@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "waas_api",
+  "project_id": "68bfb93d-5d3a-4bc9-9f68-feff23f94f99"
+}
