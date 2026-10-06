@@ -5,3 +5,6 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# beads export: local only, issues sync via the DoltHub remote
+.beads/issues.jsonl
