@@ -45,7 +45,25 @@ Not visible in HTTP, but the Client plugin depends on them:
 
 ## Postman
 
-Workspace **Peptide WaaS** holds the same spec, a collection generated from it (**WaaS Provisioning API**) with tests on all 17 Phase 1 requests and named examples, a private mock, and two environments (**Mock**, **Local (Mastra)**). Keep the spec here and in Postman identical.
+Workspace **Peptide WaaS** holds:
+- the same spec
+- a collection generated from it (**WaaS Provisioning API**), with tests on all 17 Phase 1 requests and named examples
+- a public mock: `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`
+- two environments, **Mock** and **Local (Mastra)**
+
+Keep the spec here and in Postman identical.
+
+Each request sends `x-mock-response-name`, which picks the example the mock returns. Example names are `<request name>: <example>` (for example `List versions: 403 Invalid API key or secret`). They must be unique across the collection, because the mock looks names up across the whole collection.
+
+An example added through the Postman API needs its request attached (`requestObject`), or the mock can't find it.
+
+Run the Phase 1 tests against the mock:
+
+```sh
+npx newman run <exported collection>.json -e <exported Mock environment>.json
+```
+
+Expected: 17 requests, 57 assertions, 0 failures.
 
 ## Validate
 
