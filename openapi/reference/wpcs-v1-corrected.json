@@ -1,0 +1,3086 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "WPCS API",
+    "description": "An API that allows you to manage your WPCS Product.\n\nRecovered from the archived docs.wpcs.io JavaScript bundle (main.1e798b65.js, Wayback capture 2024-09-08). Three corrections versus the original: GET /v1/snapshots returns an array; PhpConstantParams no longer requires a non-existent 'key'; ProductionVersionParams requires only 'versionId'. Also corrected: copy-pasted parameter/response/field descriptions, example request paths (/domain → /domains), invalid example JSON, '-x' → '-X' in curl examples, DELETE /v1/versions example (?versionId=), PUT /v1/versions/production example (versionId), deprecated fields in the create-tenant example, and the snapshot download response type (binary zip).",
+    "termsOfService": "https://wpcs.io/terms-of-service/",
+    "contact": {
+      "name": "WPCS Support team",
+      "url": "https://wpcs.io",
+      "email": "support@wpcs.io"
+    },
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "https://api.eu1.wpcs.io"
+    },
+    {
+      "url": "https://api.us1.wpcs.io"
+    }
+  ],
+  "paths": {
+    "/v1/tenants": {
+      "get": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "v1/tenants",
+        "description": "Gets tenants for a product. Use the ExternalId or TenantId of a tenant to filter the list to a specific tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "Specify a tenantId to filter to a specific tenant.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "Specify an ExternalId to filter to a specific tenant.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetTenantQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\nhttps://api.us1.wpcs.io/v1/tenants"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "v1/tenants",
+        "description": "Schedule the creation of a new tenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTenantParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The tenant creation was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTenantCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-data.json \\\r\nhttps://api.us1.wpcs.io/v1/tenants"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"name\": \"Client Company Inc\",\r\n   \"externalId\": \"my-own-identifier\",\r\n   \"wordPressUserName\": \"John Doe\",\r\n   \"wordPressUserEmail\": \"j.doe@example.com\",\r\n   \"wordPressUserPassword\": \"averystrongpassword\",\r\n   \"wordPressUserRole\": \"store-owner\",\r\n   \"groupName\": \"my-snapshot-group-name\"\r\n}",
+            "label": "tenant-data.json"
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "v1/tenants",
+        "description": "Schedule an update of a Tenant specifically for WP Options or PHP Constants",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "Specify a tenantId to filter to a specific tenant.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "Specify an ExternalId to filter to a specific tenant.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTenantParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The tenant update was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateTenantCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X PUT \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-data.json \\\r\nhttps://api.us1.wpcs.io/v1/tenants"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"wpOptions\": { \"someOption\": \"updatedValue\"},\r\n   \"phpConstants\": { \"someConstant\": {\"value\": \"updatedValue\", \"isPrivate\": false } } \r\n}",
+            "label": "tenant-data.json"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "v1/tenants",
+        "description": "Remove the tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to delete (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The Id of the Tenant to delete (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deletion of the tenant was scheduled succesfully"
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X DELETE \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/tenants?externalId=my-own-identifier"
+          }
+        ]
+      }
+    },
+    "/v1/tenants/domain": {
+      "post": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "v1/tenants/domain",
+        "description": "Schedule the addition of a domain to the tenant. For more info see our [domains section](docs/tenants/domains)",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddTenantDomainParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The addition of the domain was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddTenantDomainCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "deprecated": true,
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-data.json \\\r\nhttps://api.us1.wpcs.io/v1/tenants/domain?externalId=my-own-identifier"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"domainName\": \"my-store.com\",\r\n   \"setAsMainDomain\": true\r\n}",
+            "label": "tenant-data.json"
+          }
+        ]
+      }
+    },
+    "/v1/tenants/version": {
+      "post": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "v1/tenants/version",
+        "description": "Move the tenant identified by the tenantId or externalId to a target version",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to move (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The ExternalId of the Tenant to move (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveVersionParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The move of the tenant to a new version was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoveTenantCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-data.json \\\r\nhttps://api.us1.wpcs.io/v1/tenants/version?externalId=my-own-identifier"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"targetVersionId\": \"24ab3137-a5ce-4b73-b8b6-ff8efc329093\"\r\n}",
+            "label": "tenant-data.json"
+          }
+        ]
+      }
+    },
+    "/v1/tenants/domains": {
+      "get": {
+        "tags": [
+          "TenantDomain"
+        ],
+        "summary": "v1/tenants/domains",
+        "description": "Get an overview of the domains of a Tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The domains of the tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetTenantDomainsQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/tenants/domains?externalId=my-own-identifier"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "TenantDomain"
+        ],
+        "summary": "v1/tenants/domains",
+        "description": "Schedule the addition of a domain to the tenant. For more info see our [domains section](docs/tenants/domains)",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddTenantDomainsParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The addition of the domain was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddTenantDomainCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-domain-data.json \\\r\nhttps://api.us1.wpcs.io/v1/tenants/domains?externalId=my-own-identifier"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"domainName\": \"my-store.com\",\r\n   \"setAsMainDomain\": true\r\n}",
+            "label": "tenant-domain-data.json"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "TenantDomain"
+        ],
+        "summary": "v1/tenants/domains",
+        "description": "Schedule the removal of a domain of the tenant. Specify the domain either through the domainName or domainId query parameter.\r\n\r\n_Note_: you cannot remove the Main domain as it acts as SiteUrl and Home in your WordPress deploy.\r\n_Note_: you cannot remove the domain that has IsBaseDomain set to true.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The ExternalId of the Tenant to which to add a domain (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "The Id of the Tenant Domain you want to remove (required if the domainName is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "domainName",
+            "in": "query",
+            "description": "The domain name that you want to remove (required if domainId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The removal of the domain was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveTenantDomainCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X DELETE \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/tenants/domains?externalId=my-own-identifier"
+          }
+        ]
+      }
+    },
+    "/v1/tenants/domains/main": {
+      "put": {
+        "tags": [
+          "TenantDomain"
+        ],
+        "summary": "v1/tenants/domains/main",
+        "description": "Schedule setting an existing domain as main domain of the tenant.\r\n\r\n_Note_: To add a new domain as main domain use the add domain Post and set _setAsMainDomain_ to true.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if externalId is omitted)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "description": "The Id of the Tenant to which to add a domain (required if tenantId is omitted)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMainDomainParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The addition of the domain was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetTenantMainDomainCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X PUT \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-domain-data.json \\\r\nhttps://api.us1.wpcs.io/v1/tenants/domains/main?externalId=my-own-identifier"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"domainName\": \"my-store.com\"\r\n}",
+            "label": "tenant-domain-data.json"
+          }
+        ]
+      }
+    },
+    "/v1/tenants/domains/available": {
+      "get": {
+        "tags": [
+          "TenantDomain"
+        ],
+        "summary": "v1/tenants/domains/available",
+        "description": "See if a domain is available for a tenant at this point in time",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "description": "The domain name to check, e.g. my-store.example.com",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The result of the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDomainAvailableQueryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/tenants/domains/available?domain=my-domain.example.com"
+          }
+        ]
+      }
+    },
+    "/v1/versions": {
+      "get": {
+        "tags": [
+          "Version"
+        ],
+        "summary": "v1/versions",
+        "description": "Gets a list of versions. Use the VersionName or VersionId of a version to filter the list to a specific version.",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "query",
+            "description": "Specify a versionId to filter to a specific version.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "versionName",
+            "in": "query",
+            "description": "Specify a versionName to filter to a specific version.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetVersionQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\nhttps://api.us1.wpcs.io/v1/versions"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Version"
+        ],
+        "summary": "v1/versions",
+        "description": "Create a version based on an existing snapshot in the product or upload a custom snapshot to work with. \r\n\r\n_Note_ either a valid _snapshotId_ is required or the _useCustomUpload_ parameter must be true and a custom snapshot uploaded using a single _PUT_ to the returned *uploadUrl* with a maximum of 4GB.\r\n\r\nValid snapshotIds are either valid snapshots in the product (see snapshots)[#tag/Snapshot] or a System snapshotId needs to be supplied (Partner API Keys only).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVersionParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The version will be created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateVersionCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Something was wrong with the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./version-data.json \\\r\nhttps://api.us1.wpcs.io/v1/versions"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n  \"snapshotId\": \"37ad43a6-c083-452c-8909-f261d0c36771\",\r\n  \"wordPressVersion\": \"5.8.2\",\r\n  \"phpVersion\": \"7.4\",\r\n  \"name\": \"V3.5\"\r\n}",
+            "label": "version-data.json"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Version"
+        ],
+        "summary": "v1/versions",
+        "description": "Remove a non-production version",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "query",
+            "description": "The Id of the Version to delete",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deletion of the version was scheduled succesfully"
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X DELETE \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/versions?versionId=53418033-c35a-4641-baf1-7794e3618351"
+          }
+        ]
+      }
+    },
+    "/v1/versions/production": {
+      "put": {
+        "tags": [
+          "Version"
+        ],
+        "summary": "v1/versions/production",
+        "description": "Sets a Version to Production",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionVersionParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The version will be set as production",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetProductionVersionCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Something was wrong with the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X PUT \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./version-data.json \\\r\nhttps://api.us1.wpcs.io/v1/versions/production"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n  \"versionId\": \"37ad43a6-c083-452c-8909-f261d0c36771\"\r\n}",
+            "label": "version-data.json"
+          }
+        ]
+      }
+    },
+    "/v1/snapshots": {
+      "get": {
+        "tags": [
+          "Snapshot"
+        ],
+        "summary": "v1/snapshots",
+        "description": "Gets a list of snapshots. Use the `versionId` to filter the list for the snapshots for a specific version. Use the `snapshotId`, `snapshotName` or `groupName` to filter the list on specific snapshots or groups of snapshots.",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "query",
+            "description": "Specify a `versionId` to filter the list to a specific version",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "description": "Specify a `snapshotId` to filter to a specific snapshot",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "snapshotName",
+            "in": "query",
+            "description": "Specify a `snapshotName` to filter to a specific snapshot",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupName",
+            "in": "query",
+            "description": "Specify a `groupName` to filter to a specific group of tenant snapshots.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of Snapshots available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetSnapshotQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Something was wrong with the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\nhttps://api.us1.wpcs.io/v1/snapshots?versionId=ed142f0f-cae8-441d-ac8d-dbb22c88caa6"
+          }
+        ]
+      }
+    },
+    "/v1/snapshots/download": {
+      "get": {
+        "tags": [
+          "Snapshot"
+        ],
+        "summary": "v1/snapshots/download",
+        "description": "Download a snapshot",
+        "parameters": [
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "description": "The id of the snapshot you want to download",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The snapshot as a zip file",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Something was wrong with the request.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\nhttps://api.us1.wpcs.io/v1/snapshots/download?snapshotId=ed142f0f-cae8-441d-ac8d-dbb22c88caa6"
+          }
+        ]
+      }
+    },
+    "/v1/subscriptions": {
+      "get": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "v1/subscriptions",
+        "description": "Returns a list of Subscriptions, optionally filtered by name or subscriptionId",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Specify a Name of Subscription to filter to a specific subscription.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "Specify a subscriptionId to filter to a specific subscription.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetSubscriptionsQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwOkhlbGxvV29ybGQ=\" \\\r\nhttps://api.us1.wpcs.io/v1/subscriptions"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "v1/subscriptions",
+        "description": "Schedule the creation of a new subscription.\r\n\r\nWhen creating a subscription, a product can be immediately added. The product will be created if the Subscription was succesfully created.\r\nWhen defining a product to create for the subscription a version can also be defined. *Note* that for the version either a valid _System snapshotId_ is required or the _useCustomUpload_ parameter must be true and a custom snapshot uploaded using a single _PUT_ to the returned *uploadUrl*.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSubscriptionParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The subscription creation was scheduled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSubscriptionCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./tenant-data.json \\\r\nhttps://api.us1.wpcs.io/v1/subscriptions"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"name\": \"MySubscription\",\r\n   \"user\": {\r\n       \"emailAddress\": \"john@mysubscription.com\",\r\n       \"name\": \"John\",\r\n       \"lastName\": \"Doe\"\r\n   },\r\n   \"product\": {\r\n       \"name\": \"ACME Webshop\",\r\n       \"version\": {\r\n           \"snapshotId\": \"37ad43a6-c083-452c-8909-f261d0c36771\",\r\n           \"wordPressVersion\": \"5.8.2\",\r\n           \"phpVersion\": \"7.4\",\r\n           \"name\": \"V3.5\"\r\n       }\r\n   }\r\n}",
+            "label": "subscription-data.json"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "v1/subscriptions",
+        "description": "Removes a subscription including underlying products",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "The Id of the Subscription that should be deleted",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X DELETE \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/subscriptions?subscriptionId="
+          }
+        ]
+      }
+    },
+    "/v1/subscriptions/usage": {
+      "get": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "v1/subscriptions/usage",
+        "description": "Gets the usage in terms of product, version and tenant hours of a certain subscription between the specified start- and enddate",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "The id of the Subscription to get usage for",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "The startdate of the period in ISO 8601 format to measure usage",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "description": "The enddate of the period in ISO 8601 format to measure usage",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSubscriptionUsageQueryResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X GET \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/subscriptions/usage?subscriptionId=5ab7917a-840b-4091-a205-602c7ea8cb7b&startDate=2022-03-01T00%3A00%3A00.000%2B02%3A00&endDate=2022-03-30T00%3A00%3A00.000%2B02%3A00"
+          }
+        ]
+      }
+    },
+    "/v1/products": {
+      "get": {
+        "tags": [
+          "Product"
+        ],
+        "summary": "v1/products",
+        "description": "Gets a list of Products. Use the ProductName, ProductId or SubscriptionId to filter the list to specific products.",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "Specify a Subscription to filter to specific products.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "description": "Specify a productId to filter to a specific product.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productName",
+            "in": "query",
+            "description": "Specify a productName to filter to a specific product.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetProductsQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\nhttps://api.us1.wpcs.io/v1/products"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Product"
+        ],
+        "summary": "v1/products",
+        "description": "Schedule the creation of a new product\r\n\r\nWhen creating a product, a version can also be defined. *Note* that for the version either a valid _System snapshotId_ is required or the _useCustomUpload_ parameter must be true and a custom snapshot uploaded using a single _PUT_ to the returned *uploadUrl*.",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "Specify the Id of the Subscription the product should be added to",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The product creation was scheduled succesfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProductCommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The validation of the request failed. See the message in the response to see why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\n-d @./product-data.json \\\r\nhttps://api.us1.wpcs.io/v1/products"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"name\": \"ACME Webshop\",\r\n   \"version\": {\r\n       \"snapshotId\": \"37ad43a6-c083-452c-8909-f261d0c36771\",\r\n       \"wordPressVersion\": \"5.8.2\",\r\n       \"phpVersion\": \"7.4\",\r\n       \"name\": \"V3.5\"\r\n   }\r\n}",
+            "label": "product-data.json"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Product"
+        ],
+        "summary": "v1/products",
+        "description": "Removes a Product.",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "query",
+            "description": "Specify a productId to filter to a specific product.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveProductCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X DELETE \\\\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\nhttps://api.us1.wpcs.io/v1/products?productId=37ad43a6-c083-452c-8909-f261d0c36771"
+          }
+        ]
+      }
+    },
+    "/v1/products/usage": {
+      "get": {
+        "tags": [
+          "Product"
+        ],
+        "summary": "v1/products/usage",
+        "description": "Gets the usage in terms of product, version and tenant hours of a certain product between the specified start- and enddate",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "query",
+            "description": "The id of the Product to get usage for",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "The startdate of the period in ISO 8601 format to measure usage",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "description": "The enddate of the period in ISO 8601 format to measure usage",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetProductUsageQueryResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X GET \\\r\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\r\n-H \"Content-Type: application/json\" \\\r\nhttps://api.us1.wpcs.io/v1/products/usage?productId=5ab7917a-840b-4091-a205-602c7ea8cb7b&startDate=2022-03-01T00%3A00%3A00.000%2B02%3A00&endDate=2022-03-30T00%3A00%3A00.000%2B02%3A00"
+          }
+        ]
+      }
+    },
+    "/v1/basesnapshots": {
+      "get": {
+        "tags": [
+          "BaseSnapshot"
+        ],
+        "summary": "v1/basesnapshots",
+        "description": "Returns a list of BaseSnapshots",
+        "parameters": [
+          {
+            "name": "baseSnapshotId",
+            "in": "query",
+            "description": "Specify a BaseSnapshotId to filter to a specific BaseSnapshots.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Specify the Name of a BaseSnapshot to filter to specific BaseSnapshots.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupName",
+            "in": "query",
+            "description": "Specify a GroupName to filter to a specific BaseSnapshots.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "onlyPartnerSpecific",
+            "in": "query",
+            "description": "Only show BaseSnapshots created through your Partner API Key.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GetBaseSnapshotsQueryResult"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl \\\r\n-H \"Authorization: Basic MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwOkhlbGxvV29ybGQ=\" \\\r\nhttps://api.us1.wpcs.io/v1/basesnapshots"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "BaseSnapshot"
+        ],
+        "summary": "v1/basesnapshots",
+        "description": "Creates a BaseSnapshot to use as a snapshot to base initial versions on or to define tenant snapshots that can be added to a version to function.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBaseSnapshotParams"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBaseSnapshotParams"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBaseSnapshotParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBaseSnapshotCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X POST \\\r\n-H \"Authorization: Basic MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwOkhlbGxvV29ybGQ=\" \\\r\n-d @./base-snapshot-data.json \\\r\nhttps://api.us1.wpcs.io/v1/basesnapshots"
+          },
+          {
+            "lang": "json",
+            "source": "{\r\n   \"name\": \"Base Webshop\",\r\n   \"comment\": \"Snapshot containing base functionalities for a webshop\"\r\n}",
+            "label": "base-snapshot-data.json"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "BaseSnapshot"
+        ],
+        "summary": "v1/basesnapshots",
+        "description": "Removes a BaseSnapshot",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Specify a BaseSnapshotId to filter to a specific BaseSnapshots.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveBaseSnapshotCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "$ curl -X DELETE \\\r\n-H \"Authorization: Basic MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwOkhlbGxvV29ybGQ=\" \\\r\nhttps://api.us1.wpcs.io/v1/basesnapshots?id=193463fd-ce54-43d9-ba61-304ceef2885e"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddTenantDomainCommandResult": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "description": "The Id of the Tenant",
+            "format": "uuid"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "The External Id of the Tenant",
+            "example": "T001"
+          },
+          "domain": {
+            "type": "string",
+            "description": "The added domain",
+            "example": "my-awesome-domain.com"
+          },
+          "setAsMainDomain": {
+            "type": "boolean",
+            "description": "Whether it will be added as main domain"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Response when tenant domain addition was succesfully scheduled"
+      },
+      "AddTenantDomainParams": {
+        "required": [
+          "domainName"
+        ],
+        "type": "object",
+        "properties": {
+          "domainName": {
+            "type": "string",
+            "description": "The domain name to be added to the tenant.",
+            "example": "my-new-domain.io"
+          },
+          "setAsMainDomain": {
+            "type": "boolean",
+            "description": "When set to true the domain name will be set as the primary domain name of the tenant."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AddTenantDomainsParams": {
+        "required": [
+          "domainName"
+        ],
+        "type": "object",
+        "properties": {
+          "domainName": {
+            "type": "string",
+            "description": "The domain name to be added to the tenant.",
+            "example": "my-new-domain.io"
+          },
+          "setAsMainDomain": {
+            "type": "boolean",
+            "description": "When set to true the domain name will be set as the primary domain name of the tenant."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ApiKeyType"
+          },
+          "userAgent": {
+            "type": "string"
+          },
+          "createdFor": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiKeyType": {
+        "enum": [
+          0,
+          1
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "CreateBaseSnapshotCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the snapshot",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The Name of the snapshot"
+          },
+          "comment": {
+            "type": "string",
+            "description": "The comments or description of the snapshot"
+          },
+          "showInConsole": {
+            "type": "boolean",
+            "description": "Whether the snapshot is shown in the console"
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "An URL to PUT a GZipped Tar to.",
+            "example": "https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateBaseSnapshotParams": {
+        "required": [
+          "comment",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the BaseSnapshot that is between 5 and 50 characters. It may only contain alphanumeric characters, spaces and dashes."
+          },
+          "comment": {
+            "type": "string",
+            "description": "A comment or description of what is in the snapshot"
+          },
+          "isTenantSnapshot": {
+            "type": "boolean",
+            "description": "Whether this snapshot should be available as a tenant snapshot."
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The groupName of the snapshot in the case of a tenant snapshot. GroupName cannot be filled out when trying to upload a BaseSnapshot that is not a tenant snapshot."
+          },
+          "showInConsole": {
+            "type": "boolean",
+            "description": "Whether this snapshot is available in the Version creation dropdown in the console (only for the first version within a product).\r\nWhen false, the snapshot will still show up in Get queries of this API and can be used as a snapshot for new version, however, only from the API."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateProductCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the Product that will be created",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the product that will be created"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CreateProductCommandVersionResult"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateProductCommandVersionResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id of the version that will be created",
+            "format": "uuid",
+            "example": "f742de68-a400-4bdb-99fe-c999fd33981a"
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The domain under which the version will be available",
+            "example": "v2-5ea23421dba24a99e4a583c5dea4397f.snapshots.us1.wpcs.io"
+          },
+          "wordPressVersion": {
+            "type": "string",
+            "description": "The selected WordPress version that the version runs",
+            "example": "5.8.2"
+          },
+          "phpVersion": {
+            "type": "string",
+            "description": "The selected PHP version that the version runs",
+            "example": "7.4"
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "An URL to PUT a GZipped Tar to when `useCustomUpload` was true",
+            "example": "https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateProductParams": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the product"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CreateProductVersionParams"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateProductVersionParams": {
+        "title": "Create Version Params",
+        "required": [
+          "name",
+          "phpVersion",
+          "wordPressVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "description": "Base your version on a specific system snapshot.",
+            "format": "uuid"
+          },
+          "snapshotIdsToCopy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "List of snapshots you want to copy to the new version",
+            "nullable": true
+          },
+          "wordPressVersion": {
+            "type": "string",
+            "description": "The WordPress version you want your version to run.",
+            "example": "5.8.2"
+          },
+          "phpVersion": {
+            "type": "string",
+            "description": "The PHP version you want your version to run.",
+            "example": "7.4"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the version.",
+            "example": "V3.5"
+          },
+          "useCustomUpload": {
+            "type": "boolean",
+            "description": "Whether you want to upload a Gzipped Tar to act as the the basis of your version."
+          },
+          "asZip": {
+            "type": "boolean",
+            "description": "Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UseCustomUpload is true."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionCommandProductResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the Product that will be created",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the product that will be created"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CreateSubscriptionCommandVersionResult"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the Subscription that will be created",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the Subscription that will be created"
+          },
+          "product": {
+            "$ref": "#/components/schemas/CreateSubscriptionCommandProductResult"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionCommandVersionResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id of the version that will be created",
+            "format": "uuid",
+            "example": "f742de68-a400-4bdb-99fe-c999fd33981a"
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The domain under which the version will be available",
+            "example": "v2-5ea23421dba24a99e4a583c5dea4397f.snapshots.us1.wpcs.io"
+          },
+          "wordPressVersion": {
+            "type": "string",
+            "description": "The selected WordPress version that the version runs",
+            "example": "5.8.2"
+          },
+          "phpVersion": {
+            "type": "string",
+            "description": "The selected PHP version that the version runs",
+            "example": "7.4"
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "An URL to PUT a GZipped Tar to when `useCustomUpload` was true",
+            "example": "https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionParams": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the subscription",
+            "example": "Johns-Sub"
+          },
+          "product": {
+            "$ref": "#/components/schemas/CreateSubscriptionProductParams"
+          },
+          "user": {
+            "$ref": "#/components/schemas/CreateSubscriptionUserParams"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionProductParams": {
+        "title": "Create Product parameters",
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the product",
+            "example": "My Product"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CreateSubscriptionVersionParams"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionUserParams": {
+        "title": "User Parameters",
+        "required": [
+          "emailAddress",
+          "lastName",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the user that will manage the subscription",
+            "example": "John"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "The last name of the user that will manage the subscription",
+            "example": "Doe"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "The email address of the user that will manage the subscription",
+            "example": "john@doe.io"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSubscriptionVersionParams": {
+        "title": "Create Version parameters",
+        "required": [
+          "name",
+          "phpVersion",
+          "wordPressVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "description": "Base your version on a specific system snapshot.",
+            "format": "uuid"
+          },
+          "snapshotIdsToCopy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "List of snapshots you want to copy to the new version",
+            "nullable": true
+          },
+          "wordPressVersion": {
+            "type": "string",
+            "description": "The WordPress version you want your version to run.",
+            "example": "5.8.2"
+          },
+          "phpVersion": {
+            "type": "string",
+            "description": "The PHP version you want your version to run.",
+            "example": "7.4"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the version.",
+            "example": "V3.5"
+          },
+          "useCustomUpload": {
+            "type": "boolean",
+            "description": "Whether you want to upload a Gzipped Tar to act as the the basis of your version."
+          },
+          "asZip": {
+            "type": "boolean",
+            "description": "Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UseCustomUpload is true."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateTenantCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the Tenant",
+            "format": "uuid",
+            "example": "90b97b83-b320-4006-aaa8-dacb0639325c"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "The External Id of the Tenant",
+            "example": "T001"
+          },
+          "baseDomain": {
+            "type": "string",
+            "description": "The WPCS domain that the Tenant will be available under",
+            "example": "https://my-tenant-90b97b83b3204006aaa8dacb0639325c.tenants.us1.wpcs.io/"
+          },
+          "customDomain": {
+            "type": "string",
+            "description": "The custom domain which was added to the Tenant, if any",
+            "example": "my-domain.com"
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "An URL to PUT a GZipped Tar to when `uploadCustomSnapshot` was true",
+            "example": "https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Tenant succesfully scheduled to be created"
+      },
+      "CreateTenantParams": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "description": "The Id of the version you want to add the Tenant to. If omitted the Production version is used.",
+            "format": "uuid"
+          },
+          "snapshotId": {
+            "type": "string",
+            "description": "The Id of the Snapshot you want to base the Tenant on. If omitted the latest snapshot in the 'GroupName' is used or, in case GroupName is omitted, the latest snapshot of the target version is used.",
+            "format": "uuid"
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The GroupName of the Snapshot you want to base this Tenant on. See [tenant snapshots](docs/tenants/tenant-snapshots#groups)",
+            "example": null
+          },
+          "externalId": {
+            "type": "string",
+            "description": "An Id for reference to other systems you might use. ExternalIds cannot contain spaces or special characters other than '-'.",
+            "example": "T001"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the Tenant as shown in the WPCS Console. Tenant name cannot be longer than 30 characters and must start and end on an alpha numeric character.",
+            "example": "My awesome Tenant"
+          },
+          "customDomainName": {
+            "type": "string",
+            "description": "A custom domain name. This can be a staging domain name that you use for clients or the production domain name.",
+            "example": "awesome-tenant.my-waas.io"
+          },
+          "tenantName": {
+            "type": "string",
+            "description": "The name of the user that will be created in the Tenant.",
+            "example": "TenantUser",
+            "deprecated": true
+          },
+          "tenantUserRole": {
+            "type": "string",
+            "description": "The Role of the user that will be created in the Tenant.",
+            "example": "author",
+            "deprecated": true
+          },
+          "tenantEmail": {
+            "type": "string",
+            "description": "The e-mail address of the user that will be created in the Tenant.",
+            "example": "example@gmail.com",
+            "deprecated": true
+          },
+          "tenantPassword": {
+            "type": "string",
+            "description": "The password for the user that will be created in the Tenant.",
+            "example": "oneV3rryStr0ngP@ss",
+            "deprecated": true
+          },
+          "wordPressUserName": {
+            "type": "string",
+            "description": "The name of the user that will be created in the Tenant.",
+            "example": "TenantUser"
+          },
+          "wordPressUserRole": {
+            "type": "string",
+            "description": "The Role of the user that will be created in the Tenant.",
+            "example": "author"
+          },
+          "wordPressUserEmail": {
+            "type": "string",
+            "description": "The e-mail address of the user that will be created in the Tenant.",
+            "example": "example@gmail.com"
+          },
+          "wordPressUserPassword": {
+            "type": "string",
+            "description": "The password for the user that will be created in the Tenant.",
+            "example": "oneV3rryStr0ngP@ss"
+          },
+          "uploadCustomSnapshot": {
+            "type": "boolean",
+            "description": "Whether to use a custom Snapshot when creating this Tenant. If true an UploadURL will be specified in the response to wich a Gzipped Tar can be uploaded, containing files and a database export."
+          },
+          "asZip": {
+            "type": "boolean",
+            "description": "Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UploadCustomSnapshot is true."
+          },
+          "wpOptions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "A collection of key value pairs that will be used to initialize WordPress options;\r\nUse the key as option name. The value will be set as is.",
+            "nullable": true,
+            "example": {
+              "important_option": "initialValue"
+            }
+          },
+          "phpConstants": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PhpConstantParams"
+            },
+            "description": "A collection of key value pairs with an additional boolean value to obfuscate the value in the Console\r\nUse the key as PHP Constant name. The value will be set as `define(key, value);`",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateVersionCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id of the version that will be created",
+            "format": "uuid",
+            "example": "f742de68-a400-4bdb-99fe-c999fd33981a"
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The domain under which the version will be available",
+            "example": "v2-5ea23421dba24a99e4a583c5dea4397f.snapshots.us1.wpcs.io"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the version",
+            "example": "v2-5ea23421dba24a99e4a583c5dea4397f.snapshots.us1.wpcs.io"
+          },
+          "wordPressVersion": {
+            "type": "string",
+            "description": "The selected WordPress version that the version runs",
+            "example": "5.8.2"
+          },
+          "phpVersion": {
+            "type": "string",
+            "description": "The selected PHP version that the version runs",
+            "example": "7.4"
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "An URL to PUT a GZipped Tar to when `useCustomUpload` was true",
+            "example": "https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schedule a version creation"
+      },
+      "CreateVersionParams": {
+        "required": [
+          "name",
+          "phpVersion",
+          "wordPressVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "description": "Base your version on a specific snapshot. Be sure that the Snapshot exists within your product",
+            "format": "uuid"
+          },
+          "snapshotIdsToCopy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "List of snapshots you want to copy to the new version",
+            "nullable": true
+          },
+          "wordPressVersion": {
+            "type": "string",
+            "description": "The WordPress version you want your version to run.",
+            "example": "5.8.2"
+          },
+          "phpVersion": {
+            "type": "string",
+            "description": "The PHP version you want your version to run.",
+            "example": "7.4"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the version. The version name cannot be longer than 30 characters and can only contain alpha numeric characters, dashes and dots",
+            "example": "V3.5"
+          },
+          "useCustomUpload": {
+            "type": "boolean",
+            "description": "Whether you want to upload a Gzipped Tar to act as the the basis of your version. When using this option the return value will contain an UploadUrl to which a Gzipped Tar must be send to with a PUT (max 4GB)."
+          },
+          "asZip": {
+            "type": "boolean",
+            "description": "Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UseCustomUpload is true."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExceptionResult": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "description": "The status code of the request",
+            "format": "int32",
+            "example": 400
+          },
+          "message": {
+            "type": "string",
+            "description": "The reason the request was bad",
+            "example": "Validation error occured: Property xxx cannot be null"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetBaseSnapshotsQueryResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "comment": {
+            "type": "string",
+            "readOnly": true
+          },
+          "uri": {
+            "type": "string",
+            "readOnly": true
+          },
+          "isDefault": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "isTenantSnapshot": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "groupName": {
+            "type": "string",
+            "readOnly": true
+          },
+          "showAsBaseSnapshot": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetDomainAvailableQueryResult": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether the Domain is not taken by another tenant."
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetProductUsageQueryResult": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "productHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "versionHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "tenantHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetProductsQueryResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the product",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "description": "The Name of the product",
+            "readOnly": true
+          },
+          "subscriptionId": {
+            "type": "string",
+            "description": "The Id of the subscription",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "1f3ea976-d862-499d-8be2-b99c1aef21a9"
+          },
+          "subscriptionName": {
+            "type": "string",
+            "description": "The name of the Subscription",
+            "readOnly": true,
+            "example": "WPCS Inc"
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "The status code of the Product\r\nPending = 0\r\nDone = 1\r\nFailed = 2\r\nRemoving = 3",
+            "format": "int32",
+            "readOnly": true,
+            "example": 1
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The name associated with the statusCode",
+            "readOnly": true,
+            "example": "Done"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetSnapshotQueryResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the snapshot",
+            "format": "uuid",
+            "example": "347b6a3b-4b68-4888-acc5-d5d546a33d86"
+          },
+          "versionId": {
+            "type": "string",
+            "description": "The Id of the version it was created under",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "94d6406e-56d5-481a-a9eb-323152ff4724"
+          },
+          "dateCreated": {
+            "type": "string",
+            "description": "The date on which the snapshot was created",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2021-11-18T15:47:40.17337+00:00"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the snapshot",
+            "readOnly": true,
+            "example": "v2-addition-woo-commerce"
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The group name of the snapshot",
+            "readOnly": true,
+            "example": "language-school-template"
+          },
+          "isCustomSnapshot": {
+            "type": "boolean",
+            "description": "Whether the snapshot is a custom snapshot",
+            "readOnly": true,
+            "example": false
+          },
+          "isTenantSnapshot": {
+            "type": "boolean",
+            "description": "Whether the snapshot is a tenant snapshot",
+            "readOnly": true,
+            "example": false
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "The status code of the snapshot\r\nPending = 0\r\nDone = 1\r\nFailed = 2\r\nRemoving = 3",
+            "format": "int32",
+            "readOnly": true,
+            "example": 1
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The name associated with the statusCode",
+            "readOnly": true,
+            "example": "Done"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A snapshot list entry"
+      },
+      "GetSubscriptionUsageQueryResult": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "productHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "versionHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          },
+          "tenantHours": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetSubscriptionsQueryResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the Subscription",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "description": "The Name of the Subscription",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetTenantDomainsQueryResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the domain name",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The domain name",
+            "readOnly": true
+          },
+          "isMainDomain": {
+            "type": "boolean",
+            "description": "Whether it is the Main domain (SiteUrl and Home)\r\nThe main domain cannot be deleted, but should be replaced by another domain",
+            "readOnly": true
+          },
+          "isBaseDomain": {
+            "type": "boolean",
+            "description": "Whether it is the domain WPCS first adds to the tenant, this cannot be deleted",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Information about the Tenant Domain"
+      },
+      "GetTenantQueryResult": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "description": "The id of the tenant",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "68c6b25c-74ef-4401-acbe-0b1d560d8647",
+            "deprecated": true
+          },
+          "id": {
+            "type": "string",
+            "description": "The id of the tenant",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "68c6b25c-74ef-4401-acbe-0b1d560d8647"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "The external id of the tenant",
+            "readOnly": true,
+            "example": "T001"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the tenant",
+            "readOnly": true,
+            "example": "First-Tenant"
+          },
+          "versionId": {
+            "type": "string",
+            "description": "The version the tenant is running on",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "aebceb97-1296-49fc-81bc-b9e86aefe011"
+          },
+          "versionName": {
+            "type": "string",
+            "description": "The name of the version the tenant is running on",
+            "readOnly": true,
+            "example": "V1.1"
+          },
+          "basedOnSnapshotId": {
+            "type": "string",
+            "description": "The id of the snapshot the tenant was based on (could be deleted)",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "7395de9a-bfc3-45cd-8dfd-92f760d5aee7"
+          },
+          "snapshotName": {
+            "type": "string",
+            "description": "The name of the snapshot the tenant was based on",
+            "readOnly": true,
+            "example": "V2: Added french"
+          },
+          "snapshotGroupName": {
+            "type": "string",
+            "description": "The group name of the snapshot the tenant was based on",
+            "readOnly": true,
+            "example": "language-school-template"
+          },
+          "dateCreated": {
+            "type": "string",
+            "description": "The date the tenant was created",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2021-12-01T12:27:34.891662+00:00"
+          },
+          "dateChanged": {
+            "type": "string",
+            "description": "The last time the tenant was changed with regards to WPCS (backup created, domain changed, moved to a new version).",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2021-12-02T12:27:34.891662+00:00"
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The main domain of the tenant",
+            "readOnly": true,
+            "example": "my-domain.com"
+          },
+          "redirectDomains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A list of domains that are configured to redirect to a main domain",
+            "nullable": true,
+            "readOnly": true,
+            "example": [
+              "T001.staging.my-site.com",
+              "www.my-domain.com"
+            ]
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "The status code of the tenant\r\nPending = 0\r\nDone = 1\r\nFailed = 2\r\nRemoving = 3",
+            "format": "int32",
+            "readOnly": true,
+            "example": 1
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The name associated with the statusCode",
+            "readOnly": true,
+            "example": "Done"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GetVersionQueryResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id of the version",
+            "format": "uuid",
+            "readOnly": true,
+            "example": "745e1ebd-d00e-4b6b-b6bc-bffd450c0942"
+          },
+          "isProduction": {
+            "type": "boolean",
+            "description": "Whether the version is the current production version",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the version",
+            "readOnly": true,
+            "example": "v2.4"
+          },
+          "dateChanged": {
+            "type": "string",
+            "description": "The last time there was something changed in the console regarding the version (e.g. snapshot deployed)",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2021-11-20T15:47:40.17337+00:00"
+          },
+          "dateCreated": {
+            "type": "string",
+            "description": "The date on which the version was created",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2021-11-18T15:47:40.17337+00:00"
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "The status code of the version\r\nPending = 0\r\nDone = 1\r\nFailed = 2\r\nRemoving = 3",
+            "format": "int32",
+            "readOnly": true,
+            "example": 1
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The name associated with the statusCode",
+            "readOnly": true,
+            "example": "Done"
+          },
+          "domain": {
+            "type": "string",
+            "description": "The domain under which the version is available",
+            "readOnly": true,
+            "example": "v2-5ea23421dba24a99e4a583c5dea4397f.snapshots.us1.wpcs.io"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MoveTenantCommandResult": {
+        "type": "object",
+        "properties": {
+          "targetVersionId": {
+            "type": "string",
+            "description": "The id of the target version.",
+            "format": "uuid",
+            "example": "f742de68-a400-4bdb-99fe-c999fd33981a"
+          },
+          "tenantId": {
+            "type": "string",
+            "description": "The id of the tenant that will be moved.",
+            "format": "uuid",
+            "example": "59733291-9f60-46f9-acbc-6f73e8d6a8fb"
+          },
+          "externalId": {
+            "type": "string",
+            "description": "The externalId of the tenant that will be moved.",
+            "example": "T001"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Result when a tenant move has been scheduled"
+      },
+      "MoveVersionParams": {
+        "required": [
+          "targetVersionId"
+        ],
+        "type": "object",
+        "properties": {
+          "targetVersionId": {
+            "type": "string",
+            "description": "The Id of the Version that you are moving the tenant to",
+            "format": "uuid",
+            "example": "24ab3137-a5ce-4b73-b8b6-ff8efc329093"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PhpConstantParams": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProductionVersionParams": {
+        "required": [
+          "versionId"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "description": "Id of the version that should be the Production version",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RemoveBaseSnapshotCommandResult": {
+        "type": "object",
+        "properties": {
+          "baseSnapshotId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RemoveProductCommandResult": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RemoveTenantDomainCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the domain name",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The domain name",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetMainDomainParams": {
+        "type": "object",
+        "properties": {
+          "domainName": {
+            "type": "string",
+            "description": "The domain name to be set as Main domain. Required if DomainId is not set.",
+            "example": "my-new-domain.io"
+          },
+          "domainId": {
+            "type": "string",
+            "description": "The id of the domain name to be set as Main domain. Required if DomainName is not set.",
+            "format": "uuid",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetProductionVersionCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the Version",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetTenantMainDomainCommandResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Id of the tenant domain name",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "domainName": {
+            "type": "string",
+            "description": "The domain name",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateTenantCommandResult": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "externalId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Tenant succesfully scheduled to be updated"
+      },
+      "UpdateTenantParams": {
+        "type": "object",
+        "properties": {
+          "wpOptions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "A collection of key value pairs that will be used to initialize WordPress options;\r\nUse the key as option name. The value will be set as is.",
+            "nullable": true,
+            "example": {
+              "important_option": "initialValue"
+            }
+          },
+          "phpConstants": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PhpConstantParams"
+            },
+            "description": "A collection of key value pairs with an additional boolean value to obfuscate the value in the Console\r\nUse the key as PHP Constant name. The value will be set as `define(key, value);`",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "basic": {
+        "type": "http",
+        "description": "\nWhenever you interact with the WPCS API, you have to authenticate your requests.\nThe WPCS API supports Basic Auth. This means that your request requires an `Authorization` header with your API key and secret in a base 64 encoded string.\n\n### Manually setting up the Auth header\nFor example, let's say your API key is `11111111-2222-3333-4444-111111111111` and your API secret is `some-generated-secret`. You would base 64 encode the string `11111111-2222-3333-4444-111111111111:some-generated-secret` (note the colon in between the key and secret). The value of your `Authorization` header would be:\n\n```\nBasic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\n```\n\n_Note that the base 64 encoded string is prefixed with `Basic` and a space!_\n\n### Postman\n\nIf you are using something like Postman to test requests, you can input the API key and secret in the [Authorization section](https://learning.postman.com/docs/sending-requests/authorization/#basic-auth). Whenever filling out forms like this (you will find the same in services like Zapier and n8n.io), the API key should be filled in the `username` field and the API secret is used in the `password` field.\n\n### Regional Endpoints\n\nThe API is available per region, that means that each region has its own URL. Currently the following are availble\n",
+        "scheme": "Basic"
+      }
+    }
+  },
+  "security": [
+    {
+      "basic": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Partner API",
+      "description": "Partner API Authorization works the same as authorization with an Product Specific API key. When making use of a Partner API Key a query string parameter needs to be specified when calling the following (Product specific) endpoints:\n- Tenant\n- Version\n- Snapshot\n\nThe ProductId is passed by supplying it in the querystring as so:\n\n```bash\n$ curl \\\n-H \"Authorization: Basic MTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtMTExMTExMTExMTExOnNvbWUtZ2VuZXJhdGVkLXNlY3JldAo=\" \\\nhttps://api.us1.wpcs.io/v1/tenants?productId=68c6b25c-74ef-4401-acbe-0b1d560d8647\n```\n",
+      "x-traitTag": true
+    },
+    {
+      "name": "Tenant",
+      "description": "Endpoint to manage Tenants"
+    },
+    {
+      "name": "TenantDomain",
+      "description": "Endpoint to manage Tenant Domains. For more info see our [domains section](docs/tenants/domains)"
+    },
+    {
+      "name": "Version",
+      "description": "Endpoint to manage Versions"
+    },
+    {
+      "name": "Snapshot",
+      "description": "Endpoint to manage Snapshots"
+    },
+    {
+      "name": "Partner API Endpoints",
+      "description": "The following endpoints can *only* be used with a _Partner API key and secret_.",
+      "x-traitTag": true,
+      "x-wpcs-group": "Partner API"
+    },
+    {
+      "name": "Subscription",
+      "description": "Endpoint to manage Subscriptions - _Only available using a Partner API Key_"
+    },
+    {
+      "name": "Product",
+      "description": "Endpoint to manage Products - _Only available using a Partner API Key_"
+    },
+    {
+      "name": "BaseSnapshot",
+      "description": "Endpoint to BaseSnapshots - _Only available using a Partner API Key_"
+    }
+  ]
+}
