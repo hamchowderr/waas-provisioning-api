@@ -4,6 +4,12 @@ Provisioning API for the WaaS platform. It replaces the shut-down WPCS cloud and
 
 Contract first: the OpenAPI spec is the source of truth. The API itself (a Mastra service) is not built yet.
 
+## Work tracking (beads)
+
+Work is tracked in [beads](https://github.com/steveyegge/beads) (prefix `waas-api`). Its Dolt remote is this repo's GitHub origin; set `DOLT_REMOTE_INFO_BRANCH` to a blank value before `bd dolt push`. `.beads/issues.jsonl` is also committed, because Claude Code cloud sessions can't push Dolt's refs to GitHub. On a fresh clone with no Dolt data: `bd init --prefix waas-api --skip-agents --skip-hooks --from-jsonl`.
+
+The plugin fork is tracked separately in [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) (prefix `waas`).
+
 ## Contract
 
 | File | What it is |
