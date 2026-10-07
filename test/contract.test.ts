@@ -33,6 +33,10 @@ const implemented = [
   'removeTenantDomain',
   'setMainDomain',
   'checkDomainAvailability',
+  'suspendTenant',
+  'resumeTenant',
+  'listTenantBackups',
+  'createTenantBackup',
 ];
 
 // Strict: no removeAdditional, so unknown response fields fail (the schemas set additionalProperties: false).
@@ -67,8 +71,8 @@ afterAll(async () => {
 });
 
 describe('contract coverage', () => {
-  it('the contract has 17 Phase 1 operations', () => {
-    expect(phase1).toHaveLength(17);
+  it('the contract has 21 Phase 1 operations (17 from WPCS v1, 4 TenantLifecycle)', () => {
+    expect(phase1).toHaveLength(21);
     for (const id of implemented) expect(phase1.map((o) => o.operationId)).toContain(id);
   });
 
@@ -270,6 +274,52 @@ describe('Phase 1 operations', () => {
     expect((await tenantDomains()).find((d) => d.isMainDomain)!.id).toBe(www.id);
   });
 
+  const getTenant = async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as any[])[0];
+  const backupsOf = async (externalId: string) =>
+    expectContract('listTenantBackups', await t.call('GET', `/v1/tenants/backups?externalId=${externalId}`)) as Promise<any[]>;
+
+  it('createTenantBackup, listTenantBackups', async () => {
+    const res: any = await expectContract('createTenantBackup', await t.call('POST', `/v1/tenants/backups?externalId=${tenant.externalId}`));
+    expect(res).toMatchObject({ tenantId: tenant.id, externalId: tenant.externalId });
+    const backups = await waitFor(async () => {
+      const list = await backupsOf(tenant.externalId);
+      return list[0]?.statusCode === Status.Done && list;
+    });
+    expect(backups[0]).toMatchObject({ id: res.backupId, reason: 'manual', sizeBytes: expect.any(Number), statusName: 'Done' });
+  });
+
+  it('suspendTenant: backs up, then goes offline; isSuspended and dateSuspended on the tenant', async () => {
+    expect((await getTenant()).isSuspended).toBe(false);
+    expect((await getTenant()).dateSuspended).toBeNull();
+    const res: any = await expectContract('suspendTenant', await t.call('POST', `/v1/tenants/suspend?externalId=${tenant.externalId}`, { body: { takeBackup: true } }));
+    expect(res.backupId).toEqual(expect.any(String));
+    await tenantDone();
+    const found = await getTenant();
+    expect(found.isSuspended).toBe(true);
+    expect(Date.parse(found.dateSuspended)).not.toBeNaN();
+    expect(t.provisioner.stores.get(tenant.id)!.suspended).toBe(true);
+    expect((await backupsOf(tenant.externalId))[0]).toMatchObject({ id: res.backupId, reason: 'suspend', statusCode: Status.Done });
+  });
+
+  it('suspendTenant: idempotent, no second backup', async () => {
+    const res: any = await expectContract('suspendTenant', await t.call('POST', `/v1/tenants/suspend?externalId=${tenant.externalId}`, { body: { takeBackup: true } }));
+    expect(res.backupId).toBeNull();
+    expect(await backupsOf(tenant.externalId)).toHaveLength(2);
+  });
+
+  it('resumeTenant', async () => {
+    expect(await expectContract('resumeTenant', await t.call('POST', `/v1/tenants/resume?externalId=${tenant.externalId}`))).toEqual({
+      tenantId: tenant.id,
+      externalId: tenant.externalId,
+      backupId: null,
+    });
+    await tenantDone();
+    expect(await getTenant()).toMatchObject({ isSuspended: false, dateSuspended: null });
+    expect(t.provisioner.stores.get(tenant.id)!.suspended).toBe(false);
+    // Idempotent.
+    expect((await t.call('POST', `/v1/tenants/resume?externalId=${tenant.externalId}`)).status).toBe(200);
+  });
+
   it('deleteTenant: by a non-UUID tenantId (plugin 2.2.7 sends the external ID there)', async () => {
     await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?tenantId=${tenant.externalId}-x`).then(async (r) => {
       expect(r.status).toBe(400); // unknown
@@ -285,6 +335,8 @@ describe('Phase 1 operations', () => {
     await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?externalId=${tenant.externalId}`));
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as unknown[]).length === 0);
     expect(t.provisioner.stores.has(tenant.id)).toBe(false);
+    // Backups outlive the tenant.
+    expect((await backupsOf(tenant.externalId)).map((b) => b.reason).sort()).toEqual(['manual', 'suspend']);
   });
 
   it('deleteVersion: Removing, then gone', async () => {
@@ -313,6 +365,10 @@ describe('Phase 1 operations', () => {
       ['removeTenantDomain', t.call('DELETE', `/v1/tenants/domains?externalId=${tenant.externalId}`)],
       ['setMainDomain', t.call('PUT', `/v1/tenants/domains/main?externalId=${tenant.externalId}`, { body: { domainName: 'elsewhere.example.com' } })],
       ['checkDomainAvailability', t.call('GET', '/v1/tenants/domains/available?domain=https://shop.example.com')],
+      ['suspendTenant', t.call('POST', '/v1/tenants/suspend?externalId=store-9999', { body: { takeBackup: true } })],
+      ['resumeTenant', t.call('POST', '/v1/tenants/resume?externalId=store-9999')],
+      ['listTenantBackups', t.call('GET', '/v1/tenants/backups')],
+      ['createTenantBackup', t.call('POST', '/v1/tenants/backups?externalId=store-9999')],
     ];
     for (const [operationId, res] of cases) {
       const r = await res;

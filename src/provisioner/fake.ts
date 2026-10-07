@@ -13,6 +13,7 @@ export class FakeProvisioner implements Provisioner {
   readonly versions = new Map<string, { domain: string; wordPressVersion: string; phpVersion: string }>();
   readonly snapshots = new Map<string, { versionId: string; sourceSnapshotId?: string }>();
   readonly stores = new Map<string, FakeStore>();
+  readonly backups = new Map<string, { storeId: string; sizeBytes: number }>();
   private failures = new Map<keyof Provisioner, number>();
 
   failNext(method: keyof Provisioner, times = 1): void {
@@ -98,6 +99,19 @@ export class FakeProvisioner implements Provisioner {
   async restoreStore({ storeId, snapshotId }: { storeId: string; snapshotId: string }) {
     this.check('restoreStore');
     this.store(storeId).snapshotId = snapshotId;
+  }
+
+  async backupStore({ storeId, backupId }: { storeId: string; backupId: string }) {
+    this.check('backupStore');
+    this.store(storeId);
+    const sizeBytes = 1024 * 1024;
+    this.backups.set(backupId, { storeId, sizeBytes });
+    return { sizeBytes };
+  }
+
+  async deleteBackup({ backupId }: { backupId: string }) {
+    this.check('deleteBackup');
+    this.backups.delete(backupId);
   }
 
   async suspendStore({ storeId }: { storeId: string }) {

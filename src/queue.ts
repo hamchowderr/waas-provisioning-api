@@ -23,7 +23,14 @@ export type JobData =
   | { type: 'tenant.move'; tenantId: string; targetVersionId: string }
   /** Applies the tenant's current domains from the database (main + redirects). */
   | { type: 'tenant.domains'; tenantId: string }
-  | { type: 'tenant.delete'; tenantId: string };
+  | { type: 'tenant.delete'; tenantId: string }
+  /** Backs up first when backupId is set, then takes the store offline. */
+  | { type: 'tenant.suspend'; tenantId: string; backupId?: string }
+  | { type: 'tenant.resume'; tenantId: string }
+  | { type: 'tenant.backup'; tenantId: string; backupId: string };
+
+/** Daily housekeeping (purging expired backups), on its own queue so it never waits behind store work. */
+export const MAINTENANCE_QUEUE = 'maintenance';
 
 function singletonKey(data: JobData): string {
   return 'versionId' in data ? `version:${data.versionId}` : `tenant:${data.tenantId}`;
@@ -43,6 +50,8 @@ export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } 
       deleteAfterSeconds: 7 * 24 * 3600,
     });
   }
+  if (!(await boss.getQueue(MAINTENANCE_QUEUE))) await boss.createQueue(MAINTENANCE_QUEUE, { retryLimit: 2 });
+  await boss.schedule(MAINTENANCE_QUEUE, '17 3 * * *');
   return boss;
 }
 
@@ -58,9 +67,11 @@ export interface JobHandlers {
   run(data: JobData): Promise<void>;
   /** Called once retries are used up. Records the Failed status. */
   fail(data: JobData, error: unknown): Promise<void>;
+  maintenance(): Promise<void>;
 }
 
 export async function startWorker(boss: PgBoss, handlers: JobHandlers, pollingIntervalSeconds = 2): Promise<string> {
+  await boss.work(MAINTENANCE_QUEUE, { pollingIntervalSeconds: 60 }, () => handlers.maintenance());
   return boss.work(QUEUE, { includeMetadata: true, pollingIntervalSeconds }, async ([job]: JobWithMetadata<JobData>[]) => {
     if (!job) return;
     try {

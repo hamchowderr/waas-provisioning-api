@@ -58,7 +58,7 @@ export const TENANT_SELECT = `
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toTenant(row: any) {
-  return compact({
+  const tenant = compact({
     tenantId: row.id,
     id: row.id,
     externalId: row.external_id,
@@ -75,6 +75,7 @@ export function toTenant(row: any) {
     statusCode: row.status,
     statusName: statusName(row.status),
   });
+  return { ...tenant, isSuspended: row.is_suspended, dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null };
 }
 
 /**

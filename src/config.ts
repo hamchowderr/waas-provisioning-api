@@ -7,6 +7,8 @@ export interface Config {
   versionsDomain: string;
   /** 32 random bytes, base64. Encrypts the values stores need back in plain form (src/secrets.ts). */
   secretsKey: string;
+  /** Days a deleted tenant's backups are kept. */
+  backupRetentionDays: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -20,5 +22,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     storesDomain: env.STORES_DOMAIN ?? 'stores.waas.example',
     versionsDomain: env.VERSIONS_DOMAIN ?? 'versions.waas.example',
     secretsKey,
+    backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
   };
 }
