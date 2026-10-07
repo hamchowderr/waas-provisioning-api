@@ -3,7 +3,9 @@ import { createApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { createJobHandlers } from './jobs.ts';
+import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
 import { FakeProvisioner } from './provisioner/fake.ts';
+import type { Provisioner } from './provisioner/provisioner.ts';
 import { startBoss, startWorker } from './queue.ts';
 import { Secrets } from './secrets.ts';
 
@@ -11,13 +13,13 @@ const config = loadConfig();
 await migrate(config.databaseUrl);
 const pool = createPool(config.databaseUrl);
 const boss = await startBoss(config.databaseUrl);
-// The only Provisioner until the store host is chosen (waas-api-2hl.4).
-const provisioner = new FakeProvisioner();
+// Coolify for normal stores (docs/adr/0001-coolify-provisioner.md); the fake for local runs and tests.
+const provisioner: Provisioner = config.coolify ? new CoolifyProvisioner(config.coolify) : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays));
 
 const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets }).fetch, port: config.port }, (info) =>
-  console.log(`WaaS provisioning API listening on :${info.port} (fake provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'})`),
+  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'})`),
 );
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

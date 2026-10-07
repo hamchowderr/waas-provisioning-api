@@ -32,7 +32,8 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await provisioner.updateStore({
             storeId: data.tenantId,
             wpOptions: data.wpOptions,
-            phpConstants: decodePhpConstants(secrets, rows[0].php_constants, data.phpConstantNames ?? []),
+            // The full set whenever any constant changed: a host may have to rewrite them all at once.
+            phpConstants: data.phpConstantNames?.length ? decodePhpConstants(secrets, rows[0].php_constants) : undefined,
           });
           // A move or delete queued meanwhile has set its own status; only finish a Pending one.
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);

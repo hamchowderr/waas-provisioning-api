@@ -61,6 +61,8 @@ npm run dev
 
 Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept), `ADMIN_TOKEN` (optional; enables `/admin/*`, generate with `openssl rand -base64 32`).
 
+`PROVISIONER` picks who does the store-side work: `fake` (default; in memory, for local runs and tests) or `coolify` (each store is a Coolify Service; see [ADR 0001](docs/adr/0001-coolify-provisioner.md)). `coolify` also needs `COOLIFY_URL`, `COOLIFY_TOKEN` (read, write and deploy; not root), `COOLIFY_SERVER_UUID`, `COOLIFY_PROJECT_UUID` (the `WaaS Stores` project), and an S3-compatible bucket: `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` (default `auto`). Stores live on sslip.io for now (`STORES_DOMAIN` and `VERSIONS_DOMAIN` = `191.101.15.236.sslip.io`, no DNS needed). Moving to an owned domain later is DNS plus those two settings; existing stores move one by one with `addTenantDomain` and `setMainDomain`. Steps: ADR 0001, "Switching to an owned domain later".
+
 ## Deployment
 
 The API runs on Otaku's Hostinger VPS through Coolify (https://coolify.otakusolutions.io), at **https://waas-api.otakusolutions.io**. It still uses the fake provisioner, so it serves test data only. No API keys have been created yet.
@@ -72,7 +74,7 @@ The API runs on Otaku's Hostinger VPS through Coolify (https://coolify.otakusolu
 | Database | `waas-api-db` (`iyrj7t91motv1kno8zmeg6pn`): Postgres 16, not public, reached by the app at host `iyrj7t91motv1kno8zmeg6pn` on Coolify's internal network. Coolify backs it up daily at 03:00 UTC and keeps the last 14 backups on the VPS (not off-site). |
 | DNS | A record `waas-api.otakusolutions.io` → `191.101.15.236`; Coolify's Traefik serves HTTPS with a Let's Encrypt certificate |
 
-Environment variables (values only in Coolify, under the application's Environment Variables): `DATABASE_URL`, `SECRETS_KEY`, `ADMIN_TOKEN`, `STORES_DOMAIN` and `VERSIONS_DOMAIN` (`stores.invalid` and `versions.invalid` until a store host is chosen).
+Environment variables (values only in Coolify, under the application's Environment Variables): `DATABASE_URL`, `SECRETS_KEY`, `ADMIN_TOKEN`, `STORES_DOMAIN` and `VERSIONS_DOMAIN` (`stores.invalid` and `versions.invalid` while the fake provisioner runs; `191.101.15.236.sslip.io` once `PROVISIONER=coolify`).
 
 `ADMIN_TOKEN` turns on `/admin/*`. It was generated straight into Coolify and its value exists only there. The dashboard gets it by copying it from the `waas-api` application's environment. To rotate it, generate a new one (`openssl rand -base64 32`), set it in both places and redeploy both.
 

@@ -53,7 +53,10 @@ export interface Provisioner {
   /** Sets the domains a store answers on. The main domain is SiteUrl and Home; the rest redirect to it. */
   setDomains(input: { storeId: string; mainDomain: string; redirectDomains: string[] }): Promise<void>;
 
-  /** Writes wpOptions and phpConstants into a running store. */
+  /**
+   * Writes wpOptions and phpConstants into a running store. wpOptions holds only the options to
+   * change; phpConstants, when given, is the store's complete set of constants.
+   */
   updateStore(input: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant> }): Promise<void>;
 
   /** Moves a store to another version's code. */

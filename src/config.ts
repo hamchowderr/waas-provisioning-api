@@ -1,3 +1,5 @@
+import type { CoolifyProvisionerConfig } from './provisioner/coolify/provisioner.ts';
+
 export interface Config {
   databaseUrl: string;
   port: number;
@@ -11,6 +13,32 @@ export interface Config {
   backupRetentionDays: number;
   /** Bearer token for /admin/*. Unset disables the admin API (every request gets 403). */
   adminToken?: string;
+  /** Which Provisioner runs store-side work: the in-memory fake (default) or Coolify. */
+  provisioner: 'fake' | 'coolify';
+  coolify?: CoolifyProvisionerConfig;
+}
+
+function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
+  const value = env[name];
+  if (!value) throw new Error(`${name} is required ${why}`);
+  return value;
+}
+
+function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
+  const why = 'when PROVISIONER=coolify';
+  return {
+    url: required(env, 'COOLIFY_URL', why),
+    token: env.COOLIFY_TOKEN || undefined,
+    serverUuid: required(env, 'COOLIFY_SERVER_UUID', why),
+    projectUuid: required(env, 'COOLIFY_PROJECT_UUID', why),
+    s3: {
+      endpoint: required(env, 'S3_ENDPOINT', why),
+      bucket: required(env, 'S3_BUCKET', why),
+      region: env.S3_REGION ?? 'auto',
+      accessKeyId: required(env, 'S3_ACCESS_KEY_ID', why),
+      secretAccessKey: required(env, 'S3_SECRET_ACCESS_KEY', why),
+    },
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -18,6 +46,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
   const secretsKey = env.SECRETS_KEY;
   if (!secretsKey) throw new Error('SECRETS_KEY is required (32 random bytes, base64: openssl rand -base64 32)');
+  const provisioner = env.PROVISIONER ?? 'fake';
+  if (provisioner !== 'fake' && provisioner !== 'coolify') throw new Error('PROVISIONER must be fake or coolify');
   return {
     databaseUrl,
     port: Number(env.PORT ?? 4111),
@@ -26,5 +56,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     secretsKey,
     backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
     adminToken: env.ADMIN_TOKEN || undefined,
+    provisioner,
+    coolify: provisioner === 'coolify' ? loadCoolify(env) : undefined,
   };
 }
