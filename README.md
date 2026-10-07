@@ -39,6 +39,23 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 
 A job that fails its last retry is recorded in `job_failures` (type, tenant or version, error, attempts) before the worker completes it. Job data is never returned: it can hold encrypted secrets.
 
+## Plugin updates
+
+Our WordPress plugins (waas-host, waas-payments) get their updates from this API, never from GitHub or wordpress.org (waas-hw4). It is outside the WPCS contract; [`openapi/plugin-updates.yaml`](openapi/plugin-updates.yaml) describes it.
+
+- `GET /v1/plugins/{slug}/update?version=&channel=stable|beta&site=&wp=&php=`, with the storefront's own API key (Basic auth, as for `/v1`). `slug` is `wpcs-waas-host`, `wpcs-waas-client` or `waas-payments`. It answers the release the channel points at (or the product's pin), with `sha256`, the ed25519 `signature` and a `package` URL that works for 10 minutes. 404 when nothing is released on the channel; 503 when updates aren't configured or the bucket can't be read.
+- Every check records the slug, site, version, channel, WordPress and PHP version in `plugin_installs` (also on 404 and 503).
+- The API only reads the releases bucket and never signs. waas-plugins' release workflow uploads `releases/<slug>/<version>/<slug>.zip`, its `manifest.json`, and `releases/<slug>/channels/<channel>.json` (a copy of the manifest the channel points at). The plugin checks the sha256 and the signature of `waas-release-v1\n<slug>\n<version>\n<sha256>` against the public keys built into it, so a wrong manifest here can't make a site install something we didn't sign.
+- Stores don't update themselves: waas-client comes with the template version, and a store moves to a newer one through `moveTenantToAVersion`.
+
+| Admin endpoint | What it does |
+|---|---|
+| `GET /admin/plugins` | Installs (each site's last reported version) and pins; filters `productId`, `slug` |
+| `PUT /admin/products/{productId}/plugins/{slug}/pin` `{"version": "2.3.0"}` | Holds that product's sites at a release that exists in the bucket; it never downgrades a site |
+| `DELETE /admin/products/{productId}/plugins/{slug}/pin` | Back to the channel |
+
+Settings: `RELEASES_S3_BUCKET` turns it on (`waas-releases`). `RELEASES_S3_ENDPOINT`, `RELEASES_S3_ACCESS_KEY_ID`, `RELEASES_S3_SECRET_ACCESS_KEY` and `RELEASES_S3_REGION` default to the `S3_*` values; the key needs read access to the releases bucket only. Manifests are cached in memory for a minute.
+
 ## Run locally
 
 With Docker:

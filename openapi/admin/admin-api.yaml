@@ -251,6 +251,66 @@ paths:
                             - $ref: '#/components/schemas/JobFailure'
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/plugins:
+    get:
+      operationId: adminListPluginInstalls
+      summary: Plugin versions sites report, and pins
+      description: >-
+        Every site that has checked for an update of one of our plugins (waas-hw4), with the version
+        it last reported, and the products pinned to a release.
+      parameters:
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: slug, in: query, schema: { $ref: '#/components/schemas/PluginSlug' } }
+      responses:
+        '200':
+          description: Installs and pins
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [installs, pins]
+                additionalProperties: false
+                properties:
+                  installs: { type: array, items: { $ref: '#/components/schemas/PluginInstall' } }
+                  pins: { type: array, items: { $ref: '#/components/schemas/PluginPin' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/products/{productId}/plugins/{slug}/pin:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/PluginSlug' } }
+    put:
+      operationId: adminPinPlugin
+      summary: Hold a product's sites at one plugin release
+      description: >-
+        Its update checks get this release whatever their channel says. The release must exist in
+        the releases bucket (400 otherwise). A site only installs it when it is newer than the
+        version it runs, so a pin holds sites back but never downgrades them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties: { version: { type: string, example: 2.3.0 } }
+      responses:
+        '200':
+          description: The pin
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginPin' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    delete:
+      operationId: adminUnpinPlugin
+      summary: Remove the pin; the sites follow their channel again
+      responses:
+        '200': { description: Removed (also when there was no pin) }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/db-backups:
     get:
       operationId: adminListDbBackups
@@ -313,6 +373,9 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
       description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unavailable:
+      description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
     Product:
@@ -520,3 +583,28 @@ components:
             status: { type: string, enum: [failed, retried] }
             retriedAt: { type: string, format: date-time, nullable: true }
             retryJobId: { type: string, format: uuid, nullable: true }
+    PluginSlug: { type: string, enum: [wpcs-waas-host, wpcs-waas-client, waas-payments] }
+    PluginInstall:
+      type: object
+      additionalProperties: false
+      required: [productId, productName, slug, site, version, channel, wpVersion, phpVersion, firstSeen, lastSeen]
+      properties:
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        slug: { $ref: '#/components/schemas/PluginSlug' }
+        site: { type: string, description: 'The site URL it reported; empty when it sent none' }
+        version: { type: string }
+        channel: { type: string, enum: [stable, beta] }
+        wpVersion: { type: string, nullable: true }
+        phpVersion: { type: string, nullable: true }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+    PluginPin:
+      type: object
+      additionalProperties: false
+      required: [productId, slug, version, pinnedAt]
+      properties:
+        productId: { type: string, format: uuid }
+        slug: { $ref: '#/components/schemas/PluginSlug' }
+        version: { type: string }
+        pinnedAt: { type: string, format: date-time }

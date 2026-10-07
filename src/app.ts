@@ -7,10 +7,12 @@ import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
+import type { ReleaseStore } from './releases.ts';
 import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
 import { domainRoutes } from './routes/domains.ts';
 import { lifecycleRoutes } from './routes/lifecycle.ts';
+import { pluginRoutes } from './routes/plugins.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
 import { tenantRoutes } from './routes/tenants.ts';
 import { versionRoutes } from './routes/versions.ts';
@@ -21,6 +23,8 @@ export interface Deps {
   boss: PgBoss;
   provisioner: Provisioner;
   secrets: Secrets;
+  /** Plugin releases (waas-hw4); absent when RELEASES_S3_BUCKET is not set. */
+  releases?: ReleaseStore;
 }
 
 export type AppEnv = { Variables: { productId: string } };
@@ -56,6 +60,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/versions', versionRoutes(deps));
   app.route('/v1/snapshots', snapshotRoutes(deps));
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
+  app.route('/v1/plugins', pluginRoutes(deps));
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ statusCode: err.status, message: err.message }, err.status);
