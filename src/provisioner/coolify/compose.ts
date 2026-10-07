@@ -7,18 +7,23 @@ export const AGENT_SCRIPT = readFileSync(new URL('./agent.php', import.meta.url)
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
 /** Per-store limits (docs/adr/0001-coolify-provisioner.md). */
-export const LIMITS = { wordpress: { mem: '512m', cpus: 1 }, db: { mem: '384m' }, agent: { mem: '128m' } };
+export const LIMITS = { wordpress: { mem: '512m', cpus: 1 }, db: { mem: '384m' }, agent: { mem: '256m' } };
 
 /**
  * Defines every phpConstant from WAAS_CONSTANTS_B64 (base64 JSON) in wp-config, through the
  * official image's WORDPRESS_CONFIG_EXTRA. Written without `$`, which Docker Compose and Coolify
  * would both try to interpolate; `@` keeps a redefinition of a constant the image already set
  * from printing a warning.
+ *
+ * WP-cron does not run on page loads (DISABLE_WP_CRON): a quiet store would run its scheduled
+ * jobs late or never. The store's `wp-cron` scheduled task runs them every minute instead
+ * (CRON_TASK in provisioner.ts). A phpConstant of the same name comes first and wins.
  */
 const CONFIG_EXTRA = [
   "@array_map('define',",
   "array_keys(json_decode(base64_decode((string) getenv('WAAS_CONSTANTS_B64')), true) ?: []),",
   "array_values(json_decode(base64_decode((string) getenv('WAAS_CONSTANTS_B64')), true) ?: []));",
+  "defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);",
 ].join(' ');
 
 /** The image a store or version site runs, e.g. wordpress:6.8-php8.3-apache. */

@@ -51,7 +51,7 @@ services:
         source: ./waas/agent.php
         target: /waas/agent.php
         content: "<the driver's agent script>"
-    mem_limit: 128m
+    mem_limit: 256m
 ```
 
 Why a Service and not an Application plus a standalone MariaDB: one resource per store, one delete removes containers, volumes and network together (`DELETE /services/{uuid}?delete_volumes=true&delete_configurations=true&delete_connected_networks=true&docker_cleanup=true`), and Coolify gives each Service its own Docker network.
@@ -84,6 +84,15 @@ Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on d
 | `suspendStore` | Exec: write `wp-content/.waas-suspended`. The mu-plugin and an `.htaccess` block (outside WordPress's markers) answer **503** with a plain page for every path, including `wp-cron.php`, `/wp-json/` and static files. Database and domains stay. Instant, no redeploy |
 | `resumeStore` | Exec: remove the flag file |
 | `deleteStore` | `DELETE /services/{uuid}` with all four cleanup flags; then confirm by name lookup that it is gone |
+| `ensureStoreCron` | See [Store cron](#store-cron). Also the last step of `createStore` |
+
+<a id="store-cron"></a>**Store cron.** WP-cron normally runs only when a page is loaded (and Action Scheduler's async runner only from wp-admin requests), so on a quiet store renewals, dunning and other scheduled jobs would run late or never. Stores therefore set `DISABLE_WP_CRON` (in `WORDPRESS_CONFIG_EXTRA`, after the phpConstants, so a constant of that name wins) and each store Service has one enabled scheduled task named `wp-cron` in container `agent`, every minute (`* * * * *`), timeout 300 s:
+
+```
+[ -f /var/www/html/wp-content/.waas-suspended ] || flock -n /tmp/waas-cron.lock sh -c "wp --path=/var/www/html action-scheduler run --quiet; wp --path=/var/www/html cron event run --due-now --quiet"
+```
+
+It runs as the agent container's user (33, like WordPress), skips a suspended store (the contract stops a suspended store's cron), and `flock` keeps a slow run from overlapping the next one. No single quotes: Coolify wraps the command in `sh -c '...'`. `createStore` adds it once the store is configured; it is found by name, so a retry reuses it and a differing or duplicate `wp-cron` task is replaced. On startup the API runs `ensureStoreCron` for every live (Done) store in the background; a store that has no `wp-cron` task yet predates this, so its compose is re-rendered (for `DISABLE_WP_CRON`) and it is restarted once before the task is added. Version sites take no orders and get no task; they share the compose, so their WP-cron does not run. Cost: Coolify records one execution per store per minute.
 
 Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
 
@@ -132,14 +141,14 @@ The domain is configuration only; no code changes.
 
 ### Resource limits and capacity
 
-Per store: WordPress 512 MB / 1 CPU limit, MariaDB 384 MB, agent 128 MB. Measured idle use for this stack is typically 250–400 MB in total; limits cap a busy or broken store, they are not reservations. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database.
+Per store: WordPress 512 MB / 1 CPU limit, MariaDB 384 MB, agent 256 MB (it loads WordPress with all plugins for the store's cron every minute). Measured idle use for this stack is typically 250–400 MB in total; limits cap a busy or broken store, they are not reservations. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database.
 
 <a id="capacity"></a>The Coolify API does not report the VPS's CPU, RAM or disk. The owner's notes give **8 vCPU, 32 GB RAM, 387 GB disk** (Ubuntu 24.04). Assuming the ~20 existing resources use 6–8 GB and keeping 30% of RAM free for peaks:
 
 | Basis | Normal stores |
 |---|---|
 | Typical use, ~350 MB per store | **35–45** |
-| Every store at its limits at once (~1 GB) | 15 |
+| Every store at its limits at once (~1.15 GB) | 13 |
 | Disk, ~2–5 GB per store with uploads, database and snapshots in flight | 70+ (not the bound) |
 
 Start with a soft cap of **35** stores on this server, watch real memory use, and adjust. CPU is shared and bursty; 8 vCPU is not the bound for low-traffic stores.

@@ -24,6 +24,16 @@ export interface CoolifyTaskExecution {
   finished_at?: string | null;
 }
 
+export interface CoolifyTask {
+  uuid: string;
+  name: string;
+  command: string;
+  container?: string | null;
+  frequency: string;
+  timeout?: number | string | null;
+  enabled: boolean | number;
+}
+
 export class CoolifyError extends Error {
   constructor(
     readonly status: number,
@@ -125,6 +135,10 @@ export class CoolifyClient {
 
   createTask(uuid: string, task: { name: string; command: string; container: string; frequency: string; timeout: number; enabled: boolean }) {
     return this.request<{ uuid: string }>('POST', `/services/${uuid}/scheduled-tasks`, task);
+  }
+
+  listTasks(uuid: string) {
+    return this.request<CoolifyTask[]>('GET', `/services/${uuid}/scheduled-tasks`);
   }
 
   executeTask(uuid: string, taskUuid: string) {
