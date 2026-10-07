@@ -58,7 +58,7 @@ Why a Service and not an Application plus a standalone MariaDB: one resource per
 
 ### Filling the gap: running commands
 
-Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on demand**: `POST /services/{uuid}/scheduled-tasks` (command, container, timeout), then `POST .../scheduled-tasks/{task}/execute`, then poll `GET .../executions` for status and output (`message`). The driver uses this as its exec: create a disabled task in container `agent`, execute it, wait, delete it. The commands are WP-CLI plus `/waas/agent.php`, a small PHP script that zips or unzips the database dump and `wp-content`, and moves files to and from object storage through pre-signed URLs. So all store-side logic is plain WP-CLI or one script, testable without Coolify, and no extra service runs on the host. If on-demand execution of a disabled task does not work in 4.3.23, the fallback is an enabled task on a never-firing schedule (`0 0 31 2 *`).
+Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on demand** (tasks are created through the API only; Coolify's UI form mangles programmatic commands; `container` is the compose service name): `POST /services/{uuid}/scheduled-tasks` (command, container, timeout), then `POST .../scheduled-tasks/{task}/execute`, then poll `GET .../executions` for status and output (`message`). The driver uses this as its exec: create a disabled task in container `agent`, execute it, wait, delete it. The commands are WP-CLI plus `/waas/agent.php`, a small PHP script that zips or unzips the database dump and `wp-content`, and moves files to and from object storage through pre-signed URLs. Tasks run as root, so `agent.php` drops to uid 33 (`www-data` in the Debian WordPress image; the Alpine CLI image's own `www-data` is 82) before it touches files. So all store-side logic is plain WP-CLI or one script, testable without Coolify, and no extra service runs on the host. If on-demand execution of a disabled task does not work in 4.3.23, the fallback is an enabled task on a never-firing schedule (`0 0 31 2 *`).
 
 ### Operations
 
@@ -124,13 +124,15 @@ Custom domains: the customer adds a `CNAME` to their store's `t-<id8>.stores.<do
 
 Per store: WordPress 512 MB / 1 CPU limit, MariaDB 384 MB, agent 128 MB. Measured idle use for this stack is typically 250–400 MB in total; limits cap a busy or broken store, they are not reservations. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database.
 
-<a id="capacity"></a>The Coolify API does not report the VPS's CPU, RAM or disk, so the count depends on the plan, which the owner should confirm. Rule of thumb, keeping 30% headroom and assuming the 20 current workloads use ~4 GB:
+<a id="capacity"></a>The Coolify API does not report the VPS's CPU, RAM or disk. The owner's notes give **8 vCPU, 32 GB RAM, 387 GB disk** (Ubuntu 24.04). Assuming the ~20 existing resources use 6–8 GB and keeping 30% of RAM free for peaks:
 
-| Hostinger plan | RAM | Normal stores, roughly |
-|---|---|---|
-| KVM 2 | 8 GB | 5–8 |
-| KVM 4 | 16 GB | 20–25 |
-| KVM 8 | 32 GB | 50–60 |
+| Basis | Normal stores |
+|---|---|
+| Typical use, ~350 MB per store | **35–45** |
+| Every store at its limits at once (~1 GB) | 15 |
+| Disk, ~2–5 GB per store with uploads, database and snapshots in flight | 70+ (not the bound) |
+
+Start with a soft cap of **35** stores on this server, watch real memory use, and adjust. CPU is shared and bursty; 8 vCPU is not the bound for low-traffic stores.
 
 Past that, add a server to Coolify (`POST /servers` + validate) and point new stores at it with `COOLIFY_SERVER_UUID`. Existing stores move by snapshot and recreate on the new server. Above ~50 stores per server, one shared MariaDB per server with a database per store saves ~100 MB per store.
 
@@ -169,6 +171,6 @@ Past that, add a server to Coolify (`POST /servers` + validate) and point new st
 1. **Object storage:** Cloudflare R2 (recommended) or MinIO on Coolify? If R2: create bucket `waas-stores` and a bucket-scoped token, and add the four `S3_*` values to the WaaS API app.
 2. **Store domain:** which domain (a separate registered domain is recommended), and set the `*.stores` and `*.versions` records (grey cloud).
 3. **Wildcard TLS now or later?** Now means the Cloudflare DNS token and the proxy change above, with a short proxy restart.
-4. **VPS plan** (RAM, disk), to fix the store cap; and the per-store limits above, or others.
+4. **Store cap** on this VPS: a soft cap of 35 to start (from 8 vCPU / 32 GB / 387 GB)?
 5. **Coolify token for the deployed API:** create one with read, write and deploy (not root) and add it as `COOLIFY_TOKEN` to the WaaS API app, plus `PROVISIONER=coolify` when ready.
 6. **Smoke test:** OK to create project `WaaS Stores` and one throwaway store on `*.191.101.15.236.sslip.io`, deleted afterwards? It needs object storage for the snapshot step: R2 credentials in my environment, or a MinIO Service inside `WaaS Stores` for the test.

@@ -61,6 +61,8 @@ npm run dev
 
 Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept), `ADMIN_TOKEN` (optional; enables `/admin/*`, generate with `openssl rand -base64 32`).
 
+`PROVISIONER` picks who does the store-side work: `fake` (default; in memory, for local runs and tests) or `coolify` (each store is a Coolify Service; see [ADR 0001](docs/adr/0001-coolify-provisioner.md)). `coolify` also needs `COOLIFY_URL`, `COOLIFY_TOKEN` (read, write and deploy; not root), `COOLIFY_SERVER_UUID`, `COOLIFY_PROJECT_UUID` (the `WaaS Stores` project), and an S3-compatible bucket: `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` (default `auto`).
+
 ## Deployment
 
 The API runs on Otaku's Hostinger VPS through Coolify (https://coolify.otakusolutions.io), at **https://waas-api.otakusolutions.io**. It still uses the fake provisioner, so it serves test data only. No API keys have been created yet.
