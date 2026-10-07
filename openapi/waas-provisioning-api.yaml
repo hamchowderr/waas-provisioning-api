@@ -4,7 +4,7 @@ info:
   description: 'Contract for our provisioning API, which replaces the shut-down WPCS cloud. Same paths, parameters and field names as WPCS v1, so the forked storefront and client plugins keep working.
 
 
-    **Phase 1 (21 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Four of them are not in WPCS v1: suspend, resume, list backups and back up a tenant (tag TenantLifecycle), so a cancelled subscription keeps its store for a grace period before it is deleted.
+    **Phase 1 (22 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Five of them are not in WPCS v1: suspend, resume, restore a deleted tenant, list backups and back up a tenant (tag TenantLifecycle), so a cancelled subscription keeps its store for a grace period before it is deleted, and a deleted store can come back from its backup.
 
 
     **Phase 2 (11 operations): reseller feature.** Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Product-scoped calls then take `productId`.
@@ -37,7 +37,7 @@ info:
 
 
     Source: the WPCS v1 spec recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08), with 27 corrections, then extended for this contract.'
-  version: 1.0.0-draft.3
+  version: 1.0.0-draft.4
 servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
   description: Postman mock (private; send x-api-key)
@@ -487,6 +487,88 @@ paths:
           description: Forbidden
       x-phase: 1
       operationId: resumeTenant
+  /v1/tenants/restore:
+    post:
+      tags:
+      - TenantLifecycle
+      summary: Restore deleted tenant
+      description: 'Phase 1 (storefront plugin). Not in WPCS v1.
+
+
+        Schedule the re-creation of a deleted tenant from one of its kept backups (backups are kept for 90 days after the tenant is deleted). The tenant comes back with the same `externalId`, the same domains (base domain and custom domains, the main domain unchanged) and the files, database, `phpConstants` and `wpOptions` it had when the backup was taken. It is not suspended after the restore. `backupId` picks the backup; when omitted, the newest backup with `statusCode` 1 (Done) is used. Poll List tenants with the `externalId` for `statusCode` (0 while restoring, 1 when done), as after Create tenant.
+
+
+        Returns 400 when the tenant is not deleted, or when it has no kept backup (or `backupId` is not one of its Done backups). The storefront treats that 400 as "nothing to restore" only after List tenant backups returned no Done backup; it never creates a second store because of an error.
+
+
+        **Storefront plugin:** called when a subscription becomes active again after its store was deleted at the end of the grace period. Lists the backups first, sends the newest Done `backupId`, and creates a fresh store only when there is none. `WPCSService::restore_tenant`, `TenantsSubscriptionManager::restore_or_recreate_deleted_tenant`.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the deleted Tenant to restore (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the deleted Tenant to restore (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreTenantParams'
+            examples:
+              fromBackup:
+                summary: 'Restore deleted tenant: Scheduled from a backup'
+                value:
+                  backupId: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+      responses:
+        '200':
+          description: The restore of the tenant was scheduled succesfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantLifecycleCommandResult'
+              examples:
+                scheduled:
+                  summary: 'Restore deleted tenant: Scheduled from a backup'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    backupId: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                noBackup:
+                  summary: 'Restore deleted tenant: 400 No backup to restore'
+                  value:
+                    statusCode: 400
+                    message: Tenant store-1042 has no backup to restore
+                notDeleted:
+                  summary: 'Restore deleted tenant: 400 Tenant is not deleted'
+                  value:
+                    statusCode: 400
+                    message: Tenant store-1042 is not deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      x-phase: 1
+      operationId: restoreTenant
   /v1/tenants/backups:
     get:
       tags:
@@ -556,7 +638,10 @@ paths:
       description: 'Phase 1. Not in WPCS v1.
 
 
-        Schedule a full backup (files and database) of the tenant. Poll List tenant backups for its `statusCode`. No body.'
+        Schedule a full backup (files and database) of the tenant. Works on a suspended tenant too. Poll List tenant backups for its `statusCode`. No body.
+
+
+        **Storefront plugin:** called when a subscription that was already suspended on hold (suspended without a backup) is cancelled, before the grace period starts. `WPCSService::create_tenant_backup`.'
       parameters:
       - name: tenantId
         in: query
@@ -2525,6 +2610,16 @@ components:
           description: The domain name
           readOnly: true
       additionalProperties: false
+    RestoreTenantParams:
+      type: object
+      properties:
+        backupId:
+          type: string
+          description: The backup to restore from. Defaults to the newest Done backup of the tenant.
+          format: uuid
+          nullable: true
+          example: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+      additionalProperties: false
     SetMainDomainParams:
       type: object
       properties:
@@ -2688,7 +2783,7 @@ tags:
   description: Phase 1. Endpoint to manage Tenant Domains. For more info see our [domains section](docs/tenants/domains)
   x-phase: 1
 - name: TenantLifecycle
-  description: 'Phase 1. Not in WPCS v1. Suspend, resume and back up tenants, so a cancelled subscription can keep its store for a grace period before it is deleted.'
+  description: 'Phase 1. Not in WPCS v1. Suspend, resume, back up and restore tenants, so a cancelled subscription can keep its store for a grace period before it is deleted, and get it back from a backup after.'
   x-phase: 1
 - name: Version
   description: Phase 1. Endpoint to manage Versions
