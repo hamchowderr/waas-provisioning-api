@@ -4,7 +4,7 @@ info:
   description: 'Contract for our provisioning API, which replaces the shut-down WPCS cloud. Same paths, parameters and field names as WPCS v1, so the forked storefront and client plugins keep working.
 
 
-    **Phase 1 (17 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls.
+    **Phase 1 (21 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Four of them are not in WPCS v1: suspend, resume, list backups and back up a tenant (tag TenantLifecycle), so a cancelled subscription keeps its store for a grace period before it is deleted.
 
 
     **Phase 2 (11 operations): reseller feature.** Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Product-scoped calls then take `productId`.
@@ -37,7 +37,7 @@ info:
 
 
     Source: the WPCS v1 spec recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08), with 27 corrections, then extended for this contract.'
-  version: 1.0.0-draft.2
+  version: 1.0.0-draft.3
 servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
   description: Postman mock (private; send x-api-key)
@@ -337,6 +337,272 @@ paths:
           description: Forbidden
       x-phase: 1
       operationId: moveTenantToAVersion
+  /v1/tenants/suspend:
+    post:
+      tags:
+      - TenantLifecycle
+      summary: Suspend tenant
+      description: 'Phase 1 (storefront plugin). Not in WPCS v1.
+
+
+        Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a plain "store unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/waas-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
+
+
+        Idempotent: suspending a suspended tenant returns 200 and changes nothing (no second backup). Operations on one tenant run in the order they are received, so a later delete waits for the suspension and its backup to finish. Backups outlive the tenant: deleting a tenant does not delete its backups (retention is an API setting).
+
+
+        **Storefront plugin:** called when a subscription is cancelled or expires, before the deletion that follows after the grace period. Sends `{"takeBackup": true}`. `WPCSService::suspend_tenant`, `TenantsSubscriptionManager::suspend_tenant_when_subscription_expired`.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant to suspend (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant to suspend (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendTenantParams'
+            examples:
+              withBackup:
+                summary: 'Suspend tenant: Scheduled with backup'
+                value:
+                  takeBackup: true
+      responses:
+        '200':
+          description: The suspension of the tenant was scheduled succesfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantLifecycleCommandResult'
+              examples:
+                scheduledWithBackup:
+                  summary: 'Suspend tenant: Scheduled with backup'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    backupId: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+                alreadySuspended:
+                  summary: 'Suspend tenant: Already suspended'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    backupId: null
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                unknownTenant:
+                  summary: 'Suspend tenant: 400 Unknown tenant'
+                  value:
+                    statusCode: 400
+                    message: No tenant with externalId store-9999
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      x-phase: 1
+      operationId: suspendTenant
+  /v1/tenants/resume:
+    post:
+      tags:
+      - TenantLifecycle
+      summary: Resume tenant
+      description: 'Phase 1 (storefront plugin). Not in WPCS v1.
+
+
+        Schedule the resumption of a suspended tenant: it is served again on the same domains, with the files and database it had when it was suspended. No body.
+
+
+        Idempotent: resuming a tenant that is not suspended returns 200 and changes nothing.
+
+
+        **Storefront plugin:** called when a subscription becomes active again within the grace period. `WPCSService::resume_tenant`, `TenantsSubscriptionManager::create_tenant_when_subscription_created`.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant to resume (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant to resume (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      responses:
+        '200':
+          description: The resumption of the tenant was scheduled succesfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantLifecycleCommandResult'
+              examples:
+                scheduled:
+                  summary: 'Resume tenant: Scheduled'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    backupId: null
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                unknownTenant:
+                  summary: 'Resume tenant: 400 Unknown tenant'
+                  value:
+                    statusCode: 400
+                    message: No tenant with externalId store-9999
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      x-phase: 1
+      operationId: resumeTenant
+  /v1/tenants/backups:
+    get:
+      tags:
+      - TenantLifecycle
+      summary: List tenant backups
+      description: 'Phase 1. Not in WPCS v1.
+
+
+        The backups of a tenant, newest first, including those of a deleted tenant that are still kept.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GetTenantBackupQueryResult'
+              examples:
+                oneBackup:
+                  summary: 'List tenant backups: One backup (taken on suspend)'
+                  value:
+                  - id: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    reason: suspend
+                    dateCreated: '2026-10-07T14:02:11.204331+00:00'
+                    sizeBytes: 184467210
+                    statusCode: 1
+                    statusName: Done
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      x-phase: 1
+      operationId: listTenantBackups
+    post:
+      tags:
+      - TenantLifecycle
+      summary: Back up tenant
+      description: 'Phase 1. Not in WPCS v1.
+
+
+        Schedule a full backup (files and database) of the tenant. Poll List tenant backups for its `statusCode`. No body.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant to back up (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant to back up (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      responses:
+        '200':
+          description: The backup was scheduled succesfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantLifecycleCommandResult'
+              examples:
+                scheduled:
+                  summary: 'Back up tenant: Scheduled'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    backupId: 7a1c9e42-0d3b-4b8f-a6e5-2c9f18d4b073
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      x-phase: 1
+      operationId: createTenantBackup
   /v1/tenants/domains:
     get:
       tags:
@@ -1958,6 +2224,59 @@ components:
           description: The Name of the Subscription
           readOnly: true
       additionalProperties: false
+    GetTenantBackupQueryResult:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The id of the backup
+          format: uuid
+          readOnly: true
+          example: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+        tenantId:
+          type: string
+          description: The id of the tenant the backup was taken of (the tenant may since have been deleted)
+          format: uuid
+          readOnly: true
+          example: 90b97b83-b320-4006-aaa8-dacb0639325c
+        externalId:
+          type: string
+          description: The externalId of the tenant the backup was taken of
+          readOnly: true
+          example: store-1042
+        reason:
+          type: string
+          description: Why the backup was taken
+          enum:
+          - manual
+          - suspend
+          readOnly: true
+          example: suspend
+        dateCreated:
+          type: string
+          description: The date the backup was taken
+          format: date-time
+          readOnly: true
+          example: '2026-10-07T14:02:11.204331+00:00'
+        sizeBytes:
+          type: integer
+          description: Size of the backup in bytes, null until it is Done
+          format: int64
+          nullable: true
+          readOnly: true
+          example: 184467210
+        statusCode:
+          type: integer
+          description: "The status code of the backup\r\nPending = 0\r\nDone = 1\r\nFailed = 2\r\nRemoving = 3\r\nMust be a JSON integer."
+          format: int32
+          readOnly: true
+          example: 1
+        statusName:
+          type: string
+          description: The name associated with the statusCode
+          readOnly: true
+          example: Done
+      additionalProperties: false
     GetTenantDomainsQueryResult:
       type: object
       properties:
@@ -2071,6 +2390,18 @@ components:
           description: The name associated with the statusCode
           readOnly: true
           example: Done
+        isSuspended:
+          type: boolean
+          description: 'True while the tenant is suspended (see Suspend tenant). Not in WPCS v1. Must be a JSON boolean.'
+          readOnly: true
+          example: false
+        dateSuspended:
+          type: string
+          description: When the tenant was suspended; null when it is not suspended. Not in WPCS v1.
+          format: date-time
+          nullable: true
+          readOnly: true
+          example: null
       additionalProperties: false
     GetVersionQueryResult:
       type: object
@@ -2228,6 +2559,34 @@ components:
           description: The domain name
           readOnly: true
       additionalProperties: false
+    SuspendTenantParams:
+      type: object
+      properties:
+        takeBackup:
+          type: boolean
+          description: Take a full backup (files and database) before the tenant goes offline.
+          default: true
+          example: true
+      additionalProperties: false
+    TenantLifecycleCommandResult:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          description: The id of the tenant.
+          format: uuid
+          example: 90b97b83-b320-4006-aaa8-dacb0639325c
+        externalId:
+          type: string
+          description: The externalId of the tenant.
+          example: store-1042
+        backupId:
+          type: string
+          description: The id of the backup this request scheduled, or null when it scheduled none.
+          format: uuid
+          nullable: true
+          example: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
+      additionalProperties: false
     UpdateTenantCommandResult:
       type: object
       properties:
@@ -2327,6 +2686,9 @@ tags:
   x-phase: 1
 - name: TenantDomain
   description: Phase 1. Endpoint to manage Tenant Domains. For more info see our [domains section](docs/tenants/domains)
+  x-phase: 1
+- name: TenantLifecycle
+  description: 'Phase 1. Not in WPCS v1. Suspend, resume and back up tenants, so a cancelled subscription can keep its store for a grace period before it is deleted.'
   x-phase: 1
 - name: Version
   description: Phase 1. Endpoint to manage Versions
