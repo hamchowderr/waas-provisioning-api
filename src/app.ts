@@ -33,9 +33,10 @@ export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
 
   // For uptime monitoring; outside the WPCS contract and unauthenticated. 503 when Postgres or
-  // the job queue doesn't answer within 3 seconds.
+  // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
+  // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
   app.get('/health', async (c) => {
-    const health = await checkHealth(deps.pool, deps.boss);
+    const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup);
     return c.json(health, health.ok ? 200 : 503);
   });
 
