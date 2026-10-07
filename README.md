@@ -2,11 +2,60 @@
 
 Provisioning API for the WaaS platform. It replaces the shut-down WPCS cloud and keeps the WPCS v1 contract (same paths, parameters and field names), so the WaaS Host and Client plugins in [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) keep working.
 
-Contract first: the OpenAPI spec is the source of truth. The API itself (a Mastra service) is not built yet.
+Contract first: the OpenAPI spec is the source of truth. The API is plain TypeScript: [Hono](https://hono.dev) for HTTP and [pg-boss](https://github.com/timgit/pg-boss) for the job queue, both on one Postgres database. Nothing in it is agentic and it never calls an LLM. The payment-processor audits are a separate Mastra service (waas-api-2hl.6); this API only queues work for it.
+
+All 21 Phase 1 operations are implemented: versions (list, create, delete, set production), snapshots (list, download), tenants (list, create, update options and constants, delete, move to a version), tenant domains (list, add, remove, set main, availability, and the deprecated add) and tenant lifecycle (suspend, resume, list backups, back up). Store-side work runs on the fake provisioner until a host driver exists (waas-api-2hl.7).
+
+## How it works
+
+- Every request authenticates with Basic auth: the API key as username, the secret as password. Each key belongs to one product (one storefront). Only a scrypt hash of each secret is stored. Any bad credential gets 403.
+- Writes are asynchronous. The request validates, records the change with `statusCode` 0 (Pending) or 3 (Removing), queues a job in the same transaction, and returns. The job moves the record to 1 (Done), or 2 (Failed) after 3 retries, or deletes it.
+- Jobs for the same version, or the same tenant, run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
+- All work on the machines stores run on goes through the `Provisioner` interface (`src/provisioner/provisioner.ts`). The store host is not chosen yet (`docs/hosting.md`, waas-api-2hl.4), so the only implementation is an in-memory fake that succeeds at once. Its upload URLs and snapshot downloads are placeholders.
+- Request bodies are checked against the contract's schemas. Fields the contract doesn't define are dropped, not rejected.
+- Values a store needs back in plain form (the first user's password, `phpConstants` marked `isPrivate`) can't be hashed, so they are encrypted with AES-256-GCM under `SECRETS_KEY` wherever they are stored, including queue jobs.
+- Domain names are bare lowercase hostnames and belong to one store only; version domains count as taken. Every domain change re-applies the tenant's full domain list in one job, with the tenant Pending until it finishes.
+- Suspend takes a backup first unless `takeBackup` is false; suspend and resume are idempotent. Backups have no foreign key to their tenant: they stay listable after the tenant is deleted and a daily job (pg-boss schedule on the `maintenance` queue) deletes them `BACKUP_RETENTION_DAYS` after the deletion.
+- A tenant created without `externalId` gets its own id as `externalId`. A `tenantId` that isn't a UUID is looked up as an external ID (storefront plugin 2.2.7 sends it that way).
+
+## Run locally
+
+With Docker:
+
+```sh
+docker compose up --build
+docker compose exec api npm run create-key -- --product-name "Example storefront"
+curl -u <key>:<secret> http://localhost:4111/v1/versions
+```
+
+`create-key` prints the key and secret once; the secret cannot be shown again. `--product <uuid>` adds a key to an existing product.
+
+Without Docker, against your own Postgres (16 or newer):
+
+```sh
+npm install
+export DATABASE_URL=postgres://user:pass@localhost:5432/waas
+export SECRETS_KEY=$(openssl rand -base64 32)   # keep it: losing it makes stored secrets unreadable
+npm run create-key -- --product-name "Example storefront"
+npm run dev
+```
+
+Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept).
+
+## Test
+
+```sh
+npm run typecheck
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/waas_test npm test
+```
+
+The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 21 Phase 1 operations.
 
 ## Work tracking (beads)
 
-Work is tracked in [beads](https://github.com/steveyegge/beads) (prefix `waas-api`). The issue database syncs through a private DoltHub database, [`chowderr/waas_api`](https://www.dolthub.com/repositories/chowderr/waas_api): `bd dolt push` after changes, `bd dolt pull` to get others'. `.beads/issues.jsonl` is a local export (kept fresh by `export.auto`) and is not committed. On a fresh clone, with DoltHub credentials in `~/.dolt/creds`: `bd init --prefix waas-api --skip-agents --skip-hooks --remote chowderr/waas_api`, then `bd dolt pull`.
+Work is tracked in [beads](https://github.com/steveyegge/beads) (prefix `waas-api`). The issues live in the private DoltHub database [`chowderr/waas_api`](https://www.dolthub.com/repositories/chowderr/waas_api), not in git: `bd dolt pull` to get others' changes, `bd dolt push` after yours. `.beads/issues.jsonl` is a local export and is git-ignored.
+
+On a fresh clone, with a DoltHub credential in dolt (`dolt creds ls`; in Claude Code cloud sessions the SessionStart hook in `.claude/settings.json` imports it from `DOLT_CREDS_JWK`): `bd init --prefix waas-api --skip-agents --skip-hooks --remote chowderr/waas_api`, then `bd dolt pull`.
 
 The plugin fork is tracked separately in [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) (prefix `waas`).
 
