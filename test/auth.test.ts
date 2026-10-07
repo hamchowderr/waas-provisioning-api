@@ -1,4 +1,6 @@
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createApp } from '../src/app.ts';
 import { createApiKey } from '../src/keys.ts';
 import { basic, setup, type TestContext } from './helpers.ts';
 
@@ -45,7 +47,17 @@ describe('Basic auth', () => {
     expect(await (await t.call('GET', '/v1/versions', { auth: basic(key, secret) })).json()).toEqual([]);
   });
 
-  it('leaves /health open', async () => {
-    expect((await t.call('GET', '/health', { auth: null })).status).toBe(200);
+  it('leaves /health open, and it checks Postgres and the queue', async () => {
+    const res = await t.call('GET', '/health', { auth: null });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok' });
+  });
+
+  it('answers 503 from /health when Postgres is unreachable', async () => {
+    const pool = new pg.Pool({ connectionString: 'postgres://nobody:x@127.0.0.1:1/none' });
+    const res = await createApp({ ...t.deps, pool }).request('/health');
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ ok: false, database: 'down', queue: 'ok' });
+    await pool.end();
   });
 });

@@ -1,6 +1,6 @@
 import pg from 'pg';
 import type { PgBoss } from 'pg-boss';
-import { createApp } from '../src/app.ts';
+import { createApp, type Deps } from '../src/app.ts';
 import type { Config } from '../src/config.ts';
 import { createPool, migrate, type Pool } from '../src/db.ts';
 import { createJobHandlers } from '../src/jobs.ts';
@@ -19,6 +19,7 @@ export interface TestContext {
   boss: PgBoss;
   provisioner: FakeProvisioner;
   app: ReturnType<typeof createApp>;
+  deps: Deps;
   productId: string;
   auth: string;
   /** Sends a request with valid credentials unless `auth` is given. */
@@ -42,7 +43,8 @@ export async function setup(): Promise<TestContext> {
   const provisioner = new FakeProvisioner();
   const secrets = new Secrets(TEST_SECRETS_KEY);
   await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays), 0.5);
-  const app = createApp({ config, pool, boss, provisioner, secrets });
+  const deps: Deps = { config, pool, boss, provisioner, secrets };
+  const app = createApp(deps);
 
   const productId = (await pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Example storefront') RETURNING id")).rows[0]!.id;
   const { key, secret } = await createApiKey(pool, productId);
@@ -53,6 +55,7 @@ export async function setup(): Promise<TestContext> {
     boss,
     provisioner,
     app,
+    deps,
     productId,
     auth,
     async call(method, path, { body, auth: authOverride, headers } = {}) {

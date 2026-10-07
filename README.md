@@ -8,6 +8,7 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 
 ## How it works
 
+- `GET /health` (no auth, outside the WPCS contract) answers 200 `{ok, database, queue}` when Postgres and the job queue respond within 3 seconds, and 503 otherwise. It is meant for uptime monitoring.
 - Every request authenticates with Basic auth: the API key as username, the secret as password. Each key belongs to one product (one storefront). Only a scrypt hash of each secret is stored. Any bad credential gets 403.
 - Writes are asynchronous. The request validates, records the change with `statusCode` 0 (Pending) or 3 (Removing), queues a job in the same transaction, and returns. The job moves the record to 1 (Done), or 2 (Failed) after 3 retries, or deletes it.
 - Jobs for the same version, or the same tenant, run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
