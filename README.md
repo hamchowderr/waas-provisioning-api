@@ -69,7 +69,7 @@ The API runs on Otaku's Hostinger VPS through Coolify (https://coolify.otakusolu
 | Database | `waas-api-db` (`iyrj7t91motv1kno8zmeg6pn`): Postgres 16, not public, reached by the app at host `iyrj7t91motv1kno8zmeg6pn` on Coolify's internal network. Coolify backs it up daily at 03:00 UTC and keeps the last 14 backups on the VPS (not off-site). |
 | DNS | A record `waas-api.otakusolutions.io` → `191.101.15.236`; Coolify's Traefik serves HTTPS with a Let's Encrypt certificate |
 
-Environment variables (values only in Coolify, under the application's Environment Variables): `DATABASE_URL`, `SECRETS_KEY`, `STORES_DOMAIN` and `VERSIONS_DOMAIN` (`stores.invalid` and `versions.invalid` until a store host is chosen).
+Environment variables (values only in Coolify, under the application's Environment Variables): `DATABASE_URL`, `SECRETS_KEY`, `STORES_DOMAIN` and `VERSIONS_DOMAIN` (`stores.invalid` and `versions.invalid` until a store host is chosen). `ADMIN_TOKEN` is not set yet, so `/admin/*` answers 403 to everything.
 
 `SECRETS_KEY` is the only copy of the key that encrypts stored store passwords and private constants. It lives in Coolify's environment and nowhere else. If it is lost or changed, those values can no longer be decrypted. Never rotate it without a migration that re-encrypts them.
 
