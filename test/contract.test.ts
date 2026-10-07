@@ -195,6 +195,9 @@ describe('Phase 1 operations', () => {
       redirectDomains: [tenant.baseDomain],
       statusName: 'Done',
     });
+    // One tenant by its id (the API has no separate get-tenant operation) carries its name too.
+    const byId: any = await expectContract('listTenants', await t.call('GET', `/v1/tenants?tenantId=${tenant.id}`));
+    expect(byId).toEqual([expect.objectContaining({ tenantId: tenant.id, name: 'Example Store' })]);
     const store = t.provisioner.stores.get(tenant.id)!;
     expect(store.phpConstants.WPCS_TENANT_ROLES!.value).toBe('shop_manager,editor');
     expect(store.user).toMatchObject({ name: 'example-owner', role: 'administrator', password: 'example-password-1' });
