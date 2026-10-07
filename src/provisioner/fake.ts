@@ -54,6 +54,26 @@ export class FakeProvisioner implements Provisioner {
     this.snapshots.set(newSnapshotId, { versionId: targetVersionId, sourceSnapshotId: snapshotId });
   }
 
+  readonly baseSnapshots = new Set<string>();
+
+  async copyBaseSnapshot({ baseSnapshotId, newSnapshotId, targetVersionId }: Parameters<Provisioner['copyBaseSnapshot']>[0]) {
+    this.check('copyBaseSnapshot');
+    if (!this.baseSnapshots.has(baseSnapshotId)) throw new Error(`FakeProvisioner: no base snapshot ${baseSnapshotId}`);
+    this.snapshots.set(newSnapshotId, { versionId: targetVersionId, sourceSnapshotId: baseSnapshotId });
+  }
+
+  async createBaseSnapshotUpload({ baseSnapshotId }: { baseSnapshotId: string }) {
+    this.check('createBaseSnapshotUpload');
+    // The fake treats the template as uploaded at once.
+    this.baseSnapshots.add(baseSnapshotId);
+    return { uploadUrl: `https://uploads.waas.example/base/${baseSnapshotId}.tgz`, uri: `https://templates.waas.example/${baseSnapshotId}.tgz` };
+  }
+
+  async deleteBaseSnapshot({ baseSnapshotId }: { baseSnapshotId: string }) {
+    this.check('deleteBaseSnapshot');
+    this.baseSnapshots.delete(baseSnapshotId);
+  }
+
   async snapshotUpload({ versionId, snapshotId }: { versionId: string; snapshotId: string }) {
     this.check('snapshotUpload');
     this.snapshots.set(snapshotId, { versionId });

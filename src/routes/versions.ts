@@ -81,7 +81,12 @@ export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
       'SELECT * FROM snapshots WHERE product_id = $1 AND id = ANY($2::uuid[]) AND status = $3',
       [productId, copyIds, Status.Done],
     );
-    const missing = copyIds.filter((id) => !sources.some((s) => s.id === id));
+    // Ids that aren't version snapshots may be the product's base snapshots (templates).
+    const { rows: templates } = await pool.query('SELECT * FROM base_snapshots WHERE product_id = $1 AND id = ANY($2::uuid[])', [
+      productId,
+      copyIds.filter((id) => !sources.some((s) => s.id === id)),
+    ]);
+    const missing = copyIds.filter((id) => !sources.some((s) => s.id === id) && !templates.some((b) => b.id === id));
     if (missing.length) throw badRequest(`Snapshot ${missing.join(', ')} not found or not ready`);
 
     const id = randomUUID();
@@ -103,6 +108,13 @@ export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
           [productId, id, s.name, s.group_name, s.is_custom_snapshot, s.is_tenant_snapshot, s.id, Status.Pending],
         );
       }
+      for (const b of templates) {
+        await client.query(
+          `INSERT INTO snapshots (product_id, version_id, name, group_name, is_tenant_snapshot, source_base_snapshot_id, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [productId, id, b.name, b.group_name, b.is_tenant_snapshot, b.id, Status.Pending],
+        );
+      }
       if (upload) {
         await client.query(
           'INSERT INTO snapshots (product_id, version_id, name, is_custom_snapshot, status) VALUES ($1, $2, $3, true, $4)',
@@ -112,7 +124,11 @@ export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
       await enqueue(boss, client, {
         type: 'version.create',
         versionId: id,
-        source: body.snapshotId ? { snapshotId: body.snapshotId } : { upload: true },
+        source: !body.snapshotId
+          ? { upload: true }
+          : templates.some((b) => b.id === body.snapshotId)
+            ? { baseSnapshotId: body.snapshotId }
+            : { snapshotId: body.snapshotId },
       });
     });
 

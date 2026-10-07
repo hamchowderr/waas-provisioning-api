@@ -11,8 +11,10 @@ import type { Client } from './db.ts';
 export const QUEUE = 'provision';
 
 export type JobData =
-  | { type: 'version.create'; versionId: string; source: { snapshotId: string } | { upload: true } }
+  | { type: 'version.create'; versionId: string; source: { snapshotId: string } | { baseSnapshotId: string } | { upload: true } }
   | { type: 'version.delete'; versionId: string }
+  /** Deletes a template's archive; the row is already gone. */
+  | { type: 'basesnapshot.delete'; baseSnapshotId: string }
   | {
       type: 'tenant.create';
       tenantId: string;
@@ -35,6 +37,7 @@ export type JobData =
 export const MAINTENANCE_QUEUE = 'maintenance';
 
 function singletonKey(data: JobData): string {
+  if ('baseSnapshotId' in data) return `basesnapshot:${data.baseSnapshotId}`;
   return 'versionId' in data ? `version:${data.versionId}` : `tenant:${data.tenantId}`;
 }
 

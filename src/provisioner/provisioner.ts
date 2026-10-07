@@ -19,7 +19,7 @@ export interface Provisioner {
     domain: string;
     wordPressVersion: string;
     phpVersion: string;
-    source: { snapshotId: string } | { upload: true };
+    source: { snapshotId: string } | { baseSnapshotId: string } | { upload: true };
   }): Promise<void>;
 
   deleteVersion(input: { versionId: string }): Promise<void>;
@@ -28,6 +28,16 @@ export interface Provisioner {
 
   /** Copies a snapshot so it can be used with another version. */
   copySnapshot(input: { snapshotId: string; newSnapshotId: string; targetVersionId: string }): Promise<void>;
+
+  /** Copies a base snapshot (template) into a version as one of its snapshots. */
+  copyBaseSnapshot(input: { baseSnapshotId: string; newSnapshotId: string; targetVersionId: string }): Promise<void>;
+
+  // Base snapshots (templates) a product uploads.
+
+  /** Where the template archive is PUT, and where it can be read afterwards. */
+  createBaseSnapshotUpload(input: { baseSnapshotId: string }): Promise<{ uploadUrl: string; uri: string }>;
+
+  deleteBaseSnapshot(input: { baseSnapshotId: string }): Promise<void>;
 
   /** Records the archive a version was built from as a snapshot. */
   snapshotUpload(input: { versionId: string; snapshotId: string }): Promise<void>;

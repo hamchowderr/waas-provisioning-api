@@ -17,6 +17,9 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
       switch (data.type) {
         case 'version.create':
           return createVersion(pool, provisioner, data);
+        case 'basesnapshot.delete':
+          await provisioner.deleteBaseSnapshot({ baseSnapshotId: data.baseSnapshotId });
+          return;
         case 'version.delete':
           await provisioner.deleteVersion({ versionId: data.versionId });
           await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
@@ -111,6 +114,8 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [data.versionId, Status.Failed, Status.Pending]);
           await pool.query('UPDATE snapshots SET status = $2 WHERE version_id = $1 AND status = $3', [data.versionId, Status.Failed, Status.Pending]);
           return;
+        case 'basesnapshot.delete':
+          return; // the row is gone already; the job error is logged
         case 'version.delete':
           await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1', [data.versionId, Status.Failed]);
           await pool.query('UPDATE snapshots SET status = $2 WHERE version_id = $1 AND status = $3', [data.versionId, Status.Failed, Status.Removing]);
@@ -153,9 +158,14 @@ async function createVersion(pool: Pool, provisioner: Provisioner, data: Extract
     source: data.source,
   });
 
-  const snapshots = await pool.query('SELECT id, source_snapshot_id FROM snapshots WHERE version_id = $1 AND status = $2', [version.id, Status.Pending]);
+  const snapshots = await pool.query('SELECT id, source_snapshot_id, source_base_snapshot_id FROM snapshots WHERE version_id = $1 AND status = $2', [
+    version.id,
+    Status.Pending,
+  ]);
   for (const snapshot of snapshots.rows) {
-    if (snapshot.source_snapshot_id) {
+    if (snapshot.source_base_snapshot_id) {
+      await provisioner.copyBaseSnapshot({ baseSnapshotId: snapshot.source_base_snapshot_id, newSnapshotId: snapshot.id, targetVersionId: version.id });
+    } else if (snapshot.source_snapshot_id) {
       await provisioner.copySnapshot({ snapshotId: snapshot.source_snapshot_id, newSnapshotId: snapshot.id, targetVersionId: version.id });
     } else {
       await provisioner.snapshotUpload({ versionId: version.id, snapshotId: snapshot.id });
