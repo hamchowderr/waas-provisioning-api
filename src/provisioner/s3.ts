@@ -16,9 +16,13 @@ const hmac = (key: Buffer | string, data: string) => createHmac('sha256', key).u
 const encode = (s: string, keepSlash = false) =>
   encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`).replace(keepSlash ? /%2F/g : /$^/, '/');
 
+const unescapeXml = (s: string) =>
+  s.replace(/&(lt|gt|quot|apos|amp);/g, (_, e: string) => ({ lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' })[e]!);
+
 /**
- * The few S3 calls the Coolify driver needs (pre-signed URLs, copy, head, get, delete), signed
- * with AWS Signature V4. Works with R2, MinIO and AWS. Never logs keys or signatures.
+ * The few S3 calls the Coolify driver and the database backups need (pre-signed URLs, put, list,
+ * copy, head, get, delete), signed with AWS Signature V4. Works with R2, MinIO and AWS. Never logs
+ * keys or signatures.
  */
 export class S3 {
   private readonly url: URL;
@@ -31,8 +35,10 @@ export class S3 {
     this.url = new URL(config.endpoint);
   }
 
+  /** Path-style: /<bucket>/<key>, or /<bucket> for bucket-level calls (key ''). */
   private path(key: string) {
-    return `${this.url.pathname.replace(/\/$/, '')}/${encode(this.config.bucket)}/${encode(key, true)}`;
+    const bucket = `${this.url.pathname.replace(/\/$/, '')}/${encode(this.config.bucket)}`;
+    return key === '' ? bucket : `${bucket}/${encode(key, true)}`;
   }
 
   private scope(date: string) {
@@ -75,19 +81,29 @@ export class S3 {
     return `${this.url.origin}${this.path(key)}`;
   }
 
-  private async request(method: string, key: string, headers: Record<string, string> = {}): Promise<Response> {
+  private async request(
+    method: string,
+    key: string,
+    headers: Record<string, string> = {},
+    { body, query = {} }: { body?: Uint8Array; query?: Record<string, string> } = {},
+  ): Promise<Response> {
     const { amzDate, date } = this.stamp();
     const path = this.path(key);
-    const all: Record<string, string> = { ...headers, host: this.url.host, 'x-amz-content-sha256': sha256(''), 'x-amz-date': amzDate };
+    const canonicalQuery = Object.keys(query)
+      .sort()
+      .map((k) => `${encode(k)}=${encode(query[k]!)}`)
+      .join('&');
+    const all: Record<string, string> = { ...headers, host: this.url.host, 'x-amz-content-sha256': sha256(body ?? ''), 'x-amz-date': amzDate };
     const names = Object.keys(all).map((h) => h.toLowerCase()).sort();
     const lower = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.toLowerCase(), v.trim()]));
     const signedHeaders = names.join(';');
-    const canonical = [method, path, '', names.map((h) => `${h}:${lower[h]}\n`).join(''), signedHeaders, lower['x-amz-content-sha256']].join('\n');
+    const canonical = [method, path, canonicalQuery, names.map((h) => `${h}:${lower[h]}\n`).join(''), signedHeaders, lower['x-amz-content-sha256']].join('\n');
     const toSign = ['AWS4-HMAC-SHA256', amzDate, this.scope(date), sha256(canonical)].join('\n');
     const signature = createHmac('sha256', this.signingKey(date)).update(toSign).digest('hex');
     const { host: _host, ...sent } = lower;
-    return this.fetchImpl(`${this.url.origin}${path}`, {
+    return this.fetchImpl(`${this.url.origin}${path}${canonicalQuery ? `?${canonicalQuery}` : ''}`, {
       method,
+      body: body as BodyInit | undefined,
       headers: {
         ...sent,
         authorization: `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${this.scope(date)}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
@@ -111,6 +127,29 @@ export class S3 {
     const res = await this.request('GET', key);
     await S3.check(res, `GET ${key}`);
     return new Uint8Array(await res.arrayBuffer());
+  }
+
+  async put(key: string, body: Uint8Array, contentType = 'application/octet-stream'): Promise<void> {
+    const res = await this.request('PUT', key, { 'content-type': contentType }, { body });
+    await S3.check(res, `PUT ${key}`);
+  }
+
+  /** Every object under `prefix` (ListObjectsV2, all pages). */
+  async list(prefix: string): Promise<{ key: string; size: number }[]> {
+    const objects: { key: string; size: number }[] = [];
+    let token: string | undefined;
+    do {
+      const query: Record<string, string> = { 'list-type': '2', prefix, ...(token ? { 'continuation-token': token } : {}) };
+      const res = await this.request('GET', '', {}, { query });
+      await S3.check(res, `list ${prefix}`);
+      const xml = await res.text();
+      for (const [, entry] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+        const key = /<Key>([\s\S]*?)<\/Key>/.exec(entry!)?.[1];
+        if (key !== undefined) objects.push({ key: unescapeXml(key), size: Number(/<Size>(\d+)<\/Size>/.exec(entry!)?.[1] ?? 0) });
+      }
+      token = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? unescapeXml(/<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/.exec(xml)?.[1] ?? '') || undefined : undefined;
+    } while (token);
+    return objects;
   }
 
   async copy(sourceKey: string, targetKey: string): Promise<void> {

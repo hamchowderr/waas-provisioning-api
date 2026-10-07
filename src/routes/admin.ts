@@ -3,6 +3,7 @@ import { Hono, type Context } from 'hono';
 import type { Deps } from '../app.ts';
 import { withTransaction, type Client } from '../db.ts';
 import { HttpError, badRequest } from '../errors.ts';
+import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
@@ -123,7 +124,7 @@ export function adminRoutes(deps: Deps) {
 
   app.get('/overview', async (c) => {
     const [health, tenants, versions, backups, jobs, suspended, products] = await Promise.all([
-      checkHealth(pool, boss),
+      checkHealth(pool, boss, !!deps.config.dbBackup),
       byStatus('tenants'),
       byStatus('versions'),
       byStatus('tenant_backups'),
@@ -296,6 +297,31 @@ export function adminRoutes(deps: Deps) {
       pool.query(`SELECT count(*)::int AS n FROM tenant_backups WHERE ${where}`, params),
     ]);
     return c.json({ items: rows.map(toBackup), total: total.rows[0].n, page: pageNumber, pageSize });
+  });
+
+  app.get('/db-backups', async (c) => {
+    const { page: pageNumber, pageSize, offset } = page(c);
+    const [status, list, total] = await Promise.all([
+      dbBackupStatus(pool, !!deps.config.dbBackup),
+      pool.query(`SELECT * FROM db_backups ORDER BY started_at DESC, id LIMIT ${pageSize} OFFSET ${offset}`),
+      pool.query('SELECT count(*)::int AS n FROM db_backups'),
+    ]);
+    return c.json({
+      ...status,
+      items: list.rows.map((b) => ({
+        id: b.id,
+        status: b.status,
+        startedAt: iso(b.started_at),
+        finishedAt: iso(b.finished_at),
+        objectKey: b.object_key,
+        sizeBytes: b.size_bytes === null ? null : Number(b.size_bytes),
+        error: b.error_message,
+        prunedAt: iso(b.pruned_at),
+      })),
+      total: total.rows[0].n,
+      page: pageNumber,
+      pageSize,
+    });
   });
 
   app.get('/jobs', async (c) => {

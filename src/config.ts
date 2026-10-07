@@ -1,3 +1,4 @@
+import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import type { CoolifyProvisionerConfig } from './provisioner/coolify/provisioner.ts';
 
 export interface Config {
@@ -16,6 +17,8 @@ export interface Config {
   /** Which Provisioner runs store-side work: the in-memory fake (default) or Coolify. */
   provisioner: 'fake' | 'coolify';
   coolify?: CoolifyProvisionerConfig;
+  /** Off-site backups of this database (src/dbbackup.ts); on when the S3_* settings are set. */
+  dbBackup?: DbBackupConfig;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
@@ -58,5 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminToken: env.ADMIN_TOKEN || undefined,
     provisioner,
     coolify: provisioner === 'coolify' ? loadCoolify(env) : undefined,
+    dbBackup: loadDbBackupConfig(env),
   };
 }

@@ -8,7 +8,8 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 
 ## How it works
 
-- `GET /health` (no auth, outside the WPCS contract) answers 200 `{ok, database, queue}` when Postgres and the job queue respond within 3 seconds, and 503 otherwise. It is meant for uptime monitoring.
+- `GET /health` (no auth, outside the WPCS contract) answers 200 `{ok, database, queue, dbBackup}` when Postgres and the job queue respond within 3 seconds, and 503 otherwise. It is meant for uptime monitoring. `dbBackup` is the last off-site database backup (`status`, `lastAttemptAt`, `lastSuccessAt`, `sizeBytes`, `stale`); it never causes a 503.
+- The API backs up its own database daily to the S3 bucket (`db-backups/`), encrypted, with 14 daily and 8 weekly kept. Setup, status and the restore runbook: [docs/db-backups.md](docs/db-backups.md).
 - Every request authenticates with Basic auth: the API key as username, the secret as password. Each key belongs to one product (one storefront). Only a scrypt hash of each secret is stored. Any bad credential gets 403.
 - Writes are asynchronous. The request validates, records the change with `statusCode` 0 (Pending) or 3 (Removing), queues a job in the same transaction, and returns. The job moves the record to 1 (Done), or 2 (Failed) after 3 retries, or deletes it.
 - Jobs for the same version, or the same tenant, run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
@@ -29,6 +30,7 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 | `GET /admin/tenants` | Tenants across products; filters `productId`, `status`, `suspended`, `versionId`, `q` (external id, name or domain); `page`, `pageSize` (max 200) |
 | `GET /admin/tenants/{id}` | One tenant: domains, backups, the last 20 jobs and failures; `wpOptions` and `phpConstants` by name only |
 | `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
+| `GET /admin/db-backups` | The database-backup status from `/health`, plus each attempt with its object key, size and error |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version |
 | `GET`/`POST /admin/products/{productId}/versions`, `DELETE …/versions/{id}`, `PUT …/versions/{id}/production` | A product's versions: same requests, rules and responses as `listVersions`, `createVersion`, `deleteVersion` and `setProductionVersion` |
@@ -59,7 +61,7 @@ npm run create-key -- --product-name "Example storefront"
 npm run dev
 ```
 
-Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept), `ADMIN_TOKEN` (optional; enables `/admin/*`, generate with `openssl rand -base64 32`).
+Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept), `ADMIN_TOKEN` (optional; enables `/admin/*`, generate with `openssl rand -base64 32`). Database backups run when the `S3_*` settings below are set (`DB_BACKUP=off` to stop them; `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY`: see [docs/db-backups.md](docs/db-backups.md)); `npm run db-backup -- run|list|fetch` takes, lists and downloads them.
 
 `PROVISIONER` picks who does the store-side work: `fake` (default; in memory, for local runs and tests) or `coolify` (each store is a Coolify Service; see [ADR 0001](docs/adr/0001-coolify-provisioner.md)). `coolify` also needs `COOLIFY_URL`, `COOLIFY_TOKEN` (read, write and deploy; not root), `COOLIFY_SERVER_UUID`, `COOLIFY_PROJECT_UUID` (the `WaaS Stores` project), and an S3-compatible bucket: `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` (default `auto`). Stores live on sslip.io for now (`STORES_DOMAIN` and `VERSIONS_DOMAIN` = `191.101.15.236.sslip.io`, no DNS needed). Moving to an owned domain later is DNS plus those two settings; existing stores move one by one with `addTenantDomain` and `setMainDomain`. Steps: ADR 0001, "Switching to an owned domain later".
 
@@ -71,7 +73,7 @@ The API runs on Otaku's Hostinger VPS through Coolify (https://coolify.otakusolu
 |---|---|
 | Coolify project | `WaaS API` (`4agsx9szalenyncprdbrffma`), environment `production` |
 | Application | `waas-api` (`pxht6lp0peqr4ucgijutnkks`): this repo, branch `main`, built from `Dockerfile`, port 4111, health check `GET /health`, through the Coolify GitHub App |
-| Database | `waas-api-db` (`iyrj7t91motv1kno8zmeg6pn`): Postgres 16, not public, reached by the app at host `iyrj7t91motv1kno8zmeg6pn` on Coolify's internal network. Coolify backs it up daily at 03:00 UTC and keeps the last 14 backups on the VPS (not off-site). |
+| Database | `waas-api-db` (`iyrj7t91motv1kno8zmeg6pn`): Postgres 16, not public, reached by the app at host `iyrj7t91motv1kno8zmeg6pn` on Coolify's internal network. Coolify backs it up daily at 03:00 UTC and keeps the last 14 backups on the VPS. The API sends its own encrypted backup to R2 daily at 02:30 UTC ([docs/db-backups.md](docs/db-backups.md)). |
 | DNS | A record `waas-api.otakusolutions.io` → `191.101.15.236`; Coolify's Traefik serves HTTPS with a Let's Encrypt certificate |
 
 Environment variables (values only in Coolify, under the application's Environment Variables): `DATABASE_URL`, `SECRETS_KEY`, `ADMIN_TOKEN`, `STORES_DOMAIN` and `VERSIONS_DOMAIN` (`stores.invalid` and `versions.invalid` while the fake provisioner runs; `191.101.15.236.sslip.io` once `PROVISIONER=coolify`).
@@ -86,7 +88,7 @@ To create a key in production, open the application's Terminal in Coolify and ru
 
 Open items:
 
-- Off-site backups. The database backups stay on the VPS only, so losing the VPS loses them too. Point Coolify's backups at S3-compatible storage.
+- Keep a copy of `SECRETS_KEY` off the VPS (password manager). The off-site database backups are encrypted under a key derived from it, and the data inside needs it too.
 
 ## Store templates
 
