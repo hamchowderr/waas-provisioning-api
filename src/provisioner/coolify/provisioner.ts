@@ -18,6 +18,11 @@ export interface CoolifyProvisionerConfig {
   sleep?: (ms: number) => Promise<void>;
   /** How long a deploy or restart may take to come up healthy. */
   deployTimeoutMs?: number;
+  /**
+   * How long to wait for Coolify to show that a restart began (some container not running healthy)
+   * before going on to wait for healthy anyway.
+   */
+  restartSeenTimeoutMs?: number;
   /** How long one agent command may run. */
   taskTimeoutSeconds?: number;
   pollMs?: number;
@@ -187,11 +192,9 @@ export class CoolifyProvisioner implements Provisioner {
     const deadline = Date.now() + (this.config.deployTimeoutMs ?? 10 * 60_000);
     let last = 'unknown';
     for (;;) {
-      const service = await this.coolify.getService(uuid);
-      const statuses = [...(service.applications ?? []), ...(service.databases ?? [])].map((c) => c.status ?? '');
-      if (!statuses.length && service.status) statuses.push(service.status);
+      const statuses = await this.statuses(uuid);
       last = statuses.join(', ') || 'unknown';
-      if (statuses.length && statuses.every((s) => s.startsWith('running') && !s.includes('unhealthy') && !s.includes('starting'))) {
+      if (allHealthy(statuses)) {
         // The agent is the last container up; a ping confirms it can run commands.
         await this.exec(uuid, 'ping', {});
         return;
@@ -202,9 +205,26 @@ export class CoolifyProvisioner implements Provisioner {
     throw new Error(`Coolify: service ${uuid} did not become healthy (${last})`);
   }
 
+  /** The status of each of the Service's containers, as Coolify last saw them. */
+  private async statuses(uuid: string): Promise<string[]> {
+    const service = await this.coolify.getService(uuid);
+    const statuses = [...(service.applications ?? []), ...(service.databases ?? [])].map((c) => c.status ?? '');
+    if (!statuses.length && service.status) statuses.push(service.status);
+    return statuses;
+  }
+
+  /**
+   * Restarts the Service and waits until it is healthy again. Coolify updates container statuses
+   * from a periodic check, so for a while after the restart call they still read the old
+   * "running:healthy"; waiting for healthy straight away would run the next agent command in the
+   * old containers just before they stop. So first wait until a status shows the restart, then
+   * wait for healthy. If no status ever shows it (a restart faster than Coolify's check), go on
+   * after restartSeenTimeoutMs.
+   */
   private async restart(uuid: string) {
     await this.coolify.restartService(uuid);
-    await this.sleep(this.pollMs);
+    const deadline = Date.now() + (this.config.restartSeenTimeoutMs ?? 3 * 60_000);
+    while (allHealthy(await this.statuses(uuid)) && Date.now() < deadline) await this.sleep(this.pollMs);
     await this.waitHealthy(uuid);
   }
 
@@ -471,6 +491,11 @@ export class CoolifyProvisioner implements Provisioner {
   async deleteStore({ storeId }: { storeId: string }) {
     await this.deleteService(STORES_ENV, storeName(storeId));
   }
+}
+
+/** Every container runs and none is unhealthy or still starting. */
+function allHealthy(statuses: string[]): boolean {
+  return statuses.length > 0 && statuses.every((s) => s.startsWith('running') && !s.includes('unhealthy') && !s.includes('starting'));
 }
 
 export function formatMeta(meta: VersionMeta | StoreMeta): string {
