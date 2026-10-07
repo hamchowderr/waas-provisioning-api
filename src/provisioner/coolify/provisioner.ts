@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
-import { CoolifyClient, type CoolifyService } from './client.ts';
+import { CoolifyClient, type CoolifyService, type CoolifyTask } from './client.ts';
 import { encodeConstants, renderCompose } from './compose.ts';
 
 export interface CoolifyProvisionerConfig {
@@ -31,6 +31,32 @@ const AGENT = 'php /tmp/waas-agent.php';
 /** Coolify stores a scheduled task's command in a varchar(255). */
 const MAX_COMMAND = 255;
 const STAGE_CHUNK = 200;
+const WP = 'wp --path=/var/www/html';
+
+/**
+ * Each store's cron: WP-cron and Action Scheduler every minute, from the agent container (which
+ * runs as uid 33, as WordPress does), since DISABLE_WP_CRON keeps page loads from running them
+ * (compose.ts). Skipped while the store is suspended: the contract says its cron stops. `flock`
+ * keeps a slow run from overlapping the next one in the agent's 128 MB. No single quotes:
+ * Coolify wraps the command in sh -c '...'.
+ */
+export const CRON_TASK = {
+  name: 'wp-cron',
+  container: 'agent',
+  frequency: '* * * * *',
+  timeout: 300,
+  enabled: true,
+  command:
+    '[ -f /var/www/html/wp-content/.waas-suspended ] || flock -n /tmp/waas-cron.lock sh -c ' +
+    `"${WP} action-scheduler run --quiet; ${WP} cron event run --due-now --quiet"`,
+};
+
+const isCronTask = (t: CoolifyTask) =>
+  t.command === CRON_TASK.command &&
+  t.container === CRON_TASK.container &&
+  t.frequency === CRON_TASK.frequency &&
+  Number(t.timeout) === CRON_TASK.timeout &&
+  Boolean(t.enabled);
 
 /**
  * What the driver keeps in a Service's description, so it needs no table of its own. Coolify
@@ -335,6 +361,36 @@ export class CoolifyProvisioner implements Provisioner {
       // The first user's password is needed once; don't leave it in Coolify.
       if (envs.WAAS_INIT_PASSWORD) await this.removeEnv(uuid, 'WAAS_INIT_PASSWORD');
     }
+    await this.ensureCron(uuid);
+  }
+
+  /**
+   * Makes the Service's `wp-cron` task exist exactly once, as CRON_TASK says. Found by name, so a
+   * retry reuses it; a task of that name that differs (or a duplicate) is replaced.
+   */
+  private async ensureCron(uuid: string): Promise<'created' | 'updated' | 'unchanged'> {
+    const named = (await this.coolify.listTasks(uuid)).filter((t) => t.name === CRON_TASK.name);
+    const keep = named.find(isCronTask);
+    for (const task of named) if (task !== keep) await this.coolify.deleteTask(uuid, task.uuid);
+    if (keep) return named.length > 1 ? 'updated' : 'unchanged';
+    await this.coolify.createTask(uuid, CRON_TASK);
+    return named.length ? 'updated' : 'created';
+  }
+
+  /**
+   * Gives a store created before stores had a cron task its task. Such a store's compose also
+   * predates DISABLE_WP_CRON, so it is re-rendered from the store's version and the store restarted
+   * once, before the task is added: a store with the task is left alone, so this runs once.
+   */
+  async ensureStoreCron({ storeId }: { storeId: string }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    if (!(await this.coolify.listTasks(store.uuid)).some((t) => t.name === CRON_TASK.name)) {
+      const meta = parseMeta(store.description);
+      if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
+      await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
+      await this.restart(store.uuid);
+    }
+    return this.ensureCron(store.uuid);
   }
 
   private async removeEnv(uuid: string, key: string) {

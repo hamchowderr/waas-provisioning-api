@@ -84,8 +84,17 @@ Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on d
 | `suspendStore` | Exec: write `wp-content/.waas-suspended`. The mu-plugin and an `.htaccess` block (outside WordPress's markers) answer **503** with a plain page for every path, including `wp-cron.php`, `/wp-json/` and static files. Database and domains stay. Instant, no redeploy |
 | `resumeStore` | Exec: remove the flag file |
 | `deleteStore` | `DELETE /services/{uuid}` with all four cleanup flags; then confirm by name lookup that it is gone |
+| `ensureStoreCron` | See [Store cron](#store-cron). Also the last step of `createStore` |
 
-Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
+<a id="store-cron"></a>**Store cron.** WP-cron normally runs only when a page is loaded (and Action Scheduler's async runner only from wp-admin requests), so on a quiet store renewals, dunning and other scheduled jobs would run late or never. Stores therefore set `DISABLE_WP_CRON` (in `WORDPRESS_CONFIG_EXTRA`, after the phpConstants, so a constant of that name wins) and each store Service has one enabled scheduled task named `wp-cron` in container `agent`, every minute (`* * * * *`), timeout 300 s:
+
+```
+[ -f /var/www/html/wp-content/.waas-suspended ] || flock -n /tmp/waas-cron.lock sh -c "wp --path=/var/www/html action-scheduler run --quiet; wp --path=/var/www/html cron event run --due-now --quiet"
+```
+
+It runs as the agent container's user (33, like WordPress), skips a suspended store (the contract stops a suspended store's cron), and `flock` keeps a slow run from overlapping the next one. No single quotes: Coolify wraps the command in `sh -c '...'`. `createStore` adds it once the store is configured; it is found by name, so a retry reuses it and a differing or duplicate `wp-cron` task is replaced. On startup the API runs `ensureStoreCron` for every live (Done) store in the background; a store that has no `wp-cron` task yet predates this, so its compose is re-rendered (for `DISABLE_WP_CRON`) and it is restarted once before the task is added. Version sites take no orders and get no task; they share the compose, so their WP-cron does not run. Cost: Coolify records one execution per store per minute.
+
+ `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
 
 ### Versions, snapshots and object storage
 

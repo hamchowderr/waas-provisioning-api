@@ -3,6 +3,7 @@ import { createApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { createJobHandlers } from './jobs.ts';
+import { ensureStoreCrons } from './maintenance.ts';
 import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
 import { FakeProvisioner } from './provisioner/fake.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -17,6 +18,8 @@ const boss = await startBoss(config.databaseUrl);
 const provisioner: Provisioner = config.coolify ? new CoolifyProvisioner(config.coolify) : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays));
+// In the background: a store that already has its cron task costs one Coolify lookup.
+void ensureStoreCrons(pool, provisioner);
 
 const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets }).fetch, port: config.port }, (info) =>
   console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'})`),

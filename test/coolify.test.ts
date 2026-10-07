@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
-import { CoolifyProvisioner } from '../src/provisioner/coolify/provisioner.ts';
+import { CRON_TASK, CoolifyProvisioner } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
 const COOLIFY = 'https://coolify.test';
@@ -27,7 +27,10 @@ interface Service {
 class FakeCloud {
   environments = new Map<string, number>([['stores', 11]]);
   services = new Map<string, Service>();
-  tasks = new Map<string, { service: string; command: string; container: string; executions: { uuid: string; status: string; message: string }[] }>();
+  tasks = new Map<
+    string,
+    { service: string; name: string; command: string; container: string; frequency: string; timeout: number; enabled: boolean; executions: { uuid: string; status: string; message: string }[] }
+  >();
   objects = new Map<string, Uint8Array>();
   calls: string[] = [];
   /** What the agent does for each command. Defaults to success. */
@@ -112,8 +115,13 @@ class FakeCloud {
         if (body.command.length > 255) return json(500, { message: 'Server Error' });
         this.longestCommand = Math.max(this.longestCommand, body.command.length);
         const uuid = `task-${++this.seq}`;
-        this.tasks.set(uuid, { service: service.uuid, command: body.command, container: body.container, executions: [] });
+        this.tasks.set(uuid, { service: service.uuid, ...body, executions: [] });
         return json(201, { uuid, ...body });
+      }
+      if (rest === '/scheduled-tasks' && method === 'GET') {
+        // Coolify answers with its own column types: enabled as 0/1.
+        const own = [...this.tasks].filter(([, t]) => t.service === service.uuid);
+        return json(200, own.map(([uuid, { executions: _x, service: _s, ...t }]) => ({ uuid, ...t, enabled: t.enabled ? 1 : 0 })));
       }
       if ((m = /^\/scheduled-tasks\/([^/]+)\/execute$/.exec(rest)) && method === 'POST') {
         const task = this.tasks.get(m[1]!)!;
@@ -172,6 +180,10 @@ class FakeCloud {
     });
   }
 }
+
+/** Tasks other than the store's cron: the agent's on-demand ones, deleted after they run. */
+const onDemandTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name !== CRON_TASK.name);
+const cronTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name === CRON_TASK.name);
 
 function provisioner(cloud: FakeCloud) {
   return new CoolifyProvisioner({
@@ -243,7 +255,62 @@ describe('CoolifyProvisioner', () => {
     expect(commands).not.toContain('example-password-123');
     expect(commands).not.toContain('private-constant-value');
     // Every task is deleted after it runs.
-    expect(cloud.tasks.size).toBe(0);
+    expect(onDemandTasks(cloud)).toEqual([]);
+  });
+
+  it('gives a new store one enabled wp-cron task in the agent, every minute', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const crons = cronTasks(cloud);
+    expect(crons).toHaveLength(1);
+    expect(crons[0]).toMatchObject({ service: store.uuid, container: 'agent', frequency: '* * * * *', timeout: 300, enabled: true });
+    const command = crons[0]!.command;
+    expect(command.length).toBeLessThanOrEqual(255);
+    expect(command).toContain('wp --path=/var/www/html action-scheduler run --quiet; wp --path=/var/www/html cron event run --due-now --quiet');
+    // Not while suspended, never overlapping, and nothing Coolify's sh -c '...' would cut.
+    expect(command).toMatch(/^\[ -f \/var\/www\/html\/wp-content\/\.waas-suspended \] \|\| flock -n /);
+    expect(command).not.toContain("'");
+    expect(command).not.toContain('$');
+    // Created once the store is restored and configured.
+    expect(cloud.calls.findLastIndex((c) => c.endsWith('/scheduled-tasks') && c.startsWith('POST'))).toBeGreaterThan(
+      cloud.calls.findLastIndex((c) => c.endsWith('/execute')),
+    );
+  });
+
+  it('does not duplicate the wp-cron task when a create is retried', async () => {
+    await p.createStore(storeInput);
+    await p.createStore(storeInput);
+    expect(cronTasks(cloud)).toHaveLength(1);
+  });
+
+  it('replaces a wp-cron task that differs, and removes duplicates', async () => {
+    await p.createStore(storeInput);
+    const [uuid] = [...cloud.tasks].find(([, t]) => t.name === CRON_TASK.name)!;
+    cloud.tasks.get(uuid)!.enabled = false;
+    cloud.tasks.set('task-dup', { ...cloud.tasks.get(uuid)!, enabled: true, executions: [] });
+    expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('updated');
+    expect(cronTasks(cloud)).toHaveLength(1);
+    expect(cronTasks(cloud)[0]).toMatchObject({ enabled: true, command: CRON_TASK.command });
+    expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
+  });
+
+  it('backfills a store created before stores had a cron: new compose, one restart, then the task', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    for (const [uuid, t] of cloud.tasks) if (t.name === CRON_TASK.name) cloud.tasks.delete(uuid);
+    store.compose = 'old compose';
+    const starts = store.started;
+
+    expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('created');
+    expect(parse(store.compose).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA).toContain("define('DISABLE_WP_CRON', true)");
+    expect(store.started).toBe(starts + 1);
+    expect(cronTasks(cloud)).toHaveLength(1);
+
+    // Again: nothing to do, no restart.
+    cloud.calls = [];
+    expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
   });
 
   it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {
@@ -253,7 +320,7 @@ describe('CoolifyProvisioner', () => {
     // The staged arguments arrive whole.
     expect(cloud.agentOps.find((o) => o.op === 'configure')!.args.options).toEqual({ blogname: 'Example Store', blogdescription: 'x'.repeat(2000) });
     expect(String(cloud.agentOps.find((o) => o.op === 'restore')!.args.url)).toContain('X-Amz-Signature=');
-    expect(cloud.tasks.size).toBe(0);
+    expect(onDemandTasks(cloud)).toEqual([]);
   });
 
   it('is idempotent: a retried create reuses the Service', async () => {
@@ -298,7 +365,7 @@ describe('CoolifyProvisioner', () => {
     await p.createStore(storeInput);
     cloud.agent = () => ({ status: 'failed', message: 'some output\nWAAS_ERROR wp db export exited 1: disk full\n' });
     await expect(p.snapshotStore({ storeId: STORE_ID, snapshotId: 'snap-2' })).rejects.toThrow('Store agent snapshot failed (failed): wp db export exited 1: disk full');
-    expect(cloud.tasks.size).toBe(0);
+    expect(onDemandTasks(cloud)).toEqual([]);
   });
 
   it('backs up to backups/ and returns the size', async () => {
@@ -369,6 +436,12 @@ describe('Store compose file', () => {
     expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_INIT_PASSWORD']));
     const parsed = parse(compose);
     expect(Buffer.from(parsed.services.agent.environment.WAAS_AGENT_B64, 'base64').toString()).toBe(AGENT_SCRIPT);
+  });
+
+  it('turns off WP-cron on page loads, after the phpConstants so a constant of that name wins', () => {
+    const extra: string = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA;
+    expect(extra.endsWith("defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);")).toBe(true);
+    expect(extra.indexOf('WAAS_CONSTANTS_B64')).toBeLessThan(extra.indexOf('DISABLE_WP_CRON'));
   });
 
   it('rejects versions that would not make a valid image tag', () => {

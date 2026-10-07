@@ -89,6 +89,13 @@ export interface Provisioner {
   resumeStore(input: { storeId: string }): Promise<void>;
 
   deleteStore(input: { storeId: string }): Promise<void>;
+
+  /**
+   * Makes sure a store's scheduled jobs (WP-cron, Action Scheduler) run on their own, without page
+   * traffic. createStore already does this; the API calls it for every live store on startup so
+   * stores created before it get it too.
+   */
+  ensureStoreCron(input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'>;
 }
 
 export interface PhpConstant {
