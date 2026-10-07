@@ -1,0 +1,74 @@
+openapi: 3.0.1
+info:
+  title: WaaS Provisioning API - plugin updates
+  version: 0.1.0
+  description: >-
+    Update checks from our WordPress plugins (waas-hw4). Not part of the WPCS contract. A storefront
+    authenticates with its own API key and secret (Basic auth, as for /v1), and gets the release its
+    channel points at, or the release its product is pinned to, with a package URL that works for
+    10 minutes. The plugin must check the zip's sha256 and the ed25519 signature of
+    "waas-release-v1\n<slug>\n<version>\n<sha256>" against the public keys built into it before it
+    installs anything; the API never signs. Every check records the version the site reported.
+servers:
+  - url: http://localhost:4111
+    description: Local
+security:
+  - basic: []
+paths:
+  /v1/plugins/{slug}/update:
+    get:
+      operationId: checkPluginUpdate
+      summary: The release a site should run
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string, enum: [wpcs-waas-host, wpcs-waas-client, waas-payments] } }
+        - { name: version, in: query, required: true, description: The installed version, schema: { type: string, example: 2.2.7 } }
+        - { name: channel, in: query, schema: { type: string, enum: [stable, beta], default: stable } }
+        - { name: site, in: query, description: The site's home URL, schema: { type: string, format: uri } }
+        - { name: wp, in: query, description: WordPress version, schema: { type: string } }
+        - { name: php, in: query, description: PHP version, schema: { type: string } }
+      responses:
+        '200':
+          description: >-
+            The release. It may be the version the site already runs, or an older one when pinned:
+            the plugin offers it only when it is newer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginRelease' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    basic: { type: http, scheme: basic }
+  responses:
+    Error:
+      description: >-
+        400 bad query; 403 bad key or secret; 404 unknown plugin or nothing released on the channel;
+        503 updates not configured or the release store unreachable
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [statusCode, message]
+            additionalProperties: false
+            properties: { statusCode: { type: integer }, message: { type: string } }
+  schemas:
+    PluginRelease:
+      type: object
+      additionalProperties: false
+      required: [slug, version, channel, pinned, package, packageExpiresIn, sha256, signature]
+      properties:
+        slug: { type: string }
+        version: { type: string, pattern: '^\d+\.\d+\.\d+(-beta\.\d+)?$' }
+        channel: { type: string, enum: [stable, beta] }
+        pinned: { type: boolean }
+        package: { type: string, format: uri, description: Pre-signed GET URL of the zip }
+        packageExpiresIn: { type: integer, description: Seconds the package URL works }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        signature: { type: string, description: base64 ed25519 signature (64 bytes) }
+        requires: { type: string, description: Minimum WordPress version }
+        requiresPhp: { type: string }
+        tested: { type: string, description: WordPress version it was tested up to }
+        releasedAt: { type: string, format: date-time }
+        changelog: { type: string }

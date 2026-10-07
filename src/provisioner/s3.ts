@@ -113,6 +113,14 @@ export class S3 {
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  /** The object's bytes, or null when it does not exist. */
+  async getIfExists(key: string): Promise<Uint8Array | null> {
+    const res = await this.request('GET', key);
+    if (res.status === 404) return null;
+    await S3.check(res, `GET ${key}`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
   async copy(sourceKey: string, targetKey: string): Promise<void> {
     const res = await this.request('PUT', targetKey, { 'x-amz-copy-source': `/${encode(this.config.bucket)}/${encode(sourceKey, true)}` });
     await S3.check(res, `copy to ${targetKey}`);

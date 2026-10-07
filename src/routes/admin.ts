@@ -6,6 +6,7 @@ import { HttpError, badRequest } from '../errors.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
+import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { Status, statusName } from '../status.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
 import { versionService } from './versions.ts';
@@ -89,8 +90,11 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const toPin = (p: any) => ({ productId: p.product_id, slug: p.slug, version: p.version, pinnedAt: iso(p.pinned_at) });
+
 export function adminRoutes(deps: Deps) {
-  const { config, pool, boss } = deps;
+  const { config, pool, boss, releases } = deps;
   const versions = versionService(deps);
   const templates = baseSnapshotService(deps);
   const app = new Hono();
@@ -393,6 +397,70 @@ export function adminRoutes(deps: Deps) {
   });
   app.post('/products/:productId/basesnapshots', async (c) => c.json(await templates.create(await product(c), await readJson(c))));
   app.delete('/products/:productId/basesnapshots', async (c) => c.json(await templates.remove(await product(c), requiredUuidQuery(c, 'id'))));
+
+  // Plugin updates (waas-hw4): which version each site last reported, and per-product pins.
+  app.get('/plugins', async (c) => {
+    const productId = uuidQuery(c, 'productId') ?? null;
+    const slug = c.req.query('slug') || null;
+    const [installs, pins] = await Promise.all([
+      pool.query(
+        `SELECT i.*, p.name AS product_name FROM plugin_installs i JOIN products p ON p.id = i.product_id
+          WHERE ($1::uuid IS NULL OR i.product_id = $1) AND ($2::text IS NULL OR i.slug = $2)
+          ORDER BY p.name, i.slug, i.site`,
+        [productId, slug],
+      ),
+      pool.query(
+        `SELECT * FROM plugin_pins WHERE ($1::uuid IS NULL OR product_id = $1) AND ($2::text IS NULL OR slug = $2)
+          ORDER BY product_id, slug`,
+        [productId, slug],
+      ),
+    ]);
+    return c.json({
+      installs: installs.rows.map((i) => ({
+        productId: i.product_id,
+        productName: i.product_name,
+        slug: i.slug,
+        site: i.site,
+        version: i.version,
+        channel: i.channel,
+        wpVersion: i.wp_version,
+        phpVersion: i.php_version,
+        firstSeen: iso(i.first_seen),
+        lastSeen: iso(i.last_seen),
+      })),
+      pins: pins.rows.map(toPin),
+    });
+  });
+
+  function pluginSlug(c: Context) {
+    const slug = c.req.param('slug')!;
+    if (!isPluginSlug(slug)) throw notFound(`Unknown plugin ${slug}`);
+    return slug;
+  }
+
+  // Holds a product's sites at one release, which must exist in the releases bucket.
+  app.put('/products/:productId/plugins/:slug/pin', async (c) => {
+    const productId = await product(c);
+    const slug = pluginSlug(c);
+    const body = (await readJson(c)) as { version?: unknown };
+    const version = body?.version;
+    if (typeof version !== 'string' || !RELEASE_VERSION.test(version)) throw badRequest('version must be a release version, like 2.3.0 or 2.3.0-beta.1');
+    if (!releases) throw new HttpError(503, 'Plugin updates are not configured');
+    if (!parseManifest(await releases.getJson(manifestKey(slug, version)), slug, version)) {
+      throw badRequest(`Release ${version} of ${slug} not found`);
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO plugin_pins (product_id, slug, version) VALUES ($1, $2, $3)
+       ON CONFLICT (product_id, slug) DO UPDATE SET version = EXCLUDED.version, pinned_at = now() RETURNING *`,
+      [productId, slug, version],
+    );
+    return c.json(toPin(rows[0]));
+  });
+
+  app.delete('/products/:productId/plugins/:slug/pin', async (c) => {
+    await pool.query('DELETE FROM plugin_pins WHERE product_id = $1 AND slug = $2', [await product(c), pluginSlug(c)]);
+    return c.body(null, 200);
+  });
 
   // Idempotent: retrying an already retried failure returns the same result.
   app.post('/jobs/failures/:id/retry', async (c) => {

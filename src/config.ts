@@ -1,4 +1,5 @@
 import type { CoolifyProvisionerConfig } from './provisioner/coolify/provisioner.ts';
+import type { S3Config } from './provisioner/s3.ts';
 
 export interface Config {
   databaseUrl: string;
@@ -16,6 +17,8 @@ export interface Config {
   /** Which Provisioner runs store-side work: the in-memory fake (default) or Coolify. */
   provisioner: 'fake' | 'coolify';
   coolify?: CoolifyProvisionerConfig;
+  /** The plugin releases bucket (waas-hw4). Unset: update checks get 503. */
+  releases?: S3Config;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
@@ -41,6 +44,29 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
   };
 }
 
+/**
+ * RELEASES_S3_BUCKET turns on plugin updates. The endpoint and keys default to the S3_* ones; the
+ * key only needs read access to the releases bucket.
+ */
+function loadReleases(env: NodeJS.ProcessEnv): S3Config | undefined {
+  const bucket = env.RELEASES_S3_BUCKET;
+  if (!bucket) return undefined;
+  const why = 'when RELEASES_S3_BUCKET is set';
+  const pick = (name: string) => env[`RELEASES_${name}`] || env[name];
+  const need = (name: string) => {
+    const value = pick(name);
+    if (!value) throw new Error(`RELEASES_${name} or ${name} is required ${why}`);
+    return value;
+  };
+  return {
+    endpoint: need('S3_ENDPOINT'),
+    bucket,
+    region: pick('S3_REGION') ?? 'auto',
+    accessKeyId: need('S3_ACCESS_KEY_ID'),
+    secretAccessKey: need('S3_SECRET_ACCESS_KEY'),
+  };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
@@ -58,5 +84,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminToken: env.ADMIN_TOKEN || undefined,
     provisioner,
     coolify: provisioner === 'coolify' ? loadCoolify(env) : undefined,
+    releases: loadReleases(env),
   };
 }
