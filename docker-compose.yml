@@ -1,0 +1,29 @@
+# Local run: the API (with the fake provisioner) and its Postgres, which also holds the job queue.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: waas
+      POSTGRES_PASSWORD: waas
+      POSTGRES_DB: waas
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U waas"]
+      interval: 2s
+      retries: 15
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://waas:waas@db:5432/waas
+      STORES_DOMAIN: stores.waas.example
+      VERSIONS_DOMAIN: versions.waas.example
+    ports:
+      - "4111:4111"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db:
