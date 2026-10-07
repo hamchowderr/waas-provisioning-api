@@ -4,7 +4,7 @@ Provisioning API for the WaaS platform. It replaces the shut-down WPCS cloud and
 
 Contract first: the OpenAPI spec is the source of truth. The API is plain TypeScript: [Hono](https://hono.dev) for HTTP and [pg-boss](https://github.com/timgit/pg-boss) for the job queue, both on one Postgres database. Nothing in it is agentic and it never calls an LLM. The payment-processor audits are a separate Mastra service (waas-api-2hl.6); this API only queues work for it.
 
-All 21 Phase 1 operations are implemented: versions (list, create, delete, set production), snapshots (list, download), tenants (list, create, update options and constants, delete, move to a version), tenant domains (list, add, remove, set main, availability, and the deprecated add) and tenant lifecycle (suspend, resume, list backups, back up). Store-side work runs on the fake provisioner until a host driver exists (waas-api-2hl.7).
+All 22 Phase 1 operations are implemented: versions (list, create, delete, set production), snapshots (list, download), tenants (list, create, update options and constants, delete, move to a version), tenant domains (list, add, remove, set main, availability, and the deprecated add) and tenant lifecycle (suspend, resume, restore a deleted tenant, list backups, back up). Store-side work runs on the fake provisioner until a host driver exists (waas-api-2hl.7).
 
 ## How it works
 
@@ -15,7 +15,7 @@ All 21 Phase 1 operations are implemented: versions (list, create, delete, set p
 - Request bodies are checked against the contract's schemas. Fields the contract doesn't define are dropped, not rejected.
 - Values a store needs back in plain form (the first user's password, `phpConstants` marked `isPrivate`) can't be hashed, so they are encrypted with AES-256-GCM under `SECRETS_KEY` wherever they are stored, including queue jobs.
 - Domain names are bare lowercase hostnames and belong to one store only; version domains count as taken. Every domain change re-applies the tenant's full domain list in one job, with the tenant Pending until it finishes.
-- Suspend takes a backup first unless `takeBackup` is false; suspend and resume are idempotent. Backups have no foreign key to their tenant: they stay listable after the tenant is deleted and a daily job (pg-boss schedule on the `maintenance` queue) deletes them `BACKUP_RETENTION_DAYS` after the deletion.
+- Suspend takes a backup first unless `takeBackup` is false; suspend and resume are idempotent. Backups have no foreign key to their tenant: they stay listable after the tenant is deleted and a daily job (pg-boss schedule on the `maintenance` queue) deletes them `BACKUP_RETENTION_DAYS` after the deletion. Each backup records the tenant's `wpOptions` and `phpConstants` when it was taken, and deleting a tenant stamps its name, version and domains on its backups, so restore can bring it back with the same id, `externalId` and domains (on its old version, or production if that version is gone).
 - A tenant created without `externalId` gets its own id as `externalId`. A `tenantId` that isn't a UUID is looked up as an external ID (storefront plugin 2.2.7 sends it that way).
 
 ## Run locally
@@ -49,7 +49,7 @@ npm run typecheck
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/waas_test npm test
 ```
 
-The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 21 Phase 1 operations.
+The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 22 Phase 1 operations.
 
 ## Work tracking (beads)
 
@@ -63,12 +63,12 @@ The plugin fork is tracked separately in [`waas-plugins`](https://github.com/ham
 
 | File | What it is |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.3. Edit this. |
+| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.4. Edit this. |
 | `openapi/reference/wpcs-v1-corrected.json` | The original WPCS v1 spec, recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08) with 27 corrections. Reference only. |
 
 ### Phases
 
-- **Phase 1 (21 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Four are not in WPCS v1 (tag `TenantLifecycle`): suspend, resume, list backups and back up a tenant. The storefront suspends and backs up a store when its subscription is cancelled or expires, deletes it after a grace period, and resumes it if the subscription comes back first.
+- **Phase 1 (22 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Five are not in WPCS v1 (tag `TenantLifecycle`): suspend, resume, restore a deleted tenant, list backups and back up a tenant. The storefront suspends and backs up a store when its subscription is cancelled or expires, deletes it after a grace period, and resumes it if the subscription comes back first. If the subscription comes back after the deletion, it restores the store from its newest backup (kept 90 days after deletion), or creates a fresh store when there is none.
 - **Phase 2 (11 operations):** the reseller feature. Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Phase 1 calls then take `productId`.
 
 Every operation carries `x-phase: 1` or `x-phase: 2`.
@@ -103,7 +103,7 @@ Not visible in HTTP, but the Client plugin depends on them:
 Workspace **Peptide WaaS** holds:
 - the same spec
 - a collection generated from it (**WaaS Provisioning API**), with tests on all 17 Phase 1 requests and named examples
-  (the four `TenantLifecycle` requests from draft.3 are not in the collection yet; their spec examples are named `<request name>: <example>` for the import)
+  (the five `TenantLifecycle` requests from draft.3/draft.4 are not in the collection yet; their spec examples are named `<request name>: <example>` for the import)
 - a public mock: `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`
 - two environments, **Mock** and **Local (Mastra)**
 

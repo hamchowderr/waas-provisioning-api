@@ -7,7 +7,7 @@ import { isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { findTenant } from '../tenants.ts';
+import { domainInUse, findTenant } from '../tenants.ts';
 
 /** Suspend, resume and backups (contract draft.3, tag TenantLifecycle). Mounted at /v1/tenants. */
 export function lifecycleRoutes({ pool, boss }: Deps) {
@@ -100,6 +100,78 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
       await enqueue(boss, client, { type: 'tenant.backup', tenantId: tenant.id, backupId });
     });
     return c.json(result(tenant, backupId));
+  });
+
+  app.post('/restore', async (c) => {
+    const productId = c.get('productId');
+    const body = validateBody<{ backupId?: string | null }>('RestoreTenantParams', await readJson(c));
+    const tenantId = c.req.query('tenantId') || undefined;
+    const externalId = c.req.query('externalId') || undefined;
+    if (!tenantId && !externalId) throw badRequest('tenantId or externalId is required');
+    const byId = tenantId && isUuid(tenantId);
+    const value = (byId ? tenantId : (tenantId ?? externalId))!;
+
+    // Kept backups of the deleted tenant, newest first.
+    const { rows: kept } = await pool.query(
+      `SELECT * FROM tenant_backups
+        WHERE product_id = $1 AND ${byId ? 'tenant_id' : 'external_id'} = $2
+          AND tenant_deleted_at IS NOT NULL AND tenant_record IS NOT NULL AND status = $3
+        ORDER BY date_created DESC, id`,
+      [productId, value, Status.Done],
+    );
+    const externalIdOf = kept[0]?.external_id ?? value;
+    const live = await pool.query(
+      `SELECT 1 FROM tenants WHERE product_id = $1 AND (external_id = $2 ${kept[0] ? 'OR id = $3' : ''})`,
+      kept[0] ? [productId, externalIdOf, kept[0].tenant_id] : [productId, externalIdOf],
+    );
+    if (live.rowCount) throw badRequest(`Tenant ${externalIdOf} is not deleted`);
+    const backup = body.backupId ? kept.find((b) => b.id === body.backupId) : kept[0];
+    if (!backup) {
+      throw badRequest(body.backupId ? `Backup ${body.backupId} is not a Done backup of tenant ${externalIdOf}` : `Tenant ${externalIdOf} has no backup to restore`);
+    }
+
+    const record = backup.tenant_record;
+    for (const d of record.domains) {
+      if (await domainInUse(pool, d.domainName)) throw badRequest(`Domain ${d.domainName} is now used by another store`);
+    }
+    // Back on its own version if that still exists, else on production.
+    const { rows: versions } = await pool.query(
+      `SELECT id FROM versions WHERE product_id = $1 AND status = $2 AND (id = $3 OR is_production) ORDER BY (id = $3) DESC LIMIT 1`,
+      [productId, Status.Done, record.versionId],
+    );
+    if (!versions[0]) throw badRequest('There is no version to restore the tenant on');
+
+    await withTransaction(pool, async (client) => {
+      await client.query(
+        `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          backup.tenant_id,
+          productId,
+          backup.external_id,
+          record.name,
+          versions[0].id,
+          record.snapshotId,
+          record.snapshotName,
+          record.snapshotGroupName,
+          backup.wp_options ?? {},
+          backup.php_constants ?? {},
+          Status.Pending,
+        ],
+      );
+      for (const d of record.domains) {
+        await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main, is_base) VALUES ($1, $2, $3, $4)', [
+          backup.tenant_id,
+          d.domainName,
+          d.isMain,
+          d.isBase,
+        ]);
+      }
+      // The tenant exists again: its backups no longer count down to deletion.
+      await client.query('UPDATE tenant_backups SET tenant_deleted_at = NULL WHERE tenant_id = $1', [backup.tenant_id]);
+      await enqueue(boss, client, { type: 'tenant.restore', tenantId: backup.tenant_id, backupId: backup.id });
+    });
+    return c.json({ tenantId: backup.tenant_id, externalId: backup.external_id, backupId: backup.id });
   });
 
   return app;

@@ -47,11 +47,45 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
-        case 'tenant.delete':
+        case 'tenant.delete': {
           await provisioner.deleteStore({ storeId: data.tenantId });
-          await pool.query('UPDATE tenant_backups SET tenant_deleted_at = now() WHERE tenant_id = $1 AND tenant_deleted_at IS NULL', [data.tenantId]);
+          // Keep what a restore needs on the backups, which outlive the tenant.
+          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+          const { rows: domains } = await pool.query(
+            'SELECT domain_name, is_main, is_base FROM tenant_domains WHERE tenant_id = $1 ORDER BY date_created',
+            [data.tenantId],
+          );
+          const record = rows[0] && {
+            name: rows[0].name,
+            versionId: rows[0].version_id,
+            snapshotId: rows[0].snapshot_id,
+            snapshotName: rows[0].snapshot_name,
+            snapshotGroupName: rows[0].snapshot_group_name,
+            domains: domains.map((d) => ({ domainName: d.domain_name, isMain: d.is_main, isBase: d.is_base })),
+          };
+          await pool.query(
+            'UPDATE tenant_backups SET tenant_deleted_at = now(), tenant_record = COALESCE($2, tenant_record) WHERE tenant_id = $1 AND tenant_deleted_at IS NULL',
+            [data.tenantId, record ?? null],
+          );
           await pool.query('DELETE FROM tenants WHERE id = $1', [data.tenantId]);
           return;
+        }
+        case 'tenant.restore': {
+          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+          const tenant = rows[0];
+          if (!tenant) return;
+          await provisioner.restoreDeletedStore({
+            storeId: tenant.id,
+            backupId: data.backupId,
+            versionId: tenant.version_id,
+            mainDomain: tenant.main_domain,
+            redirectDomains: tenant.redirect_domains,
+            phpConstants: decodePhpConstants(secrets, tenant.php_constants),
+            wpOptions: tenant.wp_options,
+          });
+          await setTenantStatus(tenant.id, Status.Done, Status.Pending);
+          return;
+        }
         case 'tenant.suspend':
           if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
           await provisioner.suspendStore({ storeId: data.tenantId });
@@ -97,6 +131,9 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           return;
         case 'tenant.backup':
           await failBackup(pool, data.backupId);
+          return;
+        case 'tenant.restore':
+          await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
       }
     },
@@ -158,7 +195,12 @@ async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, ba
   const { rows } = await pool.query('SELECT status FROM tenant_backups WHERE id = $1', [backupId]);
   if (rows[0]?.status !== Status.Pending) return; // already taken on an earlier attempt
   const { sizeBytes } = await provisioner.backupStore({ storeId: tenantId, backupId });
-  await pool.query('UPDATE tenant_backups SET status = $2, size_bytes = $3 WHERE id = $1', [backupId, Status.Done, sizeBytes]);
+  // The constants and options a restore from this backup brings back.
+  await pool.query(
+    `UPDATE tenant_backups b SET status = $2, size_bytes = $3, wp_options = t.wp_options, php_constants = t.php_constants
+       FROM tenants t WHERE b.id = $1 AND t.id = b.tenant_id`,
+    [backupId, Status.Done, sizeBytes],
+  );
 }
 
 const failBackup = (pool: Pool, backupId: string) =>

@@ -86,6 +86,75 @@ describe('suspend, resume and backups', () => {
     expect(t.provisioner.stores.get(tenant.id)!.suspended).toBe(false);
   }, 40000);
 
+  it('backs up a suspended tenant', async () => {
+    const tenant = await newTenant('On Hold');
+    await t.call('POST', `/v1/tenants/suspend?externalId=${tenant.externalId}`, { body: { takeBackup: false } });
+    await settled(tenant.externalId);
+    const res = await t.call('POST', `/v1/tenants/backups?externalId=${tenant.externalId}`);
+    expect(res.status).toBe(200);
+    await waitFor(async () => (await backups(tenant.externalId))[0]?.statusCode === Status.Done);
+  });
+
+  const deleteTenant = async (externalId: string) => {
+    await t.call('DELETE', `/v1/tenants?externalId=${externalId}`);
+    await waitFor(async () => !(await getTenant(externalId)));
+  };
+  const backUp = async (externalId: string) => {
+    const { backupId } = (await (await t.call('POST', `/v1/tenants/backups?externalId=${externalId}`)).json()) as any;
+    await waitFor(async () => (await backups(externalId)).find((b) => b.id === backupId)?.statusCode === Status.Done);
+    return backupId as string;
+  };
+  const restore = (externalId: string, body: object = {}) => t.call('POST', `/v1/tenants/restore?externalId=${externalId}`, { body });
+
+  it('restores from a chosen backup, with the options it had then', async () => {
+    const tenant = await newTenant('Time Travel');
+    await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body: { wpOptions: { era: 'first' } } });
+    await settled(tenant.externalId);
+    const first = await backUp(tenant.externalId);
+    await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body: { wpOptions: { era: 'second' } } });
+    await settled(tenant.externalId);
+    await backUp(tenant.externalId);
+    await deleteTenant(tenant.externalId);
+
+    const res = await restore(tenant.externalId, { backupId: first });
+    expect(res.status).toBe(200);
+    await settled(tenant.externalId);
+    expect(t.provisioner.stores.get(tenant.id)!.wpOptions.era).toBe('first');
+    // Its backups no longer count down to deletion.
+    const { rows } = await t.pool.query('SELECT tenant_deleted_at FROM tenant_backups WHERE tenant_id = $1', [tenant.id]);
+    expect(rows.every((r) => r.tenant_deleted_at === null)).toBe(true);
+  });
+
+  it('refuses: no kept backup, a backup that is not this tenant\'s, or a domain now taken', async () => {
+    const bare = await newTenant('No Backups Kept');
+    await deleteTenant(bare.externalId);
+    expect(((await (await restore(bare.externalId)).json()) as any).message).toMatch(/no backup to restore/);
+
+    const a = await newTenant('Owner A');
+    const b = await newTenant('Owner B');
+    const backupOfB = await backUp(b.externalId);
+    await backUp(a.externalId);
+    await deleteTenant(a.externalId);
+    expect((await restore(a.externalId, { backupId: backupOfB })).status).toBe(400);
+
+    const c = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Domain Owner', customDomainName: 'owned.example.com' } })).json()) as Tenant;
+    await settled(c.externalId);
+    await backUp(c.externalId);
+    await deleteTenant(c.externalId);
+    const squatter = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Squatter', customDomainName: 'owned.example.com' } })).json()) as Tenant;
+    await settled(squatter.externalId);
+    expect(((await (await restore(c.externalId)).json()) as any).message).toMatch(/owned.example.com/);
+  });
+
+  it('restores by tenantId too', async () => {
+    const tenant = await newTenant('By Id');
+    await backUp(tenant.externalId);
+    await deleteTenant(tenant.externalId);
+    const res = await t.call('POST', `/v1/tenants/restore?tenantId=${tenant.id}`, { body: [] });
+    expect(((await res.json()) as any).externalId).toBe(tenant.externalId);
+    await settled(tenant.externalId);
+  });
+
   it('answers 400 for an unknown tenant and [] for a tenant without backups', async () => {
     expect((await t.call('GET', '/v1/tenants/backups?externalId=nobody')).status).toBe(400);
     const tenant = await newTenant('No Backups Yet');

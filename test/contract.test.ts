@@ -37,6 +37,7 @@ const implemented = [
   'resumeTenant',
   'listTenantBackups',
   'createTenantBackup',
+  'restoreTenant',
 ];
 
 // Strict: no removeAdditional, so unknown response fields fail (the schemas set additionalProperties: false).
@@ -71,8 +72,8 @@ afterAll(async () => {
 });
 
 describe('contract coverage', () => {
-  it('the contract has 21 Phase 1 operations (17 from WPCS v1, 4 TenantLifecycle)', () => {
-    expect(phase1).toHaveLength(21);
+  it('the contract has 22 Phase 1 operations (17 from WPCS v1, 5 TenantLifecycle)', () => {
+    expect(phase1).toHaveLength(22);
     for (const id of implemented) expect(phase1.map((o) => o.operationId)).toContain(id);
   });
 
@@ -339,6 +340,26 @@ describe('Phase 1 operations', () => {
     expect((await backupsOf(tenant.externalId)).map((b) => b.reason).sort()).toEqual(['manual', 'suspend']);
   });
 
+  it('restoreTenant: the newest Done backup by default; same externalId and domains, not suspended', async () => {
+    const [newest] = await backupsOf(tenant.externalId);
+    const res: any = await expectContract('restoreTenant', await t.call('POST', `/v1/tenants/restore?externalId=${tenant.externalId}`, { body: {} }));
+    expect(res).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, backupId: newest.id });
+    expect((await getTenant()).statusCode).toBe(Status.Pending);
+    await tenantDone();
+    const restored = await getTenant();
+    expect(restored).toMatchObject({ id: tenant.id, domainName: 'www.new-shop.example.com', isSuspended: false, dateSuspended: null });
+    const store = t.provisioner.stores.get(tenant.id)!;
+    expect(store.mainDomain).toBe('www.new-shop.example.com');
+    expect(store.phpConstants.WPCS_TENANT_ROLES!.value).toBe('shop_manager');
+    expect(store.wpOptions.blogname).toBe('Example Store');
+    expect(store.suspended).toBe(false);
+    // Restoring a live tenant is refused.
+    expect((await t.call('POST', `/v1/tenants/restore?externalId=${tenant.externalId}`, { body: {} })).status).toBe(400);
+    // Delete it again so its version can be removed below.
+    await t.call('DELETE', `/v1/tenants?externalId=${tenant.externalId}`);
+    await waitFor(async () => !(await getTenant()));
+  });
+
   it('deleteVersion: Removing, then gone', async () => {
     await expectContract('deleteVersion', await t.call('DELETE', `/v1/versions?versionId=${copyVersionId}`));
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${copyVersionId}`)).json()) as unknown[]).length === 0);
@@ -369,6 +390,7 @@ describe('Phase 1 operations', () => {
       ['resumeTenant', t.call('POST', '/v1/tenants/resume?externalId=store-9999')],
       ['listTenantBackups', t.call('GET', '/v1/tenants/backups')],
       ['createTenantBackup', t.call('POST', '/v1/tenants/backups?externalId=store-9999')],
+      ['restoreTenant', t.call('POST', `/v1/tenants/restore?externalId=${tenant.externalId}`, { body: { backupId: null } })],
     ];
     for (const [operationId, res] of cases) {
       const r = await res;

@@ -27,7 +27,9 @@ export type JobData =
   /** Backs up first when backupId is set, then takes the store offline. */
   | { type: 'tenant.suspend'; tenantId: string; backupId?: string }
   | { type: 'tenant.resume'; tenantId: string }
-  | { type: 'tenant.backup'; tenantId: string; backupId: string };
+  | { type: 'tenant.backup'; tenantId: string; backupId: string }
+  /** Re-creates a deleted tenant (already re-inserted by the request) from a kept backup. */
+  | { type: 'tenant.restore'; tenantId: string; backupId: string };
 
 /** Daily housekeeping (purging expired backups), on its own queue so it never waits behind store work. */
 export const MAINTENANCE_QUEUE = 'maintenance';
