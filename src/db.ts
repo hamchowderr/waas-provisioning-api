@@ -33,3 +33,9 @@ export async function withTransaction<T>(pool: Pool, fn: (client: Client) => Pro
     client.release();
   }
 }
+
+/** Whether a query failed on the named unique constraint (Postgres error 23505). */
+export function isUniqueViolation(err: unknown, constraint: string): boolean {
+  const e = err as { code?: string; constraint?: string };
+  return e?.code === '23505' && e.constraint === constraint;
+}

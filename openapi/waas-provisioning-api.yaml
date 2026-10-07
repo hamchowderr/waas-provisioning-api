@@ -37,7 +37,7 @@ info:
 
 
     Source: the WPCS v1 spec recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08), with 27 corrections, then extended for this contract.'
-  version: 1.0.0-draft.5
+  version: 1.0.0-draft.6
 servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
   description: Postman mock (private; send x-api-key)
@@ -100,7 +100,10 @@ paths:
         Schedule the creation of a new tenant
 
 
-        **Storefront plugin:** sends `name`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, optional `wordPressUserPassword`, `customDomainName`, `groupName`, and `phpConstants` (`WPCS_TENANT_ROLES`, `WPCS_PUBLIC_KEY`, `WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS`). It never sends `externalId`, so **the API must generate one** and return it. Reads `externalId`, `baseDomain`, `customDomain` from the response. `WPCSService.php:100-123`, `TenantsSubscriptionManager.php:68-96`.'
+        **Storefront plugin:** sends `name`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, optional `wordPressUserPassword`, `customDomainName`, `groupName`, and `phpConstants` (`WPCS_TENANT_ROLES`, `WPCS_PUBLIC_KEY`, `WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS`). Release 2.2.7 never sends `externalId`, so **the API must generate one** and return it; the fork sends one chosen when the signup is queued, and looks the store up by it before retrying. Reads `externalId`, `baseDomain`, `customDomain` from the response. `WPCSService.php:100-123`, `TenantsSubscriptionManager.php:68-96`.
+
+
+        **An `externalId` already in use** by a tenant of the product returns 400 (`externalId <id> is already in use`); the existing tenant is neither changed nor returned, and no second tenant is created, also when two requests with the same `externalId` arrive at once. The same applies to a `customDomainName` already used by any store (`Domain <domain> is already in use`).'
       requestBody:
         content:
           application/json:
@@ -2003,7 +2006,7 @@ components:
           example: peptide-starter
         externalId:
           type: string
-          description: 'An Id for reference to other systems you might use. ExternalIds cannot contain spaces or special characters other than ''-''. Optional: if omitted, the API generates one and returns it in the response (the storefront plugin relies on this).'
+          description: 'An Id for reference to other systems you might use. ExternalIds cannot contain spaces or special characters other than ''-''. Optional: if omitted, the API generates one and returns it in the response (the storefront plugin relies on this). Must be unused within the product: an externalId already in use returns 400.'
           example: T001
         name:
           type: string

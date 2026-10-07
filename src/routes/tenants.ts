@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
-import { withTransaction } from '../db.ts';
+import { isUniqueViolation, withTransaction } from '../db.ts';
 import { badRequest } from '../errors.ts';
 import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
@@ -104,6 +104,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     const password = body.wordPressUserPassword ?? body.tenantPassword;
     if ((userName || userEmail) && !(userName && userEmail)) throw badRequest('wordPressUserName and wordPressUserEmail go together');
 
+    // The checks above give the usual answer; these constraints settle two requests racing past them.
     await withTransaction(pool, async (client) => {
       await client.query(
         `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status)
@@ -134,6 +135,10 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
             ? { name: userName, email: userEmail, role: userRole || 'administrator', encryptedPassword: password ? secrets.encrypt(password) : undefined }
             : undefined,
       });
+    }).catch((err) => {
+      if (isUniqueViolation(err, 'tenants_product_id_external_id_key')) throw badRequest(`externalId ${externalId} is already in use`);
+      if (isUniqueViolation(err, 'tenant_domains_domain_name_key')) throw badRequest(`Domain ${customDomain} is already in use`);
+      throw err;
     });
 
     // customDomain is left out, not null or "", when there is none.
