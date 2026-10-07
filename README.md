@@ -19,6 +19,21 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 - Suspend takes a backup first unless `takeBackup` is false; suspend and resume are idempotent. Backups have no foreign key to their tenant: they stay listable after the tenant is deleted and a daily job (pg-boss schedule on the `maintenance` queue) deletes them `BACKUP_RETENTION_DAYS` after the deletion. Each backup records the tenant's `wpOptions` and `phpConstants` when it was taken, and deleting a tenant stamps its name, version and domains on its backups, so restore can bring it back with the same id, `externalId` and domains (on its old version, or production if that version is gone).
 - A tenant created without `externalId` gets its own id as `externalId`. A `tenantId` that isn't a UUID is looked up as an external ID (storefront plugin 2.2.7 sends it that way).
 
+## Admin API
+
+`/admin/*` serves the admin dashboard (epic waas-api-plu). It is not part of the WPCS contract; `openapi/admin/admin-api.yaml` describes it. It sees every product and authenticates with `Authorization: Bearer <ADMIN_TOKEN>`. Product keys, a missing header or a wrong token all get 403, and so does every request when `ADMIN_TOKEN` is not set. The token is compared in constant time and never logged.
+
+| Endpoint | What it returns |
+|---|---|
+| `GET /admin/overview` | Health, tenant/version/backup counts by status, suspended tenants, job counts (queued, running, failed), products with tenant counts |
+| `GET /admin/tenants` | Tenants across products; filters `productId`, `status`, `suspended`, `versionId`, `q` (external id, name or domain); `page`, `pageSize` (max 200) |
+| `GET /admin/tenants/{id}` | One tenant: domains, backups, the last 20 jobs and failures; `wpOptions` and `phpConstants` by name only |
+| `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
+| `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
+| `POST /admin/jobs/failures/{id}/retry` | Re-queues a failed job and puts its record back to Pending (Removing for a delete); only while the record is still Failed; idempotent |
+
+A job that fails its last retry is recorded in `job_failures` (type, tenant or version, error, attempts) before the worker completes it. Job data is never returned: it can hold encrypted secrets.
+
 ## Run locally
 
 With Docker:
@@ -41,7 +56,7 @@ npm run create-key -- --product-name "Example storefront"
 npm run dev
 ```
 
-Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept).
+Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept), `ADMIN_TOKEN` (optional; enables `/admin/*`, generate with `openssl rand -base64 32`).
 
 ## Test
 

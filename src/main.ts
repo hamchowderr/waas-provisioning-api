@@ -17,7 +17,7 @@ const secrets = new Secrets(config.secretsKey);
 await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays));
 
 const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets }).fetch, port: config.port }, (info) =>
-  console.log(`WaaS provisioning API listening on :${info.port} (fake provisioner)`),
+  console.log(`WaaS provisioning API listening on :${info.port} (fake provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'})`),
 );
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

@@ -9,6 +9,8 @@ export interface Config {
   secretsKey: string;
   /** Days a deleted tenant's backups are kept. */
   backupRetentionDays: number;
+  /** Bearer token for /admin/*. Unset disables the admin API (every request gets 403). */
+  adminToken?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -23,5 +25,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     versionsDomain: env.VERSIONS_DOMAIN ?? 'versions.waas.example',
     secretsKey,
     backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
+    adminToken: env.ADMIN_TOKEN || undefined,
   };
 }
