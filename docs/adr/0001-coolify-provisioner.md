@@ -86,13 +86,23 @@ Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on d
 | `deleteStore` | `DELETE /services/{uuid}` with all four cleanup flags; then confirm by name lookup that it is gone |
 | `ensureStoreCron` | See [Store cron](#store-cron). Also the last step of `createStore` |
 
+**Restarts.** Coolify fills in container statuses from a periodic check, so for up to a minute after `POST /services/{uuid}/restart` they still read the old `running:healthy` (seen live on 2026-10-07: the containers stopped ~25 s after the call). The driver therefore first waits until some status shows the restart (not running healthy), then waits for healthy and pings the agent, so the next command never runs in containers about to stop. If no status shows the restart within 3 minutes (a restart quicker than Coolify's check), it goes on to wait for healthy.
+
 <a id="store-cron"></a>**Store cron.** WP-cron normally runs only when a page is loaded (and Action Scheduler's async runner only from wp-admin requests), so on a quiet store renewals, dunning and other scheduled jobs would run late or never. Stores therefore set `DISABLE_WP_CRON` (in `WORDPRESS_CONFIG_EXTRA`, after the phpConstants, so a constant of that name wins) and each store Service has one enabled scheduled task named `wp-cron` in container `agent`, every minute (`* * * * *`), timeout 300 s:
 
 ```
 [ -f /var/www/html/wp-content/.waas-suspended ] || flock -n /tmp/waas-cron.lock sh -c "wp --path=/var/www/html action-scheduler run --quiet; wp --path=/var/www/html cron event run --due-now --quiet"
 ```
 
-It runs as the agent container's user (33, like WordPress), skips a suspended store (the contract stops a suspended store's cron), and `flock` keeps a slow run from overlapping the next one. No single quotes: Coolify wraps the command in `sh -c '...'`. `createStore` adds it once the store is configured; it is found by name, so a retry reuses it and a differing or duplicate `wp-cron` task is replaced. On startup the API runs `ensureStoreCron` for every live (Done) store in the background; a store that has no `wp-cron` task yet predates this, so its compose is re-rendered (for `DISABLE_WP_CRON`) and it is restarted once before the task is added. Version sites take no orders and get no task; they share the compose, so their WP-cron does not run. Cost: Coolify records one execution per store per minute.
+It runs as the agent container's user (33, like WordPress), skips a suspended store (the contract stops a suspended store's cron), and `flock` keeps a slow run from overlapping the next one. No single quotes: Coolify wraps the command in `sh -c '...'`. `createStore` adds it once the store is configured; it is found by name, so a retry reuses it and a differing or duplicate `wp-cron` task is replaced. On startup the API runs `ensureStoreCron` for every live (Done) store in the background; a store that has no `wp-cron` task yet predates this, so its compose is re-rendered (for `DISABLE_WP_CRON`) and it is restarted once before the task is added. Version sites take no orders and get no task; they share the compose, so their WP-cron does not run. Cost: Coolify records one execution per store per minute (~1,440 rows a day per store, in `scheduled_task_executions` in Coolify's own Postgres).
+
+**Pruning the executions.** Coolify 4.3.23 trims that table itself, but only to 60 days: its scheduler runs `php artisan cleanup:database --yes` daily (`app/Console/Kernel.php`, not on dev instances), which deletes `scheduled_task_executions` rows older than `--keep-days` (default 60; no setting in the UI or API changes it). That leaves ~86,000 rows per store, ~3 million at 35 stores. The API cannot delete executions (no endpoint), so the owner keeps 7 days with one daily host cron job. In Coolify → Servers → localhost → Terminal (a root shell on the host), run `crontab -e` and add:
+
+```
+23 4 * * * docker exec coolify-db psql -U coolify -d coolify -c "DELETE FROM scheduled_task_executions WHERE created_at < now() - interval '7 days'" > /dev/null 2>&1
+```
+
+Run the `docker exec ...` part once by hand first: it prints `DELETE <n>`. It touches only execution history (status and output of past runs), never tasks, and covers every Coolify resource's tasks, not only stores'. (`docker exec coolify php artisan cleanup:database --yes --keep-days=7` would also work, but it trims sessions, the activity log and deployment history to 7 days as well.)
 
 Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
 

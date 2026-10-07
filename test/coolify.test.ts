@@ -21,6 +21,8 @@ interface Service {
   urls: { name: string; url: string }[];
   envs: Map<string, { uuid: string; value: string }>;
   started: number;
+  /** After a restart call: reads that still show the old healthy status, then reads that show it down. */
+  restarting?: { stale: number; down: number };
 }
 
 /** An in-memory Coolify API and S3 bucket, served through a fetch stub. */
@@ -41,6 +43,10 @@ class FakeCloud {
   agentOps: { op: string; args: Record<string, unknown>; service: string }[] = [];
   staged = new Map<string, string>();
   longestCommand = 0;
+  /** How a restart looks through the API (Coolify's statuses lag the restart call). */
+  restartPhases = { stale: 2, down: 2 };
+  /** Agent commands that ran while a restart was still under way, in containers about to stop. */
+  execsDuringRestart = 0;
   private seq = 0;
 
   fetch: typeof fetch = async (input, init) => {
@@ -84,7 +90,13 @@ class FakeCloud {
       if (!service) return json(404, { message: 'Service not found.' });
       const rest = m[2] ?? '';
       if (rest === '' && method === 'GET') {
-        const status = service.started ? 'running:healthy' : 'exited';
+        let status = service.started ? 'running:healthy' : 'exited';
+        const r = service.restarting;
+        if (r && r.stale > 0) r.stale--;
+        else if (r && r.down > 0) {
+          r.down--;
+          status = 'exited';
+        } else service.restarting = undefined;
         return json(200, { ...service, envs: undefined, applications: [{ name: 'wordpress', status }, { name: 'agent', status }], databases: [{ name: 'db', status }] });
       }
       if (rest === '' && method === 'PATCH') {
@@ -99,6 +111,7 @@ class FakeCloud {
       }
       if ((rest === '/start' || rest === '/restart') && method === 'POST') {
         service.started++;
+        if (rest === '/restart') service.restarting = { ...this.restartPhases };
         return json(200, { message: 'queued' });
       }
       if (rest === '/envs' && method === 'GET') return json(200, [...service.envs].map(([key, e]) => ({ uuid: e.uuid, key, value: e.value, real_value: e.value })));
@@ -125,6 +138,7 @@ class FakeCloud {
       }
       if ((m = /^\/scheduled-tasks\/([^/]+)\/execute$/.exec(rest)) && method === 'POST') {
         const task = this.tasks.get(m[1]!)!;
+        if (service.restarting) this.execsDuringRestart++;
         const [, , op, arg, chunk] = task.command.split(' ');
         if (op === 'stage') {
           this.staged.set(arg!, (this.staged.get(arg!) ?? '') + chunk);
@@ -185,8 +199,9 @@ class FakeCloud {
 const onDemandTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name !== CRON_TASK.name);
 const cronTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name === CRON_TASK.name);
 
-function provisioner(cloud: FakeCloud) {
+function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number } = {}) {
   return new CoolifyProvisioner({
+    ...extra,
     url: COOLIFY,
     serverUuid: SERVER,
     projectUuid: PROJECT,
@@ -397,6 +412,27 @@ describe('CoolifyProvisioner', () => {
     await p.setDomains({ storeId: STORE_ID, mainDomain: 'new-shop.example.com', redirectDomains: ['shop.example.com'] });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(store.urls).toEqual([{ name: 'wordpress', url: 'https://new-shop.example.com,https://shop.example.com' }]);
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: { home: 'https://new-shop.example.com' } });
+  });
+
+  it('after a restart, waits for Coolify to show it before waiting for healthy (statuses lag the call)', async () => {
+    await p.createStore(storeInput);
+    cloud.addVersion('v9');
+    await p.setDomains({ storeId: STORE_ID, mainDomain: 'new-shop.example.com', redirectDomains: [] });
+    await p.updateStore({ storeId: STORE_ID, phpConstants: storeInput.phpConstants, wpOptions: { blogdescription: 'New' } });
+    await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
+    for (const [uuid, t] of cloud.tasks) if (t.name === CRON_TASK.name) cloud.tasks.delete(uuid);
+    await p.ensureStoreCron({ storeId: STORE_ID });
+    expect(cloud.calls.filter((c) => c.endsWith('/restart'))).toHaveLength(4);
+    // No agent command ran in the old containers.
+    expect(cloud.execsDuringRestart).toBe(0);
+  });
+
+  it('goes on to wait for healthy when Coolify never shows the restart', async () => {
+    p = provisioner(cloud, { restartSeenTimeoutMs: 20 });
+    await p.createStore(storeInput);
+    cloud.restartPhases = { stale: Number.MAX_SAFE_INTEGER, down: 0 };
+    await p.setDomains({ storeId: STORE_ID, mainDomain: 'new-shop.example.com', redirectDomains: [] });
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: { home: 'https://new-shop.example.com' } });
   });
 
