@@ -18,6 +18,7 @@ import {
   parseBackupKey,
   pgDump,
   selectExpired,
+  startDbBackups,
 } from '../src/dbbackup.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 import { Status } from '../src/status.ts';
@@ -169,6 +170,18 @@ describe('the backup job', () => {
     expect(rows[0].pruned_at).not.toBeNull();
     expect(rows[1].pruned_at).toBeNull();
     expect(rows[3]).toMatchObject({ object_key: null, error_message: 'S3 PUT failed: HTTP 503' });
+  });
+
+  it('takes a catch-up backup on start when none succeeded in the last 26 hours', async () => {
+    await t.pool.query('DELETE FROM db_backups');
+    const store = new MemoryStore();
+    const backups = new DbBackups(t.pool, store, cipherKey, { prefix: 'catch-up', keepDaily: 14, keepWeekly: 8 }, async () => Buffer.from('dump'));
+    expect(await backups.isDue()).toBe(true);
+    await startDbBackups(t.boss, backups, '0 0 1 1 *', 0.5);
+    await waitFor(async () => store.objects.size === 1);
+    expect(await backups.isDue()).toBe(false);
+    await t.pool.query("UPDATE db_backups SET finished_at = now() - interval '27 hours'");
+    expect(await backups.isDue()).toBe(true);
   });
 
   // The restore runbook (docs/db-backups.md), end to end: dump -> encrypt -> upload -> download ->
