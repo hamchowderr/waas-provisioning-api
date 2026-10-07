@@ -146,12 +146,11 @@ Not visible in HTTP, but the Client plugin depends on them:
 
 Workspace **Peptide WaaS** holds:
 - the same spec
-- a collection generated from it (**WaaS Provisioning API**), with tests on all 17 Phase 1 requests and named examples
-  (the five `TenantLifecycle` requests from draft.3/draft.4 are not in the collection yet; their spec examples are named `<request name>: <example>` for the import)
+- a collection generated from it (**WaaS Provisioning API**), with tests and named examples on all 22 Phase 1 requests, the five `TenantLifecycle` requests included
 - a public mock: `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`
-- two environments, **Mock** and **Local (Mastra)**
+- two environments, **Mock** and **Local**
 
-Keep the spec here and in Postman identical.
+Keep the spec here and in Postman identical. The Postman connector rejects the full spec (about 100 KB, HTTP 413), so paste it into the Postman spec by hand after changing it here.
 
 Each request sends `x-mock-response-name`, which picks the example the mock returns. Example names are `<request name>: <example>` (for example `List versions: 403 Invalid API key or secret`). They must be unique across the collection, because the mock looks names up across the whole collection.
 
@@ -163,7 +162,7 @@ Run the Phase 1 tests against the mock:
 npx newman run <exported collection>.json -e <exported Mock environment>.json
 ```
 
-Expected: 17 requests, 57 assertions, 0 failures.
+Expected: 22 requests, 87 assertions, 0 failures. Run the collection in order: List tenant backups sets the `backupId` that Restore deleted tenant uses.
 
 ## Validate
 
