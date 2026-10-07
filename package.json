@@ -10,6 +10,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node --import tsx src/main.ts",
     "create-key": "tsx src/cli/create-key.ts",
+    "db-backup": "tsx src/cli/db-backup.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

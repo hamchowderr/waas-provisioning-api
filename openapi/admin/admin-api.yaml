@@ -251,6 +251,33 @@ paths:
                             - $ref: '#/components/schemas/JobFailure'
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/db-backups:
+    get:
+      operationId: adminListDbBackups
+      summary: Off-site backups of the API's own database
+      description: >-
+        The status /health reports, plus each backup attempt, newest first, with its object key in
+        the bucket and the error when it failed. prunedAt is set once retention deleted the object.
+        Restore runbook: docs/db-backups.md.
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+      responses:
+        '200':
+          description: Backup status and one page of attempts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - $ref: '#/components/schemas/DbBackupStatus'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/DbBackup' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /admin/jobs/failures/{id}/retry:
     post:
       operationId: adminRetryFailure
@@ -325,12 +352,13 @@ components:
       properties:
         health:
           type: object
-          required: [ok, database, queue]
+          required: [ok, database, queue, dbBackup]
           additionalProperties: false
           properties:
             ok: { type: boolean }
             database: { type: string, enum: [ok, down] }
             queue: { type: string, enum: [ok, down] }
+            dbBackup: { $ref: '#/components/schemas/DbBackupStatus' }
         tenants:
           type: object
           additionalProperties: false
@@ -351,6 +379,32 @@ components:
             required: [id, name, tenantCount]
             additionalProperties: false
             properties: { id: { type: string, format: uuid }, name: { type: string }, tenantCount: { type: integer } }
+    DbBackupStatus:
+      type: object
+      description: >-
+        The newest backup of the API's database to object storage. status off means the S3_*
+        settings are not set; none, no backup yet; unknown, the status could not be read. stale is
+        true when the newest success is more than 26 hours old. Never affects health.ok.
+      required: [status, lastAttemptAt, lastSuccessAt, sizeBytes, stale]
+      properties:
+        status: { type: string, enum: [off, none, running, ok, failed, unknown] }
+        lastAttemptAt: { type: string, format: date-time, nullable: true }
+        lastSuccessAt: { type: string, format: date-time, nullable: true }
+        sizeBytes: { type: integer, nullable: true, description: Size of the newest successful backup (encrypted) }
+        stale: { type: boolean }
+    DbBackup:
+      type: object
+      required: [id, status, startedAt, finishedAt, objectKey, sizeBytes, error, prunedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [running, ok, failed] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        objectKey: { type: string, nullable: true, example: db-backups/2026/10/07/waas-20261007T023000Z.dump.enc }
+        sizeBytes: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+        prunedAt: { type: string, format: date-time, nullable: true }
     Page:
       type: object
       required: [items, total, page, pageSize]

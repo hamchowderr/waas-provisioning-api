@@ -101,7 +101,7 @@ describe('admin endpoints', () => {
     shop = await newTenant({ name: 'Admin Shop', customDomainName: 'admin-shop.example.com', wpOptions: { blogname: 'secret-ish value' } });
     await newTenant({ name: 'Other Shop' }, otherAuth);
     const overview = await admin('GET', '/admin/overview');
-    expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok' });
+    expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false } });
     expect(overview.tenants.done).toBe(2);
     expect(overview.products.map((p: any) => p.name).sort()).toEqual(['Example storefront', 'Other storefront']);
   });
@@ -240,6 +240,29 @@ describe('admin versions and templates (any product)', () => {
     await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${spare.id}`))[0]?.statusCode === Status.Done);
     expect(await admin('DELETE', `${base}/versions/${spare.id}`)).toBeUndefined();
     await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${spare.id}`)).length === 0);
+  });
+
+  it('db-backups: status and attempts, newest first', async () => {
+    expect(await admin('GET', '/admin/db-backups')).toMatchObject({ status: 'off', items: [], total: 0 });
+    await t.pool.query(
+      `INSERT INTO db_backups (started_at, finished_at, status, object_key, size_bytes, error_message) VALUES
+        (now() - interval '2 days', now() - interval '2 days', 'ok', 'db-backups/old.dump.enc', 1234, NULL),
+        (now() - interval '1 day', now() - interval '1 day', 'failed', NULL, NULL, 'S3 PUT failed: HTTP 403')`,
+    );
+    t.deps.config.dbBackup = { s3: { endpoint: 'https://s3.test', bucket: 'b', region: 'auto', accessKeyId: 'k', secretAccessKey: 's' }, prefix: 'db-backups', schedule: '30 2 * * *', keepDaily: 14, keepWeekly: 8 };
+    try {
+      const list = await admin('GET', '/admin/db-backups?pageSize=1');
+      expect(list).toMatchObject({ status: 'failed', sizeBytes: 1234, stale: true, total: 2, pageSize: 1 });
+      expect(list.items).toEqual([expect.objectContaining({ status: 'failed', objectKey: null, error: 'S3 PUT failed: HTTP 403' })]);
+      expect((await admin('GET', '/admin/overview')).health.dbBackup).toMatchObject({ status: 'failed', sizeBytes: 1234 });
+      // /health shows the status but not keys or errors, and a failed backup is not a 503.
+      const health = await t.call('GET', '/health', { auth: null });
+      expect(health.status).toBe(200);
+      expect((await health.json()).dbBackup).toEqual({ status: 'failed', lastAttemptAt: expect.any(String), lastSuccessAt: expect.any(String), sizeBytes: 1234, stale: true });
+    } finally {
+      t.deps.config.dbBackup = undefined;
+      await t.pool.query('DELETE FROM db_backups');
+    }
   });
 
   it('answers 404 for an unknown product or version, 400 for a bad body, 403 without the token', async () => {
