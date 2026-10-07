@@ -61,8 +61,8 @@ export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } 
 }
 
 /** Queues a job inside the caller's transaction, so the job exists only if the row change commits. */
-export async function enqueue(boss: PgBoss, client: Client, data: JobData): Promise<void> {
-  await boss.send(QUEUE, data, {
+export async function enqueue(boss: PgBoss, client: Client, data: JobData): Promise<string | null> {
+  return boss.send(QUEUE, data, {
     singletonKey: singletonKey(data),
     db: { executeSql: (text, values) => client.query(text, values) },
   });
@@ -70,8 +70,8 @@ export async function enqueue(boss: PgBoss, client: Client, data: JobData): Prom
 
 export interface JobHandlers {
   run(data: JobData): Promise<void>;
-  /** Called once retries are used up. Records the Failed status. */
-  fail(data: JobData, error: unknown): Promise<void>;
+  /** Called once retries are used up. Records the Failed status and the failure itself. */
+  fail(data: JobData, error: unknown, job: { id: string; attempts: number }): Promise<void>;
   maintenance(): Promise<void>;
 }
 
@@ -86,7 +86,7 @@ export async function startWorker(boss: PgBoss, handlers: JobHandlers, pollingIn
       // Last attempt: record Failed and complete the job. A failed job would hold back every
       // later job with the same key until someone retries or deletes it.
       console.error(`job ${job.id} (${job.data.type}) failed:`, err);
-      await handlers.fail(job.data, err);
+      await handlers.fail(job.data, err, { id: job.id, attempts: job.retryCount + 1 });
     }
   });
 }

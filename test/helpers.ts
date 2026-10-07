@@ -11,6 +11,9 @@ import { Secrets } from '../src/secrets.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/waas_test';
 
+/** Test-only admin bearer token. */
+export const TEST_ADMIN_TOKEN = 'test-admin-token-not-a-secret';
+
 /** A fixed key for tests only. */
 export const TEST_SECRETS_KEY = Buffer.alloc(32, 7).toString('base64');
 
@@ -37,7 +40,7 @@ export async function setup(): Promise<TestContext> {
   await admin.end();
 
   await migrate(TEST_DATABASE_URL);
-  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', secretsKey: TEST_SECRETS_KEY, backupRetentionDays: 90 };
+  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', secretsKey: TEST_SECRETS_KEY, backupRetentionDays: 90, adminToken: TEST_ADMIN_TOKEN };
   const pool = createPool(TEST_DATABASE_URL);
   const boss = await startBoss(TEST_DATABASE_URL, { retryDelaySeconds: 1 });
   const provisioner = new FakeProvisioner();

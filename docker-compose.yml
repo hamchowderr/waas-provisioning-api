@@ -21,6 +21,8 @@ services:
       VERSIONS_DOMAIN: versions.waas.example
       # Local development only. Generate a real one with: openssl rand -base64 32
       SECRETS_KEY: ${SECRETS_KEY:-ZGV2LW9ubHktc2VjcmV0cy1rZXktMzItYnl0ZXMhISE=}
+      # Bearer token for /admin/*; leave empty to keep the admin API off.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
     ports:
       - "4111:4111"
     depends_on:
