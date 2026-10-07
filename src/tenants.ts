@@ -40,6 +40,17 @@ export function normalizeDomain(input: string): string {
   return domain;
 }
 
+/**
+ * A generated DNS label (a store's t-<id8>, a version's slug) that never ends in "-<digits>".
+ * sslip.io, where stores and versions live for now, reads an address out of such a name: it takes
+ * the trailing digits together with the IP that follows, so v1-0-0.191.101.15.236.sslip.io resolves
+ * to 0.191.101.15 and the site is unreachable (and gets no certificate). Only labels that would end
+ * in -<digits> get "-<suffix>"; every other label, and so every existing domain, stays as it was.
+ */
+export function dnsSafeLabel(label: string, suffix: string): string {
+  return /(^|-)\d+$/.test(label) ? `${label}-${suffix}` : label;
+}
+
 /** Whether any store or version already answers on this domain. */
 export async function domainInUse(pool: Pool, domain: string): Promise<boolean> {
   const { rowCount } = await pool.query(

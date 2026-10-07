@@ -2,6 +2,7 @@
 // OpenAPI contract (status code listed for the operation, content type, and body schema).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Status } from '../src/status.ts';
+import { dnsSafeLabel } from '../src/tenants.ts';
 import { createAjv, spec } from '../src/openapi.ts';
 import { setup, waitFor, type TestContext } from './helpers.ts';
 
@@ -101,7 +102,7 @@ describe('Phase 1 operations', () => {
       'createVersion',
       await t.call('POST', '/v1/versions', { body: { name: 'v1.0.0', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true } }),
     );
-    expect(body.domainName).toBe('v1-0-0.versions.waas.example');
+    expect(body.domainName).toBe('v1-0-0-v.versions.waas.example');
     expect(body.uploadUrl).toMatch(/^https:\/\//);
     versionId = body.id;
   });
@@ -111,7 +112,7 @@ describe('Phase 1 operations', () => {
       const list: any = await expectContract('listVersions', await t.call('GET', `/v1/versions?versionId=${versionId}`));
       return list[0]?.statusCode === Status.Done && list;
     });
-    expect(versions[0]).toMatchObject({ id: versionId, isProduction: false, statusName: 'Done', domain: 'v1-0-0.versions.waas.example' });
+    expect(versions[0]).toMatchObject({ id: versionId, isProduction: false, statusName: 'Done', domain: 'v1-0-0-v.versions.waas.example' });
   });
 
   it('setProductionVersion', async () => {
@@ -164,7 +165,7 @@ describe('Phase 1 operations', () => {
   it('createTenant: generates externalId, returns bare base and custom domains', async () => {
     tenant = (await expectContract('createTenant', await t.call('POST', '/v1/tenants', { body: storefrontTenant }))) as typeof tenant;
     expect(tenant.externalId).toBeTruthy();
-    expect(tenant.baseDomain).toBe(`t-${tenant.id.slice(0, 8)}.stores.waas.example`);
+    expect(tenant.baseDomain).toBe(`${dnsSafeLabel(`t-${tenant.id.slice(0, 8)}`, 's')}.stores.waas.example`);
     expect(tenant.customDomain).toBe('shop.example.com');
   });
 

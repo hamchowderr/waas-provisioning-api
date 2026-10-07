@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Status } from '../src/status.ts';
+import { dnsSafeLabel } from '../src/tenants.ts';
 import { setup, waitFor, type TestContext } from './helpers.ts';
 
 let t: TestContext;
@@ -50,7 +51,16 @@ describe('versions', () => {
     const a = await (await t.call('POST', '/v1/versions', { body: fromUpload('Store V2') })).json();
     const b = await (await t.call('POST', '/v1/versions', { body: fromUpload('Store V2') })).json();
     expect(a.domainName).toBe('store-v2.versions.waas.example');
-    expect(b.domainName).toBe(`store-v2-${b.id.slice(0, 8)}.versions.waas.example`);
+    expect(b.domainName).toBe(`${dnsSafeLabel(`store-v2-${b.id.slice(0, 8)}`, 'v')}.versions.waas.example`);
+  });
+
+  it('never ends a version domain label in -<digits> (sslip.io would read it as an address)', async () => {
+    const a = await (await t.call('POST', '/v1/versions', { body: fromUpload('v1.0.0') })).json();
+    expect(a.domainName).toBe('v1-0-0-v.versions.waas.example');
+    const b = await (await t.call('POST', '/v1/versions', { body: fromUpload('2026') })).json();
+    expect(b.domainName).toBe('2026-v.versions.waas.example');
+    const c = await (await t.call('POST', '/v1/versions', { body: fromUpload('V1.1 beta') })).json();
+    expect(c.domainName).toBe('v1-1-beta.versions.waas.example');
   });
 
   it('marks the version Failed when the build keeps failing', async () => {
