@@ -7,8 +7,12 @@ import { createJobHandlers } from '../src/jobs.ts';
 import { createApiKey } from '../src/keys.ts';
 import { FakeProvisioner } from '../src/provisioner/fake.ts';
 import { startBoss, startWorker } from '../src/queue.ts';
+import { Secrets } from '../src/secrets.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/waas_test';
+
+/** A fixed key for tests only. */
+export const TEST_SECRETS_KEY = Buffer.alloc(32, 7).toString('base64');
 
 export interface TestContext {
   pool: Pool;
@@ -32,12 +36,13 @@ export async function setup(): Promise<TestContext> {
   await admin.end();
 
   await migrate(TEST_DATABASE_URL);
-  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example' };
+  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', secretsKey: TEST_SECRETS_KEY };
   const pool = createPool(TEST_DATABASE_URL);
   const boss = await startBoss(TEST_DATABASE_URL, { retryDelaySeconds: 1 });
   const provisioner = new FakeProvisioner();
-  await startWorker(boss, createJobHandlers(pool, provisioner), 0.5);
-  const app = createApp({ config, pool, boss, provisioner });
+  const secrets = new Secrets(TEST_SECRETS_KEY);
+  await startWorker(boss, createJobHandlers(pool, provisioner, secrets), 0.5);
+  const app = createApp({ config, pool, boss, provisioner, secrets });
 
   const productId = (await pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Example storefront') RETURNING id")).rows[0]!.id;
   const { key, secret } = await createApiKey(pool, productId);

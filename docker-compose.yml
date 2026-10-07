@@ -19,6 +19,8 @@ services:
       DATABASE_URL: postgres://waas:waas@db:5432/waas
       STORES_DOMAIN: stores.waas.example
       VERSIONS_DOMAIN: versions.waas.example
+      # Local development only. Generate a real one with: openssl rand -base64 32
+      SECRETS_KEY: ${SECRETS_KEY:-ZGV2LW9ubHktc2VjcmV0cy1rZXktMzItYnl0ZXMhISE=}
     ports:
       - "4111:4111"
     depends_on:
