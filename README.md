@@ -79,7 +79,7 @@ The plugin fork is tracked separately in [`waas-plugins`](https://github.com/ham
 
 | File | What it is |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.5. Edit this. |
+| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.6. Edit this. |
 | `openapi/reference/wpcs-v1-corrected.json` | The original WPCS v1 spec, recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08) with 27 corrections. Reference only. |
 
 ### Phases
@@ -94,7 +94,7 @@ Every operation carries `x-phase: 1` or `x-phase: 2`.
 Every network call in release 2.2.7 of both plugins was traced from its call site to what it sends and every field it reads. These requirements come from that trace, not from the WPCS docs:
 
 - `GET /v1/snapshots` accepts `onlyProductionVersion=true`.
-- `POST /v1/tenants` generates `externalId` when it is omitted (the plugin never sends one).
+- `POST /v1/tenants` generates `externalId` when it is omitted (release 2.2.7 never sends one), and answers 400 to an `externalId` already in use, even when two requests race.
 - Invalid credentials return **403**, not 401.
 - Store domains are bare hostnames; the plugin adds `https://` itself.
 - A tenant's `domainName` equals the creation-time `customDomain ?? baseDomain` exactly (same case, no trailing dot).
