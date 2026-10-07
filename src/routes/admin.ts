@@ -4,9 +4,11 @@ import type { Deps } from '../app.ts';
 import { withTransaction, type Client } from '../db.ts';
 import { HttpError, badRequest } from '../errors.ts';
 import { checkHealth } from '../health.ts';
-import { booleanQuery, isUuid, uuidQuery } from '../http.ts';
+import { booleanQuery, isUuid, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
+import { baseSnapshotService } from './basesnapshots.ts';
+import { versionService } from './versions.ts';
 
 /**
  * Admin API for the dashboard (waas-api-plu). Outside the WPCS contract: documented in the README
@@ -87,7 +89,10 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
   }
 }
 
-export function adminRoutes({ config, pool, boss }: Deps) {
+export function adminRoutes(deps: Deps) {
+  const { config, pool, boss } = deps;
+  const versions = versionService(deps);
+  const templates = baseSnapshotService(deps);
   const app = new Hono();
 
   app.use('*', async (c, next) => {
@@ -327,6 +332,67 @@ export function adminRoutes({ config, pool, boss }: Deps) {
       pageSize,
     });
   });
+
+  // Versions and templates of any product: the same operations, request and response shapes as
+  // the WPCS ones (listVersions, createVersion, deleteVersion, setProductionVersion and the
+  // base-snapshot operations), with the product taken from the path.
+
+  app.get('/products', async (c) => {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.name, p.created_at,
+         (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
+         (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
+         (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
+       FROM products p ORDER BY p.name, p.id`,
+    );
+    return c.json(
+      rows.map((p) => ({
+        id: p.id,
+        name: p.name,
+        tenantCount: p.tenant_count,
+        versionCount: p.version_count,
+        productionVersionId: p.production_version_id,
+        dateCreated: iso(p.created_at),
+      })),
+    );
+  });
+
+  async function product(c: Context): Promise<string> {
+    const productId = c.req.param('productId')!;
+    if (!isUuid(productId) || !(await pool.query('SELECT 1 FROM products WHERE id = $1', [productId])).rowCount) {
+      throw notFound(`Product ${productId} not found`);
+    }
+    return productId;
+  }
+
+  function versionId(c: Context): string {
+    const id = c.req.param('id')!;
+    if (!isUuid(id)) throw notFound(`Version ${id} not found`);
+    return id;
+  }
+
+  app.get('/products/:productId/versions', async (c) =>
+    c.json(await versions.list(await product(c), { versionId: uuidQuery(c, 'versionId'), versionName: c.req.query('versionName') || undefined })),
+  );
+  app.post('/products/:productId/versions', async (c) => c.json(await versions.create(await product(c), await readJson(c))));
+  app.delete('/products/:productId/versions/:id', async (c) => {
+    await versions.remove(await product(c), versionId(c));
+    return c.body(null, 200);
+  });
+  app.put('/products/:productId/versions/:id/production', async (c) => c.json(await versions.setProduction(await product(c), versionId(c))));
+
+  app.get('/products/:productId/basesnapshots', async (c) => {
+    booleanQuery(c, 'onlyPartnerSpecific');
+    return c.json(
+      await templates.list(await product(c), {
+        baseSnapshotId: uuidQuery(c, 'baseSnapshotId'),
+        name: c.req.query('name') || undefined,
+        groupName: c.req.query('groupName') || undefined,
+      }),
+    );
+  });
+  app.post('/products/:productId/basesnapshots', async (c) => c.json(await templates.create(await product(c), await readJson(c))));
+  app.delete('/products/:productId/basesnapshots', async (c) => c.json(await templates.remove(await product(c), requiredUuidQuery(c, 'id'))));
 
   // Idempotent: retrying an already retried failure returns the same result.
   app.post('/jobs/failures/:id/retry', async (c) => {

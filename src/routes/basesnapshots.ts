@@ -21,20 +21,16 @@ const NAME = /^[A-Za-z0-9 -]{5,50}$/;
  * Base snapshots (templates). Phase 2 operations that product keys may use (contract draft.5):
  * a product's templates belong to it alone, and createVersion copies them into versions.
  */
-export function baseSnapshotRoutes({ pool, boss, provisioner }: Deps) {
-  const app = new Hono<AppEnv>();
-
-  app.get('/', async (c) => {
-    // onlyPartnerSpecific has no effect for product keys; it is still validated.
-    booleanQuery(c, 'onlyPartnerSpecific');
+/** The base-snapshot operations for one product; shared by these routes and the admin routes. */
+export function baseSnapshotService({ pool, boss, provisioner }: Deps) {
+  async function list(productId: string, filter: { baseSnapshotId?: string; name?: string; groupName?: string } = {}) {
     const { rows } = await pool.query(
       `SELECT * FROM base_snapshots
         WHERE product_id = $1 AND ($2::uuid IS NULL OR id = $2) AND ($3::text IS NULL OR name = $3) AND ($4::text IS NULL OR group_name = $4)
         ORDER BY date_created`,
-      [c.get('productId'), uuidQuery(c, 'baseSnapshotId') ?? null, c.req.query('name') || null, c.req.query('groupName') || null],
+      [productId, filter.baseSnapshotId ?? null, filter.name ?? null, filter.groupName ?? null],
     );
-    return c.json(
-      rows.map((b) =>
+    return rows.map((b) =>
         compact({
           id: b.id,
           name: b.name,
@@ -45,12 +41,12 @@ export function baseSnapshotRoutes({ pool, boss, provisioner }: Deps) {
           groupName: b.group_name,
           showAsBaseSnapshot: b.show_in_console,
         }),
-      ),
     );
-  });
+  }
 
-  app.post('/', async (c) => {
-    const body = validateBody<CreateBaseSnapshotParams>('CreateBaseSnapshotParams', await readJson(c));
+  /** CreateBaseSnapshotParams in, CreateBaseSnapshotCommandResult out. */
+  async function create(productId: string, input: unknown) {
+    const body = validateBody<CreateBaseSnapshotParams>('CreateBaseSnapshotParams', input);
     if (!NAME.test(body.name)) throw badRequest('name must be 5 to 50 characters: letters, digits, spaces and dashes');
     if (!body.comment.trim()) throw badRequest('comment is required');
     const groupName = body.groupName?.trim() || null;
@@ -61,21 +57,43 @@ export function baseSnapshotRoutes({ pool, boss, provisioner }: Deps) {
     await pool.query(
       `INSERT INTO base_snapshots (id, product_id, name, comment, is_tenant_snapshot, group_name, show_in_console, uri)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [id, c.get('productId'), body.name, body.comment, body.isTenantSnapshot === true, groupName, body.showInConsole === true, uri],
+      [id, productId, body.name, body.comment, body.isTenantSnapshot === true, groupName, body.showInConsole === true, uri],
     );
-    return c.json({ id, name: body.name, comment: body.comment, showInConsole: body.showInConsole === true, uploadUrl });
-  });
+    return { id, name: body.name, comment: body.comment, showInConsole: body.showInConsole === true, uploadUrl };
+  }
 
   // Versions keep their own copies, so deleting a template leaves them alone.
-  app.delete('/', async (c) => {
-    const id = requiredUuidQuery(c, 'id');
+  async function remove(productId: string, id: string) {
     await withTransaction(pool, async (client) => {
-      const { rowCount } = await client.query('DELETE FROM base_snapshots WHERE id = $1 AND product_id = $2', [id, c.get('productId')]);
+      const { rowCount } = await client.query('DELETE FROM base_snapshots WHERE id = $1 AND product_id = $2', [id, productId]);
       if (!rowCount) throw badRequest(`Base snapshot ${id} not found`);
       await enqueue(boss, client, { type: 'basesnapshot.delete', baseSnapshotId: id });
     });
-    return c.json({ baseSnapshotId: id });
+    return { baseSnapshotId: id };
+  }
+
+  return { list, create, remove };
+}
+
+export function baseSnapshotRoutes(deps: Deps) {
+  const templates = baseSnapshotService(deps);
+  const app = new Hono<AppEnv>();
+
+  app.get('/', async (c) => {
+    // onlyPartnerSpecific has no effect for product keys; it is still validated.
+    booleanQuery(c, 'onlyPartnerSpecific');
+    return c.json(
+      await templates.list(c.get('productId'), {
+        baseSnapshotId: uuidQuery(c, 'baseSnapshotId'),
+        name: c.req.query('name') || undefined,
+        groupName: c.req.query('groupName') || undefined,
+      }),
+    );
   });
+
+  app.post('/', async (c) => c.json(await templates.create(c.get('productId'), await readJson(c))));
+
+  app.delete('/', async (c) => c.json(await templates.remove(c.get('productId'), requiredUuidQuery(c, 'id'))));
 
   return app;
 }
