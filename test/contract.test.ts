@@ -344,7 +344,8 @@ describe('Phase 1 operations', () => {
     const [newest] = await backupsOf(tenant.externalId);
     const res: any = await expectContract('restoreTenant', await t.call('POST', `/v1/tenants/restore?externalId=${tenant.externalId}`, { body: {} }));
     expect(res).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, backupId: newest.id });
-    expect((await getTenant()).statusCode).toBe(Status.Pending);
+    // Pending until the job runs; the fake host can finish before this read.
+    expect([Status.Pending, Status.Done]).toContain((await getTenant()).statusCode);
     await tenantDone();
     const restored = await getTenant();
     expect(restored).toMatchObject({ id: tenant.id, domainName: 'www.new-shop.example.com', isSuspended: false, dateSuspended: null });

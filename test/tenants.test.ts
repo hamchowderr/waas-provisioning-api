@@ -108,7 +108,8 @@ describe('tenants', () => {
   it('runs a delete sent during creation after the creation', async () => {
     const { body } = await createTenant({ name: 'Fleeting' });
     expect((await t.call('DELETE', `/v1/tenants?externalId=${body.externalId}`)).status).toBe(200);
-    expect(await tenantStatus(body.externalId)).toBe(Status.Removing);
+    // Removing until the delete job runs, which can finish before this read.
+    expect([Status.Removing, undefined]).toContain(await tenantStatus(body.externalId));
     await waitFor(async () => (await tenantStatus(body.externalId)) === undefined);
     expect(t.provisioner.stores.has(body.id)).toBe(false);
   });

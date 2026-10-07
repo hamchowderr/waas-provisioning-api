@@ -91,7 +91,8 @@ describe('versions', () => {
   it('runs a delete queued during the build after the build', async () => {
     const id = await createVersion(fromUpload('short-lived'));
     expect((await t.call('DELETE', `/v1/versions?versionId=${id}`)).status).toBe(200);
-    expect(await versionStatus(id)).toBe(Status.Removing);
+    // Removing until the delete job runs, which can finish before this read.
+    expect([Status.Removing, undefined]).toContain(await versionStatus(id));
     await waitFor(async () => (await versionStatus(id)) === undefined);
     expect(t.provisioner.versions.has(id)).toBe(false);
   });
