@@ -18,17 +18,27 @@ ajv.addSchema({ components: adminSpec.components }, 'admin');
 let t: TestContext;
 const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
 
-async function admin(method: string, path: string, expected = 200): Promise<any> {
-  const res = await t.call(method, path, { auth: ADMIN });
+async function admin(method: string, path: string, expected = 200, body?: unknown): Promise<any> {
+  const res = await t.call(method, path, { auth: ADMIN, body });
   expect(res.status, `${method} ${path}`).toBe(expected);
-  const body = await res.json();
+  const text = await res.text();
   const opPath = Object.keys(adminSpec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path.split('?')[0]!))!;
   const responses = adminSpec.paths[opPath][method.toLowerCase()].responses[String(expected)];
   const media = responses.$ref ? adminSpec.components.responses[responses.$ref.split('/').pop()].content : responses.content;
-  const schema = JSON.parse(JSON.stringify(media['application/json'].schema).replaceAll('"#/components', '"admin#/components'));
+  if (!media) {
+    expect(text).toBe('');
+    return undefined;
+  }
+  const parsed = JSON.parse(text);
+  // Admin schemas, and the WPCS schemas the version and template endpoints reuse.
+  const schema = JSON.parse(
+    JSON.stringify(media['application/json'].schema)
+      .replaceAll('"#/components', '"admin#/components')
+      .replaceAll('"../waas-provisioning-api.yaml#/components', '"spec#/components'),
+  );
   const validate = ajv.compile(schema);
-  expect(validate(body), `${method} ${path}: ${ajv.errorsText(validate.errors)}`).toBe(true);
-  return body;
+  expect(validate(parsed), `${method} ${path}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+  return parsed;
 }
 
 const tenantStatus = async (externalId: string) => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as any[])[0]?.statusCode;
@@ -185,4 +195,63 @@ describe('job failures and retry', () => {
     const res = await admin('POST', `/admin/jobs/failures/${failure.id}/retry`, 400);
     expect(res.message).toMatch(/no longer Failed/);
   }, 60000);
+});
+
+describe('admin versions and templates (any product)', () => {
+  it('lists products', async () => {
+    const products = await admin('GET', '/admin/products');
+    expect(products.map((p: any) => p.name)).toEqual(['Example storefront', 'Other storefront']);
+    expect(products.find((p: any) => p.id === otherProductId)).toMatchObject({ versionCount: 1, productionVersionId: expect.any(String) });
+  });
+
+  it('manages another product\'s versions and templates with the WPCS shapes', async () => {
+    const base = `/admin/products/${otherProductId}`;
+    // Same answer as the product's own key gets from /v1.
+    expect(await admin('GET', `${base}/versions`)).toEqual(await (await t.call('GET', '/v1/versions', { auth: otherAuth })).json());
+
+    const template = await admin('POST', `${base}/basesnapshots`, 200, { name: 'Admin Starter', comment: 'From the dashboard', isTenantSnapshot: true, groupName: 'admin-starter' });
+    expect(template.uploadUrl).toMatch(/^https:\/\//);
+    expect(await admin('GET', `${base}/basesnapshots?groupName=admin-starter`)).toEqual(
+      await (await t.call('GET', '/v1/basesnapshots?groupName=admin-starter', { auth: otherAuth })).json(),
+    );
+    // Not visible to the first product.
+    expect(await (await t.call('GET', '/v1/basesnapshots')).json()).toEqual([]);
+
+    const created = await admin('POST', `${base}/versions`, 200, { name: 'admin-v2', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true, snapshotIdsToCopy: [template.id] });
+    expect(created).toMatchObject({ name: 'admin-v2', domainName: expect.stringContaining('admin-v2') });
+    await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${created.id}`))[0]?.statusCode === Status.Done);
+    expect(await admin('PUT', `${base}/versions/${created.id}/production`)).toEqual({ id: created.id });
+    const groups = (await (await t.call('GET', '/v1/snapshots?onlyProductionVersion=true', { auth: otherAuth })).json()) as any[];
+    expect(groups.map((g) => g.groupName)).toContain('admin-starter');
+
+    // The old production version can now go; the new one can't.
+    const old = (await admin('GET', `${base}/versions`)).find((v: any) => v.id !== created.id);
+    expect((await admin('DELETE', `${base}/versions/${created.id}`, 400)).message).toMatch(/production/);
+    expect((await admin('GET', `/admin/tenants?productId=${otherProductId}&versionId=${old.id}`)).total).toBe(1);
+    expect((await admin('DELETE', `${base}/versions/${old.id}`, 400)).message).toMatch(/tenant/);
+
+    expect(await admin('DELETE', `${base}/basesnapshots?id=${template.id}`)).toEqual({ baseSnapshotId: template.id });
+    expect(await admin('GET', `${base}/basesnapshots`)).toEqual([]);
+  });
+
+  it('removes a version through the admin path', async () => {
+    const base = `/admin/products/${otherProductId}`;
+    const spare = await admin('POST', `${base}/versions`, 200, { name: 'spare', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true });
+    await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${spare.id}`))[0]?.statusCode === Status.Done);
+    expect(await admin('DELETE', `${base}/versions/${spare.id}`)).toBeUndefined();
+    await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${spare.id}`)).length === 0);
+  });
+
+  it('answers 404 for an unknown product or version, 400 for a bad body, 403 without the token', async () => {
+    await admin('GET', `/admin/products/${crypto.randomUUID()}/versions`, 404);
+    await admin('GET', '/admin/products/not-a-uuid/basesnapshots', 404);
+    await admin('PUT', `/admin/products/${otherProductId}/versions/not-a-uuid/production`, 404);
+    await admin('PUT', `/admin/products/${otherProductId}/versions/${crypto.randomUUID()}/production`, 400);
+    await admin('POST', `/admin/products/${otherProductId}/versions`, 400, { name: 'x' });
+    await admin('POST', `/admin/products/${otherProductId}/basesnapshots`, 400, { name: 'abc', comment: 'too short' });
+    for (const auth of [null, otherAuth]) {
+      expect((await t.call('GET', `/admin/products/${otherProductId}/versions`, { auth })).status).toBe(403);
+      expect((await t.call('GET', '/admin/products', { auth })).status).toBe(403);
+    }
+  });
 });

@@ -44,30 +44,30 @@ function slug(name: string): string {
   );
 }
 
-export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
-  const app = new Hono<AppEnv>();
-
+/**
+ * The version operations, for one product. Used by the WPCS routes below (product from the API
+ * key) and the admin routes (product from the path), so both behave and answer the same.
+ */
+export function versionService({ config, pool, boss, provisioner }: Deps) {
   async function findVersion(productId: string, versionId: string) {
     const { rows } = await pool.query('SELECT * FROM versions WHERE id = $1 AND product_id = $2', [versionId, productId]);
     if (!rows[0]) throw badRequest(`Version ${versionId} not found`);
     return rows[0];
   }
 
-  app.get('/', async (c) => {
-    const versionId = uuidQuery(c, 'versionId');
-    const versionName = c.req.query('versionName') || undefined;
+  async function list(productId: string, filter: { versionId?: string; versionName?: string } = {}) {
     const { rows } = await pool.query(
       `SELECT * FROM versions
         WHERE product_id = $1 AND ($2::uuid IS NULL OR id = $2) AND ($3::text IS NULL OR name = $3)
         ORDER BY date_created`,
-      [c.get('productId'), versionId ?? null, versionName ?? null],
+      [productId, filter.versionId ?? null, filter.versionName ?? null],
     );
-    return c.json(rows.map(toVersion));
-  });
+    return rows.map(toVersion);
+  }
 
-  app.post('/', async (c) => {
-    const productId = c.get('productId');
-    const body = validateBody<CreateVersionParams>('CreateVersionParams', await readJson(c));
+  /** CreateVersionParams in, CreateVersionCommandResult out. */
+  async function create(productId: string, input: unknown) {
+    const body = validateBody<CreateVersionParams>('CreateVersionParams', input);
     for (const field of ['name', 'phpVersion', 'wordPressVersion'] as const) {
       if (!body[field].trim()) throw badRequest(`${field} is required`);
     }
@@ -132,14 +132,11 @@ export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
       });
     });
 
-    return c.json(
-      compact({ id, domainName: domain, name: body.name, wordPressVersion: body.wordPressVersion, phpVersion: body.phpVersion, uploadUrl }),
-    );
-  });
+    return compact({ id, domainName: domain, name: body.name, wordPressVersion: body.wordPressVersion, phpVersion: body.phpVersion, uploadUrl });
+  }
 
-  app.delete('/', async (c) => {
-    const productId = c.get('productId');
-    const version = await findVersion(productId, requiredUuidQuery(c, 'versionId'));
+  async function remove(productId: string, versionId: string) {
+    const version = await findVersion(productId, versionId);
     if (version.is_production) throw badRequest('The production version cannot be removed');
     const inUse = await pool.query('SELECT count(*)::int AS n FROM tenants WHERE version_id = $1', [version.id]);
     if (inUse.rows[0].n > 0) throw badRequest(`Version ${version.id} still has ${inUse.rows[0].n} tenant(s); move them first`);
@@ -150,19 +147,40 @@ export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
         await enqueue(boss, client, { type: 'version.delete', versionId: version.id });
       });
     }
-    return c.body(null, 200);
-  });
+  }
 
-  app.put('/production', async (c) => {
-    const productId = c.get('productId');
-    const body = validateBody<{ versionId: string }>('ProductionVersionParams', await readJson(c));
-    const version = await findVersion(productId, body.versionId);
+  /** SetProductionVersionCommandResult out. */
+  async function setProduction(productId: string, versionId: string) {
+    const version = await findVersion(productId, versionId);
     if (version.status !== Status.Done) throw badRequest(`Version ${version.id} is ${statusName(version.status)}, not Done`);
     await withTransaction(pool, async (client) => {
       await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
       await client.query('UPDATE versions SET is_production = true, date_changed = now() WHERE id = $1', [version.id]);
     });
-    return c.json({ id: version.id });
+    return { id: version.id };
+  }
+
+  return { list, create, remove, setProduction };
+}
+
+export function versionRoutes(deps: Deps) {
+  const versions = versionService(deps);
+  const app = new Hono<AppEnv>();
+
+  app.get('/', async (c) =>
+    c.json(await versions.list(c.get('productId'), { versionId: uuidQuery(c, 'versionId'), versionName: c.req.query('versionName') || undefined })),
+  );
+
+  app.post('/', async (c) => c.json(await versions.create(c.get('productId'), await readJson(c))));
+
+  app.delete('/', async (c) => {
+    await versions.remove(c.get('productId'), requiredUuidQuery(c, 'versionId'));
+    return c.body(null, 200);
+  });
+
+  app.put('/production', async (c) => {
+    const body = validateBody<{ versionId: string }>('ProductionVersionParams', await readJson(c));
+    return c.json(await versions.setProduction(c.get('productId'), body.versionId));
   });
 
   return app;
