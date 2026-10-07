@@ -233,6 +233,8 @@ describe('CoolifyProvisioner', () => {
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
     expect(compose.services.wordpress.mem_limit).toBe('512m');
     expect(compose.services.agent.image).toBe('wordpress:cli-php8.3');
+    // The agent loads WordPress with every plugin for the store's cron each minute.
+    expect(compose.services.agent.mem_limit).toBe('256m');
     // Created without deploying, so the variables are in place before the first start.
     const create = cloud.calls.indexOf('POST /services');
     expect(cloud.calls.findIndex((c) => c.endsWith('/envs/bulk'))).toBeGreaterThan(create);

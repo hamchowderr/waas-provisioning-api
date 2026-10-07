@@ -37,7 +37,7 @@ const WP = 'wp --path=/var/www/html';
  * Each store's cron: WP-cron and Action Scheduler every minute, from the agent container (which
  * runs as uid 33, as WordPress does), since DISABLE_WP_CRON keeps page loads from running them
  * (compose.ts). Skipped while the store is suspended: the contract says its cron stops. `flock`
- * keeps a slow run from overlapping the next one in the agent's 128 MB. No single quotes:
+ * keeps a slow run from overlapping the next one in the agent's 256 MB. No single quotes:
  * Coolify wraps the command in sh -c '...'.
  */
 export const CRON_TASK = {
