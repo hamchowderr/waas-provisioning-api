@@ -42,7 +42,7 @@ servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
   description: Postman mock (private; send x-api-key)
 - url: http://localhost:4111
-  description: Local (Mastra dev server)
+  description: Local
 paths:
   /v1/tenants:
     get:
