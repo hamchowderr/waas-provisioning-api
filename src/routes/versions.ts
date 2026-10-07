@@ -125,6 +125,8 @@ export function versionRoutes({ config, pool, boss, provisioner }: Deps) {
     const productId = c.get('productId');
     const version = await findVersion(productId, requiredUuidQuery(c, 'versionId'));
     if (version.is_production) throw badRequest('The production version cannot be removed');
+    const inUse = await pool.query('SELECT count(*)::int AS n FROM tenants WHERE version_id = $1', [version.id]);
+    if (inUse.rows[0].n > 0) throw badRequest(`Version ${version.id} still has ${inUse.rows[0].n} tenant(s); move them first`);
     if (version.status !== Status.Removing) {
       await withTransaction(pool, async (client) => {
         await client.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1', [version.id, Status.Removing]);

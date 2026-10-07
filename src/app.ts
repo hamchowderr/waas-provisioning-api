@@ -5,7 +5,9 @@ import type { Pool } from './db.ts';
 import { HttpError } from './errors.ts';
 import { authenticate } from './keys.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
+import type { Secrets } from './secrets.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
+import { tenantRoutes } from './routes/tenants.ts';
 import { versionRoutes } from './routes/versions.ts';
 
 export interface Deps {
@@ -13,6 +15,7 @@ export interface Deps {
   pool: Pool;
   boss: PgBoss;
   provisioner: Provisioner;
+  secrets: Secrets;
 }
 
 export type AppEnv = { Variables: { productId: string } };
@@ -34,6 +37,7 @@ export function createApp(deps: Deps) {
     await next();
   });
 
+  app.route('/v1/tenants', tenantRoutes(deps));
   app.route('/v1/versions', versionRoutes(deps));
   app.route('/v1/snapshots', snapshotRoutes(deps));
 

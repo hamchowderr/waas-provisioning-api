@@ -15,7 +15,19 @@ const phase1: Operation[] = Object.entries(spec.paths).flatMap(([path, item]) =>
     .map(([method, op]) => ({ method: method as Method, path, operationId: op.operationId })),
 );
 
-const implemented = ['listVersions', 'createVersion', 'deleteVersion', 'setProductionVersion', 'listSnapshots', 'downloadSnapshot'];
+const implemented = [
+  'listVersions',
+  'createVersion',
+  'deleteVersion',
+  'setProductionVersion',
+  'listSnapshots',
+  'downloadSnapshot',
+  'listTenants',
+  'createTenant',
+  'updateTenantOptionsAndConstants',
+  'deleteTenant',
+  'moveTenantToAVersion',
+];
 
 // Strict: no removeAdditional, so unknown response fields fail (the schemas set additionalProperties: false).
 const ajv = createAjv();
@@ -63,6 +75,7 @@ describe('Phase 1 operations', () => {
   let versionId: string;
   let snapshotId: string;
   let copyVersionId: string;
+  let tenant: { id: string; externalId: string; baseDomain: string; customDomain?: string };
 
   it('listVersions: empty product', async () => {
     expect(await expectContract('listVersions', await t.call('GET', '/v1/versions'))).toEqual([]);
@@ -118,6 +131,98 @@ describe('Phase 1 operations', () => {
     expect(copies[0]).toMatchObject({ name: 'v1.0.0', versionId: copyVersionId });
   });
 
+  // What the storefront plugin sends (WPCSService.php:100-123): no externalId.
+  const storefrontTenant = {
+    name: 'Example Store',
+    wordPressUserName: 'example-owner',
+    wordPressUserEmail: 'owner@example.com',
+    wordPressUserRole: 'administrator',
+    wordPressUserPassword: 'example-password-1',
+    customDomainName: 'shop.example.com',
+    phpConstants: {
+      WPCS_TENANT_ROLES: { value: 'shop_manager,editor' },
+      WPCS_PUBLIC_KEY: { value: Buffer.from('example public key').toString('base64') },
+      WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS: { value: 'true' },
+    },
+  };
+
+  it('createTenant: generates externalId, returns bare base and custom domains', async () => {
+    tenant = (await expectContract('createTenant', await t.call('POST', '/v1/tenants', { body: storefrontTenant }))) as typeof tenant;
+    expect(tenant.externalId).toBeTruthy();
+    expect(tenant.baseDomain).toBe(`t-${tenant.id.slice(0, 8)}.stores.waas.example`);
+    expect(tenant.customDomain).toBe('shop.example.com');
+  });
+
+  it('createTenant: customDomain is absent, not null or "", without a custom domain', async () => {
+    const body: any = await expectContract('createTenant', await t.call('POST', '/v1/tenants', { body: { name: 'No Custom Domain' } }));
+    expect('customDomain' in body).toBe(false);
+    const [created]: any = await waitFor(async () => {
+      const list: any = await (await t.call('GET', `/v1/tenants?externalId=${body.externalId}`)).json();
+      return list[0]?.statusCode === Status.Done && list;
+    });
+    expect(created.domainName).toBe(body.baseDomain);
+  });
+
+  it('listTenants: Pending to Done, domainName equals the creation-time customDomain', async () => {
+    const [found]: any = await waitFor(async () => {
+      const list: any = await expectContract('listTenants', await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`));
+      return list[0]?.statusCode === Status.Done && list;
+    });
+    expect(found).toMatchObject({
+      id: tenant.id,
+      tenantId: tenant.id,
+      name: 'Example Store',
+      versionId,
+      versionName: 'v1.0.0',
+      basedOnSnapshotId: snapshotId,
+      domainName: tenant.customDomain,
+      redirectDomains: [tenant.baseDomain],
+      statusName: 'Done',
+    });
+    const store = t.provisioner.stores.get(tenant.id)!;
+    expect(store.phpConstants.WPCS_TENANT_ROLES!.value).toBe('shop_manager,editor');
+    expect(store.user).toMatchObject({ name: 'example-owner', role: 'administrator', password: 'example-password-1' });
+  });
+
+  it('updateTenantOptionsAndConstants', async () => {
+    const body = { phpConstants: { WPCS_TENANT_ROLES: { value: 'shop_manager' } }, wpOptions: { blogname: 'Example Store' } };
+    expect(await expectContract('updateTenantOptionsAndConstants', await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body }))).toEqual({
+      tenantId: tenant.id,
+      externalId: tenant.externalId,
+    });
+    await waitFor(async () => t.provisioner.stores.get(tenant.id)?.phpConstants.WPCS_TENANT_ROLES?.value === 'shop_manager');
+    expect(t.provisioner.stores.get(tenant.id)!.wpOptions.blogname).toBe('Example Store');
+    // [] is an empty PUT body.
+    expect((await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body: [] })).status).toBe(200);
+  });
+
+  it('moveTenantToAVersion', async () => {
+    expect(
+      await expectContract('moveTenantToAVersion', await t.call('POST', `/v1/tenants/version?externalId=${tenant.externalId}`, { body: { targetVersionId: copyVersionId } })),
+    ).toEqual({ targetVersionId: copyVersionId, tenantId: tenant.id, externalId: tenant.externalId });
+    await waitFor(async () => {
+      const [found]: any = await (await t.call('GET', `/v1/tenants?tenantId=${tenant.id}`)).json();
+      return found.statusCode === Status.Done && found.versionId === copyVersionId;
+    });
+  });
+
+  it('deleteTenant: by a non-UUID tenantId (plugin 2.2.7 sends the external ID there)', async () => {
+    await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?tenantId=${tenant.externalId}-x`).then(async (r) => {
+      expect(r.status).toBe(400); // unknown
+      return r;
+    }));
+    const externalId = 'example-store-42';
+    await t.call('POST', '/v1/tenants', { body: { name: 'Delete Me', externalId } });
+    await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?tenantId=${externalId}`));
+    await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as unknown[]).length === 0);
+  });
+
+  it('deleteTenant: by externalId', async () => {
+    await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?externalId=${tenant.externalId}`));
+    await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as unknown[]).length === 0);
+    expect(t.provisioner.stores.has(tenant.id)).toBe(false);
+  });
+
   it('deleteVersion: Removing, then gone', async () => {
     await expectContract('deleteVersion', await t.call('DELETE', `/v1/versions?versionId=${copyVersionId}`));
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${copyVersionId}`)).json()) as unknown[]).length === 0);
@@ -131,6 +236,10 @@ describe('Phase 1 operations', () => {
       ['setProductionVersion', t.call('PUT', '/v1/versions/production', { body: [] })],
       ['listSnapshots', t.call('GET', '/v1/snapshots?onlyProductionVersion=maybe')],
       ['downloadSnapshot', t.call('GET', '/v1/snapshots/download')],
+      ['createTenant', t.call('POST', '/v1/tenants', { body: { name: 'x', customDomainName: 'https://shop.example.com/' } })],
+      ['updateTenantOptionsAndConstants', t.call('PUT', '/v1/tenants', { body: {} })],
+      ['deleteTenant', t.call('DELETE', '/v1/tenants')],
+      ['moveTenantToAVersion', t.call('POST', '/v1/tenants/version?externalId=nobody', { body: { targetVersionId: crypto.randomUUID() } })],
     ];
     for (const [operationId, res] of cases) {
       const r = await res;

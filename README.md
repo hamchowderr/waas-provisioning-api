@@ -4,7 +4,7 @@ Provisioning API for the WaaS platform. It replaces the shut-down WPCS cloud and
 
 Contract first: the OpenAPI spec is the source of truth. The API is plain TypeScript: [Hono](https://hono.dev) for HTTP and [pg-boss](https://github.com/timgit/pg-boss) for the job queue, both on one Postgres database. Nothing in it is agentic and it never calls an LLM. The payment-processor audits are a separate Mastra service (waas-api-2hl.6); this API only queues work for it.
 
-Phase 1 is being built in slices. Implemented so far: versions (list, create, delete, set production) and snapshots (list, download). Tenants and tenant domains are next.
+Phase 1 is being built in slices. Implemented so far: versions (list, create, delete, set production), snapshots (list, download) and tenants (list, create, update options and constants, delete, move to a version). Tenant domains are next.
 
 ## How it works
 
@@ -13,6 +13,8 @@ Phase 1 is being built in slices. Implemented so far: versions (list, create, de
 - Jobs for the same version (later, the same tenant) run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
 - All work on the machines stores run on goes through the `Provisioner` interface (`src/provisioner/provisioner.ts`). The store host is not chosen yet (`docs/hosting.md`, waas-api-2hl.4), so the only implementation is an in-memory fake that succeeds at once. Its upload URLs and snapshot downloads are placeholders.
 - Request bodies are checked against the contract's schemas. Fields the contract doesn't define are dropped, not rejected.
+- Values a store needs back in plain form (the first user's password, `phpConstants` marked `isPrivate`) can't be hashed, so they are encrypted with AES-256-GCM under `SECRETS_KEY` wherever they are stored, including queue jobs.
+- A tenant created without `externalId` gets its own id as `externalId`. A `tenantId` that isn't a UUID is looked up as an external ID (storefront plugin 2.2.7 sends it that way).
 
 ## Run locally
 
@@ -31,11 +33,12 @@ Without Docker, against your own Postgres (16 or newer):
 ```sh
 npm install
 export DATABASE_URL=postgres://user:pass@localhost:5432/waas
+export SECRETS_KEY=$(openssl rand -base64 32)   # keep it: losing it makes stored secrets unreadable
 npm run create-key -- --product-name "Example storefront"
 npm run dev
 ```
 
-Migrations run at startup. Settings: `DATABASE_URL` (required), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`).
+Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`).
 
 ## Test
 

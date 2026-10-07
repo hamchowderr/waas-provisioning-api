@@ -4,18 +4,27 @@ import type { Client } from './db.ts';
 /**
  * Slow store-side work runs as pg-boss jobs in the API's own Postgres database.
  *
- * One queue with the key_strict_fifo policy: jobs that share a singletonKey (one version, later
- * one tenant) run one at a time in arrival order, so a delete waits for the build before it.
+ * One queue with the key_strict_fifo policy: jobs that share a singletonKey (one version, or one
+ * tenant) run one at a time in arrival order, so a delete waits for the build before it.
  * Jobs with different keys run independently.
  */
 export const QUEUE = 'provision';
 
 export type JobData =
   | { type: 'version.create'; versionId: string; source: { snapshotId: string } | { upload: true } }
-  | { type: 'version.delete'; versionId: string };
+  | { type: 'version.delete'; versionId: string }
+  | {
+      type: 'tenant.create';
+      tenantId: string;
+      /** The store's first WordPress user. The password is encrypted (src/secrets.ts). */
+      user?: { name: string; email: string; role: string; encryptedPassword?: string };
+    }
+  | { type: 'tenant.update'; tenantId: string; wpOptions?: Record<string, string>; phpConstantNames?: string[] }
+  | { type: 'tenant.move'; tenantId: string; targetVersionId: string }
+  | { type: 'tenant.delete'; tenantId: string };
 
 function singletonKey(data: JobData): string {
-  return `version:${data.versionId}`;
+  return 'versionId' in data ? `version:${data.versionId}` : `tenant:${data.tenantId}`;
 }
 
 export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } = {}): Promise<PgBoss> {
