@@ -6,7 +6,7 @@ The API's own Postgres (`waas-api-db`: products, API keys, versions, tenants, do
 
 | | |
 |---|---|
-| When | Daily at 02:30 UTC (pg-boss schedule on the `db-backup` queue; `DB_BACKUP_SCHEDULE` to change). One retry 10 minutes later if it fails. |
+| When | Daily at 02:30 UTC (pg-boss schedule on the `db-backup` queue; `DB_BACKUP_SCHEDULE` to change). One retry 10 minutes later if it fails. Also on startup when no backup succeeded in the last 26 hours (first deploy, or the API was down at 02:30). |
 | What | `pg_dump --format=custom --compress=6` of the whole database (all schemas, `pgboss` included), run from the API container (`postgresql16-client` in the image). |
 | Encryption | AES-256-GCM in the API before upload, under a key derived from `SECRETS_KEY` (HKDF-SHA256, info `waas-db-backup-v1`). R2 also encrypts at rest on its side. |
 | Where | `s3://$S3_BUCKET/db-backups/YYYY/MM/DD/waas-YYYYMMDDTHHMMSSZ.dump.enc` (`DB_BACKUP_PREFIX` to change the prefix). Store archives use other prefixes, so the store lifecycle rule on `uploads/` does not touch these. |

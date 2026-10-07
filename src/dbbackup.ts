@@ -194,6 +194,17 @@ export class DbBackups {
     }
   }
 
+  /** True when nothing succeeded in the last 26 hours and no backup is running now. */
+  async isDue(): Promise<boolean> {
+    const { rows } = await this.pool.query(
+      `SELECT NOT EXISTS (SELECT 1 FROM db_backups
+                           WHERE (status = 'ok' AND finished_at > now() - make_interval(secs => $1))
+                              OR (status = 'running' AND started_at > now() - interval '2 hours')) AS due`,
+      [STALE_AFTER_MS / 1000],
+    );
+    return rows[0].due;
+  }
+
   /** Deletes the backups retention no longer keeps; returns their keys. */
   async prune(): Promise<string[]> {
     const backups = (await this.store.list(`${this.config.prefix}/`)).flatMap(({ key }) => {
@@ -217,18 +228,23 @@ export async function latestBackupKey(store: Pick<BackupStore, 'list'>, prefix: 
   return backups[0]?.key ?? null;
 }
 
-/** Schedules the daily backup on its own queue and works it; unschedules it when backups are off. */
-export async function startDbBackups(boss: PgBoss, backups: DbBackups | undefined, schedule: string): Promise<void> {
+/**
+ * Schedules the daily backup on its own queue and works it; unschedules it when backups are off.
+ * Also queues one now when the last success is over 26 hours old (first deploy, or the API was
+ * down at the scheduled time).
+ */
+export async function startDbBackups(boss: PgBoss, backups: DbBackups | undefined, schedule: string, pollingIntervalSeconds = 60): Promise<void> {
   if (!backups) {
     if (await boss.getQueue(DB_BACKUP_QUEUE)) await boss.unschedule(DB_BACKUP_QUEUE);
     return;
   }
   if (!(await boss.getQueue(DB_BACKUP_QUEUE))) await boss.createQueue(DB_BACKUP_QUEUE, { retryLimit: 1, retryDelay: 600, expireInSeconds: 3600 });
   await boss.schedule(DB_BACKUP_QUEUE, schedule);
-  await boss.work(DB_BACKUP_QUEUE, { pollingIntervalSeconds: 60 }, async () => {
+  await boss.work(DB_BACKUP_QUEUE, { pollingIntervalSeconds }, async () => {
     const { key, sizeBytes } = await backups.run();
     console.log(`db backup: ${key} (${sizeBytes} bytes)`);
   });
+  if (await backups.isDue()) await boss.send(DB_BACKUP_QUEUE, {}, { singletonKey: 'catch-up', singletonSeconds: 3600 });
 }
 
 // --- Status --------------------------------------------------------------------------------
