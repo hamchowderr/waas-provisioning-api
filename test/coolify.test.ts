@@ -36,6 +36,8 @@ class FakeCloud {
     message: `WAAS_RESULT ${JSON.stringify(op === 'snapshot' ? { sizeBytes: 42 } : op === 'home' ? { home: 'https://shop.example.com' } : {})}`,
   });
   agentOps: { op: string; args: Record<string, unknown>; service: string }[] = [];
+  staged = new Map<string, string>();
+  longestCommand = 0;
   private seq = 0;
 
   fetch: typeof fetch = async (input, init) => {
@@ -106,14 +108,23 @@ class FakeCloud {
         return json(200, { message: 'Environment variable deleted.' });
       }
       if (rest === '/scheduled-tasks' && method === 'POST') {
+        // Coolify keeps the command in a varchar(255) and answers 500 past it.
+        if (body.command.length > 255) return json(500, { message: 'Server Error' });
+        this.longestCommand = Math.max(this.longestCommand, body.command.length);
         const uuid = `task-${++this.seq}`;
         this.tasks.set(uuid, { service: service.uuid, command: body.command, container: body.container, executions: [] });
         return json(201, { uuid, ...body });
       }
       if ((m = /^\/scheduled-tasks\/([^/]+)\/execute$/.exec(rest)) && method === 'POST') {
         const task = this.tasks.get(m[1]!)!;
-        const [, , op, arg] = task.command.split(' ');
-        const args = JSON.parse(Buffer.from(arg!, 'base64').toString());
+        const [, , op, arg, chunk] = task.command.split(' ');
+        if (op === 'stage') {
+          this.staged.set(arg!, (this.staged.get(arg!) ?? '') + chunk);
+          task.executions.push({ uuid: `exec-${++this.seq}`, status: 'success', message: 'WAAS_RESULT []' });
+          return json(200, { message: 'queued' });
+        }
+        const payload = arg!.startsWith('@') ? this.staged.get(arg!.slice(1))! : arg!;
+        const args = JSON.parse(Buffer.from(payload, 'base64').toString());
         this.agentOps.push({ op: op!, args, service: service.uuid });
         task.executions.push({ uuid: `exec-${++this.seq}`, ...this.agent(op!, args, service) });
         return json(200, { message: 'queued' });
@@ -235,6 +246,16 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.tasks.size).toBe(0);
   });
 
+  it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {
+    await p.createStore({ ...storeInput, wpOptions: { blogname: 'Example Store', blogdescription: 'x'.repeat(2000) } });
+    expect(cloud.staged.size).toBeGreaterThan(0);
+    expect(cloud.longestCommand).toBeLessThanOrEqual(255);
+    // The staged arguments arrive whole.
+    expect(cloud.agentOps.find((o) => o.op === 'configure')!.args.options).toEqual({ blogname: 'Example Store', blogdescription: 'x'.repeat(2000) });
+    expect(String(cloud.agentOps.find((o) => o.op === 'restore')!.args.url)).toContain('X-Amz-Signature=');
+    expect(cloud.tasks.size).toBe(0);
+  });
+
   it('is idempotent: a retried create reuses the Service', async () => {
     await p.createStore(storeInput);
     await p.createStore(storeInput);
@@ -291,11 +312,11 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.objects.has('backups/b-1.zip')).toBe(false);
   });
 
-  it('merges phpConstants into the existing set and restarts', async () => {
+  it('replaces the phpConstants with the complete set it is given, and restarts', async () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     const starts = store.started;
-    await p.updateStore({ storeId: STORE_ID, phpConstants: { WPCS_TENANT_ROLES: { value: 'editor' } }, wpOptions: { blogdescription: 'New' } });
+    await p.updateStore({ storeId: STORE_ID, phpConstants: { ...storeInput.phpConstants, WPCS_TENANT_ROLES: { value: 'editor' } }, wpOptions: { blogdescription: 'New' } });
     const constants = JSON.parse(Buffer.from(store.envs.get('WAAS_CONSTANTS_B64')!.value, 'base64').toString());
     expect(constants).toEqual({ WPCS_TENANT_ROLES: 'editor', API_SECRET: 'private-constant-value' });
     expect(store.started).toBe(starts + 1);

@@ -171,7 +171,21 @@ putenv('HOME=/tmp');
 umask(0022);
 
 $op = $argv[1] ?? '';
-$args = json_decode(base64_decode($argv[2] ?? '') ?: '{}', true);
+$raw = $argv[2] ?? '';
+// Arguments too long for one Coolify task command (255 characters) arrive in chunks first:
+// "stage <id> <chunk>" appends, then "<op> @<id>" reads the staged arguments and removes them.
+if ($op === 'stage') {
+    preg_match('/^[0-9a-f]{12}$/', $raw) || fail('bad stage id');
+    file_put_contents("/tmp/waas-args-$raw", $argv[3] ?? '', FILE_APPEND) !== false || fail('cannot stage arguments');
+    done();
+}
+if (substr($raw, 0, 1) === '@') {
+    $id = substr($raw, 1);
+    preg_match('/^[0-9a-f]{12}$/', $id) || fail('bad stage id');
+    $raw = (string) @file_get_contents("/tmp/waas-args-$id");
+    @unlink("/tmp/waas-args-$id");
+}
+$args = json_decode(base64_decode($raw) ?: '{}', true);
 if (!is_array($args)) fail('arguments are not base64 JSON');
 
 switch ($op) {

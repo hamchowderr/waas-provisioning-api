@@ -118,6 +118,13 @@ export class S3 {
     await S3.check(res, `copy to ${targetKey}`);
   }
 
+  /** Creates the bucket (for MinIO and tests; R2 buckets are made in the dashboard). Succeeds if it exists. */
+  async createBucket(): Promise<void> {
+    const res = await this.request('PUT', '');
+    if (res.status === 409) return; // BucketAlreadyOwnedByYou
+    await S3.check(res, 'create bucket');
+  }
+
   /** Deleting a missing object succeeds, as in S3. */
   async delete(key: string): Promise<void> {
     const res = await this.request('DELETE', key);

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import { CoolifyClient, type CoolifyService } from './client.ts';
-import { decodeConstants, encodeConstants, renderCompose } from './compose.ts';
+import { encodeConstants, renderCompose } from './compose.ts';
 
 export interface CoolifyProvisionerConfig {
   /** e.g. https://coolify.otakusolutions.io */
@@ -27,6 +27,10 @@ const STORES_ENV = 'stores';
 const VERSIONS_ENV = 'versions';
 /** On-demand tasks are created disabled; Coolify still wants a valid schedule (it rejects Feb 31st). */
 const NEVER = '0 0 1 1 *';
+const AGENT = 'php /tmp/waas-agent.php';
+/** Coolify stores a scheduled task's command in a varchar(255). */
+const MAX_COMMAND = 255;
+const STAGE_CHUNK = 200;
 
 /**
  * What the driver keeps in a Service's description, so it needs no table of its own. Coolify
@@ -180,13 +184,25 @@ export class CoolifyProvisioner implements Provisioner {
 
   /**
    * Runs one agent operation in the Service's agent container: an on-demand scheduled task,
-   * deleted afterwards because its command carries pre-signed URLs.
+   * deleted afterwards because its command can carry pre-signed URLs. Coolify keeps a task's
+   * command in 255 characters, so longer arguments are first staged in the container in chunks.
    */
   async exec(uuid: string, op: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const payload = b64(JSON.stringify(args));
+    const direct = `${AGENT} ${op} ${payload}`;
+    if (direct.length <= MAX_COMMAND) return this.runTask(uuid, op, direct);
+    const id = randomBytes(6).toString('hex');
+    for (let i = 0; i < payload.length; i += STAGE_CHUNK) {
+      await this.runTask(uuid, 'stage', `${AGENT} stage ${id} ${payload.slice(i, i + STAGE_CHUNK)}`);
+    }
+    return this.runTask(uuid, op, `${AGENT} ${op} @${id}`);
+  }
+
+  private async runTask(uuid: string, op: string, command: string): Promise<Record<string, unknown>> {
     const timeout = this.config.taskTimeoutSeconds ?? 1800;
     const task = await this.coolify.createTask(uuid, {
       name: `waas-${op}-${randomBytes(4).toString('hex')}`,
-      command: `php /tmp/waas-agent.php ${op} ${b64(JSON.stringify(args))}`,
+      command,
       container: 'agent',
       frequency: NEVER,
       timeout,
@@ -335,10 +351,9 @@ export class CoolifyProvisioner implements Provisioner {
 
   async updateStore({ storeId, wpOptions, phpConstants }: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant> }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    if (phpConstants && Object.keys(phpConstants).length) {
-      const current = (await this.coolify.listEnvs(store.uuid)).find((e) => e.key === 'WAAS_CONSTANTS_B64');
-      const merged = { ...decodeConstants(current?.real_value ?? current?.value), ...Object.fromEntries(Object.entries(phpConstants).map(([k, c]) => [k, c.value])) };
-      await this.coolify.setEnvs(store.uuid, { WAAS_CONSTANTS_B64: encodeConstants({}, merged) });
+    if (phpConstants) {
+      // The complete set (see Provisioner.updateStore); Coolify's API does not hand values back to merge with.
+      await this.coolify.setEnvs(store.uuid, { WAAS_CONSTANTS_B64: encodeConstants(phpConstants) });
       await this.restart(store.uuid);
     }
     if (wpOptions && Object.keys(wpOptions).length) await this.exec(store.uuid, 'configure', { options: wpOptions });

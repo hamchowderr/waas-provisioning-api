@@ -83,19 +83,10 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
 }
 
 /** The phpConstants as the WAAS_CONSTANTS_B64 value: base64 of a JSON object of name → value. */
-export function encodeConstants(constants: Record<string, { value: string }>, extra: Record<string, string> = {}): string {
-  const plain = { ...Object.fromEntries(Object.entries(constants).map(([name, c]) => [name, c.value])), ...extra };
+export function encodeConstants(constants: Record<string, { value: string }>): string {
+  const plain = Object.fromEntries(Object.entries(constants).map(([name, c]) => [name, c.value]));
   for (const name of Object.keys(plain)) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Invalid PHP constant name: ${name}`);
   }
   return Buffer.from(JSON.stringify(plain)).toString('base64');
-}
-
-export function decodeConstants(b64: string | undefined): Record<string, string> {
-  if (!b64) return {};
-  try {
-    return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-  } catch {
-    return {};
-  }
 }
