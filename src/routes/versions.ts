@@ -7,6 +7,7 @@ import { compact, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
+import { dnsSafeLabel } from '../tenants.ts';
 
 interface CreateVersionParams {
   name: string;
@@ -90,9 +91,9 @@ export function versionService({ config, pool, boss, provisioner }: Deps) {
     if (missing.length) throw badRequest(`Snapshot ${missing.join(', ')} not found or not ready`);
 
     const id = randomUUID();
-    const base = slug(body.name);
+    const base = dnsSafeLabel(slug(body.name), 'v');
     const taken = await pool.query('SELECT 1 FROM versions WHERE domain = $1', [`${base}.${config.versionsDomain}`]);
-    const domain = `${taken.rowCount ? `${base}-${id.slice(0, 8)}` : base}.${config.versionsDomain}`;
+    const domain = `${taken.rowCount ? dnsSafeLabel(`${base}-${id.slice(0, 8)}`, 'v') : base}.${config.versionsDomain}`;
     const uploadUrl = upload ? await provisioner.createUploadUrl({ versionId: id, asZip: body.asZip === true }) : undefined;
 
     await withTransaction(pool, async (client) => {
