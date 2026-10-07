@@ -55,7 +55,17 @@ export interface Provisioner {
   /** Replaces a store's files and database with a snapshot. */
   restoreStore(input: { storeId: string; snapshotId: string }): Promise<void>;
 
-  /** Stops serving a store (it answers 503) while keeping its data and domains; resume undoes it. */
+  /** Takes a full backup (files and database) of a store. Returns its size. */
+  backupStore(input: { storeId: string; backupId: string }): Promise<{ sizeBytes: number }>;
+
+  /** Deletes a backup. Called once a deleted tenant's backups pass their retention. */
+  deleteBackup(input: { backupId: string }): Promise<void>;
+
+  /**
+   * Stops serving a store while keeping its files, database and domains: every domain answers 503
+   * with a plain "store unavailable" page (no redirect), WordPress cron stops, and
+   * /wp-json/waas-client/v1/single_login/verify is unreachable. resumeStore undoes it.
+   */
   suspendStore(input: { storeId: string }): Promise<void>;
   resumeStore(input: { storeId: string }): Promise<void>;
 

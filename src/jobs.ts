@@ -5,7 +5,7 @@ import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, TENANT_SELECT } from './tenants.ts';
 
-export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets: Secrets): JobHandlers {
+export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets: Secrets, backupRetentionDays: number): JobHandlers {
   const setTenantStatus = (tenantId: string, status: number, onlyFrom?: number) =>
     pool.query(
       `UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 ${onlyFrom === undefined ? '' : 'AND status = $3'}`,
@@ -49,9 +49,26 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         }
         case 'tenant.delete':
           await provisioner.deleteStore({ storeId: data.tenantId });
+          await pool.query('UPDATE tenant_backups SET tenant_deleted_at = now() WHERE tenant_id = $1 AND tenant_deleted_at IS NULL', [data.tenantId]);
           await pool.query('DELETE FROM tenants WHERE id = $1', [data.tenantId]);
           return;
+        case 'tenant.suspend':
+          if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
+          await provisioner.suspendStore({ storeId: data.tenantId });
+          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+          return;
+        case 'tenant.resume':
+          await provisioner.resumeStore({ storeId: data.tenantId });
+          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+          return;
+        case 'tenant.backup':
+          await backUp(pool, provisioner, data.tenantId, data.backupId);
+          return;
       }
+    },
+
+    async maintenance() {
+      await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
     },
 
     async fail(data: JobData) {
@@ -72,6 +89,14 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           return;
         case 'tenant.delete':
           await setTenantStatus(data.tenantId, Status.Failed);
+          return;
+        case 'tenant.suspend':
+        case 'tenant.resume':
+          if ('backupId' in data && data.backupId) await failBackup(pool, data.backupId);
+          await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
+        case 'tenant.backup':
+          await failBackup(pool, data.backupId);
           return;
       }
     },
@@ -127,4 +152,24 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
     user,
   });
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
+}
+
+async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, backupId: string) {
+  const { rows } = await pool.query('SELECT status FROM tenant_backups WHERE id = $1', [backupId]);
+  if (rows[0]?.status !== Status.Pending) return; // already taken on an earlier attempt
+  const { sizeBytes } = await provisioner.backupStore({ storeId: tenantId, backupId });
+  await pool.query('UPDATE tenant_backups SET status = $2, size_bytes = $3 WHERE id = $1', [backupId, Status.Done, sizeBytes]);
+}
+
+const failBackup = (pool: Pool, backupId: string) =>
+  pool.query('UPDATE tenant_backups SET status = $2 WHERE id = $1 AND status = $3', [backupId, Status.Failed, Status.Pending]);
+
+/** Deletes the backups of tenants deleted more than `retentionDays` ago. Safe to re-run. */
+export async function purgeExpiredBackups(pool: Pool, provisioner: Provisioner, retentionDays: number): Promise<number> {
+  const { rows } = await pool.query('SELECT id FROM tenant_backups WHERE tenant_deleted_at < now() - make_interval(days => $1)', [retentionDays]);
+  for (const { id } of rows) {
+    await provisioner.deleteBackup({ backupId: id });
+    await pool.query('DELETE FROM tenant_backups WHERE id = $1', [id]);
+  }
+  return rows.length;
 }

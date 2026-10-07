@@ -36,12 +36,12 @@ export async function setup(): Promise<TestContext> {
   await admin.end();
 
   await migrate(TEST_DATABASE_URL);
-  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', secretsKey: TEST_SECRETS_KEY };
+  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', secretsKey: TEST_SECRETS_KEY, backupRetentionDays: 90 };
   const pool = createPool(TEST_DATABASE_URL);
   const boss = await startBoss(TEST_DATABASE_URL, { retryDelaySeconds: 1 });
   const provisioner = new FakeProvisioner();
   const secrets = new Secrets(TEST_SECRETS_KEY);
-  await startWorker(boss, createJobHandlers(pool, provisioner, secrets), 0.5);
+  await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays), 0.5);
   const app = createApp({ config, pool, boss, provisioner, secrets });
 
   const productId = (await pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Example storefront') RETURNING id")).rows[0]!.id;

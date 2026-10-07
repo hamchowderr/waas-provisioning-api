@@ -14,7 +14,7 @@ const boss = await startBoss(config.databaseUrl);
 // The only Provisioner until the store host is chosen (waas-api-2hl.4).
 const provisioner = new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
-await startWorker(boss, createJobHandlers(pool, provisioner, secrets));
+await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays));
 
 const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets }).fetch, port: config.port }, (info) =>
   console.log(`WaaS provisioning API listening on :${info.port} (fake provisioner)`),
