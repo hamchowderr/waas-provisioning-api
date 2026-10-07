@@ -1,0 +1,325 @@
+openapi: 3.0.1
+info:
+  title: WaaS Provisioning API - admin
+  version: 0.1.0
+  description: >-
+    Admin endpoints for the dashboard (waas-api-plu). Not part of the WPCS contract. They see every
+    product. Authenticate with `Authorization: Bearer <ADMIN_TOKEN>`; anything else, product keys
+    included, gets 403. When ADMIN_TOKEN is not set, every request gets 403.
+servers:
+  - url: http://localhost:4111
+    description: Local
+security:
+  - adminToken: []
+paths:
+  /admin/overview:
+    get:
+      operationId: adminOverview
+      summary: Counts, health and products
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Overview' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/tenants:
+    get:
+      operationId: adminListTenants
+      summary: Tenants across all products
+      parameters:
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: integer, minimum: 0, maximum: 3 } }
+        - { name: suspended, in: query, schema: { type: boolean } }
+        - { name: versionId, in: query, schema: { type: string, format: uuid } }
+        - name: q
+          in: query
+          description: 'Matches external id, name or any domain (case-insensitive substring).'
+          schema: { type: string }
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+      responses:
+        '200':
+          description: One page of tenants, newest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/TenantRow' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/tenants/{id}:
+    get:
+      operationId: adminGetTenant
+      summary: One tenant with domains, backups, recent jobs and failures
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The tenant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/backups:
+    get:
+      operationId: adminListBackups
+      summary: Backups across all products, including deleted tenants'
+      parameters:
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: tenantId, in: query, schema: { type: string, format: uuid } }
+        - { name: externalId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: integer, minimum: 0, maximum: 3 } }
+        - { name: tenantDeleted, in: query, schema: { type: boolean } }
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+      responses:
+        '200':
+          description: One page of backups, newest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Backup' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/jobs:
+    get:
+      operationId: adminListJobs
+      summary: Queued, running or failed jobs
+      description: Failed means failed its last retry; those are kept in the job_failures table until retried.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [queued, running, failed], default: queued } }
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+      responses:
+        '200':
+          description: One page of jobs, with counts for every tab
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    required: [state, counts, items]
+                    properties:
+                      state: { type: string, enum: [queued, running, failed] }
+                      counts: { $ref: '#/components/schemas/JobCounts' }
+                      items:
+                        type: array
+                        items:
+                          oneOf:
+                            - $ref: '#/components/schemas/Job'
+                            - $ref: '#/components/schemas/JobFailure'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/jobs/failures/{id}/retry:
+    post:
+      operationId: adminRetryFailure
+      summary: Re-queue a failed job
+      description: >-
+        Puts the record the job worked on back to Pending (Removing for a delete) and queues the same
+        job again. Only from Failed, so newer changes are never overwritten; otherwise 400.
+        Idempotent: retrying a retried failure returns it unchanged.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The failure record, now retried
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobFailure' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    adminToken: { type: http, scheme: bearer }
+  parameters:
+    page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    pageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Missing or wrong admin token
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      required: [statusCode, message]
+      additionalProperties: false
+      properties: { statusCode: { type: integer }, message: { type: string } }
+    StatusCounts:
+      type: object
+      required: [pending, done, failed, removing]
+      additionalProperties: false
+      properties:
+        pending: { type: integer }
+        done: { type: integer }
+        failed: { type: integer }
+        removing: { type: integer }
+    JobCounts:
+      type: object
+      required: [queued, running, failed]
+      additionalProperties: false
+      properties: { queued: { type: integer }, running: { type: integer }, failed: { type: integer } }
+    Overview:
+      type: object
+      required: [health, tenants, versions, backups, jobs, products]
+      additionalProperties: false
+      properties:
+        health:
+          type: object
+          required: [ok, database, queue]
+          additionalProperties: false
+          properties:
+            ok: { type: boolean }
+            database: { type: string, enum: [ok, down] }
+            queue: { type: string, enum: [ok, down] }
+        tenants:
+          type: object
+          additionalProperties: false
+          required: [pending, done, failed, removing, suspended]
+          properties:
+            pending: { type: integer }
+            done: { type: integer }
+            failed: { type: integer }
+            removing: { type: integer }
+            suspended: { type: integer }
+        versions: { $ref: '#/components/schemas/StatusCounts' }
+        backups: { $ref: '#/components/schemas/StatusCounts' }
+        jobs: { $ref: '#/components/schemas/JobCounts' }
+        products:
+          type: array
+          items:
+            type: object
+            required: [id, name, tenantCount]
+            additionalProperties: false
+            properties: { id: { type: string, format: uuid }, name: { type: string }, tenantCount: { type: integer } }
+    Page:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: { type: array }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    TenantRow:
+      type: object
+      additionalProperties: false
+      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, isSuspended, latestBackupAt, dateCreated]
+      properties:
+        id: { type: string, format: uuid }
+        externalId: { type: string }
+        name: { type: string }
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        versionId: { type: string, format: uuid }
+        versionName: { type: string }
+        mainDomain: { type: string, nullable: true }
+        domainCount: { type: integer }
+        statusCode: { type: integer, minimum: 0, maximum: 3 }
+        statusName: { type: string }
+        isSuspended: { type: boolean }
+        latestBackupAt: { type: string, format: date-time, nullable: true }
+        dateCreated: { type: string, format: date-time }
+    TenantDetail:
+      type: object
+      additionalProperties: false
+      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, isSuspended, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
+      properties:
+        id: { type: string, format: uuid }
+        externalId: { type: string }
+        name: { type: string }
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        versionId: { type: string, format: uuid }
+        versionName: { type: string }
+        snapshotName: { type: string }
+        snapshotGroupName: { type: string, nullable: true }
+        statusCode: { type: integer, minimum: 0, maximum: 3 }
+        statusName: { type: string }
+        isSuspended: { type: boolean }
+        dateSuspended: { type: string, format: date-time, nullable: true }
+        dateCreated: { type: string, format: date-time }
+        dateChanged: { type: string, format: date-time }
+        wpOptionNames: { type: array, items: { type: string }, description: Names only; values can be secret. }
+        phpConstantNames: { type: array, items: { type: string }, description: Names only; values can be secret. }
+        domains:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, domainName, isMainDomain, isBaseDomain]
+            properties:
+              id: { type: string, format: uuid }
+              domainName: { type: string }
+              isMainDomain: { type: boolean }
+              isBaseDomain: { type: boolean }
+        backups: { type: array, items: { $ref: '#/components/schemas/Backup' } }
+        recentJobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        failures: { type: array, items: { $ref: '#/components/schemas/JobFailure' } }
+    Backup:
+      type: object
+      additionalProperties: false
+      required: [id, tenantId, externalId, productId, reason, sizeBytes, statusCode, statusName, dateCreated, tenantDeletedAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        externalId: { type: string }
+        productId: { type: string, format: uuid }
+        reason: { type: string, enum: [manual, suspend] }
+        sizeBytes: { type: integer, nullable: true }
+        statusCode: { type: integer, minimum: 0, maximum: 3 }
+        statusName: { type: string }
+        dateCreated: { type: string, format: date-time }
+        tenantDeletedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true, description: When the backup is purged; null while its tenant exists. }
+    JobTarget:
+      type: object
+      required: [type, tenantId, versionId, backupId, baseSnapshotId]
+      properties:
+        type: { type: string, example: tenant.create }
+        tenantId: { type: string, format: uuid, nullable: true }
+        versionId: { type: string, format: uuid, nullable: true }
+        backupId: { type: string, format: uuid, nullable: true }
+        baseSnapshotId: { type: string, format: uuid, nullable: true }
+    Job:
+      allOf:
+        - $ref: '#/components/schemas/JobTarget'
+        - type: object
+          required: [id, state, attempts, createdOn]
+          properties:
+            id: { type: string, format: uuid }
+            state: { type: string, enum: [created, retry, active, completed, cancelled, failed] }
+            attempts: { type: integer }
+            createdOn: { type: string, format: date-time }
+            startedOn: { type: string, format: date-time, nullable: true }
+            startAfter: { type: string, format: date-time, nullable: true }
+            completedOn: { type: string, format: date-time, nullable: true }
+    JobFailure:
+      allOf:
+        - $ref: '#/components/schemas/JobTarget'
+        - type: object
+          required: [id, jobId, errorMessage, attempts, failedAt, status, retriedAt, retryJobId]
+          properties:
+            id: { type: string, format: uuid }
+            jobId: { type: string, format: uuid }
+            errorMessage: { type: string }
+            attempts: { type: integer }
+            failedAt: { type: string, format: date-time }
+            status: { type: string, enum: [failed, retried] }
+            retriedAt: { type: string, format: date-time, nullable: true }
+            retryJobId: { type: string, format: uuid, nullable: true }

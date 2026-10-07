@@ -108,7 +108,20 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
     },
 
-    async fail(data: JobData) {
+    async fail(data: JobData, error: unknown, job: { id: string; attempts: number }) {
+      await pool.query(
+        `INSERT INTO job_failures (job_id, job_type, job_data, tenant_id, version_id, error_message, attempts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          job.id,
+          data.type,
+          data,
+          'tenantId' in data ? data.tenantId : null,
+          'versionId' in data ? data.versionId : null,
+          error instanceof Error ? error.message : String(error),
+          job.attempts,
+        ],
+      );
       switch (data.type) {
         case 'version.create':
           await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [data.versionId, Status.Failed, Status.Pending]);

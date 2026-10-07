@@ -4,7 +4,8 @@ import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import { HttpError } from './errors.ts';
 import { authenticate } from './keys.ts';
-import { QUEUE } from './queue.ts';
+import { checkHealth } from './health.ts';
+import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
@@ -30,26 +31,11 @@ export function createApp(deps: Deps) {
   // For uptime monitoring; outside the WPCS contract and unauthenticated. 503 when Postgres or
   // the job queue doesn't answer within 3 seconds.
   app.get('/health', async (c) => {
-    const check = async (fn: () => Promise<unknown>) => {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([fn(), new Promise((_, reject) => (timer = setTimeout(() => reject(new Error('timeout')), 3000)))]);
-        return 'ok';
-      } catch {
-        return 'down';
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-    const [database, queue] = await Promise.all([
-      check(() => deps.pool.query('SELECT 1')),
-      check(async () => {
-        if (!(await deps.boss.getQueue(QUEUE))) throw new Error('queue missing');
-      }),
-    ]);
-    const ok = database === 'ok' && queue === 'ok';
-    return c.json({ ok, database, queue }, ok ? 200 : 503);
+    const health = await checkHealth(deps.pool, deps.boss);
+    return c.json(health, health.ok ? 200 : 503);
   });
+
+  app.route('/admin', adminRoutes(deps));
 
   // Basic auth with the API key as username and the secret as password. Any failure is 403,
   // not 401: the storefront plugin's connection test reads 403 as "invalid key or secret".
