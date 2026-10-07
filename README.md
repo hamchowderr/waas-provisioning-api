@@ -4,16 +4,17 @@ Provisioning API for the WaaS platform. It replaces the shut-down WPCS cloud and
 
 Contract first: the OpenAPI spec is the source of truth. The API is plain TypeScript: [Hono](https://hono.dev) for HTTP and [pg-boss](https://github.com/timgit/pg-boss) for the job queue, both on one Postgres database. Nothing in it is agentic and it never calls an LLM. The payment-processor audits are a separate Mastra service (waas-api-2hl.6); this API only queues work for it.
 
-Phase 1 is being built in slices. Implemented so far: versions (list, create, delete, set production), snapshots (list, download) and tenants (list, create, update options and constants, delete, move to a version). Tenant domains are next.
+All 17 Phase 1 operations are implemented: versions (list, create, delete, set production), snapshots (list, download), tenants (list, create, update options and constants, delete, move to a version) and tenant domains (list, add, remove, set main, availability, and the deprecated add). Store-side work runs on the fake provisioner until a host driver exists (waas-api-2hl.7).
 
 ## How it works
 
 - Every request authenticates with Basic auth: the API key as username, the secret as password. Each key belongs to one product (one storefront). Only a scrypt hash of each secret is stored. Any bad credential gets 403.
 - Writes are asynchronous. The request validates, records the change with `statusCode` 0 (Pending) or 3 (Removing), queues a job in the same transaction, and returns. The job moves the record to 1 (Done), or 2 (Failed) after 3 retries, or deletes it.
-- Jobs for the same version (later, the same tenant) run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
+- Jobs for the same version, or the same tenant, run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
 - All work on the machines stores run on goes through the `Provisioner` interface (`src/provisioner/provisioner.ts`). The store host is not chosen yet (`docs/hosting.md`, waas-api-2hl.4), so the only implementation is an in-memory fake that succeeds at once. Its upload URLs and snapshot downloads are placeholders.
 - Request bodies are checked against the contract's schemas. Fields the contract doesn't define are dropped, not rejected.
 - Values a store needs back in plain form (the first user's password, `phpConstants` marked `isPrivate`) can't be hashed, so they are encrypted with AES-256-GCM under `SECRETS_KEY` wherever they are stored, including queue jobs.
+- Domain names are bare lowercase hostnames and belong to one store only; version domains count as taken. Every domain change re-applies the tenant's full domain list in one job, with the tenant Pending until it finishes.
 - A tenant created without `externalId` gets its own id as `externalId`. A `tenantId` that isn't a UUID is looked up as an external ID (storefront plugin 2.2.7 sends it that way).
 
 ## Run locally
@@ -47,7 +48,7 @@ npm run typecheck
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/waas_test npm test
 ```
 
-The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; operations not built yet are listed as todo.
+The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 17 Phase 1 operations.
 
 ## Work tracking (beads)
 

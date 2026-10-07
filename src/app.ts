@@ -6,6 +6,7 @@ import { HttpError } from './errors.ts';
 import { authenticate } from './keys.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { Secrets } from './secrets.ts';
+import { domainRoutes } from './routes/domains.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
 import { tenantRoutes } from './routes/tenants.ts';
 import { versionRoutes } from './routes/versions.ts';
@@ -37,6 +38,7 @@ export function createApp(deps: Deps) {
     await next();
   });
 
+  app.route('/v1/tenants', domainRoutes(deps));
   app.route('/v1/tenants', tenantRoutes(deps));
   app.route('/v1/versions', versionRoutes(deps));
   app.route('/v1/snapshots', snapshotRoutes(deps));

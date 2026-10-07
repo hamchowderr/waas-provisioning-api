@@ -27,6 +27,12 @@ const implemented = [
   'updateTenantOptionsAndConstants',
   'deleteTenant',
   'moveTenantToAVersion',
+  'addDomainDeprecated',
+  'listTenantDomains',
+  'addTenantDomain',
+  'removeTenantDomain',
+  'setMainDomain',
+  'checkDomainAvailability',
 ];
 
 // Strict: no removeAdditional, so unknown response fields fail (the schemas set additionalProperties: false).
@@ -66,9 +72,9 @@ describe('contract coverage', () => {
     for (const id of implemented) expect(phase1.map((o) => o.operationId)).toContain(id);
   });
 
-  for (const op of phase1.filter((o) => !implemented.includes(o.operationId))) {
-    it.todo(`${op.operationId} (${op.method.toUpperCase()} ${op.path})`);
-  }
+  it('every Phase 1 operation is implemented and run below', () => {
+    expect(phase1.map((o) => o.operationId).filter((id) => !implemented.includes(id))).toEqual([]);
+  });
 });
 
 describe('Phase 1 operations', () => {
@@ -206,6 +212,64 @@ describe('Phase 1 operations', () => {
     });
   });
 
+  const tenantDomains = async () =>
+    (await (await t.call('GET', `/v1/tenants/domains?externalId=${tenant.externalId}`)).json()) as { id: string; domainName: string; isMainDomain: boolean }[];
+  const tenantDone = () =>
+    waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as { statusCode: number }[])[0]!.statusCode === Status.Done);
+
+  it('listTenantDomains', async () => {
+    const domains: any = await expectContract('listTenantDomains', await t.call('GET', `/v1/tenants/domains?externalId=${tenant.externalId}`));
+    expect(domains).toEqual([
+      expect.objectContaining({ domainName: tenant.baseDomain, isBaseDomain: true, isMainDomain: false }),
+      expect.objectContaining({ domainName: 'shop.example.com', isBaseDomain: false, isMainDomain: true }),
+    ]);
+  });
+
+  it('checkDomainAvailability', async () => {
+    expect(await expectContract('checkDomainAvailability', await t.call('GET', '/v1/tenants/domains/available?domain=shop.example.com'))).toEqual({ available: false });
+    expect(await expectContract('checkDomainAvailability', await t.call('GET', '/v1/tenants/domains/available?domain=new-shop.example.com'))).toEqual({ available: true });
+  });
+
+  it('addTenantDomain: the storefront switching to a new main domain', async () => {
+    // WPCSService.php:150: {domainName, setAsMainDomain: true}, then remove the old one.
+    expect(
+      await expectContract(
+        'addTenantDomain',
+        await t.call('POST', `/v1/tenants/domains?externalId=${tenant.externalId}`, { body: { domainName: 'new-shop.example.com', setAsMainDomain: true } }),
+      ),
+    ).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, domain: 'new-shop.example.com', setAsMainDomain: true });
+    await tenantDone();
+    const [found]: any = await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json();
+    expect(found.domainName).toBe('new-shop.example.com');
+    expect(t.provisioner.stores.get(tenant.id)!.mainDomain).toBe('new-shop.example.com');
+  });
+
+  it('removeTenantDomain', async () => {
+    expect(
+      await expectContract('removeTenantDomain', await t.call('DELETE', `/v1/tenants/domains?externalId=${tenant.externalId}&domainName=shop.example.com`)),
+    ).toMatchObject({ domainName: 'shop.example.com' });
+    await tenantDone();
+    expect((await tenantDomains()).map((d) => d.domainName)).toEqual([tenant.baseDomain, 'new-shop.example.com']);
+    expect(t.provisioner.stores.get(tenant.id)!.redirectDomains).toEqual([tenant.baseDomain]);
+  });
+
+  it('addDomainDeprecated', async () => {
+    expect(
+      await expectContract('addDomainDeprecated', await t.call('POST', `/v1/tenants/domain?externalId=${tenant.externalId}`, { body: { domainName: 'www.new-shop.example.com' } })),
+    ).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, domain: 'www.new-shop.example.com', setAsMainDomain: false });
+    await tenantDone();
+  });
+
+  it('setMainDomain', async () => {
+    const www = (await tenantDomains()).find((d) => d.domainName === 'www.new-shop.example.com')!;
+    expect(await expectContract('setMainDomain', await t.call('PUT', `/v1/tenants/domains/main?externalId=${tenant.externalId}`, { body: { domainId: www.id } }))).toEqual({
+      id: www.id,
+      domainName: 'www.new-shop.example.com',
+    });
+    await tenantDone();
+    expect((await tenantDomains()).find((d) => d.isMainDomain)!.id).toBe(www.id);
+  });
+
   it('deleteTenant: by a non-UUID tenantId (plugin 2.2.7 sends the external ID there)', async () => {
     await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?tenantId=${tenant.externalId}-x`).then(async (r) => {
       expect(r.status).toBe(400); // unknown
@@ -230,6 +294,9 @@ describe('Phase 1 operations', () => {
   });
 
   it('400 responses carry an ExceptionResult', async () => {
+    // A live tenant, so the domain cases fail on their own input and not on an unknown tenant.
+    const live = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Error Cases' } })).json()) as { externalId: string };
+    tenant = { ...tenant, externalId: live.externalId };
     const cases: [string, Promise<Response>][] = [
       ['createVersion', t.call('POST', '/v1/versions', { body: { name: 'v2' } })],
       ['deleteVersion', t.call('DELETE', '/v1/versions?versionId=not-a-uuid')],
@@ -240,6 +307,12 @@ describe('Phase 1 operations', () => {
       ['updateTenantOptionsAndConstants', t.call('PUT', '/v1/tenants', { body: {} })],
       ['deleteTenant', t.call('DELETE', '/v1/tenants')],
       ['moveTenantToAVersion', t.call('POST', '/v1/tenants/version?externalId=nobody', { body: { targetVersionId: crypto.randomUUID() } })],
+      ['addDomainDeprecated', t.call('POST', '/v1/tenants/domain?externalId=nobody', { body: { domainName: 'a.example.com' } })],
+      ['listTenantDomains', t.call('GET', '/v1/tenants/domains')],
+      ['addTenantDomain', t.call('POST', `/v1/tenants/domains?externalId=${tenant.externalId}`, { body: { domainName: 'not a domain' } })],
+      ['removeTenantDomain', t.call('DELETE', `/v1/tenants/domains?externalId=${tenant.externalId}`)],
+      ['setMainDomain', t.call('PUT', `/v1/tenants/domains/main?externalId=${tenant.externalId}`, { body: { domainName: 'elsewhere.example.com' } })],
+      ['checkDomainAvailability', t.call('GET', '/v1/tenants/domains/available?domain=https://shop.example.com')],
     ];
     for (const [operationId, res] of cases) {
       const r = await res;

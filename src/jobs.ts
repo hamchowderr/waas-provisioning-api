@@ -40,6 +40,13 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
+        case 'tenant.domains': {
+          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+          if (!rows[0]) return;
+          await provisioner.setDomains({ storeId: data.tenantId, mainDomain: rows[0].main_domain, redirectDomains: rows[0].redirect_domains });
+          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+          return;
+        }
         case 'tenant.delete':
           await provisioner.deleteStore({ storeId: data.tenantId });
           await pool.query('DELETE FROM tenants WHERE id = $1', [data.tenantId]);
@@ -60,6 +67,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.create':
         case 'tenant.update':
         case 'tenant.move':
+        case 'tenant.domains':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
         case 'tenant.delete':

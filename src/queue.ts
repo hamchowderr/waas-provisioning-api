@@ -21,6 +21,8 @@ export type JobData =
     }
   | { type: 'tenant.update'; tenantId: string; wpOptions?: Record<string, string>; phpConstantNames?: string[] }
   | { type: 'tenant.move'; tenantId: string; targetVersionId: string }
+  /** Applies the tenant's current domains from the database (main + redirects). */
+  | { type: 'tenant.domains'; tenantId: string }
   | { type: 'tenant.delete'; tenantId: string };
 
 function singletonKey(data: JobData): string {

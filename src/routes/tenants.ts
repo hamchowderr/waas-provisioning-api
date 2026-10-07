@@ -8,7 +8,7 @@ import { validateBody } from '../openapi.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
+import { domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
 
 interface CreateTenantParams {
   name: string;
@@ -95,8 +95,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     const baseDomain = `t-${id.slice(0, 8)}.${config.storesDomain}`;
     const customDomain = body.customDomainName?.trim() ? normalizeDomain(body.customDomainName) : undefined;
     if (customDomain) {
-      const inUse = await pool.query('SELECT 1 FROM tenant_domains WHERE domain_name = $1', [customDomain]);
-      if (inUse.rowCount) throw badRequest(`Domain ${customDomain} is already in use`);
+      if (await domainInUse(pool, customDomain)) throw badRequest(`Domain ${customDomain} is already in use`);
     }
 
     const userName = body.wordPressUserName ?? body.tenantName;

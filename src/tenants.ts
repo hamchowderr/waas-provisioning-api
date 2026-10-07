@@ -40,6 +40,15 @@ export function normalizeDomain(input: string): string {
   return domain;
 }
 
+/** Whether any store or version already answers on this domain. */
+export async function domainInUse(pool: Pool, domain: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM tenant_domains WHERE domain_name = $1 UNION ALL SELECT 1 FROM versions WHERE domain = $1',
+    [domain],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 export const TENANT_SELECT = `
   SELECT t.*, v.name AS version_name,
     (SELECT d.domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain,
