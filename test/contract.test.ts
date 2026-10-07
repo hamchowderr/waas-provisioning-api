@@ -8,12 +8,16 @@ import { setup, waitFor, type TestContext } from './helpers.ts';
 type Method = 'get' | 'post' | 'put' | 'delete';
 type Operation = { method: Method; path: string; operationId: string };
 
-const phase1: Operation[] = Object.entries(spec.paths).flatMap(([path, item]) =>
+const operations: (Operation & { phase: number })[] = Object.entries(spec.paths).flatMap(([path, item]) =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Object.entries(item as Record<string, any>)
-    .filter(([, op]) => op?.['x-phase'] === 1)
-    .map(([method, op]) => ({ method: method as Method, path, operationId: op.operationId })),
+    .filter(([, op]) => op?.['x-phase'])
+    .map(([method, op]) => ({ method: method as Method, path, operationId: op.operationId, phase: op['x-phase'] })),
 );
+const phase1 = operations.filter((o) => o.phase === 1);
+
+// Phase 2 operations that product keys may already use (contract draft.5).
+const earlyPhase2 = ['listBaseSnapshotsTemplates', 'createBaseSnapshotTemplateUpload', 'deleteBaseSnapshot'];
 
 const implemented = [
   'listVersions',
@@ -45,7 +49,7 @@ const ajv = createAjv();
 const checked = new Set<string>();
 
 async function expectContract(operationId: string, res: Response): Promise<unknown> {
-  const op = phase1.find((o) => o.operationId === operationId)!;
+  const op = operations.find((o) => o.operationId === operationId)!;
   const declared = spec.paths[op.path][op.method].responses[String(res.status)];
   expect(declared, `${operationId} returned ${res.status}, which the contract does not list`).toBeDefined();
   checked.add(`${operationId} ${res.status}`);
@@ -344,7 +348,8 @@ describe('Phase 1 operations', () => {
     const [newest] = await backupsOf(tenant.externalId);
     const res: any = await expectContract('restoreTenant', await t.call('POST', `/v1/tenants/restore?externalId=${tenant.externalId}`, { body: {} }));
     expect(res).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, backupId: newest.id });
-    expect((await getTenant()).statusCode).toBe(Status.Pending);
+    // Pending until the job runs; the fake host can finish before this read.
+    expect([Status.Pending, Status.Done]).toContain((await getTenant()).statusCode);
     await tenantDone();
     const restored = await getTenant();
     expect(restored).toMatchObject({ id: tenant.id, domainName: 'www.new-shop.example.com', isSuspended: false, dateSuspended: null });
@@ -364,6 +369,44 @@ describe('Phase 1 operations', () => {
     await expectContract('deleteVersion', await t.call('DELETE', `/v1/versions?versionId=${copyVersionId}`));
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${copyVersionId}`)).json()) as unknown[]).length === 0);
     expect(await (await t.call('GET', `/v1/snapshots?versionId=${copyVersionId}`)).json()).toEqual([]);
+  });
+
+  it('base snapshots: a template becomes a snapshot group on the production version, and a store is built from it', async () => {
+    const base: any = await expectContract(
+      'createBaseSnapshotTemplateUpload',
+      await t.call('POST', '/v1/basesnapshots', { body: { name: 'Peptide Base 2026', comment: 'Plain WordPress with WooCommerce' } }),
+    );
+    expect(base.uploadUrl).toMatch(/^https:\/\//);
+    const starter: any = await expectContract(
+      'createBaseSnapshotTemplateUpload',
+      await t.call('POST', '/v1/basesnapshots', {
+        body: { name: 'Peptide Starter', comment: 'Starter store', isTenantSnapshot: true, groupName: 'peptide-starter', showInConsole: true },
+      }),
+    );
+    const listed: any = await expectContract('listBaseSnapshotsTemplates', await t.call('GET', '/v1/basesnapshots?groupName=peptide-starter&onlyPartnerSpecific=true'));
+    expect(listed).toEqual([expect.objectContaining({ id: starter.id, isTenantSnapshot: true, groupName: 'peptide-starter', showAsBaseSnapshot: true })]);
+
+    // A version built from the base template, with the starter template copied in.
+    const version: any = await expectContract(
+      'createVersion',
+      await t.call('POST', '/v1/versions', {
+        body: { name: 'v2.0.0', phpVersion: '8.3', wordPressVersion: '6.8', snapshotId: base.id, snapshotIdsToCopy: [starter.id] },
+      }),
+    );
+    await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${version.id}`)).json()) as any[])[0]?.statusCode === Status.Done);
+    await t.call('PUT', '/v1/versions/production', { body: { versionId: version.id } });
+    const groups: any = await expectContract('listSnapshots', await t.call('GET', '/v1/snapshots?onlyProductionVersion=true&groupName=peptide-starter'));
+    expect(groups).toEqual([expect.objectContaining({ versionId: version.id, name: 'Peptide Starter', groupName: 'peptide-starter', isTenantSnapshot: true })]);
+
+    const store = (await (await t.call('POST', '/v1/tenants', { body: { name: 'From Template', groupName: 'peptide-starter' } })).json()) as any;
+    await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${store.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
+    const [built]: any = await (await t.call('GET', `/v1/tenants?externalId=${store.externalId}`)).json();
+    expect(built).toMatchObject({ versionId: version.id, basedOnSnapshotId: groups[0].id, snapshotGroupName: 'peptide-starter' });
+
+    // Deleting a template leaves the version's copy alone.
+    expect(await expectContract('deleteBaseSnapshot', await t.call('DELETE', `/v1/basesnapshots?id=${starter.id}`))).toEqual({ baseSnapshotId: starter.id });
+    expect(await (await t.call('GET', `/v1/basesnapshots?baseSnapshotId=${starter.id}`)).json()).toEqual([]);
+    expect(await (await t.call('GET', '/v1/snapshots?groupName=peptide-starter')).json()).toHaveLength(1);
   });
 
   it('400 responses carry an ExceptionResult', async () => {
@@ -391,6 +434,8 @@ describe('Phase 1 operations', () => {
       ['listTenantBackups', t.call('GET', '/v1/tenants/backups')],
       ['createTenantBackup', t.call('POST', '/v1/tenants/backups?externalId=store-9999')],
       ['restoreTenant', t.call('POST', `/v1/tenants/restore?externalId=${tenant.externalId}`, { body: { backupId: null } })],
+      ['createBaseSnapshotTemplateUpload', t.call('POST', '/v1/basesnapshots', { body: { name: 'abc', comment: 'too short a name' } })],
+      ['deleteBaseSnapshot', t.call('DELETE', `/v1/basesnapshots?id=${crypto.randomUUID()}`)],
     ];
     for (const [operationId, res] of cases) {
       const r = await res;
@@ -400,7 +445,7 @@ describe('Phase 1 operations', () => {
   });
 
   it('every implemented operation answers 403 to bad credentials', async () => {
-    for (const op of phase1.filter((o) => implemented.includes(o.operationId))) {
+    for (const op of operations.filter((o) => implemented.includes(o.operationId) || earlyPhase2.includes(o.operationId))) {
       const res = await t.call(op.method.toUpperCase(), op.path, { auth: 'Basic ' + Buffer.from('nobody:nothing').toString('base64') });
       expect(res.status, op.operationId).toBe(403);
       await expectContract(op.operationId, res);
@@ -408,6 +453,6 @@ describe('Phase 1 operations', () => {
   });
 
   it('checked a 200 for every implemented operation', () => {
-    for (const id of implemented) expect(checked.has(`${id} 200`), id).toBe(true);
+    for (const id of [...implemented, ...earlyPhase2]) expect(checked.has(`${id} 200`), id).toBe(true);
   });
 });

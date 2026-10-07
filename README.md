@@ -8,6 +8,7 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 
 ## How it works
 
+- `GET /health` (no auth, outside the WPCS contract) answers 200 `{ok, database, queue}` when Postgres and the job queue respond within 3 seconds, and 503 otherwise. It is meant for uptime monitoring.
 - Every request authenticates with Basic auth: the API key as username, the secret as password. Each key belongs to one product (one storefront). Only a scrypt hash of each secret is stored. Any bad credential gets 403.
 - Writes are asynchronous. The request validates, records the change with `statusCode` 0 (Pending) or 3 (Removing), queues a job in the same transaction, and returns. The job moves the record to 1 (Done), or 2 (Failed) after 3 retries, or deletes it.
 - Jobs for the same version, or the same tenant, run one at a time in arrival order (pg-boss `key_strict_fifo` queue), so a delete waits for the build before it.
@@ -63,13 +64,13 @@ The plugin fork is tracked separately in [`waas-plugins`](https://github.com/ham
 
 | File | What it is |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.4. Edit this. |
+| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.5. Edit this. |
 | `openapi/reference/wpcs-v1-corrected.json` | The original WPCS v1 spec, recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08) with 27 corrections. Reference only. |
 
 ### Phases
 
 - **Phase 1 (22 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Five are not in WPCS v1 (tag `TenantLifecycle`): suspend, resume, restore a deleted tenant, list backups and back up a tenant. The storefront suspends and backs up a store when its subscription is cancelled or expires, deletes it after a grace period, and resumes it if the subscription comes back first. If the subscription comes back after the deletion, it restores the store from its newest backup (kept 90 days after deletion), or creates a fresh store when there is none.
-- **Phase 2 (11 operations):** the reseller feature. Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Phase 1 calls then take `productId`.
+- **Phase 2 (11 operations):** the reseller feature. Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Phase 1 calls then take `productId`. The three base-snapshot operations already work with product keys (draft.5): a product's templates are created through the API and copied into a version with `createVersion`, which is how snapshot groups reach the storefront.
 
 Every operation carries `x-phase: 1` or `x-phase: 2`.
 
