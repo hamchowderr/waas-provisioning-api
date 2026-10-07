@@ -43,6 +43,25 @@ npm run dev
 
 Migrations run at startup. Settings: `DATABASE_URL` (required), `SECRETS_KEY` (required, 32 bytes base64; docker-compose sets a development value), `PORT` (default 4111), `STORES_DOMAIN` (default `stores.waas.example`; stores get `t-<id>.<STORES_DOMAIN>`), `VERSIONS_DOMAIN` (default `versions.waas.example`), `BACKUP_RETENTION_DAYS` (default 90; how long a deleted tenant's backups are kept).
 
+## Deployment
+
+The API runs on Otaku's Hostinger VPS through Coolify (https://coolify.otakusolutions.io), at **https://waas-api.otakusolutions.io**. It still uses the fake provisioner, so it serves test data only. No API keys have been created yet.
+
+| | |
+|---|---|
+| Coolify project | `WaaS API` (`4agsx9szalenyncprdbrffma`), environment `production` |
+| Application | `waas-api` (`pxht6lp0peqr4ucgijutnkks`): this repo, branch `main`, built from `Dockerfile`, port 4111, health check `GET /health`, through the Coolify GitHub App |
+| Database | `waas-api-db` (`iyrj7t91motv1kno8zmeg6pn`): Postgres 16, not public, reached by the app at host `iyrj7t91motv1kno8zmeg6pn` on Coolify's internal network. Coolify backs it up daily at 03:00 UTC and keeps the last 14 backups on the VPS (not off-site). |
+| DNS | A record `waas-api.otakusolutions.io` → `191.101.15.236`; Coolify's Traefik serves HTTPS with a Let's Encrypt certificate |
+
+Environment variables (values only in Coolify, under the application's Environment Variables): `DATABASE_URL`, `SECRETS_KEY`, `STORES_DOMAIN` and `VERSIONS_DOMAIN` (`stores.invalid` and `versions.invalid` until a store host is chosen).
+
+`SECRETS_KEY` is the only copy of the key that encrypts stored store passwords and private constants. It lives in Coolify's environment and nowhere else. If it is lost or changed, those values can no longer be decrypted. Never rotate it without a migration that re-encrypts them.
+
+Redeploying: every push to `main` deploys automatically. To redeploy by hand, use Deploy on the application in Coolify, or `POST /api/v1/deploy?uuid=pxht6lp0peqr4ucgijutnkks`. Migrations run at startup.
+
+To create a key in production, open the application's Terminal in Coolify and run `npm run create-key -- --product-name "<storefront>"`.
+
 ## Test
 
 ```sh
