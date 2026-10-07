@@ -20,7 +20,7 @@ A host's acceptance covers its own terms only. It does not change the stores' le
 flowchart LR
   subgraph H[Hostinger VPS: Otaku systems]
     SF[Storefront WP<br/>WaaS Host plugin]
-    API[Provisioning API<br/>Mastra]
+    API[Provisioning API<br/>TypeScript]
     CO[Coolify]
     REG[(API database)]
   end
