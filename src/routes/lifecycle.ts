@@ -7,7 +7,7 @@ import { isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { domainInUse, findTenant } from '../tenants.ts';
+import { checkTenantCap, domainInUse, findTenant } from '../tenants.ts';
 
 /** Suspend, resume and backups (contract draft.3, tag TenantLifecycle). Mounted at /v1/tenants. */
 export function lifecycleRoutes({ pool, boss }: Deps) {
@@ -142,6 +142,7 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
     if (!versions[0]) throw badRequest('There is no version to restore the tenant on');
 
     await withTransaction(pool, async (client) => {
+      await checkTenantCap(client, productId);
       await client.query(
         `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,

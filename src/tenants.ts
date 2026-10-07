@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import type { AppEnv } from './app.ts';
-import type { Pool } from './db.ts';
+import type { Client, Pool } from './db.ts';
 import { badRequest } from './errors.ts';
 import { compact, isUuid } from './http.ts';
 import type { PhpConstant } from './provisioner/provisioner.ts';
@@ -52,6 +52,21 @@ export function dnsSafeLabel(label: string, suffix: string): string {
 }
 
 /** Whether any store or version already answers on this domain. */
+/**
+ * Refuses a new tenant when the product is at its max_tenants (NULL: no limit). Call inside the
+ * transaction that inserts the tenant: the product row stays locked until it commits, so two
+ * requests can't both take the last place.
+ */
+export async function checkTenantCap(client: Client, productId: string): Promise<void> {
+  const { rows } = await client.query<{ max_tenants: number | null }>('SELECT max_tenants FROM products WHERE id = $1 FOR UPDATE', [productId]);
+  const max = rows[0]?.max_tenants;
+  if (max === null || max === undefined) return;
+  const { rows: count } = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE product_id = $1', [productId]);
+  if (count[0]!.n >= max) {
+    throw badRequest(`This storefront has reached its limit of ${max} store${max === 1 ? '' : 's'}; delete one or ask for a higher limit`);
+  }
+}
+
 export async function domainInUse(pool: Pool, domain: string): Promise<boolean> {
   const { rowCount } = await pool.query(
     'SELECT 1 FROM tenant_domains WHERE domain_name = $1 UNION ALL SELECT 1 FROM versions WHERE domain = $1',
