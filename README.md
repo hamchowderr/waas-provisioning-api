@@ -62,12 +62,12 @@ The plugin fork is tracked separately in [`waas-plugins`](https://github.com/ham
 
 | File | What it is |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.2. Edit this. |
+| `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.3. Edit this. |
 | `openapi/reference/wpcs-v1-corrected.json` | The original WPCS v1 spec, recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08) with 27 corrections. Reference only. |
 
 ### Phases
 
-- **Phase 1 (17 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls.
+- **Phase 1 (21 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Four are not in WPCS v1 (tag `TenantLifecycle`): suspend, resume, list backups and back up a tenant. The storefront suspends and backs up a store when its subscription is cancelled or expires, deletes it after a grace period, and resumes it if the subscription comes back first.
 - **Phase 2 (11 operations):** the reseller feature. Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Phase 1 calls then take `productId`.
 
 Every operation carries `x-phase: 1` or `x-phase: 2`.
@@ -102,6 +102,7 @@ Not visible in HTTP, but the Client plugin depends on them:
 Workspace **Peptide WaaS** holds:
 - the same spec
 - a collection generated from it (**WaaS Provisioning API**), with tests on all 17 Phase 1 requests and named examples
+  (the four `TenantLifecycle` requests from draft.3 are not in the collection yet; their spec examples are named `<request name>: <example>` for the import)
 - a public mock: `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`
 - two environments, **Mock** and **Local (Mastra)**
 
