@@ -367,24 +367,39 @@ export function adminRoutes(deps: Deps) {
   // the WPCS ones (listVersions, createVersion, deleteVersion, setProductionVersion and the
   // base-snapshot operations), with the product taken from the path.
 
-  app.get('/products', async (c) => {
+  async function products(id: string | null) {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, p.created_at,
+      `SELECT p.id, p.name, p.created_at, p.max_tenants,
          (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
          (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
          (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
-       FROM products p ORDER BY p.name, p.id`,
+       FROM products p WHERE ($1::uuid IS NULL OR p.id = $1) ORDER BY p.name, p.id`,
+      [id],
     );
-    return c.json(
-      rows.map((p) => ({
-        id: p.id,
-        name: p.name,
-        tenantCount: p.tenant_count,
-        versionCount: p.version_count,
-        productionVersionId: p.production_version_id,
-        dateCreated: iso(p.created_at),
-      })),
-    );
+    return rows.map((p) => ({
+      id: p.id,
+      name: p.name,
+      tenantCount: p.tenant_count,
+      maxTenants: p.max_tenants,
+      versionCount: p.version_count,
+      productionVersionId: p.production_version_id,
+      dateCreated: iso(p.created_at),
+    }));
+  }
+
+  app.get('/products', async (c) => c.json(await products(null)));
+
+  // The product's settings. Only maxTenants for now: the most tenants it may have, or null for no
+  // limit. Lowering it below the current count deletes nothing; it only stops new ones.
+  app.put('/products/:productId', async (c) => {
+    const productId = await product(c);
+    const body = (await readJson(c)) as { maxTenants?: unknown };
+    const max = body?.maxTenants;
+    if (max !== null && !(typeof max === 'number' && Number.isInteger(max) && max >= 0 && max <= 100000)) {
+      throw badRequest('maxTenants must be a whole number, 0 or more, or null for no limit');
+    }
+    await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
+    return c.json((await products(productId))[0]);
   });
 
   async function product(c: Context): Promise<string> {

@@ -38,6 +38,33 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Product' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/products/{productId}:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    put:
+      operationId: adminUpdateProduct
+      summary: A product's settings (maxTenants)
+      description: >-
+        maxTenants is the most tenants the product may have (null: no limit). At the limit,
+        createTenant and restoreTenant answer 400. Lowering it below the current count deletes
+        nothing; it only stops new tenants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [maxTenants]
+              properties: { maxTenants: { type: integer, minimum: 0, nullable: true } }
+      responses:
+        '200':
+          description: The product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/versions:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -381,11 +408,12 @@ components:
     Product:
       type: object
       additionalProperties: false
-      required: [id, name, tenantCount, versionCount, productionVersionId, dateCreated]
+      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         tenantCount: { type: integer }
+        maxTenants: { type: integer, nullable: true, description: 'The most tenants it may have; null is no limit' }
         versionCount: { type: integer }
         productionVersionId: { type: string, format: uuid, nullable: true }
         dateCreated: { type: string, format: date-time }

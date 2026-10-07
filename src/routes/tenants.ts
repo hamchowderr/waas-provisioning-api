@@ -8,7 +8,7 @@ import { validateBody } from '../openapi.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
+import { checkTenantCap, dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
 
 interface CreateTenantParams {
   name: string;
@@ -106,6 +106,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
 
     // The checks above give the usual answer; these constraints settle two requests racing past them.
     await withTransaction(pool, async (client) => {
+      await checkTenantCap(client, productId);
       await client.query(
         `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
