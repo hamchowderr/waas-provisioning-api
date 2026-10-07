@@ -152,7 +152,7 @@ class FakeCloud {
     this.services.set(uuid, {
       uuid,
       name: `version-${versionId}`,
-      description: JSON.stringify({ kind: 'version', wordPressVersion: '6.8', phpVersion: '8.3' }),
+      description: 'WaaS version, WordPress 6.8, PHP 8.3',
       environment_id: environmentId,
       compose: '',
       urls: [],
@@ -204,7 +204,7 @@ describe('CoolifyProvisioner', () => {
     expect(stores).toHaveLength(1);
     const store = stores[0]!;
     expect(store.environment_id).toBe(11);
-    expect(JSON.parse(store.description)).toEqual({ kind: 'store', versionId: VERSION_ID });
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}`);
     expect(store.urls).toEqual([{ name: 'wordpress', url: 'https://shop.example.com,https://t-0b8f6a0e.stores.example.com' }]);
     const compose = parse(store.compose);
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
@@ -256,7 +256,7 @@ describe('CoolifyProvisioner', () => {
     await p.buildVersion({ versionId: 'v2', domain: 'v2.versions.example.com', wordPressVersion: '6.8', phpVersion: '8.2', source: { baseSnapshotId: 'base-1' } });
     expect(cloud.calls).toContain(`POST /projects/${PROJECT}/environments`);
     const version = [...cloud.services.values()].find((s) => s.name === 'version-v2')!;
-    expect(JSON.parse(version.description)).toEqual({ kind: 'version', wordPressVersion: '6.8', phpVersion: '8.2' });
+    expect(version.description).toBe('WaaS version, WordPress 6.8, PHP 8.2');
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'code-export']);
   });
 
@@ -314,11 +314,11 @@ describe('CoolifyProvisioner', () => {
     await p.createStore(storeInput);
     cloud.addVersion('v9');
     const v9 = [...cloud.services.values()].find((s) => s.name === 'version-v9')!;
-    v9.description = JSON.stringify({ kind: 'version', wordPressVersion: '6.9', phpVersion: '8.4' });
+    v9.description = 'WaaS version, WordPress 6.9, PHP 8.4';
     await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(parse(store.compose).services.wordpress.image).toBe('wordpress:6.9-php8.4-apache');
-    expect(JSON.parse(store.description)).toEqual({ kind: 'store', versionId: 'v9' });
+    expect(store.description).toBe('WaaS store, version v9');
     expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['code-import', 'update-db']);
   });
 

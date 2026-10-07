@@ -12,3 +12,4 @@
 # Node
 node_modules/
 .env
+.smoke/

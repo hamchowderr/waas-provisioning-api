@@ -28,13 +28,17 @@ const VERSIONS_ENV = 'versions';
 /** Feb 31st: an on-demand task's schedule never fires. */
 const NEVER = '0 0 31 2 *';
 
-/** What the driver keeps in a Service's description, so it needs no table of its own. */
-interface VersionMeta {
+/**
+ * What the driver keeps in a Service's description, so it needs no table of its own. Coolify
+ * allows only letters, digits, spaces and some punctuation there (no JSON), hence a plain format:
+ * "WaaS version, WordPress 6.8, PHP 8.3" or "WaaS store, version <id>".
+ */
+export interface VersionMeta {
   kind: 'version';
   wordPressVersion: string;
   phpVersion: string;
 }
-interface StoreMeta {
+export interface StoreMeta {
   kind: 'store';
   versionId: string;
 }
@@ -131,7 +135,7 @@ export class CoolifyProvisioner implements Provisioner {
     if (!service) {
       const created = await this.coolify.createService({
         name: input.name,
-        description: JSON.stringify(input.meta),
+        description: formatMeta(input.meta),
         project_uuid: this.config.projectUuid,
         environment_name: input.envName,
         server_uuid: this.config.serverUuid,
@@ -344,7 +348,7 @@ export class CoolifyProvisioner implements Provisioner {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const version = await this.versionMeta(targetVersionId);
     await this.coolify.updateService(store.uuid, {
-      description: JSON.stringify({ kind: 'store', versionId: targetVersionId } satisfies StoreMeta),
+      description: formatMeta({ kind: 'store', versionId: targetVersionId }),
       docker_compose_raw: b64(renderCompose(version)),
     });
     await this.restart(store.uuid);
@@ -398,11 +402,13 @@ export class CoolifyProvisioner implements Provisioner {
   }
 }
 
-function parseMeta(description: string | null | undefined): VersionMeta | StoreMeta | null {
-  try {
-    const meta = JSON.parse(description ?? '');
-    return meta && (meta.kind === 'version' || meta.kind === 'store') ? meta : null;
-  } catch {
-    return null;
-  }
+export function formatMeta(meta: VersionMeta | StoreMeta): string {
+  return meta.kind === 'version' ? `WaaS version, WordPress ${meta.wordPressVersion}, PHP ${meta.phpVersion}` : `WaaS store, version ${meta.versionId}`;
+}
+
+export function parseMeta(description: string | null | undefined): VersionMeta | StoreMeta | null {
+  const version = /^WaaS version, WordPress ([\d.]+), PHP ([\d.]+)$/.exec(description ?? '');
+  if (version) return { kind: 'version', wordPressVersion: version[1]!, phpVersion: version[2]! };
+  const store = /^WaaS store, version ([\w-]+)$/.exec(description ?? '');
+  return store ? { kind: 'store', versionId: store[1]! } : null;
 }
