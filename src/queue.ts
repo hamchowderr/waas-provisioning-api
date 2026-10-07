@@ -1,0 +1,65 @@
+import { PgBoss, type JobWithMetadata } from 'pg-boss';
+import type { Client } from './db.ts';
+
+/**
+ * Slow store-side work runs as pg-boss jobs in the API's own Postgres database.
+ *
+ * One queue with the key_strict_fifo policy: jobs that share a singletonKey (one version, later
+ * one tenant) run one at a time in arrival order, so a delete waits for the build before it.
+ * Jobs with different keys run independently.
+ */
+export const QUEUE = 'provision';
+
+export type JobData =
+  | { type: 'version.create'; versionId: string; source: { snapshotId: string } | { upload: true } }
+  | { type: 'version.delete'; versionId: string };
+
+function singletonKey(data: JobData): string {
+  return `version:${data.versionId}`;
+}
+
+export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } = {}): Promise<PgBoss> {
+  const boss = new PgBoss({ connectionString: databaseUrl, schema: 'pgboss' });
+  boss.on('error', (err) => console.error('pg-boss:', err));
+  await boss.start();
+  if (!(await boss.getQueue(QUEUE))) {
+    await boss.createQueue(QUEUE, {
+      policy: 'key_strict_fifo',
+      retryLimit: 3,
+      retryDelay: retryDelaySeconds,
+      retryBackoff: true,
+      expireInSeconds: 3600,
+      deleteAfterSeconds: 7 * 24 * 3600,
+    });
+  }
+  return boss;
+}
+
+/** Queues a job inside the caller's transaction, so the job exists only if the row change commits. */
+export async function enqueue(boss: PgBoss, client: Client, data: JobData): Promise<void> {
+  await boss.send(QUEUE, data, {
+    singletonKey: singletonKey(data),
+    db: { executeSql: (text, values) => client.query(text, values) },
+  });
+}
+
+export interface JobHandlers {
+  run(data: JobData): Promise<void>;
+  /** Called once retries are used up. Records the Failed status. */
+  fail(data: JobData, error: unknown): Promise<void>;
+}
+
+export async function startWorker(boss: PgBoss, handlers: JobHandlers, pollingIntervalSeconds = 2): Promise<string> {
+  return boss.work(QUEUE, { includeMetadata: true, pollingIntervalSeconds }, async ([job]: JobWithMetadata<JobData>[]) => {
+    if (!job) return;
+    try {
+      await handlers.run(job.data);
+    } catch (err) {
+      if (job.retryCount < job.retryLimit) throw err;
+      // Last attempt: record Failed and complete the job. A failed job would hold back every
+      // later job with the same key until someone retries or deletes it.
+      console.error(`job ${job.id} (${job.data.type}) failed:`, err);
+      await handlers.fail(job.data, err);
+    }
+  });
+}
