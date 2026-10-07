@@ -109,6 +109,14 @@ export class FakeProvisioner implements Provisioner {
     return { sizeBytes };
   }
 
+  async restoreDeletedStore(input: Parameters<Provisioner['restoreDeletedStore']>[0]) {
+    this.check('restoreDeletedStore');
+    const backup = this.backups.get(input.backupId);
+    if (!backup || backup.storeId !== input.storeId) throw new Error(`FakeProvisioner: no backup ${input.backupId} of ${input.storeId}`);
+    const { backupId, ...store } = input;
+    this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false });
+  }
+
   async deleteBackup({ backupId }: { backupId: string }) {
     this.check('deleteBackup');
     this.backups.delete(backupId);

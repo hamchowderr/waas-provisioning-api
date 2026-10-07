@@ -58,6 +58,12 @@ export interface Provisioner {
   /** Takes a full backup (files and database) of a store. Returns its size. */
   backupStore(input: { storeId: string; backupId: string }): Promise<{ sizeBytes: number }>;
 
+  /**
+   * Re-creates a deleted store from one of its backups (files and database), on the given version
+   * and domains, with the constants and options it had when the backup was taken. Not suspended.
+   */
+  restoreDeletedStore(input: Omit<CreateStoreInput, 'snapshotId' | 'user'> & { backupId: string }): Promise<void>;
+
   /** Deletes a backup. Called once a deleted tenant's backups pass their retention. */
   deleteBackup(input: { backupId: string }): Promise<void>;
 

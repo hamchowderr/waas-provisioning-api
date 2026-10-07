@@ -4,7 +4,7 @@ Provisioning API for the WaaS platform. It replaces the shut-down WPCS cloud and
 
 Contract first: the OpenAPI spec is the source of truth. The API is plain TypeScript: [Hono](https://hono.dev) for HTTP and [pg-boss](https://github.com/timgit/pg-boss) for the job queue, both on one Postgres database. Nothing in it is agentic and it never calls an LLM. The payment-processor audits are a separate Mastra service (waas-api-2hl.6); this API only queues work for it.
 
-All 21 Phase 1 operations are implemented: versions (list, create, delete, set production), snapshots (list, download), tenants (list, create, update options and constants, delete, move to a version), tenant domains (list, add, remove, set main, availability, and the deprecated add) and tenant lifecycle (suspend, resume, list backups, back up). Store-side work runs on the fake provisioner until a host driver exists (waas-api-2hl.7).
+All 22 Phase 1 operations are implemented: versions (list, create, delete, set production), snapshots (list, download), tenants (list, create, update options and constants, delete, move to a version), tenant domains (list, add, remove, set main, availability, and the deprecated add) and tenant lifecycle (suspend, resume, restore a deleted tenant, list backups, back up). Store-side work runs on the fake provisioner until a host driver exists (waas-api-2hl.7).
 
 ## How it works
 
@@ -15,7 +15,7 @@ All 21 Phase 1 operations are implemented: versions (list, create, delete, set p
 - Request bodies are checked against the contract's schemas. Fields the contract doesn't define are dropped, not rejected.
 - Values a store needs back in plain form (the first user's password, `phpConstants` marked `isPrivate`) can't be hashed, so they are encrypted with AES-256-GCM under `SECRETS_KEY` wherever they are stored, including queue jobs.
 - Domain names are bare lowercase hostnames and belong to one store only; version domains count as taken. Every domain change re-applies the tenant's full domain list in one job, with the tenant Pending until it finishes.
-- Suspend takes a backup first unless `takeBackup` is false; suspend and resume are idempotent. Backups have no foreign key to their tenant: they stay listable after the tenant is deleted and a daily job (pg-boss schedule on the `maintenance` queue) deletes them `BACKUP_RETENTION_DAYS` after the deletion.
+- Suspend takes a backup first unless `takeBackup` is false; suspend and resume are idempotent. Backups have no foreign key to their tenant: they stay listable after the tenant is deleted and a daily job (pg-boss schedule on the `maintenance` queue) deletes them `BACKUP_RETENTION_DAYS` after the deletion. Each backup records the tenant's `wpOptions` and `phpConstants` when it was taken, and deleting a tenant stamps its name, version and domains on its backups, so restore can bring it back with the same id, `externalId` and domains (on its old version, or production if that version is gone).
 - A tenant created without `externalId` gets its own id as `externalId`. A `tenantId` that isn't a UUID is looked up as an external ID (storefront plugin 2.2.7 sends it that way).
 
 ## Run locally
@@ -49,7 +49,7 @@ npm run typecheck
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/waas_test npm test
 ```
 
-The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 21 Phase 1 operations.
+The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 22 Phase 1 operations.
 
 ## Work tracking (beads)
 
