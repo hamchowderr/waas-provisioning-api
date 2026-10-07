@@ -88,6 +88,10 @@ Open items:
 
 - Off-site backups. The database backups stay on the VPS only, so losing the VPS loses them too. Point Coolify's backups at S3-compatible storage.
 
+## Store templates
+
+`templates/` holds the build scripts for the base snapshots (templates) new stores are created from. [`templates/starter-fluentcart`](templates/starter-fluentcart/README.md) is the starter store: WordPress, WaaS Client, FluentCart and Twenty Twenty-Five. `build.sh` makes the archive, `publish.sh` uploads it through the API and creates a version from it.
+
 ## Test
 
 ```sh

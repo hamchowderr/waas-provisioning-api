@@ -13,3 +13,7 @@
 node_modules/
 .env
 .smoke/
+
+# Store template builds (templates/*/build.sh)
+templates/*/.work/
+templates/*/dist/
