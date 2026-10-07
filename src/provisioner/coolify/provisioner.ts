@@ -25,8 +25,8 @@ export interface CoolifyProvisionerConfig {
 
 const STORES_ENV = 'stores';
 const VERSIONS_ENV = 'versions';
-/** Feb 31st: an on-demand task's schedule never fires. */
-const NEVER = '0 0 31 2 *';
+/** On-demand tasks are created disabled; Coolify still wants a valid schedule (it rejects Feb 31st). */
+const NEVER = '0 0 1 1 *';
 
 /**
  * What the driver keeps in a Service's description, so it needs no table of its own. Coolify
