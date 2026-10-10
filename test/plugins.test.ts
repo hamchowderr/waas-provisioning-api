@@ -7,6 +7,7 @@ import { parse } from 'yaml';
 import { createApp } from '../src/app.ts';
 import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
+import { S3 } from '../src/provisioner/s3.ts';
 import { channelKey, manifestKey, parseManifest, S3ReleaseStore, type PluginSlug, type ReleaseStore } from '../src/releases.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
@@ -227,6 +228,23 @@ describe('S3ReleaseStore', () => {
   it('throws when the bucket answers with an error, so the route can 503', async () => {
     const s = new S3ReleaseStore(config, (async () => new Response('', { status: 500 })) as typeof fetch);
     await expect(s.getJson('releases/wpcs-waas-host/channels/stable.json')).rejects.toThrow('HTTP 500');
+  });
+
+  it('addresses the bucket by hostname when virtualHost is set, as R2 needs for a bucket-scoped key', async () => {
+    const urls: URL[] = [];
+    const fetchImpl = (async (url: string) => {
+      urls.push(new URL(url));
+      return new URL(url).searchParams.get('list-type') ? new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>') : new Response('{"version":"2.3.0"}');
+    }) as typeof fetch;
+    const s3 = new S3({ ...config, virtualHost: true }, fetchImpl);
+    await s3.getIfExists('releases/wpcs-waas-host/channels/beta.json');
+    await s3.list('releases/');
+    expect(urls.map((u) => `${u.host}${u.pathname}`)).toEqual([
+      'waas-releases.acct.r2.cloudflarestorage.com/releases/wpcs-waas-host/channels/beta.json',
+      'waas-releases.acct.r2.cloudflarestorage.com/',
+    ]);
+    const presigned = new URL(new S3ReleaseStore({ ...config, virtualHost: true }).presignGet('releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip', 600));
+    expect(`${presigned.host}${presigned.pathname}`).toBe('waas-releases.acct.r2.cloudflarestorage.com/releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip');
   });
 
   it("names the bucket's error code, and only the code, so a wrong key shows which setting it is", async () => {

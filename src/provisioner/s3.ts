@@ -1,12 +1,17 @@
 import { createHash, createHmac } from 'node:crypto';
 
 export interface S3Config {
-  /** e.g. https://<account>.r2.cloudflarestorage.com or a MinIO URL. Path-style addressing. */
+  /** e.g. https://<account>.r2.cloudflarestorage.com or a MinIO URL. Path-style addressing unless virtualHost. */
   endpoint: string;
   bucket: string;
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /**
+   * Address the bucket as a subdomain of the endpoint (<bucket>.<host>/<key>). R2 answers
+   * AccessDenied to a bucket-scoped token on path-style requests, so the releases bucket uses this.
+   */
+  virtualHost?: boolean;
 }
 
 const sha256 = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
@@ -33,12 +38,15 @@ export class S3 {
     private readonly now: () => Date = () => new Date(),
   ) {
     this.url = new URL(config.endpoint);
+    if (config.virtualHost) this.url.hostname = `${config.bucket}.${this.url.hostname}`;
   }
 
-  /** Path-style: /<bucket>/<key>, or /<bucket> for bucket-level calls (key ''). */
+  /** Path-style: /<bucket>/<key>, or /<bucket> for bucket-level calls (key ''). Virtual-host: /<key>, or /. */
   private path(key: string) {
-    const bucket = `${this.url.pathname.replace(/\/$/, '')}/${encode(this.config.bucket)}`;
-    return key === '' ? bucket : `${bucket}/${encode(key, true)}`;
+    const base = this.url.pathname.replace(/\/$/, '');
+    const bucket = this.config.virtualHost ? base : `${base}/${encode(this.config.bucket)}`;
+    if (key === '') return bucket || '/';
+    return `${bucket}/${encode(key, true)}`;
   }
 
   private scope(date: string) {
