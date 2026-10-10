@@ -229,6 +229,13 @@ describe('S3ReleaseStore', () => {
     await expect(s.getJson('releases/wpcs-waas-host/channels/stable.json')).rejects.toThrow('HTTP 500');
   });
 
+  it("names the bucket's error code, and only the code, so a wrong key shows which setting it is", async () => {
+    const body = '<?xml version="1.0" encoding="UTF-8"?><Error><Code>SignatureDoesNotMatch</Code><Message>Check your secret</Message><StringToSign>AWS4 not-a-secret</StringToSign></Error>';
+    const s = new S3ReleaseStore(config, (async () => new Response(body, { status: 403 })) as typeof fetch);
+    const err = await s.getJson('releases/wpcs-waas-host/channels/stable.json').catch((e: Error) => e);
+    expect((err as Error).message).toBe('S3 GET releases/wpcs-waas-host/channels/stable.json failed: HTTP 403 SignatureDoesNotMatch');
+  });
+
   it('presigns GETs of the zip without exposing the secret', () => {
     const url = new URL(new S3ReleaseStore(config).presignGet('releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip', 600));
     expect(url.pathname).toBe('/waas-releases/releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip');

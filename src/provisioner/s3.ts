@@ -112,7 +112,11 @@ export class S3 {
   }
 
   private static async check(res: Response, what: string) {
-    if (!res.ok) throw new Error(`S3 ${what} failed: HTTP ${res.status}`);
+    if (res.ok) return;
+    // The error's <Code> (AccessDenied, SignatureDoesNotMatch, InvalidAccessKeyId, ...) says which
+    // setting is wrong. Only the code: other fields of the body can echo the request.
+    const code = /<Code>([A-Za-z]{1,64})<\/Code>/.exec(await res.text().catch(() => ''))?.[1];
+    throw new Error(`S3 ${what} failed: HTTP ${res.status}${code ? ` ${code}` : ''}`);
   }
 
   /** Size in bytes, or null when the object does not exist. */
