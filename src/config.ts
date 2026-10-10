@@ -52,10 +52,11 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
  * key only needs read access to the releases bucket.
  */
 function loadReleases(env: NodeJS.ProcessEnv): S3Config | undefined {
-  const bucket = env.RELEASES_S3_BUCKET;
+  const bucket = env.RELEASES_S3_BUCKET?.trim();
   if (!bucket) return undefined;
   const why = 'when RELEASES_S3_BUCKET is set';
-  const pick = (name: string) => env[`RELEASES_${name}`] || env[name];
+  // Trimmed: a key pasted with a trailing newline otherwise signs every request wrong (R2 answers 403).
+  const pick = (name: string) => env[`RELEASES_${name}`]?.trim() || env[name]?.trim() || undefined;
   const need = (name: string) => {
     const value = pick(name);
     if (!value) throw new Error(`RELEASES_${name} or ${name} is required ${why}`);
