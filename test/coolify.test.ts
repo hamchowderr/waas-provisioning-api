@@ -531,4 +531,21 @@ describe('Provisioner selection', () => {
     });
     expect(config.coolify).toMatchObject({ url: COOLIFY, serverUuid: SERVER, projectUuid: PROJECT, token: undefined, s3: { region: 'auto' } });
   });
+
+  it('trims the release bucket settings, so a key pasted with a trailing newline still signs', () => {
+    expect(loadConfig(base).releases).toBeUndefined();
+    expect(loadConfig({ ...base, RELEASES_S3_BUCKET: ' \n' }).releases).toBeUndefined();
+    const releases = loadConfig({
+      ...base,
+      RELEASES_S3_BUCKET: 'waas-releases\n',
+      S3_ENDPOINT: `${S3_ENDPOINT}\n`,
+      S3_ACCESS_KEY_ID: 'BACKUPKEY',
+      S3_SECRET_ACCESS_KEY: 'backup-secret',
+      RELEASES_S3_ACCESS_KEY_ID: ' READKEY\n',
+      RELEASES_S3_SECRET_ACCESS_KEY: 'read-secret\r\n',
+    }).releases;
+    expect(releases).toEqual({ endpoint: S3_ENDPOINT, bucket: 'waas-releases', region: 'auto', accessKeyId: 'READKEY', secretAccessKey: 'read-secret' });
+    // A blank RELEASES_ value falls back to the backup one, as an unset one does.
+    expect(loadConfig({ ...base, RELEASES_S3_BUCKET: 'waas-releases', S3_ENDPOINT, S3_ACCESS_KEY_ID: 'BACKUPKEY', S3_SECRET_ACCESS_KEY: 'backup-secret', RELEASES_S3_ACCESS_KEY_ID: '\n' }).releases?.accessKeyId).toBe('BACKUPKEY');
+  });
 });
