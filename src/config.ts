@@ -68,6 +68,8 @@ function loadReleases(env: NodeJS.ProcessEnv): S3Config | undefined {
     region: pick('S3_REGION') ?? 'auto',
     accessKeyId: need('S3_ACCESS_KEY_ID'),
     secretAccessKey: need('S3_SECRET_ACCESS_KEY'),
+    // The releases key is scoped to this one bucket, and R2 refuses such keys on path-style requests.
+    virtualHost: true,
   };
 }
 

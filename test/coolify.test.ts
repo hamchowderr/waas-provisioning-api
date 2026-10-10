@@ -544,7 +544,7 @@ describe('Provisioner selection', () => {
       RELEASES_S3_ACCESS_KEY_ID: ' READKEY\n',
       RELEASES_S3_SECRET_ACCESS_KEY: 'read-secret\r\n',
     }).releases;
-    expect(releases).toEqual({ endpoint: S3_ENDPOINT, bucket: 'waas-releases', region: 'auto', accessKeyId: 'READKEY', secretAccessKey: 'read-secret' });
+    expect(releases).toEqual({ endpoint: S3_ENDPOINT, bucket: 'waas-releases', region: 'auto', accessKeyId: 'READKEY', secretAccessKey: 'read-secret', virtualHost: true });
     // A blank RELEASES_ value falls back to the backup one, as an unset one does.
     expect(loadConfig({ ...base, RELEASES_S3_BUCKET: 'waas-releases', S3_ENDPOINT, S3_ACCESS_KEY_ID: 'BACKUPKEY', S3_SECRET_ACCESS_KEY: 'backup-secret', RELEASES_S3_ACCESS_KEY_ID: '\n' }).releases?.accessKeyId).toBe('BACKUPKEY');
   });
