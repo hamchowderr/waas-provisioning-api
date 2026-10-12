@@ -7,6 +7,13 @@
  * Every method must be idempotent: a queue job can run more than once (retries, a worker that
  * looked dead), so calling a method again with the same input must not fail or duplicate work.
  */
+/** Who the "website unavailable" page credits: the platform, or later a reseller. */
+export interface Brand {
+  name: string;
+  /** http(s) link on the name; others are dropped. */
+  url?: string;
+}
+
 export interface Provisioner {
   // Versions: the shared WordPress code a set of stores runs on.
 
@@ -82,10 +89,11 @@ export interface Provisioner {
 
   /**
    * Stops serving a store while keeping its files, database and domains: every domain answers 503
-   * with a plain "store unavailable" page (no redirect), WordPress cron stops, and
-   * /wp-json/waas-client/v1/single_login/verify is unreachable. resumeStore undoes it.
+   * with the shared "website unavailable" page (no redirect), WordPress cron stops, and
+   * /wp-json/waas-client/v1/single_login/verify is unreachable. resumeStore undoes it. `brand`
+   * names whose platform the page credits; without it the provisioner's default (AnyPress).
    */
-  suspendStore(input: { storeId: string }): Promise<void>;
+  suspendStore(input: { storeId: string; brand?: Brand }): Promise<void>;
   resumeStore(input: { storeId: string }): Promise<void>;
 
   deleteStore(input: { storeId: string }): Promise<void>;
