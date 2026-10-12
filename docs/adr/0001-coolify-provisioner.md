@@ -139,13 +139,20 @@ Custom domains: the customer adds a `CNAME` to their store's `t-<id8>.stores.<do
 
 **For now (owner's decision, 2026-10-07)** stores and versions use sslip.io, which needs no DNS: `STORES_DOMAIN=191.101.15.236.sslip.io` and `VERSIONS_DOMAIN=191.101.15.236.sslip.io`, so a store answers on `t-<id8>.191.101.15.236.sslip.io` with a real HTTP-01 certificate. sslip.io is fine for testing and early stores, but it is a third party's DNS and Let's Encrypt limits certificates per registered domain, so move to an owned domain before many stores go live.
 
-#### Switching to an owned domain later
+#### Switching to an owned domain
 
-The domain is configuration only; no code changes.
+**Chosen (2026-10-12): anypress.io.** A customer's store answers on `<website name>.anypress.io`: the storefront plugin's root domain setting (WaaS Host settings, `wpcs_host_settings_root_domain` = `anypress.io`) sends that name as the store's custom domain, checks it at checkout, and parks the store as "Needs New Name" if it turns out taken. Each store also keeps an internal base name `t-<id8>.stores.anypress.io`, and version sites live on `<slug>.versions.anypress.io`, so neither ever takes a name a customer might want. `PLATFORM_DOMAIN=anypress.io` makes the API refuse the apex and reserved names (`www`, `api`, `app`, `stores`, `versions`, … in `src/tenants.ts`) as "already in use".
 
-1. DNS for the new domain as above (`*.stores` and `*.versions`, A and AAAA to the VPS, grey cloud).
-2. Set `STORES_DOMAIN` and `VERSIONS_DOMAIN` on the waas-api app and redeploy. New stores and versions get names under the new domain at once.
-3. Existing stores keep their old base domain until moved. For each, add the new base domain with `addTenantDomain` and make it main with `setMainDomain`: `setDomains` adds the Traefik routers, the certificate is issued over HTTP-01, and `home`/`siteurl` and the database URLs are rewritten (`wp search-replace`). The old sslip.io name then 301s to the new one; remove it with `removeTenantDomain` once nothing links to it. Customers' custom domains are untouched.
+1. DNS in the anypress.io zone, all **DNS only (grey cloud)** so Traefik gets HTTP-01 certificates and terminates TLS itself:
+   | Type | Name | Content |
+   |---|---|---|
+   | A | `*` | `191.101.15.236` |
+   | A | `*.stores` | `191.101.15.236` |
+   | A | `*.versions` | `191.101.15.236` |
+
+   The `*.stores` and `*.versions` records keep those names answering whatever is added to the zone later. No AAAA records until IPv6 to the VPS is confirmed working: Let's Encrypt prefers IPv6, and a broken AAAA fails every certificate.
+2. Set `STORES_DOMAIN=stores.anypress.io`, `VERSIONS_DOMAIN=versions.anypress.io` and `PLATFORM_DOMAIN=anypress.io` on the waas-api app and redeploy. New stores and versions get names under the new domain at once.
+3. Existing stores keep their old base domain until moved. For each, add `<website name>.anypress.io` with `addTenantDomain` and make it main with `setMainDomain`: `setDomains` adds the Traefik routers, the certificate is issued over HTTP-01, and `home`/`siteurl` and the database URLs are rewritten (`wp search-replace`). The old sslip.io name then 301s to the new one (it stays: a base domain can't be removed). Update the storefront's subscription meta (`WPCS_DOMAIN_NAME_META`) to the new name so the customer's login link uses it. Customers' custom domains are untouched.
 4. Version sites: create new versions on the new domain, or move the existing ones the same way.
 5. Optional, later: the wildcard certificate (step 2 of the certificate plan above).
 

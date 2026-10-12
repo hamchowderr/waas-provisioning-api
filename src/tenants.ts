@@ -51,7 +51,6 @@ export function dnsSafeLabel(label: string, suffix: string): string {
   return /(^|-)\d+$/.test(label) ? `${label}-${suffix}` : label;
 }
 
-/** Whether any store or version already answers on this domain. */
 /**
  * Refuses a new tenant when the product is at its max_tenants (NULL: no limit). Call inside the
  * transaction that inserts the tenant: the product row stays locked until it commits, so two
@@ -67,7 +66,28 @@ export async function checkTenantCap(client: Client, productId: string): Promise
   }
 }
 
-export async function domainInUse(pool: Pool, domain: string): Promise<boolean> {
+/**
+ * Names under the platform domain that stores never get: the platform's own sites and services,
+ * now or later. A wildcard DNS record sends every other name to the store server.
+ */
+export const RESERVED_LABELS = new Set([
+  'about', 'account', 'accounts', 'admin', 'api', 'app', 'assets', 'auth', 'billing', 'blog', 'cdn', 'dashboard',
+  'dev', 'docs', 'email', 'ftp', 'help', 'imap', 'login', 'mail', 'mx', 'ns1', 'ns2', 'pop', 'portal', 'smtp',
+  'staging', 'static', 'status', 'store', 'stores', 'support', 'test', 'versions', 'webmail', 'www',
+]);
+
+/** Whether a domain is the platform domain itself or a reserved name directly under it. */
+export function isReservedDomain(domain: string, platformDomain: string | undefined): boolean {
+  if (!platformDomain) return false;
+  if (domain === platformDomain) return true;
+  if (!domain.endsWith(`.${platformDomain}`)) return false;
+  const label = domain.slice(0, -platformDomain.length - 1);
+  return RESERVED_LABELS.has(label);
+}
+
+/** Whether any store or version already answers on this domain, or the platform keeps it for itself. */
+export async function domainInUse(pool: Pool, domain: string, platformDomain?: string): Promise<boolean> {
+  if (isReservedDomain(domain, platformDomain)) return true;
   const { rowCount } = await pool.query(
     'SELECT 1 FROM tenant_domains WHERE domain_name = $1 UNION ALL SELECT 1 FROM versions WHERE domain = $1',
     [domain],

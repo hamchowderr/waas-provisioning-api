@@ -37,6 +37,19 @@ describe('tenant domains', () => {
     expect(await (await t.call('GET', '/v1/tenants/domains/available?domain=v1.versions.waas.example')).json()).toEqual({ available: false });
   });
 
+  it('keeps the platform domain and its reserved names for the platform', async () => {
+    const available = async (domain: string) =>
+      ((await (await t.call('GET', `/v1/tenants/domains/available?domain=${domain}`)).json()) as { available: boolean }).available;
+    for (const domain of ['waas.example', 'www.waas.example', 'API.waas.example', 'stores.waas.example']) expect(await available(domain), domain).toBe(false);
+    for (const domain of ['my-shop.waas.example', 'www.example.com', 'shop.www.waas.example']) expect(await available(domain), domain).toBe(true);
+
+    const create = await t.call('POST', '/v1/tenants', { body: { name: 'Www', customDomainName: 'www.waas.example' } });
+    expect(create.status).toBe(400);
+    expect(await create.text()).toContain('already in use');
+    const b = await newTenant('Named', 'named.waas.example');
+    expect((await t.call('POST', `/v1/tenants/domains?externalId=${b.externalId}`, { body: { domainName: 'app.waas.example' } })).status).toBe(400);
+  });
+
   it('treats re-adding its own domain as a no-op, or as set-main', async () => {
     const c = await newTenant('Repeat', 'repeat.example.com');
     const res = await t.call('POST', `/v1/tenants/domains?externalId=${c.externalId}`, { body: { domainName: c.baseDomain, setAsMainDomain: true } });
