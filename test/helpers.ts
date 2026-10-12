@@ -40,7 +40,7 @@ export async function setup(): Promise<TestContext> {
   await admin.end();
 
   await migrate(TEST_DATABASE_URL);
-  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', secretsKey: TEST_SECRETS_KEY, backupRetentionDays: 90, adminToken: TEST_ADMIN_TOKEN, provisioner: 'fake' };
+  const config: Config = { databaseUrl: TEST_DATABASE_URL, port: 0, storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example', platformDomain: 'waas.example', secretsKey: TEST_SECRETS_KEY, backupRetentionDays: 90, adminToken: TEST_ADMIN_TOKEN, provisioner: 'fake' };
   const pool = createPool(TEST_DATABASE_URL);
   const boss = await startBoss(TEST_DATABASE_URL, { retryDelaySeconds: 1 });
   const provisioner = new FakeProvisioner();

@@ -14,7 +14,7 @@ interface AddDomainParams {
 }
 
 /** Tenant-domain routes, mounted at /v1/tenants. Every change re-applies the domains in a queue job. */
-export function domainRoutes({ pool, boss }: Deps) {
+export function domainRoutes({ pool, boss, config }: Deps) {
   const app = new Hono<AppEnv>();
 
   async function changeableTenant(c: Context<AppEnv>) {
@@ -41,7 +41,7 @@ export function domainRoutes({ pool, boss }: Deps) {
     const setAsMain = body.setAsMainDomain === true;
     const { rows } = await pool.query('SELECT id FROM tenant_domains WHERE tenant_id = $1 AND domain_name = $2', [tenant.id, domain]);
     const existing = rows[0];
-    if (!existing && (await domainInUse(pool, domain))) throw badRequest(`Domain ${domain} is already in use`);
+    if (!existing && (await domainInUse(pool, domain, config.platformDomain))) throw badRequest(`Domain ${domain} is already in use`);
 
     if (!existing || setAsMain) {
       await applyDomains(tenant.id, async (client) => {
@@ -100,7 +100,7 @@ export function domainRoutes({ pool, boss }: Deps) {
   // 400 means "not a valid domain" to the storefront plugin; otherwise it reads `available`.
   app.get('/domains/available', async (c) => {
     const domain = normalizeDomain(c.req.query('domain') ?? '');
-    return c.json({ available: !(await domainInUse(pool, domain)) });
+    return c.json({ available: !(await domainInUse(pool, domain, config.platformDomain)) });
   });
 
   return app;
