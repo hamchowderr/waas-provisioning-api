@@ -376,6 +376,14 @@ describe('CoolifyProvisioner', () => {
     await p.suspendStore({ storeId: STORE_ID });
     await p.resumeStore({ storeId: STORE_ID });
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['suspend', 'resume']);
+    expect(cloud.agentOps[0]!.args).toEqual({ brand: { name: 'AnyPress' } });
+  });
+
+  it('brands the unavailable page with the suspend\'s brand over the default', async () => {
+    await p.createStore(storeInput);
+    cloud.agentOps = [];
+    await p.suspendStore({ storeId: STORE_ID, brand: { name: 'Reseller Co', url: 'https://reseller.example' } });
+    expect(cloud.agentOps[0]!.args).toEqual({ brand: { name: 'Reseller Co', url: 'https://reseller.example' } });
   });
 
   it('reports an agent failure with its message and still deletes the task', async () => {

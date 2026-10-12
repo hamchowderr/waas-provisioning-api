@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
+import type { Brand, CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import { CoolifyClient, type CoolifyService, type CoolifyTask } from './client.ts';
 import { encodeConstants, renderCompose } from './compose.ts';
@@ -26,7 +26,11 @@ export interface CoolifyProvisionerConfig {
   /** How long one agent command may run. */
   taskTimeoutSeconds?: number;
   pollMs?: number;
+  /** Who suspended stores' "website unavailable" page credits, unless a suspend names its own. */
+  brand?: Brand;
 }
+
+export const DEFAULT_BRAND: Brand = { name: 'AnyPress' };
 
 const STORES_ENV = 'stores';
 const VERSIONS_ENV = 'versions';
@@ -478,9 +482,9 @@ export class CoolifyProvisioner implements Provisioner {
     await this.s3.delete(keys.backup(backupId));
   }
 
-  async suspendStore({ storeId }: { storeId: string }) {
+  async suspendStore({ storeId, brand }: { storeId: string; brand?: Brand }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    await this.exec(store.uuid, 'suspend', {});
+    await this.exec(store.uuid, 'suspend', { brand: brand ?? this.config.brand ?? DEFAULT_BRAND });
   }
 
   async resumeStore({ storeId }: { storeId: string }) {

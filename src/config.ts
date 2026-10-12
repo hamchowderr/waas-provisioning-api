@@ -44,6 +44,9 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
       accessKeyId: required(env, 'S3_ACCESS_KEY_ID', why),
       secretAccessKey: required(env, 'S3_SECRET_ACCESS_KEY', why),
     },
+    brand: env.STORE_BRAND_NAME?.trim()
+      ? { name: env.STORE_BRAND_NAME.trim(), url: env.STORE_BRAND_URL?.trim() || undefined }
+      : undefined,
   };
 }
 

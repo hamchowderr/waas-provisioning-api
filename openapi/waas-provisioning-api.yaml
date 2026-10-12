@@ -348,7 +348,7 @@ paths:
       description: 'Phase 1 (storefront plugin). Not in WPCS v1.
 
 
-        Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a plain "store unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/waas-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
+        Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a shared "website unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/waas-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
 
 
         Idempotent: suspending a suspended tenant returns 200 and changes nothing (no second backup). Operations on one tenant run in the order they are received, so a later delete waits for the suspension and its backup to finish. Backups outlive the tenant: deleting a tenant does not delete its backups; they are kept for 90 days after the tenant is deleted.

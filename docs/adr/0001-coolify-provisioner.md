@@ -104,7 +104,7 @@ It runs as the agent container's user (33, like WordPress), skips a suspended st
 
 Run the `docker exec ...` part once by hand first: it prints `DELETE <n>`. It touches only execution history (status and output of past runs), never tasks, and covers every Coolify resource's tasks, not only stores'. (`docker exec coolify php artisan cleanup:database --yes --keep-days=7` would also work, but it trims sessions, the activity log and deployment history to 7 days as well.)
 
-Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
+Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. The 503 body is one shared "website unavailable" page (the agent's `render_unavailable_page`), branded per suspend and written to `wp-content/waas-unavailable.html`: Apache serves it as the 503 error document, and the guard mu-plugin serves it if a request reaches PHP. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
 
 ### Versions, snapshots and object storage
 

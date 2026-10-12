@@ -9,9 +9,13 @@
  * and exits 1. It never prints its arguments: they carry pre-signed URLs.
  */
 
-const ROOT = '/var/www/html';
+// WAAS_ROOT is for tests; in a store it is always the WordPress volume.
+define('ROOT', getenv('WAAS_ROOT') ?: '/var/www/html');
 const CONTENT = ROOT . '/wp-content';
 const FLAG = CONTENT . '/.waas-suspended';
+/** The page a suspended store shows. Rendered on suspend; kept out of snapshots, so it never spreads to other stores. */
+const PAGE = CONTENT . '/waas-unavailable.html';
+const DEFAULT_BRAND = ['name' => 'AnyPress'];
 const WWW_UID = 33; // www-data in the Debian WordPress image (the Alpine CLI image's own is 82)
 
 function fail(string $message)
@@ -103,7 +107,7 @@ function zip_dir(ZipArchive $zip, string $dir, string $prefix): void
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     foreach ($it as $path => $info) {
         $rel = substr($path, strlen($dir) + 1);
-        if ($rel === '.waas-suspended' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
+        if ($rel === '.waas-suspended' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
         if ($info->isDir()) $zip->addEmptyDir("$prefix/$rel");
         elseif ($info->isFile()) $zip->addFile($path, "$prefix/$rel");
     }
@@ -131,9 +135,64 @@ function set_home(string $home): void
     wp('option', 'update', 'siteurl', $home);
 }
 
-/** The mu-plugin and .htaccess block behind suspension and redirect domains. */
-function install_guard(): void
+/**
+ * The "website unavailable" page every suspended store shows, branded with the platform's (or,
+ * later, a reseller's) name and optional link. Self-contained: no scripts, fonts or images to load.
+ */
+function render_unavailable_page(array $brand): string
 {
+    $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    $name = trim((string) ($brand['name'] ?? '')) ?: DEFAULT_BRAND['name'];
+    $url = (string) ($brand['url'] ?? '');
+    if (!preg_match('#^https?://[^\s"<>]+$#i', $url)) $url = '';
+    $mark = $url !== '' ? '<a class="brand" href="' . $e($url) . '">' . $e($name) . '</a>' : '<span class="brand">' . $e($name) . '</span>';
+    return <<<HTML
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Website unavailable</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#14161f;--muted:#5b6172;--line:#e3e6ef;--accent:#4f46e5}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1017;--card:#171a24;--text:#eef0f6;--muted:#a3a9ba;--line:#2a2f3d;--accent:#8b85ff}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--text);
+font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{width:100%;max-width:480px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:40px 32px;text-align:center}
+.icon{width:56px;height:56px;margin:0 auto 20px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
+h1{margin:0 0 12px;font-size:1.5rem;line-height:1.3}
+p{margin:0 0 12px;color:var(--muted)}
+footer{margin-top:28px;padding-top:20px;border-top:1px solid var(--line);font-size:.875rem;color:var(--muted)}
+.brand{color:var(--text);font-weight:600;text-decoration:none}
+a.brand:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+<div class="icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M10 15V9M14 15V9"/></svg></div>
+<h1>This website is temporarily unavailable</h1>
+<p>It isn&rsquo;t being served right now. Please check back later.</p>
+<p>If this is your website, contact your provider to bring it back online.</p>
+<footer>Powered by {$mark}</footer>
+</main>
+</body>
+</html>
+
+HTML;
+}
+
+/**
+ * The mu-plugin and .htaccess block behind suspension and redirect domains. $brand re-renders the
+ * unavailable page; without it the page already there is kept (or the default one written).
+ */
+function install_guard(?array $brand = null): void
+{
+    if ($brand !== null || !is_file(PAGE)) {
+        file_put_contents(PAGE, render_unavailable_page($brand ?? DEFAULT_BRAND)) !== false || fail('cannot write the unavailable page');
+    }
     @mkdir(CONTENT . '/mu-plugins', 0755, true);
     file_put_contents(CONTENT . '/mu-plugins/waas-guard.php', <<<'PHP'
 <?php
@@ -143,10 +202,17 @@ function install_guard(): void
  */
 if (defined('WP_CLI') && WP_CLI) return;
 if (file_exists(WP_CONTENT_DIR . '/.waas-suspended')) {
+    $waas_page = WP_CONTENT_DIR . '/waas-unavailable.html';
     header('HTTP/1.1 503 Service Unavailable', true, 503);
-    header('Content-Type: text/plain; charset=utf-8');
     header('Retry-After: 3600');
-    echo "Store unavailable\n";
+    header('Cache-Control: no-store');
+    if (is_file($waas_page)) {
+        header('Content-Type: text/html; charset=utf-8');
+        readfile($waas_page);
+    } else {
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "Website unavailable\n";
+    }
     exit;
 }
 $waas_home = strtolower((string) parse_url((string) get_option('home'), PHP_URL_HOST));
@@ -156,7 +222,10 @@ if ($waas_home !== '' && $waas_host !== '' && $waas_host !== $waas_home) {
     exit;
 }
 PHP);
-    $block = "# BEGIN WaaS\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteCond %{DOCUMENT_ROOT}/wp-content/.waas-suspended -f\nRewriteRule ^ - [R=503,L]\n</IfModule>\nErrorDocument 503 \"Store unavailable\"\n# END WaaS\n";
+    // Apache answers 503 before PHP runs, with the page as the error document (which itself is let through).
+    $block = "# BEGIN WaaS\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteCond %{DOCUMENT_ROOT}/wp-content/.waas-suspended -f\n"
+        . "RewriteCond %{REQUEST_URI} !^/wp-content/waas-unavailable\\.html$\nRewriteRule ^ - [R=503,L]\n</IfModule>\n"
+        . "ErrorDocument 503 /wp-content/waas-unavailable.html\n# END WaaS\n";
     $htaccess = ROOT . '/.htaccess';
     $current = is_file($htaccess) ? file_get_contents($htaccess) : '';
     $current = preg_replace('/# BEGIN WaaS\n.*?# END WaaS\n/s', '', $current);
@@ -202,6 +271,7 @@ switch ($op) {
         mkdir("$tmp/x");
         extract_archive("$tmp/archive", "$tmp/x");
         $suspended = file_exists(FLAG);
+        $page = is_file(PAGE) ? file_get_contents(PAGE) : null;
         $content = find_content("$tmp/x");
         if ($content) {
             run('rm -rf ' . CONTENT . '/* ' . CONTENT . '/.[!.]*', true);
@@ -217,6 +287,7 @@ switch ($op) {
         }
         set_home($args['home']);
         if ($suspended) touch(FLAG); else @unlink(FLAG);
+        if ($page !== null) file_put_contents(PAGE, $page);
         install_guard();
         done(['database' => $sql !== null, 'content' => $content !== null]);
     }
@@ -279,7 +350,7 @@ switch ($op) {
         done();
 
     case 'suspend':
-        install_guard();
+        install_guard(is_array($args['brand'] ?? null) ? $args['brand'] : DEFAULT_BRAND);
         touch(FLAG) || fail('cannot write the suspension flag');
         done();
 
