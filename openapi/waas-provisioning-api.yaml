@@ -2352,10 +2352,11 @@ components:
           example: store-1042
         reason:
           type: string
-          description: Why the backup was taken
+          description: Why the backup was taken. scheduled is a nightly backup of a live tenant (kept 7 days and 4 weeks by default).
           enum:
           - manual
           - suspend
+          - scheduled
           readOnly: true
           example: suspend
         dateCreated:
