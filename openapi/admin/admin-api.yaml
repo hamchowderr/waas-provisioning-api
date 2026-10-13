@@ -604,7 +604,7 @@ components:
         tenantId: { type: string, format: uuid }
         externalId: { type: string }
         productId: { type: string, format: uuid }
-        reason: { type: string, enum: [manual, suspend] }
+        reason: { type: string, enum: [manual, suspend, scheduled] }
         sizeBytes: { type: integer, nullable: true }
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
