@@ -52,11 +52,12 @@ With `TOSEND_ADMIN_KEY` set, a store can send from its owner's domain (e.g. `no-
 3. Once verified, the store gets a new key restricted to its domain, sends from `STORE_MAIL_FROM`'s name (`no-reply`) at it, and restarts once. The old key is revoked.
 4. `DELETE /admin/tenants/{id}/mail-domain` moves the store back to `STORE_MAIL_FROM` within 10 minutes and removes the domain from toSend. A deleted store's domain is removed from toSend too.
 
+Store owners can do the same from their account page on the storefront: the storefront plugin uses `GET`, `PUT` and `DELETE /v1/tenants/mail-domain?externalId=…` with its own API key ([openapi/store-mail.yaml](../openapi/store-mail.yaml)), which only reach that storefront's own stores.
+
 A store has at most one sending domain. The platform's own domain and its subdomains are refused, as is a domain another store or another toSend account already has.
 
 ## Not covered yet
 
-- Store owners adding their sending domain themselves (from the storefront plugin); today it is done from the dashboard.
 - Setting the DNS records automatically (Domain Connect).
 - Per-store sending limits, and a toSend team per customer (its own logs and suspension).
 - Without `TOSEND_ADMIN_KEY`, all stores share one key. A store admin cannot read it from wp-admin, but anyone able to run PHP in the store could.
