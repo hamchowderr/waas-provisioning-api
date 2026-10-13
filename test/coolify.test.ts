@@ -36,6 +36,8 @@ class FakeCloud {
   objects = new Map<string, Uint8Array>();
   calls: string[] = [];
   /** What the agent does for each command. Defaults to success. */
+  /** Like a token without read:sensitive: Coolify leaves `message` out of executions. */
+  hideOutput = false;
   agent: (op: string, args: Record<string, unknown>, service: Service) => { status: string; message: string } = (op) => ({
     status: 'success',
     message: `WAAS_RESULT ${JSON.stringify(op === 'snapshot' ? { sizeBytes: 42 } : op === 'home' ? { home: 'https://shop.example.com' } : {})}`,
@@ -153,7 +155,7 @@ class FakeCloud {
         task.executions.push({ uuid: `exec-${++this.seq}`, ...this.agent(op!, args, service) });
         return json(200, { message: 'queued' });
       }
-      if ((m = /^\/scheduled-tasks\/([^/]+)\/executions$/.exec(rest)) && method === 'GET') return json(200, this.tasks.get(m[1]!)!.executions);
+      if ((m = /^\/scheduled-tasks\/([^/]+)\/executions$/.exec(rest)) && method === 'GET') return json(200, this.tasks.get(m[1]!)!.executions.map(({ message, ...e }) => (this.hideOutput ? e : { ...e, message })));
       if ((m = /^\/scheduled-tasks\/([^/]+)$/.exec(rest)) && method === 'DELETE') {
         this.tasks.delete(m[1]!);
         return json(200, { message: 'Scheduled task deleted.' });
@@ -393,6 +395,12 @@ describe('CoolifyProvisioner', () => {
     await p.createStore(storeInput);
     cloud.agent = () => ({ status: 'failed', message: 'some output\nWAAS_ERROR wp db export exited 1: disk full\n' });
     await expect(p.snapshotStore({ storeId: STORE_ID, snapshotId: 'snap-2' })).rejects.toThrow('Store agent snapshot failed (failed): wp db export exited 1: disk full');
+    expect(onDemandTasks(cloud)).toEqual([]);
+  });
+
+  it('says the token needs read:sensitive when Coolify hides the task output', async () => {
+    cloud.hideOutput = true;
+    await expect(p.createStore(storeInput)).rejects.toThrow("Store agent ping: Coolify hid the task output; the API's COOLIFY_TOKEN needs the read:sensitive permission");
     expect(onDemandTasks(cloud)).toEqual([]);
   });
 
