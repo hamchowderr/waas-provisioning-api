@@ -26,9 +26,23 @@ export interface CoolifyProvisionerConfig {
   /** How long one agent command may run. */
   taskTimeoutSeconds?: number;
   pollMs?: number;
+  /** The relay stores send email through. Unset: stores send none (the WordPress image has no mailer). */
+  mail?: StoreMail;
   /** Who suspended stores' "website unavailable" page credits, unless a suspend names its own. */
   brand?: Brand;
 }
+
+/** An SMTP relay, e.g. Resend's. `from` must be on a domain verified with it. */
+export interface StoreMail {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+/** The store variable carrying StoreMail as base64 JSON (compose.ts, the waas-mail mu-plugin). */
+const MAIL_ENV = 'WAAS_MAIL_B64';
 
 export const DEFAULT_BRAND: Brand = { name: 'AnyPress' };
 
@@ -370,6 +384,8 @@ export class CoolifyProvisioner implements Provisioner {
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
     if (input.user?.password) envs.WAAS_INIT_PASSWORD = input.user.password;
+    const mail = this.mailEnv();
+    if (mail) envs[MAIL_ENV] = mail;
     const uuid = await this.ensureService({
       envName: STORES_ENV,
       name: storeName(input.storeId),
@@ -422,6 +438,34 @@ export class CoolifyProvisioner implements Provisioner {
       await this.restart(store.uuid);
     }
     return this.ensureCron(store.uuid);
+  }
+
+  private mailEnv(): string | undefined {
+    const mail = this.config.mail;
+    return mail && b64(JSON.stringify({ host: mail.host, port: mail.port, user: mail.user, pass: mail.pass, from: mail.from }));
+  }
+
+  /**
+   * Gives a store the current mail relay settings: a store created before stores sent email, or
+   * after the relay's settings changed (a new key). Such a store gets the variable, a compose that
+   * passes it to WordPress (re-rendered from its version, as ensureStoreCron does), one restart, and
+   * the mu-plugin. A store already holding the same settings is left alone, so this runs once.
+   */
+  async ensureStoreMail({ storeId }: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
+    const want = this.mailEnv();
+    if (!want) return 'unchanged';
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const current = (await this.coolify.listEnvs(store.uuid)).find((e) => e.key === MAIL_ENV);
+    if ((current?.real_value ?? current?.value) === want) return 'unchanged';
+    if (!current) {
+      const meta = parseMeta(store.description);
+      if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
+      await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
+    }
+    await this.coolify.setEnvs(store.uuid, { [MAIL_ENV]: want });
+    await this.restart(store.uuid);
+    await this.exec(store.uuid, 'configure', {});
+    return current ? 'updated' : 'created';
   }
 
   private async removeEnv(uuid: string, key: string) {

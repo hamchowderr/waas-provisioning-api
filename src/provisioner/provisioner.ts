@@ -104,6 +104,13 @@ export interface Provisioner {
    * stores created before it get it too.
    */
   ensureStoreCron(input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'>;
+
+  /**
+   * Makes sure a store sends email through the platform's mail relay with its current settings.
+   * createStore already does this; the API calls it for every live store on startup, so older
+   * stores, and every store after the relay's settings change, get it too.
+   */
+  ensureStoreMail(input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'>;
 }
 
 export interface PhpConstant {

@@ -203,7 +203,10 @@ class FakeCloud {
 const onDemandTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name !== CRON_TASK.name);
 const cronTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name === CRON_TASK.name);
 
-function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number } = {}) {
+const MAIL = { host: 'smtp.resend.com', port: 465, user: 'resend', pass: 're_test_not_real', from: 'store@mail.example' };
+const decode = (value: string | undefined) => value && JSON.parse(Buffer.from(value, 'base64').toString());
+
+function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL } = {}) {
   return new CoolifyProvisioner({
     ...extra,
     url: COOLIFY,
@@ -332,6 +335,54 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
     expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('gives a new store the mail relay settings as a variable, never in a command', async () => {
+    p = provisioner(cloud, { mail: MAIL });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual(MAIL);
+    expect(parse(store.compose).services.wordpress.environment.WAAS_MAIL_B64).toBe('${WAAS_MAIL_B64:-}');
+    expect(cloud.agentOps.map((o) => JSON.stringify(o.args)).join('\n')).not.toContain(MAIL.pass);
+    // Already up to date: nothing to do.
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
+  });
+
+  it('sets no mail variable when no relay is configured', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(store.envs.has('WAAS_MAIL_B64')).toBe(false);
+    cloud.calls = [];
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
+    expect(cloud.calls).toEqual([]);
+  });
+
+  it('backfills mail on an older store: new compose, the variable, one restart, then the mu-plugin', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.compose = 'old compose';
+    const starts = store.started;
+    cloud.agentOps = [];
+
+    p = provisioner(cloud, { mail: MAIL });
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('created');
+    expect(parse(store.compose).services.agent.environment.WAAS_MAIL_B64).toBe('${WAAS_MAIL_B64:-}');
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual(MAIL);
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'configure']);
+    expect(cloud.execsDuringRestart).toBe(0);
+
+    cloud.calls = [];
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
+    expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+
+    // A new key: the variable changes and the store restarts, keeping its compose.
+    store.compose = 'kept';
+    p = provisioner(cloud, { mail: { ...MAIL, pass: 're_rotated_not_real' } });
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('updated');
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value).pass).toBe('re_rotated_not_real');
+    expect(store.compose).toBe('kept');
+    expect(store.started).toBe(starts + 2);
   });
 
   it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {
@@ -490,7 +541,7 @@ describe('Store compose file', () => {
   it('uses `$` only for the variables Coolify fills in', () => {
     const compose = renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' });
     const vars = compose.match(/\$\{?[A-Za-z0-9_]*/g) ?? [];
-    expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_INIT_PASSWORD']));
+    expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_MAIL_B64', '${WAAS_INIT_PASSWORD']));
     const parsed = parse(compose);
     expect(Buffer.from(parsed.services.agent.environment.WAAS_AGENT_B64, 'base64').toString()).toBe(AGENT_SCRIPT);
   });
@@ -549,6 +600,30 @@ describe('Provisioner selection', () => {
       S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
     });
     expect(config.coolify).toMatchObject({ url: COOLIFY, serverUuid: SERVER, projectUuid: PROJECT, token: undefined, s3: { region: 'auto' } });
+  });
+
+  it('turns store mail on with STORE_SMTP_PASSWORD, defaulting to Resend', () => {
+    const coolify = {
+      ...base,
+      PROVISIONER: 'coolify',
+      COOLIFY_URL: COOLIFY,
+      COOLIFY_SERVER_UUID: SERVER,
+      COOLIFY_PROJECT_UUID: PROJECT,
+      S3_ENDPOINT: S3_ENDPOINT,
+      S3_BUCKET: 'waas-stores',
+      S3_ACCESS_KEY_ID: 'TESTKEY',
+      S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
+    };
+    expect(loadConfig(coolify).coolify?.mail).toBeUndefined();
+    expect(() => loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 're_x' })).toThrow(/STORE_MAIL_FROM/);
+    expect(loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 're_x\n', STORE_MAIL_FROM: 'store@mail.example' }).coolify?.mail).toEqual({
+      host: 'smtp.resend.com',
+      port: 465,
+      user: 'resend',
+      pass: 're_x',
+      from: 'store@mail.example',
+    });
+    expect(() => loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 'x', STORE_MAIL_FROM: 'a@b.example', STORE_SMTP_PORT: 'smtp' })).toThrow(/STORE_SMTP_PORT/);
   });
 
   it('trims the release bucket settings, so a key pasted with a trailing newline still signs', () => {
