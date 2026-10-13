@@ -11,6 +11,7 @@ import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { Status, statusName } from '../status.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
+import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { versionService } from './versions.ts';
 
@@ -328,6 +329,11 @@ export function adminRoutes(deps: Deps) {
     const from = config.coolify?.mail?.from;
     if (!from) throw badRequest('Stores send no email: STORE_SMTP_PASSWORD is not set on the API');
     return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, from) });
+  });
+
+  app.get('/tenants/:id/domain-connect', async (c) => {
+    const tenant = await mailTenant(c);
+    return c.json(await storeDomainConnect(deps, tenant.id, c.req.query('domainName'), c.req.query('service')));
   });
 
   app.delete('/tenants/:id/mail-domain', async (c) => {

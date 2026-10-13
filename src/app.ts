@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { PgBoss } from 'pg-boss';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
+import type { DomainConnectNet } from './domainconnect.ts';
 import { HttpError } from './errors.ts';
 import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
@@ -12,6 +13,7 @@ import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
 import { domainRoutes } from './routes/domains.ts';
 import { lifecycleRoutes } from './routes/lifecycle.ts';
+import { domainConnectRoutes } from './routes/domainconnect.ts';
 import { mailDomainRoutes } from './routes/maildomains.ts';
 import { pluginRoutes } from './routes/plugins.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
@@ -26,6 +28,8 @@ export interface Deps {
   secrets: Secrets;
   /** Plugin releases (waas-hw4); absent when RELEASES_S3_BUCKET is not set. */
   releases?: ReleaseStore;
+  /** DNS and HTTP for Domain Connect lookups; tests replace it. */
+  domainConnectNet?: DomainConnectNet;
 }
 
 export type AppEnv = { Variables: { productId: string } };
@@ -57,6 +61,7 @@ export function createApp(deps: Deps) {
 
   app.route('/v1/tenants', domainRoutes(deps));
   app.route('/v1/tenants', mailDomainRoutes(deps));
+  app.route('/v1/tenants', domainConnectRoutes(deps));
   app.route('/v1/tenants', lifecycleRoutes(deps));
   app.route('/v1/tenants', tenantRoutes(deps));
   app.route('/v1/versions', versionRoutes(deps));
