@@ -3,17 +3,21 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { createApiKey } from '../src/keys.ts';
 import { checkMailDomains } from '../src/maildomains.ts';
 import { createAjv } from '../src/openapi.ts';
 import type { StoreSender } from '../src/provisioner/provisioner.ts';
 import { Status } from '../src/status.ts';
 import type { SendingDomain, SendingDomains } from '../src/tosend.ts';
-import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const storeSpec: any = parse(readFileSync(new URL('../openapi/store-mail.yaml', import.meta.url), 'utf8'));
+ajv.addSchema({ components: storeSpec.components }, 'store');
 
 class FakeDomains implements SendingDomains {
   domains = new Map<string, SendingDomain>();
@@ -122,5 +126,40 @@ describe('store sending domains', () => {
     await checkMailDomains(t.pool, domains, t.provisioner, quiet);
     expect(domains.domains.size).toBe(0);
     expect((await t.pool.query('SELECT 1 FROM tenant_mail_domains')).rowCount).toBe(0);
+  });
+});
+
+describe('store sending domains from the storefront', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function storefront(method: string, query: string, expected = 200, body?: unknown, auth?: string): Promise<any> {
+    const res = await t.call(method, `/v1/tenants/mail-domain?${query}`, { body, auth });
+    const parsed = await res.json();
+    expect(res.status, `${method} ${query}: ${JSON.stringify(parsed)}`).toBe(expected);
+    const responses = storeSpec.paths['/v1/tenants/mail-domain'][method.toLowerCase()].responses[String(expected)];
+    const media = responses.$ref ? storeSpec.components.responses[responses.$ref.split('/').pop()].content : responses.content;
+    const validate = ajv.compile(JSON.parse(JSON.stringify(media['application/json'].schema).replaceAll('"#/components', '"store#/components')));
+    expect(validate(parsed), `${method}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+    return parsed;
+  }
+
+  it("lets a storefront set, read and remove its own store's sending domain, and nobody else's", async () => {
+    const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Plugin Shop' } })).json()) as { id: string; externalId: string };
+    await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
+    const q = `externalId=${tenant.externalId}`;
+
+    expect(await storefront('GET', q)).toEqual({ mailDomain: null });
+    const { mailDomain } = await storefront('PUT', q, 200, { domainName: 'plugin-shop.example' });
+    expect(mailDomain).toMatchObject({ domainName: 'plugin-shop.example', status: 'pending' });
+    expect((await storefront('GET', q)).mailDomain.records).toHaveLength(1);
+
+    const other = (await t.pool.query("INSERT INTO products (name) VALUES ('Other') RETURNING id")).rows[0].id;
+    const { key, secret } = await createApiKey(t.pool, other);
+    await storefront('GET', q, 400, undefined, basic(key, secret));
+    await storefront('PUT', q, 403, { domainName: 'x.example' }, 'Basic bm9wZTpub3Bl');
+
+    expect(await storefront('DELETE', q)).toEqual({ domainName: 'plugin-shop.example' });
+    await checkMailDomains(t.pool, domains, t.provisioner, quiet);
+    expect(await storefront('GET', q)).toEqual({ mailDomain: null });
+    await storefront('DELETE', q, 400);
   });
 });

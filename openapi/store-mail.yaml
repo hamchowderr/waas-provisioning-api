@@ -1,0 +1,122 @@
+openapi: 3.0.1
+info:
+  title: WaaS Provisioning API - store sending domains
+  version: 0.1.0
+  description: >-
+    A store's own sending domain (docs/store-email.md), for the storefront plugin's customer account
+    page. Not part of the WPCS contract. A storefront authenticates with its own API key and secret
+    (Basic auth, as for /v1) and names its tenant by externalId (or tenantId), as the WPCS tenant
+    endpoints do. The admin API has the same operations at /admin/tenants/{id}/mail-domain.
+servers:
+  - url: http://localhost:4111
+    description: Local
+security:
+  - basic: []
+paths:
+  /v1/tenants/mail-domain:
+    parameters:
+      - { name: externalId, in: query, schema: { type: string } }
+      - { name: tenantId, in: query, schema: { type: string } }
+    get:
+      operationId: getTenantMailDomain
+      summary: The store's own sending domain, with the DNS records to add
+      responses:
+        '200':
+          description: The sending domain, or null when the store sends from the platform's address
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mailDomain]
+                properties:
+                  mailDomain: { anyOf: [{ $ref: '#/components/schemas/MailDomain' }, { type: object, nullable: true, enum: [null] }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      operationId: setTenantMailDomain
+      summary: Give the store its own sending domain
+      description: >-
+        Adds the domain on toSend and returns the DNS records to add. The store keeps sending from the
+        platform's address until toSend has verified them (it checks every 10 minutes), then sends
+        from no-reply at the domain. Setting the domain it already has returns it. 400 when the domain
+        is invalid, the platform's, another store's or on another toSend account, or the store already
+        has a different one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainName]
+              properties:
+                domainName: { type: string, example: shop.example.com }
+      responses:
+        '200':
+          description: The sending domain
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mailDomain]
+                properties:
+                  mailDomain: { $ref: '#/components/schemas/MailDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      operationId: removeTenantMailDomain
+      summary: Move the store back to the platform's address
+      description: Within 10 minutes the store sends from the platform's address again and the domain leaves toSend. 400 when it has none.
+      responses:
+        '200':
+          description: The domain being removed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domainName]
+                properties:
+                  domainName: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    basic: { type: http, scheme: basic }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Invalid API key or secret
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [statusCode, message]
+      properties:
+        statusCode: { type: integer }
+        message: { type: string }
+    MailDomain:
+      type: object
+      required: [domainName, status, dateCreated, dateVerified, records]
+      properties:
+        domainName: { type: string }
+        status: { type: string, enum: [pending, verified, removing] }
+        dateCreated: { type: string, format: date-time }
+        dateVerified: { type: string, format: date-time, nullable: true }
+        records:
+          description: The records to add at the domain's DNS host; null when toSend could not be reached.
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [type, name, host, value, priority]
+            properties:
+              type: { type: string }
+              name: { type: string, description: 'Relative to the domain, as most DNS hosts want it' }
+              host: { type: string, description: The full hostname }
+              value: { type: string }
+              priority: { type: integer, nullable: true }

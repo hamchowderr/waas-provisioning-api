@@ -12,6 +12,7 @@ import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
 import { domainRoutes } from './routes/domains.ts';
 import { lifecycleRoutes } from './routes/lifecycle.ts';
+import { mailDomainRoutes } from './routes/maildomains.ts';
 import { pluginRoutes } from './routes/plugins.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
 import { tenantRoutes } from './routes/tenants.ts';
@@ -55,6 +56,7 @@ export function createApp(deps: Deps) {
   });
 
   app.route('/v1/tenants', domainRoutes(deps));
+  app.route('/v1/tenants', mailDomainRoutes(deps));
   app.route('/v1/tenants', lifecycleRoutes(deps));
   app.route('/v1/tenants', tenantRoutes(deps));
   app.route('/v1/versions', versionRoutes(deps));
