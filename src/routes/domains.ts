@@ -13,44 +13,60 @@ interface AddDomainParams {
   setAsMainDomain?: boolean;
 }
 
+/** Refuses a tenant that is being removed or has failed: its domains can't change. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function assertChangeable(tenant: any) {
+  if (tenant.status === Status.Removing || tenant.status === Status.Failed) {
+    throw badRequest(`Tenant ${tenant.external_id} is ${statusName(tenant.status)}`);
+  }
+}
+
+/** Marks the tenant Pending and queues a job that applies its domains. Runs inside `change`'s transaction. */
+async function applyDomains({ pool, boss }: Deps, tenantId: string, change: (client: Client) => Promise<void>) {
+  await withTransaction(pool, async (client) => {
+    await change(client);
+    await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenantId, Status.Pending]);
+    await enqueue(boss, client, { type: 'tenant.domains', tenantId });
+  });
+}
+
+/**
+ * Adds a domain to the tenant (a no-op when it already has it), optionally making it the main one.
+ * Shared by addTenantDomain and the admin dashboard's change of a store's address.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function addTenantDomain(deps: Deps, tenant: any, domainName: string, setAsMain: boolean) {
+  const { pool, config } = deps;
+  const domain = normalizeDomain(domainName);
+  const { rows } = await pool.query('SELECT id FROM tenant_domains WHERE tenant_id = $1 AND domain_name = $2', [tenant.id, domain]);
+  const existing = rows[0];
+  if (!existing && (await domainInUse(pool, domain, config.platformDomain))) throw badRequest(`Domain ${domain} is already in use`);
+
+  if (!existing || setAsMain) {
+    await applyDomains(deps, tenant.id, async (client) => {
+      if (setAsMain) await client.query('UPDATE tenant_domains SET is_main = false WHERE tenant_id = $1 AND is_main', [tenant.id]);
+      if (existing) await client.query('UPDATE tenant_domains SET is_main = true WHERE id = $1', [existing.id]);
+      else await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, $2, $3)', [tenant.id, domain, setAsMain]);
+    });
+  }
+  return { tenantId: tenant.id, externalId: tenant.external_id, domain, setAsMainDomain: setAsMain };
+}
+
 /** Tenant-domain routes, mounted at /v1/tenants. Every change re-applies the domains in a queue job. */
-export function domainRoutes({ pool, boss, config }: Deps) {
+export function domainRoutes(deps: Deps) {
+  const { pool, config } = deps;
   const app = new Hono<AppEnv>();
 
   async function changeableTenant(c: Context<AppEnv>) {
     const tenant = await findTenant(pool, c);
-    if (tenant.status === Status.Removing || tenant.status === Status.Failed) {
-      throw badRequest(`Tenant ${tenant.external_id} is ${statusName(tenant.status)}`);
-    }
+    assertChangeable(tenant);
     return tenant;
-  }
-
-  /** Marks the tenant Pending and queues a job that applies its domains. Runs inside `change`'s transaction. */
-  async function applyDomains(tenantId: string, change: (client: Client) => Promise<void>) {
-    await withTransaction(pool, async (client) => {
-      await change(client);
-      await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenantId, Status.Pending]);
-      await enqueue(boss, client, { type: 'tenant.domains', tenantId });
-    });
   }
 
   async function addDomain(c: Context<AppEnv>) {
     const tenant = await changeableTenant(c);
     const body = validateBody<AddDomainParams>('AddTenantDomainsParams', await readJson(c));
-    const domain = normalizeDomain(body.domainName);
-    const setAsMain = body.setAsMainDomain === true;
-    const { rows } = await pool.query('SELECT id FROM tenant_domains WHERE tenant_id = $1 AND domain_name = $2', [tenant.id, domain]);
-    const existing = rows[0];
-    if (!existing && (await domainInUse(pool, domain, config.platformDomain))) throw badRequest(`Domain ${domain} is already in use`);
-
-    if (!existing || setAsMain) {
-      await applyDomains(tenant.id, async (client) => {
-        if (setAsMain) await client.query('UPDATE tenant_domains SET is_main = false WHERE tenant_id = $1 AND is_main', [tenant.id]);
-        if (existing) await client.query('UPDATE tenant_domains SET is_main = true WHERE id = $1', [existing.id]);
-        else await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, $2, $3)', [tenant.id, domain, setAsMain]);
-      });
-    }
-    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, domain, setAsMainDomain: setAsMain });
+    return c.json(await addTenantDomain(deps, tenant, body.domainName, body.setAsMainDomain === true));
   }
 
   // Deprecated path, same behaviour.
@@ -78,7 +94,7 @@ export function domainRoutes({ pool, boss, config }: Deps) {
     const domain = await findDomain(tenant.id, uuidQuery(c, 'domainId'), c.req.query('domainName') || undefined);
     if (domain.is_main) throw badRequest('The main domain cannot be removed; set another domain as main first');
     if (domain.is_base) throw badRequest('The base domain cannot be removed');
-    await applyDomains(tenant.id, async (client) => {
+    await applyDomains(deps, tenant.id, async (client) => {
       await client.query('DELETE FROM tenant_domains WHERE id = $1', [domain.id]);
     });
     return c.json({ id: domain.id, domainName: domain.domain_name });
@@ -89,7 +105,7 @@ export function domainRoutes({ pool, boss, config }: Deps) {
     const body = validateBody<{ domainName?: string; domainId?: string }>('SetMainDomainParams', await readJson(c));
     const domain = await findDomain(tenant.id, body.domainId, body.domainName);
     if (!domain.is_main) {
-      await applyDomains(tenant.id, async (client) => {
+      await applyDomains(deps, tenant.id, async (client) => {
         await client.query('UPDATE tenant_domains SET is_main = false WHERE tenant_id = $1 AND is_main', [tenant.id]);
         await client.query('UPDATE tenant_domains SET is_main = true WHERE id = $1', [domain.id]);
       });
