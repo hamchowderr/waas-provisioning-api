@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { isUniqueViolation, withTransaction } from '../db.ts';
-import { badRequest } from '../errors.ts';
+import { badRequest, conflict } from '../errors.ts';
 import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
@@ -64,8 +64,9 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     // The storefront plugin never sends externalId; the tenant's id is a valid generated one.
     const externalId = body.externalId?.trim() || id;
     if (!EXTERNAL_ID.test(externalId)) throw badRequest('externalId can only contain letters, digits and -');
-    const taken = await pool.query('SELECT 1 FROM tenants WHERE product_id = $1 AND external_id = $2', [productId, externalId]);
-    if (taken.rowCount) throw badRequest(`externalId ${externalId} is already in use`);
+    // A repeat of a create that already went through (a retry whose answer was lost) gets that store back.
+    const existing = await existingTenant(productId, externalId, body);
+    if (existing) return c.json(existing);
 
     // Version: the one asked for, else production.
     const { rows: versions } = body.versionId
@@ -105,7 +106,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     if ((userName || userEmail) && !(userName && userEmail)) throw badRequest('wordPressUserName and wordPressUserEmail go together');
 
     // The checks above give the usual answer; these constraints settle two requests racing past them.
-    await withTransaction(pool, async (client) => {
+    const raced = await withTransaction(pool, async (client) => {
       await checkTenantCap(client, productId);
       await client.query(
         `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status)
@@ -136,15 +137,51 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
             ? { name: userName, email: userEmail, role: userRole || 'administrator', encryptedPassword: password ? secrets.encrypt(password) : undefined }
             : undefined,
       });
-    }).catch((err) => {
-      if (isUniqueViolation(err, 'tenants_product_id_external_id_key')) throw badRequest(`externalId ${externalId} is already in use`);
-      if (isUniqueViolation(err, 'tenant_domains_domain_name_key')) throw badRequest(`Domain ${customDomain} is already in use`);
-      throw err;
-    });
+    }).then(
+      () => null,
+      async (err) => {
+        // Two identical creates raced past the check above: the loser answers with the winner's store.
+        if (isUniqueViolation(err, 'tenants_product_id_external_id_key')) {
+          const winner = await existingTenant(productId, externalId, body);
+          if (winner) return winner;
+          throw conflict(`externalId ${externalId} is already in use`);
+        }
+        if (isUniqueViolation(err, 'tenant_domains_domain_name_key')) throw badRequest(`Domain ${customDomain} is already in use`);
+        throw err;
+      },
+    );
+    if (raced) return c.json(raced);
 
     // customDomain is left out, not null or "", when there is none.
     return c.json(compact({ id, externalId, baseDomain, customDomain }));
   });
+
+  /**
+   * The store already created with this externalId, as POST answered for it, when the request asks for that same
+   * store (same name, and the same domain, version, snapshot and group where they are given). Null when no store
+   * has the externalId; 409 when one has it but the request asks for something else, or it is being removed.
+   */
+  async function existingTenant(productId: string, externalId: string, body: CreateTenantParams) {
+    const { rows } = await pool.query(
+      `SELECT t.id, t.name, t.status, t.version_id, t.snapshot_id, t.snapshot_group_name,
+         (SELECT d.domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_base) AS base_domain,
+         COALESCE((SELECT array_agg(d.domain_name) FROM tenant_domains d WHERE d.tenant_id = t.id), '{}') AS domains
+       FROM tenants t WHERE t.product_id = $1 AND t.external_id = $2`,
+      [productId, externalId],
+    );
+    const t = rows[0];
+    if (!t) return null;
+    const customDomain = body.customDomainName?.trim() ? normalizeDomain(body.customDomainName) : undefined;
+    const same =
+      t.name === body.name &&
+      (!customDomain || t.domains.includes(customDomain)) &&
+      (!body.versionId || t.version_id === body.versionId) &&
+      (!body.snapshotId || t.snapshot_id === body.snapshotId) &&
+      (!body.groupName || t.snapshot_group_name === body.groupName);
+    if (!same) throw conflict(`externalId ${externalId} is already in use by another store`);
+    if (t.status === Status.Removing) throw conflict(`externalId ${externalId} belongs to a store that is being removed`);
+    return compact({ id: t.id, externalId, baseDomain: t.base_domain, customDomain });
+  }
 
   app.put('/', async (c) => {
     const tenant = await findTenant(pool, c);

@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import type { Deps } from '../app.ts';
 import { withTransaction, type Client } from '../db.ts';
@@ -87,6 +87,12 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
     }
     case 'tenant.backup':
       return backup(data.backupId);
+    case 'tenant.rollback': {
+      // A rollback whose first backup failed left the store untouched and Done (src/jobs.ts).
+      const untouched = !!data.safetyBackupId && (await backup(data.safetyBackupId));
+      if (untouched) return one('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status IN ($3, $4)', [data.tenantId, Status.Pending, Status.Done, Status.Failed]);
+      return tenant(data.tenantId, Status.Pending);
+    }
     case 'basesnapshot.delete':
       return true; // nothing recorded to reset; the archive delete is simply tried again
     default:
@@ -266,6 +272,38 @@ export function adminRoutes(deps: Deps) {
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     assertChangeable(rows[0]);
     return c.json(await addTenantDomain(deps, rows[0], body.domainName, true));
+  });
+
+  // Rolls a live store back to one of its own Done backups, in place (docs/store-backups.md). What
+  // the store holds now is backed up first ('before-restore') unless takeBackup is false.
+  app.post('/tenants/:id/restore', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const body = ((await readJson(c)) ?? {}) as { backupId?: unknown; takeBackup?: unknown };
+    if (typeof body.backupId !== 'string' || !isUuid(body.backupId)) throw badRequest('backupId is required');
+    if (body.takeBackup !== undefined && typeof body.takeBackup !== 'boolean') throw badRequest('takeBackup must be a boolean');
+    const { rows } = await pool.query('SELECT id, product_id, external_id, status FROM tenants WHERE id = $1', [id]);
+    const tenant = rows[0];
+    if (!tenant) throw notFound(`Tenant ${id} not found`);
+    assertChangeable(tenant);
+    const { rows: backups } = await pool.query('SELECT id FROM tenant_backups WHERE id = $1 AND tenant_id = $2 AND status = $3', [
+      body.backupId,
+      id,
+      Status.Done,
+    ]);
+    if (!backups[0]) throw badRequest(`Backup ${body.backupId} is not a Done backup of this store`);
+    const safetyBackupId = body.takeBackup === false ? null : randomUUID();
+    await withTransaction(pool, async (client) => {
+      if (safetyBackupId) {
+        await client.query(
+          "INSERT INTO tenant_backups (id, product_id, tenant_id, external_id, reason) VALUES ($1, $2, $3, $4, 'before-restore')",
+          [safetyBackupId, tenant.product_id, id, tenant.external_id],
+        );
+      }
+      await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [id, Status.Pending]);
+      await enqueue(boss, client, { type: 'tenant.rollback', tenantId: id, backupId: body.backupId as string, ...(safetyBackupId ? { safetyBackupId } : {}) });
+    });
+    return c.json({ tenantId: id, externalId: tenant.external_id, backupId: body.backupId, safetyBackupId });
   });
 
   // The store's own sending domain (docs/store-email.md): GET shows it with the DNS records to add

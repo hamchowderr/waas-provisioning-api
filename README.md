@@ -33,6 +33,7 @@ All 22 Phase 1 operations are implemented: versions (list, create, delete, set p
 | `PUT /admin/tenants/{id}/domains/main` `{"domainName": "…"}` | Makes a domain the store's main address, adding it if new (like `addTenantDomain` with `setAsMainDomain`, any product); the old main domain stays as a redirect |
 | `GET /admin/tenants/{id}/domain-connect?domainName=…&service=website\|email` | A link that adds the domain's records at its DNS host, when it supports Domain Connect ([docs/domain-connect.md](docs/domain-connect.md)) |
 | `GET`, `PUT` `{"domainName": "…"}`, `DELETE /admin/tenants/{id}/mail-domain` | The store's own sending domain with the DNS records to add; the store sends from it once toSend verifies it, and DELETE moves it back to the platform's address ([docs/store-email.md](docs/store-email.md)) |
+| `POST /admin/tenants/{id}/restore` `{"backupId": "…", "takeBackup": true}` | Rolls a live store back to one of its Done backups in place, keeping its domains, version, constants and suspension; backs up what it holds now first (reason `before-restore`) unless `takeBackup` is false |
 | `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
 | `GET /admin/db-backups` | The database-backup status from `/health`, plus each attempt with its object key, size and error |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
@@ -152,7 +153,7 @@ Every operation carries `x-phase: 1` or `x-phase: 2`.
 Every network call in release 2.2.7 of both plugins was traced from its call site to what it sends and every field it reads. These requirements come from that trace, not from the WPCS docs:
 
 - `GET /v1/snapshots` accepts `onlyProductionVersion=true`.
-- `POST /v1/tenants` generates `externalId` when it is omitted (release 2.2.7 never sends one), and answers 400 to an `externalId` already in use, even when two requests race.
+- `POST /v1/tenants` generates `externalId` when it is omitted (release 2.2.7 never sends one), answers a repeat of the same create (a retry whose answer was lost) with the store it already made, and 409 to an `externalId` already used by a different store, even when requests race.
 - Invalid credentials return **403**, not 401.
 - Store domains are bare hostnames; the plugin adds `https://` itself.
 - A tenant's `domainName` equals the creation-time `customDomain ?? baseDomain` exactly (same case, no trailing dot).

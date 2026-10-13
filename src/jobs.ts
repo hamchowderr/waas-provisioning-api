@@ -90,6 +90,14 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await setTenantStatus(tenant.id, Status.Done, Status.Pending);
           return;
         }
+        case 'tenant.rollback': {
+          if (data.safetyBackupId) await backUp(pool, provisioner, data.tenantId, data.safetyBackupId);
+          const { rows } = await pool.query('SELECT wp_options FROM tenants WHERE id = $1', [data.tenantId]);
+          if (!rows[0]) return;
+          await provisioner.rollbackStore({ storeId: data.tenantId, backupId: data.backupId, wpOptions: rows[0].wp_options });
+          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+          return;
+        }
         case 'tenant.suspend':
           if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
           await provisioner.suspendStore({ storeId: data.tenantId });
@@ -154,6 +162,12 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.restore':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
+        case 'tenant.rollback': {
+          // The backup taken first never finished: the store was not touched and still works.
+          const untouched = data.safetyBackupId && (await failBackup(pool, data.safetyBackupId)).rowCount;
+          await setTenantStatus(data.tenantId, untouched ? Status.Done : Status.Failed, Status.Pending);
+          return;
+        }
       }
     },
   };

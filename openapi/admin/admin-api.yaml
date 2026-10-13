@@ -281,6 +281,47 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/restore:
+    post:
+      operationId: adminRestoreTenant
+      summary: Roll a live store back to one of its backups
+      description: >-
+        Replaces the store's files and database with one of its own Done backups, in place. The
+        store keeps its current domains, version, PHP constants and suspension, and the tenant's
+        current wpOptions are written again afterwards. Unless takeBackup is false, what the store
+        holds now is backed up first (reason before-restore; its id is safetyBackupId), so the
+        rollback can be undone by restoring that backup. The tenant is Pending until the job
+        finishes. If that first backup fails the store is left untouched and Done. 400 when the
+        backup is not a Done backup of this tenant, or the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [backupId]
+              properties:
+                backupId: { type: string, format: uuid }
+                takeBackup: { type: boolean, default: true, description: Back up what the store holds now first. }
+      responses:
+        '200':
+          description: The rollback was scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, externalId, backupId, safetyBackupId]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+                  backupId: { type: string, format: uuid }
+                  safetyBackupId: { type: string, format: uuid, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/mail-domain:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -730,7 +771,7 @@ components:
         tenantId: { type: string, format: uuid }
         externalId: { type: string }
         productId: { type: string, format: uuid }
-        reason: { type: string, enum: [manual, suspend, scheduled] }
+        reason: { type: string, enum: [manual, suspend, scheduled, before-restore] }
         sizeBytes: { type: integer, nullable: true }
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
