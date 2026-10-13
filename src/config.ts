@@ -1,6 +1,7 @@
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
+import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 
 export interface Config {
   databaseUrl: string;
@@ -28,6 +29,8 @@ export interface Config {
   releases?: S3Config;
   /** Off-site backups of this database (src/dbbackup.ts); on when the S3_* settings are set. */
   dbBackup?: DbBackupConfig;
+  /** Nightly backups of every live store (src/storebackups.ts); on unless STORE_BACKUP=off. */
+  storeBackup?: StoreBackupConfig;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
@@ -117,5 +120,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     coolify: provisioner === 'coolify' ? loadCoolify(env) : undefined,
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),
+    storeBackup: loadStoreBackupConfig(env),
   };
 }
