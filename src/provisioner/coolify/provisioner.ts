@@ -32,7 +32,7 @@ export interface CoolifyProvisionerConfig {
   brand?: Brand;
 }
 
-/** An SMTP relay, e.g. Resend's. `from` must be on a domain verified with it. */
+/** An SMTP relay, e.g. toSend's. `from` must be on a domain verified with it. */
 export interface StoreMail {
   host: string;
   port: number;

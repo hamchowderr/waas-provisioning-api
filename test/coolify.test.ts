@@ -203,7 +203,7 @@ class FakeCloud {
 const onDemandTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name !== CRON_TASK.name);
 const cronTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => t.name === CRON_TASK.name);
 
-const MAIL = { host: 'smtp.resend.com', port: 465, user: 'resend', pass: 're_test_not_real', from: 'store@mail.example' };
+const MAIL = { host: 'smtp.tosend.com', port: 587, user: 'tosend', pass: 'tsend_test_not_real', from: 'store@mail.example' };
 const decode = (value: string | undefined) => value && JSON.parse(Buffer.from(value, 'base64').toString());
 
 function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL } = {}) {
@@ -378,9 +378,9 @@ describe('CoolifyProvisioner', () => {
 
     // A new key: the variable changes and the store restarts, keeping its compose.
     store.compose = 'kept';
-    p = provisioner(cloud, { mail: { ...MAIL, pass: 're_rotated_not_real' } });
+    p = provisioner(cloud, { mail: { ...MAIL, pass: 'tsend_rotated_not_real' } });
     expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('updated');
-    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value).pass).toBe('re_rotated_not_real');
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value).pass).toBe('tsend_rotated_not_real');
     expect(store.compose).toBe('kept');
     expect(store.started).toBe(starts + 2);
   });
@@ -602,7 +602,7 @@ describe('Provisioner selection', () => {
     expect(config.coolify).toMatchObject({ url: COOLIFY, serverUuid: SERVER, projectUuid: PROJECT, token: undefined, s3: { region: 'auto' } });
   });
 
-  it('turns store mail on with STORE_SMTP_PASSWORD, defaulting to Resend', () => {
+  it('turns store mail on with STORE_SMTP_PASSWORD, defaulting to toSend', () => {
     const coolify = {
       ...base,
       PROVISIONER: 'coolify',
@@ -615,12 +615,12 @@ describe('Provisioner selection', () => {
       S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
     };
     expect(loadConfig(coolify).coolify?.mail).toBeUndefined();
-    expect(() => loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 're_x' })).toThrow(/STORE_MAIL_FROM/);
-    expect(loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 're_x\n', STORE_MAIL_FROM: 'store@mail.example' }).coolify?.mail).toEqual({
-      host: 'smtp.resend.com',
-      port: 465,
-      user: 'resend',
-      pass: 're_x',
+    expect(() => loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 'tsend_x' })).toThrow(/STORE_MAIL_FROM/);
+    expect(loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 'tsend_x\n', STORE_MAIL_FROM: 'store@mail.example' }).coolify?.mail).toEqual({
+      host: 'smtp.tosend.com',
+      port: 587,
+      user: 'tosend',
+      pass: 'tsend_x',
       from: 'store@mail.example',
     });
     expect(() => loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 'x', STORE_MAIL_FROM: 'a@b.example', STORE_SMTP_PORT: 'smtp' })).toThrow(/STORE_SMTP_PORT/);

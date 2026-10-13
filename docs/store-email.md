@@ -1,6 +1,6 @@
 # Store email
 
-Stores send their email (password resets, FluentCart order receipts, new-user mail) through one SMTP relay for the whole platform. The default is [Resend](https://resend.com), which the storefront already uses through FluentSMTP. Before this, stores sent nothing: the official WordPress image has no mailer, so `wp_mail()` failed quietly.
+Stores send their email (password resets, FluentCart order receipts, new-user mail) through one SMTP relay for the whole platform. The default is [toSend](https://tosend.com) over SMTP (`smtp.tosend.com`, port 587 with STARTTLS, user `tosend`, an API key as the password). Before this, stores sent nothing: the official WordPress image has no mailer, so `wp_mail()` failed quietly.
 
 ## How it works
 
@@ -14,19 +14,19 @@ Stores send their email (password resets, FluentCart order receipts, new-user ma
 
 | Variable | Default | |
 |---|---|---|
-| `STORE_SMTP_PASSWORD` | | Turns store email on. For Resend: an API key with **Sending access** for the sending domain only |
+| `STORE_SMTP_PASSWORD` | | Turns store email on. For toSend: an API key (`tsend_…`) scoped to the sending domain only |
 | `STORE_MAIL_FROM` | | Required with the password. An address on the domain verified with the relay, e.g. `no-reply@anypress.io` |
-| `STORE_SMTP_HOST` | `smtp.resend.com` | |
-| `STORE_SMTP_PORT` | `465` | 465 uses implicit TLS; any other port STARTTLS (Resend also takes 587) |
-| `STORE_SMTP_USER` | `resend` | |
+| `STORE_SMTP_HOST` | `smtp.tosend.com` | |
+| `STORE_SMTP_PORT` | `587` | 465 uses implicit TLS; any other port STARTTLS |
+| `STORE_SMTP_USER` | `tosend` | |
 
-## Setting up Resend
+## Setting up toSend
 
-1. In Resend, **Domains → Add domain** `anypress.io` and add the DNS records it shows (DKIM `TXT`, plus an `MX` and SPF `TXT` on the `send` subdomain) in Cloudflare, DNS only. Wait until Resend shows the domain as Verified.
-2. **API Keys → Create**: permission **Sending access**, domain `anypress.io`. A sending-only key limits the damage if it ever leaks: it cannot read mail logs, add domains or create keys.
-3. On `waas-api` in Coolify, add `STORE_SMTP_PASSWORD` (the key) and `STORE_MAIL_FROM`, then redeploy.
+1. In toSend, add and verify the sending domain `anypress.io`: add the DNS records it shows in Cloudflare (DNS only) and wait until it shows as verified.
+2. Create an API key scoped to `anypress.io` only. A domain-scoped key limits the damage if it ever leaks.
+3. On `waas-api` in Coolify, add `STORE_SMTP_PASSWORD` (the key) and `STORE_MAIL_FROM` (e.g. `no-reply@anypress.io`), then redeploy.
 
-Resend's free plan allows one domain, 100 emails a day and 3,000 a month; Pro ($20/month) raises that to 50,000 a month. Order receipts and password resets for a handful of stores fit the free plan; plan for Pro before selling at volume.
+Check the toSend plan's sending limits against the stores' order and password-reset volume before selling at scale.
 
 Another provider works the same way through its SMTP settings (`STORE_SMTP_HOST`, `_PORT`, `_USER`). Check its acceptable-use terms for the stores' products first ([hosting.md](hosting.md), "What needs a written answer from a provider").
 
