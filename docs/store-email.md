@@ -19,6 +19,8 @@ Stores send their email (password resets, FluentCart order receipts, new-user ma
 | `STORE_SMTP_HOST` | `smtp.tosend.com` | |
 | `STORE_SMTP_PORT` | `587` | 465 uses implicit TLS; any other port STARTTLS |
 | `STORE_SMTP_USER` | `tosend` | |
+| `TOSEND_ADMIN_KEY` | | Optional. A toSend admin key (`tsend_admin_…`) with access to domains, API keys and sending. Gives each store its own sending key (below) |
+| `TOSEND_API_URL` | `https://api.tosend.com` | |
 
 ## Setting up toSend
 
@@ -30,7 +32,19 @@ Check the toSend plan's sending limits against the stores' order and password-re
 
 Another provider works the same way through its SMTP settings (`STORE_SMTP_HOST`, `_PORT`, `_USER`). Check its acceptable-use terms for the stores' products first ([hosting.md](hosting.md), "What needs a written answer from a provider").
 
+## Per-store keys
+
+With `TOSEND_ADMIN_KEY` set, each store gets its own toSend sending key, named `store-<id>` and restricted to `STORE_MAIL_FROM`'s domain, in place of the shared `STORE_SMTP_PASSWORD`:
+
+- A new store's key is minted at create; a retried create reuses the key it minted the first time. If toSend refuses, the store is created with the shared key and gets its own on the next API start.
+- Existing stores move to their own key on the next API start (`ensureStoreMail`, one restart each).
+- The key's id is kept on the store's Service as `WAAS_MAIL_KEY_ID`; deleting the store revokes the key first. A restored store gets a new key.
+- To cut one store's email off, revoke its key in toSend.
+
+The shared `STORE_SMTP_PASSWORD` is still required: it is what stores use without the admin key, and it keeps the setting that turns store email on in one place.
+
 ## Not covered yet
 
 - Sending from the customer's own domain (their `From`, verified per store).
-- Per-store keys or per-store sending limits: all stores share one key, so one store sending spam affects the domain's reputation for all. A store admin cannot read the key from wp-admin, but anyone able to run PHP in the store could.
+- Per-store sending limits, and a toSend team per customer (its own logs and suspension).
+- Without `TOSEND_ADMIN_KEY`, all stores share one key. A store admin cannot read it from wp-admin, but anyone able to run PHP in the store could.
