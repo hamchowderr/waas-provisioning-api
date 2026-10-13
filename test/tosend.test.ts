@@ -17,7 +17,7 @@ describe('ToSendAdmin', () => {
   it('mints a key restricted to the sending domain, looking the domain up once', async () => {
     let n = 0;
     const { calls, admin } = api((method, path) => {
-      if (method === 'GET' && path === '/v2/domains') return [200, { data: [{ id: 7, name: 'other.example' }, { id: 9, name: 'AnyPress.io' }] }];
+      if (method === 'GET' && path === '/v2/domains') return [200, { data: [{ id: 7, domain_name: 'other.example' }, { id: 9, domain_name: 'AnyPress.io' }] }];
       if (method === 'POST' && path === '/v2/api-keys') return [201, { data: { id: 100 + ++n, api_key: `tsend_key_${n}` } }];
       return [404, {}];
     });

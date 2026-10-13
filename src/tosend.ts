@@ -54,9 +54,9 @@ export class ToSendAdmin implements StoreMailKeys {
   private async sendingDomainId(): Promise<string> {
     if (this.domainId) return this.domainId;
     for (let page = 1; ; page++) {
-      const res = await this.request<{ data?: { id: string | number; name: string }[] }>('GET', `/v2/domains?page=${page}&per_page=100`);
+      const res = await this.request<{ data?: { id: string | number; domain_name?: string; name?: string }[] }>('GET', `/v2/domains?page=${page}&per_page=100`);
       const domains = res.data ?? [];
-      const found = domains.find((d) => d.name.toLowerCase() === this.domain);
+      const found = domains.find((d) => (d.domain_name ?? d.name ?? '').toLowerCase() === this.domain);
       if (found) return (this.domainId = String(found.id));
       if (domains.length < 100) throw new Error(`toSend has no sending domain ${this.domain}; add and verify it first`);
     }
