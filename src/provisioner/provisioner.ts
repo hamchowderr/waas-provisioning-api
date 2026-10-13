@@ -108,9 +108,17 @@ export interface Provisioner {
   /**
    * Makes sure a store sends email through the platform's mail relay with its current settings.
    * createStore already does this; the API calls it for every live store on startup, so older
-   * stores, and every store after the relay's settings change, get it too.
+   * stores, and every store after the relay's settings change, get it too. With `sender`, the store
+   * sends from its own verified domain (src/maildomains.ts) instead of the platform's.
    */
-  ensureStoreMail(input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'>;
+  ensureStoreMail(input: { storeId: string; sender?: StoreSender }): Promise<'created' | 'updated' | 'unchanged'>;
+}
+
+/** A store's own sending domain, verified on toSend: it sends from the platform's address name at it. */
+export interface StoreSender {
+  domain: string;
+  /** toSend's id for the domain; the store's key is restricted to it. */
+  domainId: string;
 }
 
 export interface PhpConstant {

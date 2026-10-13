@@ -6,6 +6,7 @@ import { HttpError, badRequest } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
+import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { Status, statusName } from '../status.ts';
@@ -264,6 +265,38 @@ export function adminRoutes(deps: Deps) {
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     assertChangeable(rows[0]);
     return c.json(await addTenantDomain(deps, rows[0], body.domainName, true));
+  });
+
+  // The store's own sending domain (docs/store-email.md): GET shows it with the DNS records to add
+  // (null: it sends from the platform's address), PUT adds it, DELETE moves the store back.
+  async function mailTenant(c: Context) {
+    const id = c.req.param('id');
+    if (!id || !isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query('SELECT id, external_id, status FROM tenants WHERE id = $1', [id]);
+    if (!rows[0]) throw notFound(`Tenant ${id} not found`);
+    return rows[0];
+  }
+
+  app.get('/tenants/:id/mail-domain', async (c) => {
+    const tenant = await mailTenant(c);
+    return c.json({ mailDomain: await getMailDomain(pool, config.sendingDomains, tenant.id) });
+  });
+
+  app.put('/tenants/:id/mail-domain', async (c) => {
+    const tenant = await mailTenant(c);
+    assertChangeable(tenant);
+    const body = (await readJson(c)) as { domainName?: unknown };
+    if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
+    const from = config.coolify?.mail?.from;
+    if (!from) throw badRequest('Stores send no email: STORE_SMTP_PASSWORD is not set on the API');
+    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, from) });
+  });
+
+  app.delete('/tenants/:id/mail-domain', async (c) => {
+    const tenant = await mailTenant(c);
+    const removed = await removeMailDomain(pool, tenant.id);
+    if (!removed) throw notFound('This store has no sending domain');
+    return c.json(removed);
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,7 +1,7 @@
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
-import { ToSendAdmin, type StoreMailKeys } from './tosend.ts';
+import { ToSendAdmin, type SendingDomains, type StoreMailKeys } from './tosend.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 
 export interface Config {
@@ -26,6 +26,8 @@ export interface Config {
   /** Which Provisioner runs store-side work: the in-memory fake (default) or Coolify. */
   provisioner: 'fake' | 'coolify';
   coolify?: CoolifyProvisionerConfig;
+  /** Stores' own sending domains on toSend (src/maildomains.ts); set with TOSEND_ADMIN_KEY. */
+  sendingDomains?: SendingDomains;
   /** The plugin releases bucket (waas-hw4). Unset: update checks get 503. */
   releases?: S3Config;
   /** Off-site backups of this database (src/dbbackup.ts); on when the S3_* settings are set. */
@@ -123,6 +125,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!secretsKey) throw new Error('SECRETS_KEY is required (32 random bytes, base64: openssl rand -base64 32)');
   const provisioner = env.PROVISIONER ?? 'fake';
   if (provisioner !== 'fake' && provisioner !== 'coolify') throw new Error('PROVISIONER must be fake or coolify');
+  const coolify = provisioner === 'coolify' ? loadCoolify(env) : undefined;
   return {
     databaseUrl,
     port: Number(env.PORT ?? 4111),
@@ -133,7 +136,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
     adminToken: env.ADMIN_TOKEN || undefined,
     provisioner,
-    coolify: provisioner === 'coolify' ? loadCoolify(env) : undefined,
+    coolify,
+    sendingDomains: coolify?.mailKeys instanceof ToSendAdmin ? coolify.mailKeys : undefined,
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),
     storeBackup: loadStoreBackupConfig(env),

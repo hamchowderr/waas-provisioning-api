@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { Brand, CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
+import type { Brand, CreateStoreInput, PhpConstant, Provisioner, StoreSender } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
@@ -464,19 +464,31 @@ export class CoolifyProvisioner implements Provisioner {
 
   /**
    * A store's mail variables: the relay settings, with the store's own key when keys are per store
-   * (reusing the one it already holds), or nothing when stores send no email.
+   * (reusing the one it already holds while it sends from the same address), or nothing when stores
+   * send no email. With `sender`, it sends from the platform's address name at its own domain, with
+   * a key restricted to that domain.
    */
-  private async storeMailEnvs(storeId: string, current: CoolifyEnv[]): Promise<Record<string, string>> {
+  private async storeMailEnvs(storeId: string, current: CoolifyEnv[], sender?: StoreSender): Promise<Record<string, string>> {
     const mail = this.config.mail;
     if (!mail) return {};
     const envs: Record<string, string> = {};
     let pass = mail.pass;
+    let from = mail.from;
+    if (sender) {
+      if (!this.config.mailKeys) throw new Error('A store sending from its own domain needs per-store keys (TOSEND_ADMIN_KEY)');
+      from = `${mail.from.split('@')[0]}@${sender.domain}`;
+    }
     if (this.config.mailKeys) {
       const keyId = envValue(current, MAIL_KEY_ENV);
-      const held = keyId ? decodeMail(envValue(current, MAIL_ENV))?.pass : undefined;
-      if (keyId && held) {
+      const held = keyId ? decodeMail(envValue(current, MAIL_ENV)) : null;
+      if (keyId && held?.pass && held.from === from) {
         envs[MAIL_KEY_ENV] = keyId;
-        pass = held;
+        pass = held.pass;
+      } else if (sender) {
+        // No fallback here: the shared key can't send from the store's domain.
+        const key = await this.config.mailKeys.create(storeId, sender.domainId);
+        envs[MAIL_KEY_ENV] = key.id;
+        pass = key.key;
       } else {
         // toSend being down or refusing must not stop a store from being created: it sends with
         // the shared key until ensureStoreMail succeeds on a later start.
@@ -490,7 +502,7 @@ export class CoolifyProvisioner implements Provisioner {
         }
       }
     }
-    envs[MAIL_ENV] = b64(JSON.stringify({ host: mail.host, port: mail.port, user: mail.user, pass, from: mail.from }));
+    envs[MAIL_ENV] = b64(JSON.stringify({ host: mail.host, port: mail.port, user: mail.user, pass, from }));
     return envs;
   }
 
@@ -499,16 +511,16 @@ export class CoolifyProvisioner implements Provisioner {
    * keys were per store, or after the relay's settings changed. Such a store gets the variables, a
    * compose that passes them to WordPress (re-rendered from its version, as ensureStoreCron does),
    * one restart, and the mu-plugin. A store already holding the same settings is left alone, so
-   * this runs once.
+   * this runs once. A `sender` moves the store to its own domain; leaving it out moves it back.
    */
-  async ensureStoreMail({ storeId }: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
+  async ensureStoreMail({ storeId, sender }: { storeId: string; sender?: StoreSender }): Promise<'created' | 'updated' | 'unchanged'> {
     if (!this.config.mail) return 'unchanged';
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const current = await this.coolify.listEnvs(store.uuid);
     const had = current.some((e) => e.key === MAIL_ENV);
     // Coolify hides values from a token without read:sensitive; then nothing can be compared.
     if (had && envValue(current, MAIL_ENV) === undefined) return 'unchanged';
-    const want = await this.storeMailEnvs(storeId, current);
+    const want = await this.storeMailEnvs(storeId, current, sender);
     if (Object.entries(want).every(([key, value]) => envValue(current, key) === value)) return 'unchanged';
     if (!had) {
       const meta = parseMeta(store.description);
@@ -518,7 +530,7 @@ export class CoolifyProvisioner implements Provisioner {
     await this.coolify.setEnvs(store.uuid, want);
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
-    // A key the store no longer uses (its value was lost) is revoked.
+    // A key the store no longer uses (its value was lost, or it changed domains) is revoked.
     const oldKeyId = envValue(current, MAIL_KEY_ENV);
     if (oldKeyId && oldKeyId !== want[MAIL_KEY_ENV]) await this.config.mailKeys?.delete(oldKeyId);
     return had ? 'updated' : 'created';

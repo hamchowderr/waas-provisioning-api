@@ -4,6 +4,7 @@ import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { backupCipherKey, DbBackups, pgDump, startDbBackups } from './dbbackup.ts';
 import { createJobHandlers } from './jobs.ts';
+import { startMailDomainChecks } from './maildomains.ts';
 import { maintainStores } from './maintenance.ts';
 import { S3 } from './provisioner/s3.ts';
 import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
@@ -31,6 +32,8 @@ const dbBackups = config.dbBackup
 await startDbBackups(boss, dbBackups, config.dbBackup?.schedule ?? '');
 // Nightly backup of every live store (docs/store-backups.md), unless STORE_BACKUP=off.
 await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
+// Stores' own sending domains (docs/store-email.md): checked every 10 minutes, when toSend is set up.
+await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner);
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner);
 

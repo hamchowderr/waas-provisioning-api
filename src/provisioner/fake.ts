@@ -1,4 +1,4 @@
-import type { CreateStoreInput, PhpConstant, Provisioner } from './provisioner.ts';
+import type { CreateStoreInput, PhpConstant, Provisioner, StoreSender } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
@@ -162,7 +162,7 @@ export class FakeProvisioner implements Provisioner {
     return 'unchanged';
   }
 
-  async ensureStoreMail(_input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
+  async ensureStoreMail(_input: { storeId: string; sender?: StoreSender }): Promise<'created' | 'updated' | 'unchanged'> {
     this.check('ensureStoreMail');
     return 'unchanged';
   }

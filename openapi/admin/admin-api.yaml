@@ -259,6 +259,78 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/mail-domain:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetTenantMailDomain
+      summary: The store's own sending domain
+      description: >-
+        The domain the store sends email from instead of the platform's address, with the DNS
+        records its owner adds at their DNS host. null when it sends from the platform's address.
+      responses:
+        '200':
+          description: The sending domain, or null
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mailDomain]
+                properties:
+                  mailDomain: { anyOf: [{ $ref: '#/components/schemas/MailDomain' }, { type: object, nullable: true, enum: [null] }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminSetTenantMailDomain
+      summary: Give the store its own sending domain
+      description: >-
+        Adds the domain on toSend and returns the DNS records to add. The store keeps sending from
+        the platform's address until toSend has verified the records (it checks every 10 minutes),
+        then sends from no-reply (STORE_MAIL_FROM's name) at the domain. Setting the domain the
+        store already has returns it. 400 when the domain is invalid, the platform's, another
+        store's or on another toSend account, when the store already has a different one, or when
+        TOSEND_ADMIN_KEY is not set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainName]
+              properties:
+                domainName: { type: string }
+      responses:
+        '200':
+          description: The sending domain
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mailDomain]
+                properties:
+                  mailDomain: { $ref: '#/components/schemas/MailDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminRemoveTenantMailDomain
+      summary: Move the store back to the platform's address
+      description: >-
+        The domain's status becomes removing; within 10 minutes the store sends from the platform's
+        address again and the domain leaves toSend. The owner's DNS records are not touched.
+      responses:
+        '200':
+          description: The domain being removed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domainName]
+                properties:
+                  domainName: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/backups:
     get:
       operationId: adminListBackups
@@ -441,6 +513,27 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    MailDomain:
+      type: object
+      required: [domainName, status, dateCreated, dateVerified, records]
+      properties:
+        domainName: { type: string }
+        status: { type: string, enum: [pending, verified, removing] }
+        dateCreated: { type: string, format: date-time }
+        dateVerified: { type: string, format: date-time, nullable: true }
+        records:
+          description: The records to add at the domain's DNS host; null when toSend could not be reached.
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [type, name, host, value, priority]
+            properties:
+              type: { type: string }
+              name: { type: string, description: 'Relative to the domain, as most DNS hosts want it' }
+              host: { type: string, description: The full hostname }
+              value: { type: string }
+              priority: { type: integer, nullable: true }
     Product:
       type: object
       additionalProperties: false
