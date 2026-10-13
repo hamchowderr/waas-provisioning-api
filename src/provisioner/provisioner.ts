@@ -84,6 +84,13 @@ export interface Provisioner {
    */
   restoreDeletedStore(input: Omit<CreateStoreInput, 'snapshotId' | 'user'> & { backupId: string }): Promise<void>;
 
+  /**
+   * Replaces a live store's files and database with one of its backups, in place. The store keeps
+   * its current domains, version code, constants and suspension; `wpOptions` (the tenant's current
+   * options) are written again afterwards, so the options the API set stay as the API records them.
+   */
+  rollbackStore(input: { storeId: string; backupId: string; wpOptions: Record<string, string> }): Promise<void>;
+
   /** Deletes a backup. Called once a deleted tenant's backups pass their retention. */
   deleteBackup(input: { backupId: string }): Promise<void>;
 

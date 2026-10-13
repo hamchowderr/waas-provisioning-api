@@ -2358,11 +2358,12 @@ components:
           example: store-1042
         reason:
           type: string
-          description: Why the backup was taken. scheduled is a nightly backup of a live tenant (kept 7 days and 4 weeks by default).
+          description: Why the backup was taken. scheduled is a nightly backup of a live tenant (kept 7 days and 4 weeks by default); before-restore is what the tenant held just before it was rolled back to another backup.
           enum:
           - manual
           - suspend
           - scheduled
+          - before-restore
           readOnly: true
           example: suspend
         dateCreated:

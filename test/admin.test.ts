@@ -172,6 +172,49 @@ describe('admin endpoints', () => {
   });
 });
 
+describe('rolling a live store back', () => {
+  it('rolls a live store back to one of its backups, backing up what it holds now first', async () => {
+    const store = await newTenant({ name: 'Rollback Shop', wpOptions: { blogdescription: 'Then' } });
+    const { backupId } = (await (await t.call('POST', `/v1/tenants/backups?externalId=${store.externalId}`, { body: {} })).json()) as { backupId: string };
+    await waitFor(async () => t.provisioner.backups.has(backupId) && (await tenantStatus(store.externalId)) === Status.Done);
+    await waitFor(async () => (await admin('GET', `/admin/tenants/${store.id}`)).backups[0]?.statusCode === Status.Done);
+    await t.call('PUT', `/v1/tenants?externalId=${store.externalId}`, { body: { wpOptions: { blogdescription: 'Now' } } });
+    await waitFor(async () => (await tenantStatus(store.externalId)) === Status.Done);
+
+    const res = await admin('POST', `/admin/tenants/${store.id}/restore`, 200, { backupId });
+    expect(res).toEqual({ tenantId: store.id, externalId: store.externalId, backupId, safetyBackupId: expect.any(String) });
+    await waitFor(async () => (await tenantStatus(store.externalId)) === Status.Done);
+    const fake = t.provisioner.stores.get(store.id)!;
+    expect(fake.snapshotId).toBe(backupId);
+    // The options the API set now are written back over the backup's.
+    expect(fake.wpOptions.blogdescription).toBe('Now');
+    const detail = await admin('GET', `/admin/tenants/${store.id}`);
+    expect(detail.backups.find((b: any) => b.id === res.safetyBackupId)).toMatchObject({ reason: 'before-restore', statusCode: Status.Done });
+    expect(t.provisioner.backups.get(res.safetyBackupId)?.storeId).toBe(store.id);
+
+    // Without the first backup.
+    const bare = await admin('POST', `/admin/tenants/${store.id}/restore`, 200, { backupId: res.safetyBackupId, takeBackup: false });
+    expect(bare.safetyBackupId).toBeNull();
+    await waitFor(async () => (await tenantStatus(store.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(store.id)!.snapshotId).toBe(res.safetyBackupId);
+  });
+
+  it('refuses a rollback to a backup that is not this store\'s, or not Done', async () => {
+    const mine = await newTenant({ name: 'Mine Shop' });
+    const other = await newTenant({ name: 'Other Shop' });
+    const { backupId } = (await (await t.call('POST', `/v1/tenants/backups?externalId=${other.externalId}`, { body: {} })).json()) as { backupId: string };
+    await waitFor(async () => t.provisioner.backups.has(backupId));
+    await admin('POST', `/admin/tenants/${mine.id}/restore`, 400, { backupId });
+    await admin('POST', `/admin/tenants/${mine.id}/restore`, 400, { backupId: crypto.randomUUID() });
+    await admin('POST', `/admin/tenants/${mine.id}/restore`, 400, {});
+    await admin('POST', `/admin/tenants/${mine.id}/restore`, 400, { backupId, takeBackup: 'yes' });
+    await admin('POST', `/admin/tenants/${crypto.randomUUID()}/restore`, 404, { backupId });
+    const pending = (await t.pool.query("INSERT INTO tenant_backups (product_id, tenant_id, external_id, reason) SELECT product_id, id, external_id, 'manual' FROM tenants WHERE id = $1 RETURNING id", [mine.id])).rows[0].id;
+    await admin('POST', `/admin/tenants/${mine.id}/restore`, 400, { backupId: pending });
+    expect(await tenantStatus(mine.externalId)).toBe(Status.Done);
+  });
+});
+
 describe('job failures and retry', () => {
   it('records a job that fails its last retry, and retries it once', async () => {
     t.provisioner.failNext('createStore', 10);
@@ -198,6 +241,25 @@ describe('job failures and retry', () => {
     expect(await admin('POST', `/admin/jobs/failures/${failure.id}/retry`)).toEqual(retried);
     expect((await admin('GET', '/admin/jobs?state=failed')).items.some((f: any) => f.id === failure.id)).toBe(false);
     await admin('POST', `/admin/jobs/failures/${crypto.randomUUID()}/retry`, 404);
+  }, 60000);
+
+  it('leaves the store untouched and Done when the backup before a rollback fails, and retries it', async () => {
+    const store = await newTenant({ name: 'Careful Shop' });
+    const { backupId } = (await (await t.call('POST', `/v1/tenants/backups?externalId=${store.externalId}`, { body: {} })).json()) as { backupId: string };
+    await waitFor(async () => (await admin('GET', `/admin/tenants/${store.id}`)).backups[0]?.statusCode === Status.Done);
+    const before = t.provisioner.stores.get(store.id)!.snapshotId;
+    t.provisioner.failNext('backupStore', 10);
+    const { safetyBackupId } = await admin('POST', `/admin/tenants/${store.id}/restore`, 200, { backupId });
+    await waitFor(async () => (await admin('GET', '/admin/jobs?state=failed')).items.some((f: any) => f.tenantId === store.id && f.type === 'tenant.rollback'), 30000);
+    t.provisioner.failNext('backupStore', 0);
+    expect(await tenantStatus(store.externalId)).toBe(Status.Done);
+    expect(t.provisioner.stores.get(store.id)!.snapshotId).toBe(before);
+    const detail = await admin('GET', `/admin/tenants/${store.id}`);
+    expect(detail.backups.find((b: any) => b.id === safetyBackupId)).toMatchObject({ statusCode: Status.Failed });
+
+    const failure = (await admin('GET', '/admin/jobs?state=failed')).items.find((f: any) => f.tenantId === store.id && f.type === 'tenant.rollback');
+    await admin('POST', `/admin/jobs/failures/${failure.id}/retry`);
+    await waitFor(async () => t.provisioner.stores.get(store.id)!.snapshotId === backupId && (await tenantStatus(store.externalId)) === Status.Done);
   }, 60000);
 
   it('refuses a retry when the record is no longer Failed', async () => {
