@@ -15,26 +15,45 @@ afterAll(async () => {
 });
 
 describe('duplicate externalId and domain on POST /v1/tenants', () => {
-  it('answers 400 to an externalId already in use, and leaves the existing tenant alone', async () => {
+  it('answers a repeat of the same create with the store it already made', async () => {
+    const body = { name: 'Repeat', externalId: 'store-repeat-1', customDomainName: 'repeat-1.example.com', wordPressUserName: 'a', wordPressUserEmail: 'a@example.com' };
+    const first = await t.call('POST', '/v1/tenants', { body });
+    expect(first.status).toBe(200);
+    const created = await first.json();
+    const again = await t.call('POST', '/v1/tenants', { body });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual(created);
+    expect(((await (await t.call('GET', '/v1/tenants?externalId=store-repeat-1')).json()) as any[]).length).toBe(1);
+  });
+
+  it('answers 409 to an externalId already used by a different store, and leaves that store alone', async () => {
     const first = await t.call('POST', '/v1/tenants', { body: { name: 'First', externalId: 'store-dup-1' } });
     expect(first.status).toBe(200);
     const second = await t.call('POST', '/v1/tenants', { body: { name: 'Second', externalId: 'store-dup-1' } });
-    expect(second.status).toBe(400);
-    expect(await second.json()).toEqual({ statusCode: 400, message: 'externalId store-dup-1 is already in use' });
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ statusCode: 409, message: 'externalId store-dup-1 is already in use by another store' });
+    const otherDomain = await t.call('POST', '/v1/tenants', { body: { name: 'First', externalId: 'store-dup-1', customDomainName: 'elsewhere.example.com' } });
+    expect(otherDomain.status).toBe(409);
     const tenants = (await (await t.call('GET', '/v1/tenants?externalId=store-dup-1')).json()) as any[];
     expect(tenants.map((x) => x.name)).toEqual(['First']);
   });
 
-  it('answers 400, never 500, when two creates race for the same externalId', async () => {
+  it('gives every racer of the same create the one store, never 500', async () => {
     for (let round = 0; round < 5; round++) {
       const externalId = `store-race-${round}`;
-      const results = await Promise.all(
-        [1, 2, 3].map((n) => t.call('POST', '/v1/tenants', { body: { name: `Racer ${n}`, externalId } })),
-      );
-      expect(results.map((r) => r.status).sort()).toEqual([200, 400, 400]);
-      for (const r of results.filter((r) => r.status === 400)) {
-        expect(((await r.json()) as any).message).toBe(`externalId ${externalId} is already in use`);
-      }
+      const results = await Promise.all([1, 2, 3].map(() => t.call('POST', '/v1/tenants', { body: { name: 'Racer', externalId } })));
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+      const ids = new Set(await Promise.all(results.map(async (r) => ((await r.json()) as any).id)));
+      expect(ids.size).toBe(1);
+      expect(((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as any[]).length).toBe(1);
+    }
+  });
+
+  it('answers 409, never 500, when different creates race for the same externalId', async () => {
+    for (let round = 0; round < 5; round++) {
+      const externalId = `store-clash-${round}`;
+      const results = await Promise.all([1, 2, 3].map((n) => t.call('POST', '/v1/tenants', { body: { name: `Racer ${n}`, externalId } })));
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409, 409]);
       expect(((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as any[]).length).toBe(1);
     }
   });

@@ -103,7 +103,7 @@ paths:
         **Storefront plugin:** sends `name`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, optional `wordPressUserPassword`, `customDomainName`, `groupName`, and `phpConstants` (`WPCS_TENANT_ROLES`, `WPCS_PUBLIC_KEY`, `WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS`). Release 2.2.7 never sends `externalId`, so **the API must generate one** and return it; the fork sends one chosen when the signup is queued, and looks the store up by it before retrying. Reads `externalId`, `baseDomain`, `customDomain` from the response. `WPCSService.php:100-123`, `TenantsSubscriptionManager.php:68-96`.
 
 
-        **An `externalId` already in use** by a tenant of the product returns 400 (`externalId <id> is already in use`); the existing tenant is neither changed nor returned, and no second tenant is created, also when two requests with the same `externalId` arrive at once. The same applies to a `customDomainName` already used by any store (`Domain <domain> is already in use`).'
+        **An `externalId` already in use** by a tenant of the product: a repeat of the create that made it (same `name`, and the same `customDomainName`, `versionId`, `snapshotId` and `groupName` where given) returns 200 with that tenant (`id`, `externalId`, `baseDomain`, and `customDomain` when one was asked for), so a client can safely retry a create whose answer it lost. Anything else returns 409 (`externalId <id> is already in use by another store`), as does a repeat while that tenant is being removed. The existing tenant is never changed and no second tenant is created, also when requests with the same `externalId` arrive at once. A `customDomainName` already used by another store returns 400 (`Domain <domain> is already in use`).'
       requestBody:
         content:
           application/json:
@@ -118,6 +118,12 @@ paths:
                 $ref: '#/components/schemas/CreateTenantCommandResult'
         '400':
           description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '409':
+          description: The externalId is already used by a different tenant of the product
           content:
             application/json:
               schema:
