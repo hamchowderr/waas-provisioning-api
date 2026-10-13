@@ -31,7 +31,12 @@ export type JobData =
   | { type: 'tenant.resume'; tenantId: string }
   | { type: 'tenant.backup'; tenantId: string; backupId: string }
   /** Re-creates a deleted tenant (already re-inserted by the request) from a kept backup. */
-  | { type: 'tenant.restore'; tenantId: string; backupId: string };
+  | { type: 'tenant.restore'; tenantId: string; backupId: string }
+  /**
+   * Rolls a live tenant back to one of its backups in place. Backs up what it holds now first when
+   * safetyBackupId is set, so the rollback can be undone.
+   */
+  | { type: 'tenant.rollback'; tenantId: string; backupId: string; safetyBackupId?: string };
 
 /** Daily housekeeping (purging expired backups), on its own queue so it never waits behind store work. */
 export const MAINTENANCE_QUEUE = 'maintenance';

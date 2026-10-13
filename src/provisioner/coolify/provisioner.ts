@@ -584,6 +584,21 @@ export class CoolifyProvisioner implements Provisioner {
     if (meta?.kind === 'store') await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)) });
   }
 
+  async rollbackStore({ storeId, backupId, wpOptions }: Parameters<Provisioner['rollbackStore']>[0]) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const meta = parseMeta(store.description);
+    if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
+    if ((await this.s3.head(keys.backup(backupId))) === null) throw new Error(`No archive at ${keys.backup(backupId)}`);
+    // Keep the store's current main domain: read it from WordPress before replacing the database.
+    // The agent keeps the suspension flag and page across the restore.
+    const home = await this.currentHome(store.uuid);
+    await this.exec(store.uuid, 'restore', { url: this.s3.presign('GET', keys.backup(backupId)), home });
+    // The code of the version the store runs now, and its database brought up to that WordPress.
+    await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)) });
+    await this.exec(store.uuid, 'update-db', {});
+    await this.exec(store.uuid, 'configure', { options: wpOptions });
+  }
+
   private async currentHome(uuid: string): Promise<string> {
     const result = await this.exec(uuid, 'home', {});
     if (typeof result.home !== 'string') throw new Error('Store agent did not report the home URL');

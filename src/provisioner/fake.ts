@@ -137,6 +137,15 @@ export class FakeProvisioner implements Provisioner {
     this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false });
   }
 
+  async rollbackStore({ storeId, backupId, wpOptions }: Parameters<Provisioner['rollbackStore']>[0]) {
+    this.check('rollbackStore');
+    const store = this.store(storeId);
+    const backup = this.backups.get(backupId);
+    if (!backup || backup.storeId !== storeId) throw new Error(`FakeProvisioner: no backup ${backupId} of ${storeId}`);
+    store.snapshotId = backupId;
+    Object.assign(store.wpOptions, wpOptions);
+  }
+
   async deleteBackup({ backupId }: { backupId: string }) {
     this.check('deleteBackup');
     this.backups.delete(backupId);

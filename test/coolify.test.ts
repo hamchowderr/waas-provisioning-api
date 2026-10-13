@@ -556,6 +556,21 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.objects.has('backups/b-1.zip')).toBe(false);
   });
 
+  it('rolls a store back to a backup in place: same main domain, its current code, its options again', async () => {
+    await p.createStore(storeInput);
+    await expect(p.rollbackStore({ storeId: STORE_ID, backupId: 'b-1', wpOptions: {} })).rejects.toThrow(/No archive at backups\/b-1\.zip/);
+    expect(cloud.agentOps.map((o) => o.op)).not.toContain('home');
+    cloud.objects.set('backups/b-1.zip', new Uint8Array(10));
+    const before = cloud.agentOps.length;
+    await p.rollbackStore({ storeId: STORE_ID, backupId: 'b-1', wpOptions: { blogname: 'Example Store' } });
+    const ops = cloud.agentOps.slice(before).filter((o) => o.op !== 'ping');
+    expect(ops.map((o) => o.op)).toEqual(['home', 'restore', 'code-import', 'update-db', 'configure']);
+    expect(ops[1]!.args).toMatchObject({ home: 'https://shop.example.com' });
+    expect(String(ops[1]!.args.url)).toMatch(/^https:\/\/s3\.test\/waas-stores\/backups\/b-1\.zip\?/);
+    expect(String(ops[2]!.args.url)).toContain(`/versions/${VERSION_ID}/code.zip`);
+    expect(ops[4]!.args).toEqual({ options: { blogname: 'Example Store' } });
+  });
+
   it('replaces the phpConstants with the complete set it is given, and restarts', async () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
