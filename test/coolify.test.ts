@@ -209,10 +209,12 @@ const decode = (value: string | undefined) => value && JSON.parse(Buffer.from(va
 /** A stand-in for toSend's admin API: keys by id. */
 class FakeMailKeys {
   keys = new Map<string, string>();
+  domains = new Map<string, string | undefined>();
   private seq = 0;
-  async create(storeId: string) {
+  async create(storeId: string, domainId?: string) {
     const id = String(++this.seq);
     this.keys.set(id, `tsend_${storeId.slice(0, 8)}_${id}`);
+    this.domains.set(id, domainId);
     return { id, key: this.keys.get(id)! };
   }
   async delete(id: string) {
@@ -447,6 +449,30 @@ describe('CoolifyProvisioner', () => {
     expect(store.started).toBe(starts + 1);
     expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
     expect(keys.keys.size).toBe(1);
+  });
+
+  it("moves a store to its own sending domain with a key for that domain, and back again", async () => {
+    const keys = new FakeMailKeys();
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const sender = { domain: 'shop.example', domainId: 'dom1' };
+
+    expect(await p.ensureStoreMail({ storeId: STORE_ID, sender })).toBe('updated');
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual({ ...MAIL, from: `${MAIL.from.split('@')[0]}@shop.example`, pass: keys.keys.get('2') });
+    expect(keys.domains.get('2')).toBe('dom1');
+    expect([...keys.keys.keys()]).toEqual(['2']); // The platform-domain key was revoked.
+    expect(await p.ensureStoreMail({ storeId: STORE_ID, sender })).toBe('unchanged');
+
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('updated');
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual({ ...MAIL, pass: keys.keys.get('3') });
+    expect([...keys.keys.keys()]).toEqual(['3']);
+  });
+
+  it('refuses a sending domain when stores share one key', async () => {
+    p = provisioner(cloud, { mail: MAIL });
+    await p.createStore(storeInput);
+    await expect(p.ensureStoreMail({ storeId: STORE_ID, sender: { domain: 'shop.example', domainId: 'dom1' } })).rejects.toThrow(/per-store keys/);
   });
 
   it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {

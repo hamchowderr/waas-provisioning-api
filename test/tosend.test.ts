@@ -37,4 +37,61 @@ describe('ToSendAdmin', () => {
     await expect(admin.delete('1')).resolves.toBeUndefined();
     await expect(admin.delete('2')).rejects.toThrow(/HTTP 500 boom/);
   });
+
+  // The shape toSend returns for GET /v2/domains/{id} (checked against the live API).
+  const detail = (id: string, name: string, status: string) => ({
+    data: {
+      id,
+      domain_name: name,
+      verification_status: status,
+      dns_records: {
+        dkim: { type: 'TXT', name: 'tosend._domainkey', content: 'p=MIGf', TTL: 'auto', priority: '' },
+        spf: [
+          { type: 'MX', name: 'send', content: 'feedback-smtp.us-east-1.amazonses.com', TTL: 'auto', priority: '10' },
+          { type: 'TXT', name: 'send', content: 'v=spf1 include:amazonses.com ~all', TTL: 'auto', priority: '' },
+        ],
+      },
+    },
+  });
+
+  it('adds a sending domain and returns its DNS records as one list', async () => {
+    const { calls, admin } = api((method, path) => {
+      if (method === 'POST' && path === '/v2/domains') return [201, { data: { id: 'abc123', domain_name: 'shop.example' } }];
+      if (method === 'GET' && path === '/v2/domains/abc123') return [200, detail('abc123', 'shop.example', 'draft')];
+      return [404, {}];
+    });
+    expect(await admin.addDomain('shop.example')).toEqual({
+      id: 'abc123',
+      name: 'shop.example',
+      status: 'draft',
+      records: [
+        { type: 'TXT', name: 'tosend._domainkey', host: 'tosend._domainkey.shop.example', value: 'p=MIGf', priority: null },
+        { type: 'MX', name: 'send', host: 'send.shop.example', value: 'feedback-smtp.us-east-1.amazonses.com', priority: 10 },
+        { type: 'TXT', name: 'send', host: 'send.shop.example', value: 'v=spf1 include:amazonses.com ~all', priority: null },
+      ],
+    });
+    expect(calls[0]).toMatchObject({ method: 'POST', body: { name: 'shop.example' } });
+  });
+
+  it("reads back a domain this account already has, and refuses another account's", async () => {
+    const { admin } = api((method, path) => {
+      if (method === 'POST') return [409, { error: { message: 'Domain already exists' } }];
+      if (method === 'GET' && path === '/v2/domains') return [200, { data: [{ id: 'abc123', domain_name: 'shop.example' }] }];
+      if (method === 'GET' && path === '/v2/domains/abc123') return [200, detail('abc123', 'shop.example', 'verified')];
+      return [404, {}];
+    });
+    expect((await admin.addDomain('shop.example')).status).toBe('verified');
+    await expect(admin.addDomain('taken.example')).rejects.toThrow(/another toSend account/);
+  });
+
+  it('mints a key for a given domain without looking up the platform one, and treats a gone domain as deleted', async () => {
+    const { calls, admin } = api((method, path) => {
+      if (method === 'POST' && path === '/v2/api-keys') return [201, { data: { id: 5, api_key: 'tsend_k' } }];
+      if (method === 'DELETE') return [404, {}];
+      return [500, {}];
+    });
+    expect(await admin.create('abc', 'abc123')).toEqual({ id: '5', key: 'tsend_k' });
+    expect(calls[0]).toMatchObject({ body: { name: 'store-abc', domain: 'abc123' } });
+    await expect(admin.deleteDomain('abc123')).resolves.toBeUndefined();
+  });
 });
