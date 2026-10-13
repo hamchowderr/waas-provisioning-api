@@ -151,7 +151,7 @@ Every operation carries `x-phase: 1` or `x-phase: 2`.
 Every network call in release 2.2.7 of both plugins was traced from its call site to what it sends and every field it reads. These requirements come from that trace, not from the WPCS docs:
 
 - `GET /v1/snapshots` accepts `onlyProductionVersion=true`.
-- `POST /v1/tenants` generates `externalId` when it is omitted (release 2.2.7 never sends one), and answers 400 to an `externalId` already in use, even when two requests race.
+- `POST /v1/tenants` generates `externalId` when it is omitted (release 2.2.7 never sends one), answers a repeat of the same create (a retry whose answer was lost) with the store it already made, and 409 to an `externalId` already used by a different store, even when requests race.
 - Invalid credentials return **403**, not 401.
 - Store domains are bare hostnames; the plugin adds `https://` itself.
 - A tenant's `domainName` equals the creation-time `customDomain ?? baseDomain` exactly (same case, no trailing dot).

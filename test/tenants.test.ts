@@ -73,7 +73,7 @@ describe('tenants', () => {
 
   it('validates externalId: format and uniqueness', async () => {
     expect((await createTenant({ name: 'a', externalId: 'store-1' })).status).toBe(200);
-    expect((await createTenant({ name: 'b', externalId: 'store-1' })).status).toBe(400);
+    expect((await createTenant({ name: 'b', externalId: 'store-1' })).status).toBe(409);
     expect((await createTenant({ name: 'c', externalId: 'has space' })).status).toBe(400);
   });
 
