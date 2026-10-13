@@ -43,6 +43,8 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
     WORDPRESS_DB_PASSWORD: '${SERVICE_PASSWORD_DB}',
     WORDPRESS_CONFIG_EXTRA: CONFIG_EXTRA,
     WAAS_CONSTANTS_B64: '${WAAS_CONSTANTS_B64:-}',
+    // The mail relay's settings, read by the waas-mail mu-plugin (agent.php); empty on version sites.
+    WAAS_MAIL_B64: '${WAAS_MAIL_B64:-}',
     WPCS_IS_TENANT: 'true',
   };
   const compose = {

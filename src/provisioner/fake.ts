@@ -161,4 +161,9 @@ export class FakeProvisioner implements Provisioner {
     this.check('ensureStoreCron');
     return 'unchanged';
   }
+
+  async ensureStoreMail(_input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
+    this.check('ensureStoreMail');
+    return 'unchanged';
+  }
 }

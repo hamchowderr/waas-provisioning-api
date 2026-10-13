@@ -1,5 +1,5 @@
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
-import type { CoolifyProvisionerConfig } from './provisioner/coolify/provisioner.ts';
+import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 
@@ -53,10 +53,25 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
       accessKeyId: required(env, 'S3_ACCESS_KEY_ID', why),
       secretAccessKey: required(env, 'S3_SECRET_ACCESS_KEY', why),
     },
+    mail: loadStoreMail(env),
     brand: env.STORE_BRAND_NAME?.trim()
       ? { name: env.STORE_BRAND_NAME.trim(), url: env.STORE_BRAND_URL?.trim() || undefined }
       : undefined,
   };
+}
+
+/**
+ * Stores' outgoing email (docs/store-email.md): on when STORE_SMTP_PASSWORD is set. The host, port and
+ * user default to toSend's SMTP relay; STORE_MAIL_FROM must be on a domain verified there.
+ */
+function loadStoreMail(env: NodeJS.ProcessEnv): StoreMail | undefined {
+  const pass = env.STORE_SMTP_PASSWORD?.trim();
+  if (!pass) return undefined;
+  const from = env.STORE_MAIL_FROM?.trim();
+  if (!from || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(from)) throw new Error('STORE_MAIL_FROM (an address on the verified sending domain) is required when STORE_SMTP_PASSWORD is set');
+  const port = Number(env.STORE_SMTP_PORT?.trim() || 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('STORE_SMTP_PORT must be a port number');
+  return { host: env.STORE_SMTP_HOST?.trim() || 'smtp.tosend.com', port, user: env.STORE_SMTP_USER?.trim() || 'tosend', pass, from };
 }
 
 /**
