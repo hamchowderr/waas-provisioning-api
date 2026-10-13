@@ -415,6 +415,23 @@ describe('CoolifyProvisioner', () => {
     expect(keys.keys.size).toBe(0);
   });
 
+  it('falls back to the shared key when toSend refuses, and moves the store to its own key later', async () => {
+    const keys = new FakeMailKeys();
+    const create = keys.create.bind(keys);
+    keys.create = async () => {
+      throw new Error('toSend down');
+    };
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual(MAIL);
+    expect(store.envs.has('WAAS_MAIL_KEY_ID')).toBe(false);
+
+    keys.create = create;
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('updated');
+    expect(store.envs.get('WAAS_MAIL_KEY_ID')?.value).toBe('1');
+  });
+
   it('moves a store on the shared key to its own key, once', async () => {
     p = provisioner(cloud, { mail: MAIL });
     await p.createStore(storeInput);

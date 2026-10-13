@@ -36,7 +36,7 @@ Another provider works the same way through its SMTP settings (`STORE_SMTP_HOST`
 
 With `TOSEND_ADMIN_KEY` set, each store gets its own toSend sending key, named `store-<id>` and restricted to `STORE_MAIL_FROM`'s domain, in place of the shared `STORE_SMTP_PASSWORD`:
 
-- A new store's key is minted at create; a retried create reuses the key it minted the first time.
+- A new store's key is minted at create; a retried create reuses the key it minted the first time. If toSend refuses, the store is created with the shared key and gets its own on the next API start.
 - Existing stores move to their own key on the next API start (`ensureStoreMail`, one restart each).
 - The key's id is kept on the store's Service as `WAAS_MAIL_KEY_ID`; deleting the store revokes the key first. A restored store gets a new key.
 - To cut one store's email off, revoke its key in toSend.

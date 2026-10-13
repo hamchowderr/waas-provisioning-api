@@ -478,9 +478,16 @@ export class CoolifyProvisioner implements Provisioner {
         envs[MAIL_KEY_ENV] = keyId;
         pass = held;
       } else {
-        const key = await this.config.mailKeys.create(storeId);
-        envs[MAIL_KEY_ENV] = key.id;
-        pass = key.key;
+        // toSend being down or refusing must not stop a store from being created: it sends with
+        // the shared key until ensureStoreMail succeeds on a later start.
+        const key = await this.config.mailKeys.create(storeId).catch((err: unknown) => {
+          console.error(`Store ${storeId}: own mail key not created, using the shared one: ${(err as Error).message}`);
+          return null;
+        });
+        if (key) {
+          envs[MAIL_KEY_ENV] = key.id;
+          pass = key.key;
+        }
       }
     }
     envs[MAIL_ENV] = b64(JSON.stringify({ host: mail.host, port: mail.port, user: mail.user, pass, from: mail.from }));
