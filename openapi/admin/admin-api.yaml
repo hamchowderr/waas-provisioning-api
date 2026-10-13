@@ -223,6 +223,42 @@ paths:
               schema: { $ref: '#/components/schemas/TenantDetail' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domains/main:
+    put:
+      operationId: adminSetTenantMainDomain
+      summary: Make a domain the store's main address
+      description: >-
+        Adds the domain if the tenant doesn't have it yet and makes it the main domain, like
+        addTenantDomain with setAsMainDomain, for any product. The old main domain stays as a
+        redirect. The tenant is Pending until the domain job finishes. 400 when the domain is
+        invalid or taken, or the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainName]
+              properties:
+                domainName: { type: string }
+      responses:
+        '200':
+          description: The domain now being applied as main
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenantId, externalId, domain, setAsMainDomain]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+                  domain: { type: string }
+                  setAsMainDomain: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/backups:
     get:
       operationId: adminListBackups

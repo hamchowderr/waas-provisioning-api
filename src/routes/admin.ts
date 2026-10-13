@@ -10,6 +10,7 @@ import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { Status, statusName } from '../status.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
+import { addTenantDomain, assertChangeable } from './domains.ts';
 import { versionService } from './versions.ts';
 
 /**
@@ -250,6 +251,19 @@ export function adminRoutes(deps: Deps) {
       })),
       failures: failures.rows.map(toFailure),
     });
+  });
+
+  // Makes a domain the store's main address (adding it if new), as the storefront's addTenantDomain
+  // with setAsMainDomain does, for any product. The old main domain stays as a redirect.
+  app.put('/tenants/:id/domains/main', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const body = (await readJson(c)) as { domainName?: unknown };
+    if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
+    const { rows } = await pool.query('SELECT id, external_id, status FROM tenants WHERE id = $1', [id]);
+    if (!rows[0]) throw notFound(`Tenant ${id} not found`);
+    assertChangeable(rows[0]);
+    return c.json(await addTenantDomain(deps, rows[0], body.domainName, true));
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

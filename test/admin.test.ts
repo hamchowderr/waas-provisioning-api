@@ -131,6 +131,23 @@ describe('admin endpoints', () => {
     await admin('GET', `/admin/tenants/${crypto.randomUUID()}`, 404);
   });
 
+  it('moves a store to a new main domain, keeping the old one as a redirect', async () => {
+    const moving = await newTenant({ name: 'Moving Shop' });
+    const res = await admin('PUT', `/admin/tenants/${moving.id}/domains/main`, 200, { domainName: 'Moved-Shop.example.com' });
+    expect(res).toEqual({ tenantId: moving.id, externalId: moving.externalId, domain: 'moved-shop.example.com', setAsMainDomain: true });
+    await waitFor(async () => {
+      const rows = (await (await t.call('GET', `/v1/tenants?externalId=${moving.externalId}`)).json()) as any[];
+      return rows[0]?.statusCode === Status.Done && rows[0]?.domainName === 'moved-shop.example.com';
+    });
+    const detail = await admin('GET', `/admin/tenants/${moving.id}`);
+    expect(detail.domains.filter((d: any) => d.isMainDomain).map((d: any) => d.domainName)).toEqual(['moved-shop.example.com']);
+    expect(detail.domains.length).toBeGreaterThan(1);
+    // A domain another store already has is refused.
+    await admin('PUT', `/admin/tenants/${shop.id}/domains/main`, 400, { domainName: 'moved-shop.example.com' });
+    await admin('PUT', `/admin/tenants/${moving.id}/domains/main`, 400, {});
+    await admin('PUT', `/admin/tenants/${crypto.randomUUID()}/domains/main`, 404, { domainName: 'x.example.com' });
+  });
+
   it('backups: includes a deleted tenant\'s, with expiresAt', async () => {
     const gone = await newTenant({ name: 'Gone Shop' });
     await t.call('POST', `/v1/tenants/suspend?externalId=${gone.externalId}`, { body: {} });
