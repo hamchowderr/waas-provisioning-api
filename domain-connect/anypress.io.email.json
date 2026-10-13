@@ -12,6 +12,7 @@
       "type": "TXT",
       "host": "tosend._domainkey",
       "data": "%dkim%",
+      "txtConflictMatchingMode": "All",
       "ttl": 3600
     },
     {
