@@ -110,6 +110,8 @@ class FakeCloud {
         return json(200, { message: 'Service deletion request queued.' });
       }
       if ((rest === '/start' || rest === '/restart') && method === 'POST') {
+        // Coolify refuses to start a Service that is already up.
+        if (rest === '/start' && service.started) return json(400, { message: 'Service is already running.' });
         service.started++;
         if (rest === '/restart') service.restarting = { ...this.restartPhases };
         return json(200, { message: 'queued' });
@@ -340,11 +342,12 @@ describe('CoolifyProvisioner', () => {
     expect(onDemandTasks(cloud)).toEqual([]);
   });
 
-  it('is idempotent: a retried create reuses the Service', async () => {
+  it('is idempotent: a retried create reuses the Service, even though it is already running', async () => {
     await p.createStore(storeInput);
     await p.createStore(storeInput);
     expect([...cloud.services.values()].filter((s) => s.name === `store-${STORE_ID}`)).toHaveLength(1);
     expect(cloud.calls.filter((c) => c === 'POST /services')).toHaveLength(1);
+    expect(cloud.agentOps.filter((o) => o.op === 'restore')).toHaveLength(2);
   });
 
   it('only sees Services in its own project environments', async () => {

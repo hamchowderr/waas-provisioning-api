@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Brand, CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
-import { CoolifyClient, type CoolifyService, type CoolifyTask } from './client.ts';
+import { CoolifyClient, CoolifyError, type CoolifyService, type CoolifyTask } from './client.ts';
 import { encodeConstants, renderCompose } from './compose.ts';
 
 export interface CoolifyProvisionerConfig {
@@ -186,7 +186,10 @@ export class CoolifyProvisioner implements Provisioner {
       service = { uuid: created.uuid, name: input.name };
     }
     if (Object.keys(input.envs).length) await this.coolify.setEnvs(service.uuid, input.envs);
-    await this.coolify.startService(service.uuid);
+    await this.coolify.startService(service.uuid).catch((err: unknown) => {
+      // A retried job finds the Service it created last time already up; that is the goal anyway.
+      if (!(err instanceof CoolifyError && err.status === 400 && /already running/i.test(err.message))) throw err;
+    });
     await this.waitHealthy(service.uuid);
     return service.uuid;
   }
