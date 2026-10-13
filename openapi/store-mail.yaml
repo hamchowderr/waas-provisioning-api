@@ -78,6 +78,28 @@ paths:
                   domainName: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/tenants/domain-connect:
+    parameters:
+      - { name: externalId, in: query, schema: { type: string } }
+      - { name: tenantId, in: query, schema: { type: string } }
+    get:
+      operationId: getTenantDomainConnect
+      summary: A link that adds the store's DNS records at the domain's DNS host (Domain Connect)
+      description: >-
+        service website gives the domain's A record (one of the store's domains); email gives its
+        sending domain's DKIM, MX and SPF records. 400 when the domain isn't the store's or Domain
+        Connect is off.
+      parameters:
+        - { name: domainName, in: query, required: true, schema: { type: string } }
+        - { name: service, in: query, required: true, schema: { type: string, enum: [website, email] } }
+      responses:
+        '200':
+          description: The link, when the DNS host supports it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DomainConnectLink' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 components:
   securitySchemes:
     basic: { type: http, scheme: basic }
@@ -93,6 +115,17 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
   schemas:
+    DomainConnectLink:
+      type: object
+      description: >-
+        A link that sends the store owner to their DNS host, which adds the records once they approve
+        (docs/domain-connect.md). Without one (the DNS host doesn't support Domain Connect or hasn't
+        accepted the platform's template yet), show the records to copy by hand.
+      required: [dnsProvider, supported, url]
+      properties:
+        dnsProvider: { type: string, nullable: true, description: The domain's DNS host, when it supports Domain Connect at all, example: Cloudflare }
+        supported: { type: boolean, description: True when url works }
+        url: { type: string, nullable: true }
     Error:
       type: object
       required: [statusCode, message]

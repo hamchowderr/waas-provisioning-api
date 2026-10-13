@@ -1,4 +1,5 @@
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
+import { loadDomainConnectConfig, type DomainConnectConfig } from './domainconnect.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
 import { ToSendAdmin, type SendingDomains, type StoreMailKeys } from './tosend.ts';
@@ -28,6 +29,8 @@ export interface Config {
   coolify?: CoolifyProvisionerConfig;
   /** Stores' own sending domains on toSend (src/maildomains.ts); set with TOSEND_ADMIN_KEY. */
   sendingDomains?: SendingDomains;
+  /** Domain Connect links for store owners' DNS (src/domainconnect.ts); on when PLATFORM_DOMAIN is set. */
+  domainConnect?: DomainConnectConfig;
   /** The plugin releases bucket (waas-hw4). Unset: update checks get 503. */
   releases?: S3Config;
   /** Off-site backups of this database (src/dbbackup.ts); on when the S3_* settings are set. */
@@ -126,18 +129,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const provisioner = env.PROVISIONER ?? 'fake';
   if (provisioner !== 'fake' && provisioner !== 'coolify') throw new Error('PROVISIONER must be fake or coolify');
   const coolify = provisioner === 'coolify' ? loadCoolify(env) : undefined;
+  const platformDomain = env.PLATFORM_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined;
   return {
     databaseUrl,
     port: Number(env.PORT ?? 4111),
     storesDomain: env.STORES_DOMAIN ?? 'stores.waas.example',
     versionsDomain: env.VERSIONS_DOMAIN ?? 'versions.waas.example',
-    platformDomain: env.PLATFORM_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined,
+    platformDomain,
     secretsKey,
     backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
     adminToken: env.ADMIN_TOKEN || undefined,
     provisioner,
     coolify,
     sendingDomains: coolify?.mailKeys instanceof ToSendAdmin ? coolify.mailKeys : undefined,
+    domainConnect: loadDomainConnectConfig(env, platformDomain),
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),
     storeBackup: loadStoreBackupConfig(env),
