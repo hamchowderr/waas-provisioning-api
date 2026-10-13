@@ -1,6 +1,7 @@
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
+import { ToSendAdmin, type StoreMailKeys } from './tosend.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 
 export interface Config {
@@ -41,6 +42,7 @@ function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
 
 function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
   const why = 'when PROVISIONER=coolify';
+  const mail = loadStoreMail(env);
   return {
     url: required(env, 'COOLIFY_URL', why),
     token: env.COOLIFY_TOKEN || undefined,
@@ -53,7 +55,8 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
       accessKeyId: required(env, 'S3_ACCESS_KEY_ID', why),
       secretAccessKey: required(env, 'S3_SECRET_ACCESS_KEY', why),
     },
-    mail: loadStoreMail(env),
+    mail,
+    mailKeys: loadStoreMailKeys(env, mail),
     brand: env.STORE_BRAND_NAME?.trim()
       ? { name: env.STORE_BRAND_NAME.trim(), url: env.STORE_BRAND_URL?.trim() || undefined }
       : undefined,
@@ -72,6 +75,19 @@ function loadStoreMail(env: NodeJS.ProcessEnv): StoreMail | undefined {
   const port = Number(env.STORE_SMTP_PORT?.trim() || 587);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('STORE_SMTP_PORT must be a port number');
   return { host: env.STORE_SMTP_HOST?.trim() || 'smtp.tosend.com', port, user: env.STORE_SMTP_USER?.trim() || 'tosend', pass, from };
+}
+
+/**
+ * TOSEND_ADMIN_KEY (an admin key, `tsend_admin_…`) gives each store its own toSend sending key,
+ * restricted to STORE_MAIL_FROM's domain, in place of the shared STORE_SMTP_PASSWORD.
+ */
+function loadStoreMailKeys(env: NodeJS.ProcessEnv, mail: StoreMail | undefined): StoreMailKeys | undefined {
+  const adminKey = env.TOSEND_ADMIN_KEY?.trim();
+  if (!adminKey) return undefined;
+  if (!mail) throw new Error('TOSEND_ADMIN_KEY needs STORE_SMTP_PASSWORD and STORE_MAIL_FROM too');
+  if (!adminKey.startsWith('tsend_admin_')) throw new Error('TOSEND_ADMIN_KEY must be a toSend admin key (tsend_admin_…), not a sending key');
+  const domain = mail.from.split('@')[1]!.toLowerCase();
+  return new ToSendAdmin(adminKey, domain, env.TOSEND_API_URL?.trim() || undefined);
 }
 
 /**

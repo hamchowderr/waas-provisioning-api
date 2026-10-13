@@ -206,7 +206,21 @@ const cronTasks = (cloud: FakeCloud) => [...cloud.tasks.values()].filter((t) => 
 const MAIL = { host: 'smtp.tosend.com', port: 587, user: 'tosend', pass: 'tsend_test_not_real', from: 'store@mail.example' };
 const decode = (value: string | undefined) => value && JSON.parse(Buffer.from(value, 'base64').toString());
 
-function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL } = {}) {
+/** A stand-in for toSend's admin API: keys by id. */
+class FakeMailKeys {
+  keys = new Map<string, string>();
+  private seq = 0;
+  async create(storeId: string) {
+    const id = String(++this.seq);
+    this.keys.set(id, `tsend_${storeId.slice(0, 8)}_${id}`);
+    return { id, key: this.keys.get(id)! };
+  }
+  async delete(id: string) {
+    this.keys.delete(id);
+  }
+}
+
+function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL; mailKeys?: FakeMailKeys } = {}) {
   return new CoolifyProvisioner({
     ...extra,
     url: COOLIFY,
@@ -383,6 +397,39 @@ describe('CoolifyProvisioner', () => {
     expect(decode(store.envs.get('WAAS_MAIL_B64')?.value).pass).toBe('tsend_rotated_not_real');
     expect(store.compose).toBe('kept');
     expect(store.started).toBe(starts + 2);
+  });
+
+  it('gives each store its own relay key when keys are per store, reusing it on a retry and revoking it on delete', async () => {
+    const keys = new FakeMailKeys();
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    await p.createStore(storeInput);
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(keys.keys.size).toBe(1);
+    const [id, key] = [...keys.keys][0]!;
+    expect(store.envs.get('WAAS_MAIL_KEY_ID')?.value).toBe(id);
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual({ ...MAIL, pass: key });
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
+
+    await p.deleteStore({ storeId: STORE_ID });
+    expect(keys.keys.size).toBe(0);
+  });
+
+  it('moves a store on the shared key to its own key, once', async () => {
+    p = provisioner(cloud, { mail: MAIL });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+
+    const keys = new FakeMailKeys();
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('updated');
+    const [id, key] = [...keys.keys][0]!;
+    expect(store.envs.get('WAAS_MAIL_KEY_ID')?.value).toBe(id);
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value).pass).toBe(key);
+    expect(store.started).toBe(starts + 1);
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
+    expect(keys.keys.size).toBe(1);
   });
 
   it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {
@@ -624,6 +671,25 @@ describe('Provisioner selection', () => {
       from: 'store@mail.example',
     });
     expect(() => loadConfig({ ...coolify, STORE_SMTP_PASSWORD: 'x', STORE_MAIL_FROM: 'a@b.example', STORE_SMTP_PORT: 'smtp' })).toThrow(/STORE_SMTP_PORT/);
+  });
+
+  it('turns per-store toSend keys on with TOSEND_ADMIN_KEY, and refuses a sending key there', () => {
+    const coolify = {
+      ...base,
+      PROVISIONER: 'coolify',
+      COOLIFY_URL: COOLIFY,
+      COOLIFY_SERVER_UUID: SERVER,
+      COOLIFY_PROJECT_UUID: PROJECT,
+      S3_ENDPOINT: S3_ENDPOINT,
+      S3_BUCKET: 'waas-stores',
+      S3_ACCESS_KEY_ID: 'TESTKEY',
+      S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
+    };
+    const mail = { STORE_SMTP_PASSWORD: 'tsend_x', STORE_MAIL_FROM: 'no-reply@mail.example' };
+    expect(loadConfig({ ...coolify, ...mail }).coolify?.mailKeys).toBeUndefined();
+    expect(loadConfig({ ...coolify, ...mail, TOSEND_ADMIN_KEY: 'tsend_admin_x' }).coolify?.mailKeys).toBeDefined();
+    expect(() => loadConfig({ ...coolify, ...mail, TOSEND_ADMIN_KEY: 'tsend_x' })).toThrow(/admin key/);
+    expect(() => loadConfig({ ...coolify, TOSEND_ADMIN_KEY: 'tsend_admin_x' })).toThrow(/STORE_SMTP_PASSWORD/);
   });
 
   it('trims the release bucket settings, so a key pasted with a trailing newline still signs', () => {

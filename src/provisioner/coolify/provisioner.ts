@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { Brand, CreateStoreInput, PhpConstant, Provisioner } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
-import { CoolifyClient, CoolifyError, type CoolifyService, type CoolifyTask } from './client.ts';
+import type { StoreMailKeys } from '../../tosend.ts';
+import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
 import { encodeConstants, renderCompose } from './compose.ts';
 
 export interface CoolifyProvisionerConfig {
@@ -28,6 +29,12 @@ export interface CoolifyProvisionerConfig {
   pollMs?: number;
   /** The relay stores send email through. Unset: stores send none (the WordPress image has no mailer). */
   mail?: StoreMail;
+  /**
+   * Gives each store its own relay password (a toSend sending key) in place of `mail.pass`, so one
+   * store's key can be revoked alone and is revoked when the store is deleted. Unset: all stores
+   * share `mail.pass`.
+   */
+  mailKeys?: StoreMailKeys;
   /** Who suspended stores' "website unavailable" page credits, unless a suspend names its own. */
   brand?: Brand;
 }
@@ -43,6 +50,20 @@ export interface StoreMail {
 
 /** The store variable carrying StoreMail as base64 JSON (compose.ts, the waas-mail mu-plugin). */
 const MAIL_ENV = 'WAAS_MAIL_B64';
+/** The id of the store's own relay key (CoolifyProvisionerConfig.mailKeys), to revoke it later. */
+const MAIL_KEY_ENV = 'WAAS_MAIL_KEY_ID';
+
+const envValue = (envs: CoolifyEnv[], key: string) => {
+  const env = envs.find((e) => e.key === key);
+  return env && (env.real_value ?? env.value);
+};
+const decodeMail = (value: string | undefined): Partial<StoreMail> | null => {
+  try {
+    return value ? JSON.parse(Buffer.from(value, 'base64').toString()) : null;
+  } catch {
+    return null;
+  }
+};
 
 export const DEFAULT_BRAND: Brand = { name: 'AnyPress' };
 
@@ -384,8 +405,9 @@ export class CoolifyProvisioner implements Provisioner {
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
     if (input.user?.password) envs.WAAS_INIT_PASSWORD = input.user.password;
-    const mail = this.mailEnv();
-    if (mail) envs[MAIL_ENV] = mail;
+    // A retried create finds the Service, and the key it minted, from last time.
+    const existing = await this.findService(STORES_ENV, storeName(input.storeId));
+    Object.assign(envs, await this.storeMailEnvs(input.storeId, existing ? await this.coolify.listEnvs(existing.uuid) : []));
     const uuid = await this.ensureService({
       envName: STORES_ENV,
       name: storeName(input.storeId),
@@ -440,32 +462,59 @@ export class CoolifyProvisioner implements Provisioner {
     return this.ensureCron(store.uuid);
   }
 
-  private mailEnv(): string | undefined {
+  /**
+   * A store's mail variables: the relay settings, with the store's own key when keys are per store
+   * (reusing the one it already holds), or nothing when stores send no email.
+   */
+  private async storeMailEnvs(storeId: string, current: CoolifyEnv[]): Promise<Record<string, string>> {
     const mail = this.config.mail;
-    return mail && b64(JSON.stringify({ host: mail.host, port: mail.port, user: mail.user, pass: mail.pass, from: mail.from }));
+    if (!mail) return {};
+    const envs: Record<string, string> = {};
+    let pass = mail.pass;
+    if (this.config.mailKeys) {
+      const keyId = envValue(current, MAIL_KEY_ENV);
+      const held = keyId ? decodeMail(envValue(current, MAIL_ENV))?.pass : undefined;
+      if (keyId && held) {
+        envs[MAIL_KEY_ENV] = keyId;
+        pass = held;
+      } else {
+        const key = await this.config.mailKeys.create(storeId);
+        envs[MAIL_KEY_ENV] = key.id;
+        pass = key.key;
+      }
+    }
+    envs[MAIL_ENV] = b64(JSON.stringify({ host: mail.host, port: mail.port, user: mail.user, pass, from: mail.from }));
+    return envs;
   }
 
   /**
-   * Gives a store the current mail relay settings: a store created before stores sent email, or
-   * after the relay's settings changed (a new key). Such a store gets the variable, a compose that
-   * passes it to WordPress (re-rendered from its version, as ensureStoreCron does), one restart, and
-   * the mu-plugin. A store already holding the same settings is left alone, so this runs once.
+   * Gives a store the current mail relay settings: a store created before stores sent email, before
+   * keys were per store, or after the relay's settings changed. Such a store gets the variables, a
+   * compose that passes them to WordPress (re-rendered from its version, as ensureStoreCron does),
+   * one restart, and the mu-plugin. A store already holding the same settings is left alone, so
+   * this runs once.
    */
   async ensureStoreMail({ storeId }: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
-    const want = this.mailEnv();
-    if (!want) return 'unchanged';
+    if (!this.config.mail) return 'unchanged';
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    const current = (await this.coolify.listEnvs(store.uuid)).find((e) => e.key === MAIL_ENV);
-    if ((current?.real_value ?? current?.value) === want) return 'unchanged';
-    if (!current) {
+    const current = await this.coolify.listEnvs(store.uuid);
+    const had = current.some((e) => e.key === MAIL_ENV);
+    // Coolify hides values from a token without read:sensitive; then nothing can be compared.
+    if (had && envValue(current, MAIL_ENV) === undefined) return 'unchanged';
+    const want = await this.storeMailEnvs(storeId, current);
+    if (Object.entries(want).every(([key, value]) => envValue(current, key) === value)) return 'unchanged';
+    if (!had) {
       const meta = parseMeta(store.description);
       if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
       await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
     }
-    await this.coolify.setEnvs(store.uuid, { [MAIL_ENV]: want });
+    await this.coolify.setEnvs(store.uuid, want);
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
-    return current ? 'updated' : 'created';
+    // A key the store no longer uses (its value was lost) is revoked.
+    const oldKeyId = envValue(current, MAIL_KEY_ENV);
+    if (oldKeyId && oldKeyId !== want[MAIL_KEY_ENV]) await this.config.mailKeys?.delete(oldKeyId);
+    return had ? 'updated' : 'created';
   }
 
   private async removeEnv(uuid: string, key: string) {
@@ -544,6 +593,10 @@ export class CoolifyProvisioner implements Provisioner {
   }
 
   async deleteStore({ storeId }: { storeId: string }) {
+    // The store's own relay key goes first: once the Service is gone, so is the record of its id.
+    const store = this.config.mailKeys && (await this.findService(STORES_ENV, storeName(storeId)));
+    const keyId = store ? envValue(await this.coolify.listEnvs(store.uuid), MAIL_KEY_ENV) : undefined;
+    if (keyId) await this.config.mailKeys!.delete(keyId);
     await this.deleteService(STORES_ENV, storeName(storeId));
   }
 }
