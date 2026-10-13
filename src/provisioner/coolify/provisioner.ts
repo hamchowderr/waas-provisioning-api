@@ -269,6 +269,10 @@ export class CoolifyProvisioner implements Provisioner {
         const executions = await this.coolify.listExecutions(uuid, task.uuid);
         const finished = executions.find((e) => e.status === 'success' || e.status === 'failed' || e.finished_at);
         if (finished) {
+          if (finished.message === undefined) {
+            // Coolify hides task output from tokens without read:sensitive, and the result is in that output.
+            throw new Error(`Store agent ${op}: Coolify hid the task output; the API's COOLIFY_TOKEN needs the read:sensitive permission`);
+          }
           const output = finished.message ?? '';
           const result = /^WAAS_RESULT (.*)$/m.exec(output);
           if (finished.status === 'success' && result) return JSON.parse(result[1]!);
