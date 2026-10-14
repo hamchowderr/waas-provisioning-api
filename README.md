@@ -2,7 +2,7 @@
 
 The API that creates and runs WordPress websites for a "website as a service" business. A storefront (a WordPress shop running the [WaaS Host plugin](https://github.com/hamchowderr/waas-plugins)) sells a subscription; this API builds the customer's website, gives it a domain and a login, backs it up, and suspends, restores or deletes it as the subscription changes.
 
-It speaks the WPCS v1 API (same paths, parameters and field names), so plugins written for WPCS work with it. It is the backend of [AnyPress](https://anypress.io) and is open source under GPL-3.0.
+It is the backend of [AnyPress](https://anypress.io) and is open source under GPL-3.0.
 
 | Repository | What it is |
 |---|---|
@@ -71,7 +71,7 @@ More detail on single topics:
 
 ## Admin API
 
-`/admin/*` serves the admin dashboard ([waas-dashboard](https://github.com/hamchowderr/waas-dashboard)). It is not part of the WPCS contract; `openapi/admin/admin-api.yaml` describes it. It sees every product and authenticates with `Authorization: Bearer <ADMIN_TOKEN>`. Product keys, a missing header or a wrong token all get 403, and so does every request when `ADMIN_TOKEN` is not set. The token is compared in constant time and never logged.
+`/admin/*` serves the admin dashboard ([waas-dashboard](https://github.com/hamchowderr/waas-dashboard)). `openapi/admin/admin-api.yaml` describes it. It sees every product and authenticates with `Authorization: Bearer <ADMIN_TOKEN>`. Product keys, a missing header or a wrong token all get 403, and so does every request when `ADMIN_TOKEN` is not set. The token is compared in constant time and never logged.
 
 | Endpoint | What it returns |
 |---|---|
@@ -96,7 +96,7 @@ A job that fails its last retry is recorded in `job_failures` (type, tenant or v
 
 ## Plugin updates
 
-The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plugins) (waas-host, waas-payments) get their updates from this API, never from GitHub or wordpress.org. It is outside the WPCS contract; [`openapi/plugin-updates.yaml`](openapi/plugin-updates.yaml) describes it.
+The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plugins) (waas-host, waas-payments) get their updates from this API, never from GitHub or wordpress.org. [`openapi/plugin-updates.yaml`](openapi/plugin-updates.yaml) describes it.
 
 - `GET /v1/plugins/{slug}/update?version=&channel=stable|beta&site=&wp=&php=`, with the storefront's own API key (Basic auth, as for `/v1`). `slug` is `wpcs-waas-host`, `wpcs-waas-client` or `waas-payments`. It answers the release the channel points at (or the product's pin), with `sha256`, the ed25519 `signature` and a `package` URL that works for 10 minutes. 404 when nothing is released on the channel; 503 when updates aren't configured or the bucket can't be read.
 - Every check records the slug, site, version, channel, WordPress and PHP version in `plugin_installs` (also on 404 and 503).
@@ -117,7 +117,7 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 ## The contract
 
-`openapi/waas-provisioning-api.yaml` is the source of truth for the WPCS-compatible API; the admin and plugin-update endpoints have their own files under `openapi/`. What the plugins depend on, and the contract's history: [docs/contract.md](docs/contract.md).
+`openapi/waas-provisioning-api.yaml` is the source of truth for the provisioning API; the admin and plugin-update endpoints have their own files under `openapi/`. What the plugins depend on, and the contract's history: [docs/contract.md](docs/contract.md).
 
 A public Postman mock of the contract is at `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`, useful for testing a plugin without running the API.
 
@@ -138,7 +138,7 @@ The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown ab
 npx @redocly/cli lint openapi/waas-provisioning-api.yaml
 ```
 
-Expected: valid, with two warnings (a localhost server entry, and one unused schema kept from WPCS).
+Expected: valid, with two warnings (a localhost server entry, and one unused schema kept for older clients).
 
 ## License
 

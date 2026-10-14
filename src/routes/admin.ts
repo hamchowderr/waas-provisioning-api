@@ -16,7 +16,7 @@ import { addTenantDomain, assertChangeable } from './domains.ts';
 import { versionService } from './versions.ts';
 
 /**
- * Admin API for the dashboard (waas-api-plu). Outside the WPCS contract: documented in the README
+ * Admin API for the dashboard (waas-api-plu). Not part of /v1: documented in the README
  * and openapi/admin/admin-api.yaml. Sees every product. Authenticated with ADMIN_TOKEN as a
  * bearer token; product keys get 403.
  */
@@ -513,7 +513,7 @@ export function adminRoutes(deps: Deps) {
   });
 
   // Versions and templates of any product: the same operations, request and response shapes as
-  // the WPCS ones (listVersions, createVersion, deleteVersion, setProductionVersion and the
+  // the /v1 ones (listVersions, createVersion, deleteVersion, setProductionVersion and the
   // base-snapshot operations), with the product taken from the path.
 
   async function products(id: string | null) {

@@ -39,7 +39,7 @@ export type AppEnv = { Variables: { productId: string; apiKeyId?: string } };
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
 
-  // For uptime monitoring; outside the WPCS contract and unauthenticated. 503 when Postgres or
+  // For uptime monitoring; outside /v1 and unauthenticated. 503 when Postgres or
   // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
   // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
   app.get('/health', async (c) => {
