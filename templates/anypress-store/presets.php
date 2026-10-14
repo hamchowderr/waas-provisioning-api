@@ -174,6 +174,11 @@ $support->save('global_business_settings', $business);
 // hide the Pro suggestions; no review nag.
 $merge('automatorwp_settings', ['auto_logs_cleanup_days' => '30', 'disable_pro_recommendations' => 'on']);
 update_option('automatorwp_hide_review_notice', 'yes');
+// Its tables are only created when wp-admin first loads (admin_init), and a store's cron runs before anyone signs
+// in, so its log clean-up failed on a missing table. Create them now.
+foreach ($GLOBALS['ct_registered_tables'] ?? [] as $table) {
+    $table->db->maybe_upgrade();
+}
 
 // FluentAuth. Saving its settings once is what its first-run wizard does. Its defaults stay (5 failed logins locks
 // an address for 30 minutes, a monthly login digest to the admin email); XML-RPC is off, since no store uses it and
