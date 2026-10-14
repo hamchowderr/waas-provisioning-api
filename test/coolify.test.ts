@@ -577,6 +577,18 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.objects.has('backups/b-1.zip')).toBe(false);
   });
 
+  it('rolls back a store whose WordPress is gone, to its main domain on record', async () => {
+    await p.createStore(storeInput);
+    cloud.objects.set('backups/b-1.zip', new Uint8Array(10));
+    const agent = cloud.agent;
+    cloud.agent = (op, args, service) => (op === 'home' ? { status: 'success', message: 'WAAS_RESULT {"home":null}' } : agent(op, args, service));
+    await expect(p.rollbackStore({ storeId: STORE_ID, backupId: 'b-1', wpOptions: {} })).rejects.toThrow(/did not report the home URL/);
+    const before = cloud.agentOps.length;
+    await p.rollbackStore({ storeId: STORE_ID, backupId: 'b-1', wpOptions: {}, mainDomain: 'shop.example.org' });
+    const restore = cloud.agentOps.slice(before).find((o) => o.op === 'restore')!;
+    expect(restore.args).toMatchObject({ home: 'https://shop.example.org' });
+  });
+
   it('rolls a store back to a backup in place: same main domain, its current code, its options again', async () => {
     await p.createStore(storeInput);
     await expect(p.rollbackStore({ storeId: STORE_ID, backupId: 'b-1', wpOptions: {} })).rejects.toThrow(/No archive at backups\/b-1\.zip/);

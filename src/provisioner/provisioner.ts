@@ -88,7 +88,7 @@ export interface Provisioner {
    * its current domains, version code, constants and suspension; `wpOptions` (the tenant's current
    * options) are written again afterwards, so the options the API set stay as the API records them.
    */
-  rollbackStore(input: { storeId: string; backupId: string; wpOptions: Record<string, string> }): Promise<void>;
+  rollbackStore(input: { storeId: string; backupId: string; wpOptions: Record<string, string>; mainDomain?: string }): Promise<void>;
 
   /** Deletes a backup. Called once a deleted tenant's backups pass their retention. */
   deleteBackup(input: { backupId: string }): Promise<void>;
