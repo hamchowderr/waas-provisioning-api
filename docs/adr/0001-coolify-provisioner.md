@@ -1,6 +1,6 @@
 # ADR 0001: Coolify Provisioner for normal stores
 
-Status: **Proposed**, waiting for the owner's go. Date: 2026-10-07. Issue: `waas-api-2hl.10`.
+Status: **Accepted** and in production (`PROVISIONER=coolify` on waas-api; stores on anypress.io since 2026-10-12). Date: 2026-10-07. Issue: `waas-api-2hl.10`. The "Decisions for the owner" at the end are settled: R2, anypress.io, HTTP-01 certificates for now.
 
 ## Context
 
@@ -137,7 +137,7 @@ Owner steps:
 
 Custom domains: the customer adds a `CNAME` to their store's `t-<id8>.stores.<domain>` (or an `A` record to the IP for an apex domain); `setDomains` adds it to the Service and Traefik gets its certificate over HTTP-01. The API should check DNS before calling `setDomains`, so a failed challenge does not spend the rate limit (a follow-up, not in this change).
 
-**For now (owner's decision, 2026-10-07)** stores and versions use sslip.io, which needs no DNS: `STORES_DOMAIN=191.101.15.236.sslip.io` and `VERSIONS_DOMAIN=191.101.15.236.sslip.io`, so a store answers on `t-<id8>.191.101.15.236.sslip.io` with a real HTTP-01 certificate. sslip.io is fine for testing and early stores, but it is a third party's DNS and Let's Encrypt limits certificates per registered domain, so move to an owned domain before many stores go live.
+**Superseded by anypress.io (below).** From 2026-10-07 to 2026-10-12 stores and versions used sslip.io, which needs no DNS: `STORES_DOMAIN=191.101.15.236.sslip.io` and `VERSIONS_DOMAIN=191.101.15.236.sslip.io`, so a store answers on `t-<id8>.191.101.15.236.sslip.io` with a real HTTP-01 certificate. sslip.io is fine for testing and early stores, but it is a third party's DNS and Let's Encrypt limits certificates per registered domain, so move to an owned domain before many stores go live.
 
 #### Switching to an owned domain
 
