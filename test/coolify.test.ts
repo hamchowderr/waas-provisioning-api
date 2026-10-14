@@ -19,7 +19,7 @@ interface Service {
   environment_id: number;
   compose: string;
   urls: { name: string; url: string }[];
-  envs: Map<string, { uuid: string; value: string }>;
+  envs: Map<string, { uuid: string; value: string; literal?: boolean }>;
   started: number;
   /** After a restart call: reads that still show the old healthy status, then reads that show it down. */
   restarting?: { stale: number; down: number };
@@ -118,9 +118,12 @@ class FakeCloud {
         if (rest === '/restart') service.restarting = { ...this.restartPhases };
         return json(200, { message: 'queued' });
       }
-      if (rest === '/envs' && method === 'GET') return json(200, [...service.envs].map(([key, e]) => ({ uuid: e.uuid, key, value: e.value, real_value: e.value })));
+      if (rest === '/envs' && method === 'GET') {
+        // Coolify hands a literal variable's real_value back wrapped in single quotes, as it writes it to .env.
+        return json(200, [...service.envs].map(([key, e]) => ({ uuid: e.uuid, key, value: e.value, real_value: e.literal ? `'${e.value}'` : e.value })));
+      }
       if (rest === '/envs/bulk' && method === 'PATCH') {
-        for (const { key, value } of body.data) service.envs.set(key, { uuid: `env-${++this.seq}`, value });
+        for (const { key, value, is_literal } of body.data) service.envs.set(key, { uuid: `env-${++this.seq}`, value, literal: !!is_literal });
         return json(201, []);
       }
       if ((m = /^\/envs\/([^/]+)$/.exec(rest)) && method === 'DELETE') {
@@ -415,6 +418,24 @@ describe('CoolifyProvisioner', () => {
 
     await p.deleteStore({ storeId: STORE_ID });
     expect(keys.keys.size).toBe(0);
+  });
+
+  it('repairs a key id that earlier starts wrapped in quotes, keeping the same key', async () => {
+    const keys = new FakeMailKeys();
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const [id, key] = [...keys.keys][0]!;
+    // What reading real_value and writing it back left on live stores: one more layer per start.
+    store.envs.get('WAAS_MAIL_KEY_ID')!.value = `''''${id}''''`;
+    const starts = store.started;
+
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('updated');
+    expect(store.envs.get('WAAS_MAIL_KEY_ID')?.value).toBe(id);
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual({ ...MAIL, pass: key });
+    expect([...keys.keys.keys()]).toEqual([id]);
+    expect(store.started).toBe(starts + 1);
+    expect(await p.ensureStoreMail({ storeId: STORE_ID })).toBe('unchanged');
   });
 
   it('falls back to the shared key when toSend refuses, and moves the store to its own key later', async () => {
