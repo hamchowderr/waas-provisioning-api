@@ -14,8 +14,8 @@
     "db-backup": "tsx src/cli/db-backup.ts",
     "typecheck": "tsc --noEmit && tsc -p sdk/typescript",
     "test": "vitest run",
-    "sdk:generate": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false",
-    "sdk:check": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false --check && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false --check && tsc -p sdk/typescript"
+    "sdk:generate": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false",
+    "sdk:check": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false --check && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false --check && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false --check && tsc -p sdk/typescript"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",

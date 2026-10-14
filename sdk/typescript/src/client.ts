@@ -1,7 +1,8 @@
 import type { components, operations as provisioningOperations } from './generated/provisioning.js';
 import type { components as mailComponents, operations as mailOperations } from './generated/store-mail.js';
+import type { components as webhookComponents, operations as webhookOperations } from './generated/webhooks.js';
 
-type Operations = provisioningOperations & mailOperations;
+type Operations = provisioningOperations & mailOperations & webhookOperations;
 type OperationId = keyof Operations;
 
 /** The query parameters an operation takes, from the OpenAPI contract. */
@@ -17,7 +18,9 @@ export type BodyOf<K extends OperationId> = [NonNullable<Operations[K]['requestB
 /** What an operation answers with on success (`void` when the body is empty). */
 export type ResultOf<K extends OperationId> = Operations[K] extends { responses: { 200: { content: { 'application/json': infer R } } } }
   ? R
-  : void;
+  : Operations[K] extends { responses: { 201: { content: { 'application/json': infer R } } } }
+    ? R
+    : void;
 
 type Schemas = components['schemas'];
 export type Tenant = Schemas['GetTenantQueryResult'];
@@ -30,6 +33,13 @@ export type CreateTenantParams = Schemas['CreateTenantParams'];
 export type UpdateTenantParams = Schemas['UpdateTenantParams'];
 export type MailDomain = mailComponents['schemas']['MailDomain'];
 export type DomainConnectLink = mailComponents['schemas']['DomainConnectLink'];
+type WebhookSchemas = webhookComponents['schemas'];
+export type WebhookEndpoint = WebhookSchemas['WebhookEndpoint'];
+export type WebhookEndpointWithSecret = WebhookSchemas['WebhookEndpointWithSecret'];
+export type WebhookDelivery = WebhookSchemas['WebhookDelivery'];
+export type WebhookEventType = WebhookSchemas['WebhookEventType'];
+/** The body of every webhook request the API sends. */
+export type WebhookEvent = WebhookSchemas['WebhookEvent'];
 
 /** Picks a tenant: by your own `externalId` (what the WaaS Host plugin uses) or by the API's `tenantId`. */
 export type TenantRef = { externalId: string; tenantId?: never } | { tenantId: string; externalId?: never };
@@ -164,6 +174,27 @@ export class WaasClient {
     delete: (id: string) => this.#call('deleteBaseSnapshot', 'DELETE', '/v1/basesnapshots', { id }),
   };
 
+  /** Endpoints that get a signed POST when one of your stores or versions changes (docs/webhooks.md). */
+  readonly webhooks = {
+    list: () => this.#call('listWebhookEndpoints', 'GET', '/v1/webhooks'),
+    /** Registers an endpoint. The answer's `secret` is shown only this once: keep it to verify requests. */
+    create: (params: BodyOf<'createWebhookEndpoint'>) => this.#call('createWebhookEndpoint', 'POST', '/v1/webhooks', undefined, params),
+    get: (id: string) => this.#call('getWebhookEndpoint', 'GET', `/v1/webhooks/${encodeURIComponent(id)}`),
+    /** Fields left out keep their value; an empty eventTypes is every event. */
+    update: (id: string, params: BodyOf<'updateWebhookEndpoint'>) =>
+      this.#call('updateWebhookEndpoint', 'PUT', `/v1/webhooks/${encodeURIComponent(id)}`, undefined, params),
+    delete: (id: string) => this.#call('deleteWebhookEndpoint', 'DELETE', `/v1/webhooks/${encodeURIComponent(id)}`),
+    /** A new secret; the old one stops working at once. */
+    rotateSecret: (id: string) => this.#call('rotateWebhookSecret', 'POST', `/v1/webhooks/${encodeURIComponent(id)}/rotate-secret`),
+    /** Sends a webhook.test event to the endpoint and answers with the pending delivery. */
+    test: (id: string) => this.#call('testWebhookEndpoint', 'POST', `/v1/webhooks/${encodeURIComponent(id)}/test`),
+    deliveries: (id: string, query: QueryOf<'listWebhookDeliveries'> = {}) =>
+      this.#call('listWebhookDeliveries', 'GET', `/v1/webhooks/${encodeURIComponent(id)}/deliveries`, query),
+    /** Sends a delivered or failed delivery again, retries included. */
+    retryDelivery: (deliveryId: string) =>
+      this.#call('retryWebhookDelivery', 'POST', `/v1/webhooks/deliveries/${encodeURIComponent(deliveryId)}/retry`),
+  };
+
   /**
    * Polls the tenant until it is Done (resolves with it) or Failed (throws TenantFailedError).
    * Use after create, restore, moveToVersion and domain changes, which all return while the work is still scheduled.
@@ -228,4 +259,64 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       { once: true },
     );
   });
+}
+
+/** A webhook request whose signature or timestamp doesn't check out. */
+export class WebhookVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WebhookVerificationError';
+  }
+}
+
+type HeaderSource = Headers | Record<string, string | string[] | undefined>;
+
+function header(headers: HeaderSource, name: string): string | undefined {
+  if (typeof (headers as Headers).get === 'function') return (headers as Headers).get(name) ?? undefined;
+  const record = headers as Record<string, string | string[] | undefined>;
+  const value = record[name] ?? Object.entries(record).find(([key]) => key.toLowerCase() === name)?.[1];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(value);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64(bytes: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+}
+
+/**
+ * Checks a webhook request from the API (Standard Webhooks signing) and returns its event. Pass the
+ * endpoint's secret (whsec_...), the request headers and the raw body exactly as received, before
+ * any JSON parsing. Throws WebhookVerificationError when the signature doesn't match or the
+ * timestamp is more than `toleranceSeconds` (default 300) away from now.
+ */
+export async function verifyWebhook(
+  secret: string,
+  headers: HeaderSource,
+  rawBody: string,
+  { toleranceSeconds = 300, now = Date.now() }: { toleranceSeconds?: number; now?: number } = {},
+): Promise<WebhookEvent> {
+  const id = header(headers, 'webhook-id');
+  const timestamp = header(headers, 'webhook-timestamp');
+  const signatures = header(headers, 'webhook-signature');
+  if (!id || !timestamp || !signatures) throw new WebhookVerificationError('Missing webhook-id, webhook-timestamp or webhook-signature');
+  if (!/^\d+$/.test(timestamp) || Math.abs(now / 1000 - Number(timestamp)) > toleranceSeconds) {
+    throw new WebhookVerificationError('The webhook timestamp is too old or in the future');
+  }
+  const key = await crypto.subtle.importKey('raw', base64ToBytes(secret.replace(/^whsec_/, '')), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const expected = bytesToBase64(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${id}.${timestamp}.${rawBody}`)));
+  const match = signatures.split(' ').some((s) => {
+    const [version, value] = s.split(',');
+    if (version !== 'v1' || !value || value.length !== expected.length) return false;
+    let diff = 0;
+    for (let i = 0; i < value.length; i++) diff |= value.charCodeAt(i) ^ expected.charCodeAt(i);
+    return diff === 0;
+  });
+  if (!match) throw new WebhookVerificationError('The webhook signature does not match');
+  return JSON.parse(rawBody) as WebhookEvent;
 }

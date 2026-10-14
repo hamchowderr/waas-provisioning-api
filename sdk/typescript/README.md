@@ -45,7 +45,22 @@ Every tenant call takes a `TenantRef`: `{ externalId }` (your own id, such as an
 | `versions` | `list`, `create`, `delete`, `setProduction` |
 | `snapshots` | `list`, `download` |
 | `templates` | `list`, `create`, `delete` |
+| `webhooks` | `list`, `create`, `get`, `update`, `delete`, `rotateSecret`, `test`, `deliveries`, `retryDelivery` |
 | client | `domainConnect(ref, domainName, 'website' \| 'email')`, `waitForTenant(ref, { intervalMs, timeoutMs, signal })` |
+
+### Webhooks
+
+Register an endpoint once, then check each request with `verifyWebhook`, passing the raw body as received ([docs/webhooks.md](../../docs/webhooks.md) lists the events):
+
+```ts
+import { verifyWebhook } from 'waas-provisioning-sdk';
+
+const { secret } = await waas.webhooks.create({ url: 'https://example.com/waas-hooks', eventTypes: ['tenant.ready', 'tenant.failed'] });
+
+// In your handler (here a fetch-style Request):
+const event = await verifyWebhook(secret, request.headers, await request.text()); // throws WebhookVerificationError
+if (event.type === 'tenant.ready') console.log(event.data.tenant?.domainName);
+```
 
 The generated `components`, `operations` and `paths` types are exported too, for anything the client doesn't wrap.
 
