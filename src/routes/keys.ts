@@ -5,7 +5,7 @@ import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rota
 
 /**
  * Self-service API keys (openapi/api-keys.yaml): a storefront lists, creates, rotates and revokes
- * its own keys, signed in with one of them. Not part of the WPCS contract. Responses that carry a
+ * its own keys, signed in with one of them. Responses that carry a
  * secret are never cached, and the request log never records bodies.
  */
 export function keyRoutes(deps: Deps) {

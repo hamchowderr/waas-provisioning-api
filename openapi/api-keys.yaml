@@ -3,7 +3,7 @@ info:
   title: WaaS Provisioning API - API keys
   version: 0.1.0
   description: >-
-    Self-service API keys. Not part of the WPCS contract. A storefront signs in with one of its
+    Self-service API keys. A storefront signs in with one of its
     keys (Basic auth, as for /v1) and manages its own keys: list, create, rotate and revoke. A
     secret is in the response that creates it and nowhere else: only its hash is stored, and the
     request log never records bodies. Responses carrying a secret have `Cache-Control: no-store`.
