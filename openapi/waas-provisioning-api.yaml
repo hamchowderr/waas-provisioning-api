@@ -3,11 +3,11 @@ info:
   license:
     name: GPL-3.0-or-later
     url: https://www.gnu.org/licenses/gpl-3.0.html
-  title: WaaS Provisioning API (WPCS v1 compatible)
-  description: 'Contract for our provisioning API, which replaces the shut-down WPCS cloud. Same paths, parameters and field names as WPCS v1, so the forked storefront and client plugins keep working.
+  title: WaaS Provisioning API
+  description: 'Contract for the AnyPress provisioning API. The storefront and client plugins depend on these paths, parameters and field names, so they do not change.
 
 
-    **Phase 1 (22 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Five of them are not in WPCS v1: suspend, resume, restore a deleted tenant, list backups and back up a tenant (tag TenantLifecycle), so a cancelled subscription keeps its store for a grace period before it is deleted, and a deleted store can come back from its backup.
+    **Phase 1 (22 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Five of them are added for AnyPress: suspend, resume, restore a deleted tenant, list backups and back up a tenant (tag TenantLifecycle), so a cancelled subscription keeps its store for a grace period before it is deleted, and a deleted store can come back from its backup.
 
 
     **Phase 2 (11 operations): reseller feature.** Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Product-scoped calls then take `productId`.
@@ -39,7 +39,7 @@ info:
     **Provisioning requirements (inside each store, not visible in HTTP):** environment variable `WPCS_IS_TENANT=true` visible to PHP; each `phpConstants` entry written as `define()`; `wpOptions` applied; the WordPress user created with the requested role; the WaaS Client plugin active; `roles.json` served publicly at `https://{production version domain}/wp-content/plugins/waas-client-data/roles.json`; `/wp-json/waas-client/v1/single_login/verify` reachable; and the store''s home page answers `HEAD https://{domain}` with 200 and no redirect, or it never reaches Ready.
 
 
-    Source: the WPCS v1 spec recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08), with 27 corrections, then extended for this contract.'
+    History: docs/contract.md.'
   version: 1.0.0-draft.6
 servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
@@ -354,7 +354,7 @@ paths:
       tags:
       - TenantLifecycle
       summary: Suspend tenant
-      description: 'Phase 1 (storefront plugin). Not in WPCS v1.
+      description: 'Phase 1 (storefront plugin). Added for AnyPress.
 
 
         Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a shared "website unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/waas-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
@@ -437,7 +437,7 @@ paths:
       tags:
       - TenantLifecycle
       summary: Resume tenant
-      description: 'Phase 1 (storefront plugin). Not in WPCS v1.
+      description: 'Phase 1 (storefront plugin). Added for AnyPress.
 
 
         Schedule the resumption of a suspended tenant: it is served again on the same domains, with the files and database it had when it was suspended. No body.
@@ -504,7 +504,7 @@ paths:
       tags:
       - TenantLifecycle
       summary: Restore deleted tenant
-      description: 'Phase 1 (storefront plugin). Not in WPCS v1.
+      description: 'Phase 1 (storefront plugin). Added for AnyPress.
 
 
         Schedule the re-creation of a deleted tenant from one of its kept backups (backups are kept for 90 days after the tenant is deleted). The tenant comes back with the same `externalId`, the same domains (base domain and custom domains, the main domain unchanged) and the files, database, `phpConstants` and `wpOptions` it had when the backup was taken. It is not suspended after the restore. `backupId` picks the backup; when omitted, the newest backup with `statusCode` 1 (Done) is used. Poll List tenants with the `externalId` for `statusCode` (0 while restoring, 1 when done), as after Create tenant.
@@ -586,7 +586,7 @@ paths:
       tags:
       - TenantLifecycle
       summary: List tenant backups
-      description: 'Phase 1. Not in WPCS v1.
+      description: 'Phase 1. Added for AnyPress.
 
 
         The backups of a tenant, newest first, including those of a deleted tenant (kept for 90 days after deletion).'
@@ -647,7 +647,7 @@ paths:
       tags:
       - TenantLifecycle
       summary: Back up tenant
-      description: 'Phase 1. Not in WPCS v1.
+      description: 'Phase 1. Added for AnyPress.
 
 
         Schedule a full backup (files and database) of the tenant. Works on a suspended tenant too. Poll List tenant backups for its `statusCode`. No body.
@@ -1148,7 +1148,7 @@ paths:
           type: string
       - name: onlyProductionVersion
         in: query
-        description: When true, only snapshots of the current Production version. Sent by the storefront plugin (WPCSService.php:85); missing from the original WPCS spec.
+        description: When true, only snapshots of the current Production version. Sent by the storefront plugin (WPCSService.php:85); missing from the original spec.
         schema:
           type: boolean
       - name: productId
@@ -2019,7 +2019,7 @@ components:
           example: T001
         name:
           type: string
-          description: The name of the Tenant as shown in the WPCS Console. Tenant name cannot be longer than 30 characters and must start and end on an alpha numeric character.
+          description: The name of the Tenant as shown in the dashboard. Tenant name cannot be longer than 30 characters and must start and end on an alpha numeric character.
           example: My awesome Tenant
         customDomainName:
           type: string
@@ -2240,7 +2240,7 @@ components:
           type: string
           description: The name of the Subscription
           readOnly: true
-          example: WPCS Inc
+          example: Acme Inc
         statusCode:
           type: integer
           description: "The status code of the Product\r\nPending = 0\r\nDone = 1\r\nFailed = 2\r\nRemoving = 3\r\nMust be a JSON integer."
@@ -2412,7 +2412,7 @@ components:
           readOnly: true
         isBaseDomain:
           type: boolean
-          description: Whether it is the domain WPCS first adds to the tenant, this cannot be deleted
+          description: Whether it is the domain the API first adds to the tenant, this cannot be deleted
           readOnly: true
       additionalProperties: false
       description: Information about the Tenant Domain
@@ -2477,7 +2477,7 @@ components:
           example: '2021-12-01T12:27:34.891662+00:00'
         dateChanged:
           type: string
-          description: The last time the tenant was changed with regards to WPCS (backup created, domain changed, moved to a new version).
+          description: The last time the tenant was changed by the API (backup created, domain changed, moved to a new version).
           format: date-time
           readOnly: true
           example: '2021-12-02T12:27:34.891662+00:00'
@@ -2509,12 +2509,12 @@ components:
           example: Done
         isSuspended:
           type: boolean
-          description: 'True while the tenant is suspended (see Suspend tenant). Not in WPCS v1. Must be a JSON boolean.'
+          description: 'True while the tenant is suspended (see Suspend tenant). Added for AnyPress. Must be a JSON boolean.'
           readOnly: true
           example: false
         dateSuspended:
           type: string
-          description: When the tenant was suspended; null when it is not suspended. Not in WPCS v1.
+          description: When the tenant was suspended; null when it is not suspended. Added for AnyPress.
           format: date-time
           nullable: true
           readOnly: true
@@ -2747,9 +2747,9 @@ components:
       type: http
       description: '
 
-        Whenever you interact with the WPCS API, you have to authenticate your requests.
+        Every request to the API must be authenticated.
 
-        The WPCS API supports Basic Auth. This means that your request requires an `Authorization` header with your API key and secret in a base 64 encoded string.
+        The API uses Basic Auth. This means that your request requires an `Authorization` header with your API key and secret in a base 64 encoded string.
 
 
         ### Manually setting up the Auth header
@@ -2815,7 +2815,7 @@ tags:
   description: Phase 1. Endpoint to manage Tenant Domains. For more info see our [domains section](docs/tenants/domains)
   x-phase: 1
 - name: TenantLifecycle
-  description: 'Phase 1. Not in WPCS v1. Suspend, resume, back up and restore tenants, so a cancelled subscription can keep its store for a grace period before it is deleted, and get it back from a backup after.'
+  description: 'Phase 1. Added for AnyPress. Suspend, resume, back up and restore tenants, so a cancelled subscription can keep its store for a grace period before it is deleted, and get it back from a backup after.'
   x-phase: 1
 - name: Version
   description: Phase 1. Endpoint to manage Versions

@@ -26,7 +26,7 @@ function siteQuery(value: string | undefined): string {
 const platform = (value: string | undefined) => (value && PLATFORM_VERSION.test(value) ? value : null);
 
 /**
- * Update checks from our plugins (waas-hw4). Outside the WPCS contract; described in
+ * Update checks from our plugins (waas-hw4). Described in
  * openapi/plugin-updates.yaml. A storefront asks with its own API key and gets the release its
  * channel (or its pin) points at, with a short-lived package URL. Each check records the version
  * the site runs.

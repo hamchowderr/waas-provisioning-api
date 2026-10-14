@@ -3,9 +3,9 @@ info:
   title: WaaS Provisioning API - admin
   version: 0.1.0
   description: >-
-    Admin endpoints for the dashboard (waas-api-plu). Not part of the WPCS contract. The version
+    Admin endpoints for the dashboard (waas-api-plu). The version
     and template endpoints under /admin/products/{productId} take the same requests and give the
-    same responses as their WPCS operations (schemas referenced from the WPCS spec). They see every
+    same responses as their /v1 operations (schemas referenced from openapi/waas-provisioning-api.yaml). They see every
     product. Authenticate with `Authorization: Bearer <ADMIN_TOKEN>`; anything else, product keys
     included, gets 403. When ADMIN_TOKEN is not set, every request gets 403.
 servers:
@@ -38,6 +38,108 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Product' }
         '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminCreateProduct
+      summary: A new product (an agency's storefront) with its first API key
+      description: >-
+        The key's secret is in this response only (Cache-Control no-store); hand it to the agency
+        once. They can then manage their own keys at /v1/keys (openapi/api-keys.yaml).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                maxTenants: { type: integer, minimum: 0, nullable: true }
+                keyLabel: { type: string, maxLength: 100, nullable: true }
+      responses:
+        '201':
+          description: The product and its first key with the secret
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product, key]
+                additionalProperties: false
+                properties:
+                  product: { $ref: '#/components/schemas/Product' }
+                  key: { $ref: '../api-keys.yaml#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/products/{productId}/keys:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminListApiKeys
+      summary: A product's API keys
+      description: Working keys and keys revoked in the last 30 days, newest first. Never secrets.
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../api-keys.yaml#/components/schemas/ApiKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminCreateApiKey
+      summary: Create a key for a product (same rules as createApiKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/CreateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/keys/{id}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminRotateApiKey
+      summary: Replace an active key (same rules as rotateApiKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/RotateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once, and the key it replaces
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/RotatedApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/keys/{id}:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminRevokeApiKey
+      summary: Revoke a key now
+      description: Like revokeApiKey, except the product's last active key can be revoked, to cut a storefront off.
+      responses:
+        '200':
+          description: The revoked key
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -70,7 +172,7 @@ paths:
       - $ref: '#/components/parameters/productId'
     get:
       operationId: adminListVersions
-      summary: A product's versions (as WPCS listVersions)
+      summary: A product's versions (as listVersions)
       parameters:
         - { name: versionId, in: query, schema: { type: string, format: uuid } }
         - { name: versionName, in: query, schema: { type: string } }
@@ -87,7 +189,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     post:
       operationId: adminCreateVersion
-      summary: Create a version for a product (as WPCS createVersion)
+      summary: Create a version for a product (as createVersion)
       requestBody:
         content:
           application/json:
@@ -107,7 +209,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     delete:
       operationId: adminDeleteVersion
-      summary: Remove a non-production version (as WPCS deleteVersion)
+      summary: Remove a non-production version (as deleteVersion)
       responses:
         '200':
           description: Removal scheduled; no body, as DELETE /v1/versions
@@ -120,7 +222,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     put:
       operationId: adminSetProductionVersion
-      summary: Make a version the product's production version (as WPCS setProductionVersion)
+      summary: Make a version the product's production version (as setProductionVersion)
       responses:
         '200':
           description: Same response as PUT /v1/versions/production
@@ -135,7 +237,7 @@ paths:
       - $ref: '#/components/parameters/productId'
     get:
       operationId: adminListBaseSnapshots
-      summary: A product's templates (as WPCS listBaseSnapshotsTemplates)
+      summary: A product's templates (as listBaseSnapshotsTemplates)
       parameters:
         - { name: baseSnapshotId, in: query, schema: { type: string, format: uuid } }
         - { name: name, in: query, schema: { type: string } }
@@ -153,7 +255,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     post:
       operationId: adminCreateBaseSnapshot
-      summary: Create a template for a product (as WPCS createBaseSnapshotTemplateUpload)
+      summary: Create a template for a product (as createBaseSnapshotTemplateUpload)
       requestBody:
         content:
           application/json:
@@ -169,7 +271,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
       operationId: adminDeleteBaseSnapshot
-      summary: Delete a template (as WPCS deleteBaseSnapshot)
+      summary: Delete a template (as deleteBaseSnapshot)
       parameters:
         - { name: id, in: query, required: true, schema: { type: string, format: uuid } }
       responses:
@@ -618,6 +720,9 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
       description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Refused in the record's current state
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unavailable:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)

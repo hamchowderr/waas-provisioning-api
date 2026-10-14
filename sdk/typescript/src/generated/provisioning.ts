@@ -110,7 +110,7 @@ export interface paths {
         put?: never;
         /**
          * Suspend tenant
-         * @description Phase 1 (storefront plugin). Not in WPCS v1.
+         * @description Phase 1 (storefront plugin). Added for AnyPress.
          *
          *     Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a shared "website unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/waas-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
          *
@@ -136,7 +136,7 @@ export interface paths {
         put?: never;
         /**
          * Resume tenant
-         * @description Phase 1 (storefront plugin). Not in WPCS v1.
+         * @description Phase 1 (storefront plugin). Added for AnyPress.
          *
          *     Schedule the resumption of a suspended tenant: it is served again on the same domains, with the files and database it had when it was suspended. No body.
          *
@@ -162,7 +162,7 @@ export interface paths {
         put?: never;
         /**
          * Restore deleted tenant
-         * @description Phase 1 (storefront plugin). Not in WPCS v1.
+         * @description Phase 1 (storefront plugin). Added for AnyPress.
          *
          *     Schedule the re-creation of a deleted tenant from one of its kept backups (backups are kept for 90 days after the tenant is deleted). The tenant comes back with the same `externalId`, the same domains (base domain and custom domains, the main domain unchanged) and the files, database, `phpConstants` and `wpOptions` it had when the backup was taken. It is not suspended after the restore. `backupId` picks the backup; when omitted, the newest backup with `statusCode` 1 (Done) is used. Poll List tenants with the `externalId` for `statusCode` (0 while restoring, 1 when done), as after Create tenant.
          *
@@ -186,7 +186,7 @@ export interface paths {
         };
         /**
          * List tenant backups
-         * @description Phase 1. Not in WPCS v1.
+         * @description Phase 1. Added for AnyPress.
          *
          *     The backups of a tenant, newest first, including those of a deleted tenant (kept for 90 days after deletion).
          */
@@ -194,7 +194,7 @@ export interface paths {
         put?: never;
         /**
          * Back up tenant
-         * @description Phase 1. Not in WPCS v1.
+         * @description Phase 1. Added for AnyPress.
          *
          *     Schedule a full backup (files and database) of the tenant. Works on a suspended tenant too. Poll List tenant backups for its `statusCode`. No body.
          *
@@ -883,7 +883,7 @@ export interface components {
              */
             externalId?: string;
             /**
-             * @description The name of the Tenant as shown in the WPCS Console. Tenant name cannot be longer than 30 characters and must start and end on an alpha numeric character.
+             * @description The name of the Tenant as shown in the dashboard. Tenant name cannot be longer than 30 characters and must start and end on an alpha numeric character.
              * @example My awesome Tenant
              */
             name: string;
@@ -1074,7 +1074,7 @@ export interface components {
             readonly subscriptionId?: string;
             /**
              * @description The name of the Subscription
-             * @example WPCS Inc
+             * @example Acme Inc
              */
             readonly subscriptionName?: string;
             /**
@@ -1237,7 +1237,7 @@ export interface components {
              *     The main domain cannot be deleted, but should be replaced by another domain
              */
             readonly isMainDomain?: boolean;
-            /** @description Whether it is the domain WPCS first adds to the tenant, this cannot be deleted */
+            /** @description Whether it is the domain the API first adds to the tenant, this cannot be deleted */
             readonly isBaseDomain?: boolean;
         };
         GetTenantQueryResult: {
@@ -1299,7 +1299,7 @@ export interface components {
             readonly dateCreated?: string;
             /**
              * Format: date-time
-             * @description The last time the tenant was changed with regards to WPCS (backup created, domain changed, moved to a new version).
+             * @description The last time the tenant was changed by the API (backup created, domain changed, moved to a new version).
              * @example 2021-12-02T12:27:34.891662+00:00
              */
             readonly dateChanged?: string;
@@ -1333,13 +1333,13 @@ export interface components {
              */
             readonly statusName?: string;
             /**
-             * @description True while the tenant is suspended (see Suspend tenant). Not in WPCS v1. Must be a JSON boolean.
+             * @description True while the tenant is suspended (see Suspend tenant). Added for AnyPress. Must be a JSON boolean.
              * @example false
              */
             readonly isSuspended?: boolean;
             /**
              * Format: date-time
-             * @description When the tenant was suspended; null when it is not suspended. Not in WPCS v1.
+             * @description When the tenant was suspended; null when it is not suspended. Added for AnyPress.
              * @example null
              */
             readonly dateSuspended?: string | null;
@@ -2587,7 +2587,7 @@ export interface operations {
                 snapshotName?: string;
                 /** @description Specify a `groupName` to filter to a specific group of tenant snapshots. */
                 groupName?: string;
-                /** @description When true, only snapshots of the current Production version. Sent by the storefront plugin (WPCSService.php:85); missing from the original WPCS spec. */
+                /** @description When true, only snapshots of the current Production version. Sent by the storefront plugin (WPCSService.php:85); missing from the original spec. */
                 onlyProductionVersion?: boolean;
                 /** @description Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2. */
                 productId?: string;

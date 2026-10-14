@@ -3,7 +3,8 @@
 // Protected Resource Metadata document (RFC 9728), register themselves (RFC 7591) or identify
 // themselves with a Client ID Metadata Document, and get tokens with PKCE. Approving a client means
 // signing in with a product API key and secret on our own page, so the secret is never typed into
-// the client. Every code and token belongs to that API key: revoking the key cuts the client off.
+// the client. Every code and token belongs to that API key: once the key is revoked (or a rotated
+// key's grace period ends), the client is cut off.
 import { createHash, randomBytes } from 'node:crypto';
 import { OAuthError, type AuthInfo } from '@modelcontextprotocol/server';
 import type { Context, Hono } from 'hono';
@@ -50,7 +51,7 @@ export async function verifyAccessToken(pool: Pool, token: string): Promise<Auth
   const { rows } = await pool.query<{ client_id: string; scope: string; resource: string; expires_at: Date; api_key_id: string; product_id: string }>(
     `SELECT t.client_id, t.scope, t.resource, t.expires_at, t.api_key_id, k.product_id
        FROM oauth_tokens t JOIN api_keys k ON k.id = t.api_key_id
-      WHERE t.token_hash = $1 AND t.kind = 'access' AND t.revoked_at IS NULL AND k.revoked_at IS NULL`,
+      WHERE t.token_hash = $1 AND t.kind = 'access' AND t.revoked_at IS NULL AND (k.revoked_at IS NULL OR k.revoked_at > now())`,
     [sha256(token)],
   );
   const row = rows[0];
@@ -261,7 +262,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
         `UPDATE oauth_codes c SET used_at = now()
            FROM api_keys k
           WHERE c.code_hash = $1 AND c.used_at IS NULL AND c.expires_at > now()
-            AND k.id = c.api_key_id AND k.revoked_at IS NULL
+            AND k.id = c.api_key_id AND (k.revoked_at IS NULL OR k.revoked_at > now())
           RETURNING c.client_id, c.redirect_uri, c.code_challenge, c.api_key_id, c.scope, c.resource`,
         [sha256(form.code)],
       );
@@ -279,7 +280,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
         `UPDATE oauth_tokens t SET revoked_at = now()
            FROM api_keys k
           WHERE t.token_hash = $1 AND t.kind = 'refresh' AND t.revoked_at IS NULL AND t.expires_at > now() AND k.id = t.api_key_id
-          RETURNING t.client_id, t.api_key_id, t.scope, t.resource, k.revoked_at IS NOT NULL AS key_revoked`,
+          RETURNING t.client_id, t.api_key_id, t.scope, t.resource, k.revoked_at IS NOT NULL AND k.revoked_at <= now() AS key_revoked`,
         [sha256(form.refresh_token)],
       );
       const row = rows[0];

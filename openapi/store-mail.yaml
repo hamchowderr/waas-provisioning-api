@@ -4,8 +4,8 @@ info:
   version: 0.1.0
   description: >-
     A store's own sending domain (docs/store-email.md), for the storefront plugin's customer account
-    page. Not part of the WPCS contract. A storefront authenticates with its own API key and secret
-    (Basic auth, as for /v1) and names its tenant by externalId (or tenantId), as the WPCS tenant
+    page. A storefront authenticates with its own API key and secret
+    (Basic auth, as for /v1) and names its tenant by externalId (or tenantId), as the /v1 tenant
     endpoints do. The admin API has the same operations at /admin/tenants/{id}/mail-domain.
 servers:
   - url: http://localhost:4111
@@ -123,7 +123,7 @@ components:
         accepted the platform's template yet), show the records to copy by hand.
       required: [dnsProvider, supported, url]
       properties:
-        dnsProvider: { type: string, nullable: true, description: The domain's DNS host, when it supports Domain Connect at all, example: Cloudflare }
+        dnsProvider: { type: string, nullable: true, description: "The domain's DNS host, when it supports Domain Connect at all", example: Cloudflare }
         supported: { type: boolean, description: True when url works }
         url: { type: string, nullable: true }
     Error:

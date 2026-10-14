@@ -77,7 +77,7 @@ afterAll(async () => {
 });
 
 describe('contract coverage', () => {
-  it('the contract has 22 Phase 1 operations (17 from WPCS v1, 5 TenantLifecycle)', () => {
+  it('the contract has 22 Phase 1 operations (17 original, 5 TenantLifecycle)', () => {
     expect(phase1).toHaveLength(22);
     for (const id of implemented) expect(phase1.map((o) => o.operationId)).toContain(id);
   });

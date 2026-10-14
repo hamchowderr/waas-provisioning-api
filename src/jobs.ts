@@ -93,9 +93,9 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         }
         case 'tenant.rollback': {
           if (data.safetyBackupId) await backUp(pool, provisioner, data.tenantId, data.safetyBackupId);
-          const { rows } = await pool.query('SELECT wp_options FROM tenants WHERE id = $1', [data.tenantId]);
+          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
           if (!rows[0]) return;
-          await provisioner.rollbackStore({ storeId: data.tenantId, backupId: data.backupId, wpOptions: rows[0].wp_options });
+          await provisioner.rollbackStore({ storeId: data.tenantId, backupId: data.backupId, wpOptions: rows[0].wp_options, mainDomain: rows[0].main_domain });
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }

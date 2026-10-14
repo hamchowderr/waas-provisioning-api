@@ -8,7 +8,7 @@ import { assertChangeable } from './domains.ts';
 
 /**
  * A store's own sending domain, for the storefront plugin's customer account page. Mounted at
- * /v1/tenants; outside the WPCS contract (openapi/store-mail.yaml). Same behaviour as the admin
+ * /v1/tenants; described in openapi/store-mail.yaml. Same behaviour as the admin
  * API's /admin/tenants/{id}/mail-domain, for the product's own tenants.
  */
 export function mailDomainRoutes(deps: Deps) {

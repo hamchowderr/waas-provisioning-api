@@ -8,6 +8,7 @@ import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
+import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { Status, statusName } from '../status.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
@@ -16,7 +17,7 @@ import { addTenantDomain, assertChangeable } from './domains.ts';
 import { versionService } from './versions.ts';
 
 /**
- * Admin API for the dashboard (waas-api-plu). Outside the WPCS contract: documented in the README
+ * Admin API for the dashboard (waas-api-plu). Not part of /v1: documented in the README
  * and openapi/admin/admin-api.yaml. Sees every product. Authenticated with ADMIN_TOKEN as a
  * bearer token; product keys get 403.
  */
@@ -513,7 +514,7 @@ export function adminRoutes(deps: Deps) {
   });
 
   // Versions and templates of any product: the same operations, request and response shapes as
-  // the WPCS ones (listVersions, createVersion, deleteVersion, setProductionVersion and the
+  // the /v1 ones (listVersions, createVersion, deleteVersion, setProductionVersion and the
   // base-snapshot operations), with the product taken from the path.
 
   async function products(id: string | null) {
@@ -550,6 +551,41 @@ export function adminRoutes(deps: Deps) {
     await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
     return c.json((await products(productId))[0]);
   });
+
+  // A new product (an agency's storefront) with its first API key. The secret is in this response
+  // only; the dashboard shows it once.
+  app.post('/products', async (c) => {
+    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; keyLabel?: unknown };
+    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+    if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
+    const max = body?.maxTenants ?? null;
+    if (max !== null && !(typeof max === 'number' && Number.isInteger(max) && max >= 0 && max <= 100000)) {
+      throw badRequest('maxTenants must be a whole number, 0 or more, or null for no limit');
+    }
+    const label = parseLabel(body?.keyLabel);
+    const { rows } = await pool.query<{ id: string }>('INSERT INTO products (name, max_tenants) VALUES ($1, $2) RETURNING id', [name, max]);
+    const productId = rows[0]!.id;
+    const key = await addApiKey(pool, productId, label);
+    c.header('Cache-Control', 'no-store');
+    return c.json({ product: (await products(productId))[0], key }, 201);
+  });
+
+  // A product's API keys: the same operations as /v1/keys, for any product. Unlike /v1/keys, the
+  // last active key can be revoked (to cut a storefront off).
+  app.get('/products/:productId/keys', async (c) => c.json(await listApiKeys(pool, await product(c))));
+  app.post('/products/:productId/keys', async (c) => {
+    const body = (await readJson(c)) as { label?: unknown };
+    const key = await addApiKey(pool, await product(c), parseLabel(body?.label));
+    c.header('Cache-Control', 'no-store');
+    return c.json(key, 201);
+  });
+  app.post('/products/:productId/keys/:id/rotate', async (c) => {
+    const body = (await readJson(c)) as { graceHours?: unknown };
+    const result = await rotateApiKey(pool, await product(c), c.req.param('id'), parseGraceHours(body?.graceHours));
+    c.header('Cache-Control', 'no-store');
+    return c.json(result, 201);
+  });
+  app.delete('/products/:productId/keys/:id', async (c) => c.json(await revokeApiKey(pool, await product(c), c.req.param('id'))));
 
   async function product(c: Context): Promise<string> {
     const productId = c.req.param('productId')!;

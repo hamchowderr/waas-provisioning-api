@@ -3,7 +3,7 @@ info:
   title: WaaS Provisioning API - plugin updates
   version: 0.1.0
   description: >-
-    Update checks from our WordPress plugins (waas-hw4). Not part of the WPCS contract. A storefront
+    Update checks from our WordPress plugins (waas-hw4). A storefront
     authenticates with its own API key and secret (Basic auth, as for /v1), and gets the release its
     channel points at, or the release its product is pinned to, with a package URL that works for
     10 minutes. The plugin must check the zip's sha256 and the ed25519 signature of
