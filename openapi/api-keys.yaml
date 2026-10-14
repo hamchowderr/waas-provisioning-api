@@ -30,7 +30,7 @@ paths:
                 type: array
                 items:
                   allOf:
-                    - $ref: '#/components/schemas/ApiKey'
+                    - $ref: '#/components/schemas/ApiKeyInfo'
                     - type: object
                       required: [isCurrent]
                       properties: { isCurrent: { type: boolean } }
@@ -92,7 +92,7 @@ paths:
           description: The revoked key
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiKey' }
+              schema: { $ref: '#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -106,7 +106,7 @@ components:
       description: Invalid request
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Forbidden:
-      description: Missing, wrong or revoked key or secret
+      description: Invalid API key or secret
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
       description: No such key for this storefront
@@ -118,9 +118,10 @@ components:
     Error:
       type: object
       required: [statusCode, message]
-      additionalProperties: false
-      properties: { statusCode: { type: integer }, message: { type: string } }
-    ApiKey:
+      properties:
+        statusCode: { type: integer }
+        message: { type: string }
+    ApiKeyInfo:
       type: object
       required: [id, label, state, dateCreated, lastUsedAt, revokedAt]
       properties:
@@ -135,7 +136,7 @@ components:
         revokedAt: { type: string, format: date-time, nullable: true, description: When it stops (stopped) working; null while active }
     NewApiKey:
       allOf:
-        - $ref: '#/components/schemas/ApiKey'
+        - $ref: '#/components/schemas/ApiKeyInfo'
         - type: object
           required: [secret]
           properties: { secret: { type: string, description: Shown once. Store it now; it can't be shown again. } }
@@ -151,4 +152,4 @@ components:
       additionalProperties: false
       properties:
         key: { $ref: '#/components/schemas/NewApiKey' }
-        replaced: { $ref: '#/components/schemas/ApiKey' }
+        replaced: { $ref: '#/components/schemas/ApiKeyInfo' }
