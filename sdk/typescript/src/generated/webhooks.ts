@@ -291,7 +291,7 @@ export interface components {
             };
         };
         /** @description No such endpoint or delivery for this product */
-        NotFound: {
+        WebhookNotFound: {
             headers: {
                 [name: string]: unknown;
             };
@@ -382,7 +382,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
     updateWebhookEndpoint: {
@@ -411,7 +411,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
     deleteWebhookEndpoint: {
@@ -435,7 +435,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
     rotateWebhookSecret: {
@@ -459,7 +459,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
     testWebhookEndpoint: {
@@ -483,7 +483,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
     listWebhookDeliveries: {
@@ -518,7 +518,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
     retryWebhookDelivery: {
@@ -543,7 +543,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
+            404: components["responses"]["WebhookNotFound"];
         };
     };
 }

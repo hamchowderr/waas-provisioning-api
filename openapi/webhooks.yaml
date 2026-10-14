@@ -81,7 +81,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WebhookEndpoint' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
     put:
       operationId: updateWebhookEndpoint
       summary: Change an endpoint
@@ -99,7 +99,7 @@ paths:
               schema: { $ref: '#/components/schemas/WebhookEndpoint' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
     delete:
       operationId: deleteWebhookEndpoint
       summary: Remove an endpoint
@@ -111,7 +111,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WebhookEndpoint' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
   /v1/webhooks/{id}/rotate-secret:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -126,7 +126,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WebhookEndpointWithSecret' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
   /v1/webhooks/{id}/test:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -141,7 +141,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WebhookDelivery' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
   /v1/webhooks/{id}/deliveries:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -171,7 +171,7 @@ paths:
                   pageSize: { type: integer }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
   /v1/webhooks/deliveries/{id}/retry:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -189,7 +189,7 @@ paths:
               schema: { $ref: '#/components/schemas/WebhookDelivery' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
 # The requests the API sends (OpenAPI 3.1 calls this section `webhooks`; kept as an extension
 # so the file stays 3.0 like the others).
 x-webhooks:
@@ -252,7 +252,7 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
-    NotFound:
+    WebhookNotFound:
       description: No such endpoint or delivery for this product
       content:
         application/json:
