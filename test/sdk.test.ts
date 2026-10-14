@@ -1,6 +1,7 @@
 // Drives the TypeScript SDK (sdk/typescript/) against the real app, so a route change the SDK doesn't follow fails here.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { StatusCode, WaasApiError, WaasClient } from '../sdk/typescript/src/index.ts';
+import { StatusCode, verifyWebhook, WaasApiError, WaasClient, WebhookVerificationError } from '../sdk/typescript/src/index.ts';
+import { sign } from '../src/webhooks.ts';
 import { createApiKey } from '../src/keys.ts';
 import { setup, type TestContext } from './helpers.ts';
 
@@ -81,5 +82,28 @@ describe('TypeScript SDK', () => {
   it('deletes a store', async () => {
     await client.waitForTenant({ externalId: 'sdk-1' }, fast);
     await expect(client.tenants.delete({ externalId: 'sdk-1' })).resolves.toBeUndefined();
+  });
+
+  it('manages webhook endpoints', async () => {
+    const created = await client.webhooks.create({ url: 'https://hooks.sdk-example.com/waas', eventTypes: ['tenant.ready'] });
+    expect(created.secret).toMatch(/^whsec_/);
+    expect((await client.webhooks.list()).map((w) => w.id)).toContain(created.id);
+    expect(await client.webhooks.update(created.id, { enabled: false })).toMatchObject({ enabled: false, eventTypes: ['tenant.ready'] });
+    expect((await client.webhooks.rotateSecret(created.id)).secret).not.toBe(created.secret);
+    const delivery = await client.webhooks.test(created.id);
+    expect(delivery).toMatchObject({ eventType: 'webhook.test', endpointId: created.id });
+    expect((await client.webhooks.deliveries(created.id)).items.map((d) => d.id)).toContain(delivery.id);
+    expect(await client.webhooks.delete(created.id)).toMatchObject({ id: created.id });
+  });
+
+  it('verifies webhook signatures', async () => {
+    const secret = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+    const body = JSON.stringify({ type: 'tenant.ready', timestamp: new Date().toISOString(), data: { tenant: { id: 'x' } } });
+    const timestamp = Math.floor(Date.now() / 1000);
+    const headers = { 'webhook-id': 'evt-1', 'webhook-timestamp': String(timestamp), 'webhook-signature': sign(secret, 'evt-1', timestamp, body) };
+    expect(await verifyWebhook(secret, headers, body)).toMatchObject({ type: 'tenant.ready' });
+    expect(await verifyWebhook(secret, new Headers(headers), body)).toMatchObject({ type: 'tenant.ready' });
+    await expect(verifyWebhook(secret, headers, body.replace('ready', 'deleted'))).rejects.toBeInstanceOf(WebhookVerificationError);
+    await expect(verifyWebhook(secret, headers, body, { now: (timestamp + 600) * 1000 })).rejects.toThrow(/timestamp/);
   });
 });

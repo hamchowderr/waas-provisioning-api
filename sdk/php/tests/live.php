@@ -15,6 +15,8 @@ spl_autoload_register(static function (string $class): void {
 use Waas\Provisioning\Client;
 use Waas\Provisioning\StatusCode;
 use Waas\Provisioning\WaasApiException;
+use Waas\Provisioning\Webhook;
+use Waas\Provisioning\WebhookVerificationException;
 
 [, $baseUrl, $apiKey, $apiSecret] = $argv;
 $client = new Client($baseUrl . '/', $apiKey, $apiSecret);
@@ -62,6 +64,26 @@ try {
     check(false, 'a wrong secret throws');
 } catch (WaasApiException $e) {
     check($e->getStatus() === 403 && $e->getApiMessage() === 'Invalid API key or secret', 'a wrong secret gets 403');
+}
+
+$hook = $client->createWebhook(['url' => 'https://hooks.php-example.com/waas', 'eventTypes' => ['tenant.deleted']]);
+check(str_starts_with($hook['secret'], 'whsec_'), 'createWebhook returns the secret');
+check(in_array($hook['id'], array_column($client->listWebhooks(), 'id'), true), 'listWebhooks');
+check($client->updateWebhook($hook['id'], ['enabled' => false])['enabled'] === false, 'updateWebhook');
+check($client->rotateWebhookSecret($hook['id'])['secret'] !== $hook['secret'], 'rotateWebhookSecret');
+$delivery = $client->testWebhook($hook['id']);
+check($delivery['eventType'] === 'webhook.test', 'testWebhook');
+check(in_array($delivery['id'], array_column($client->listWebhookDeliveries($hook['id'])['items'], 'id'), true), 'listWebhookDeliveries');
+check($client->deleteWebhook($hook['id'])['id'] === $hook['id'], 'deleteWebhook');
+
+// The worked example from the Standard Webhooks specification.
+$headers = ['Webhook-Id' => 'msg_p5jXN8AQM9LWM0D4loKWxJek', 'Webhook-Timestamp' => '1614265330', 'Webhook-Signature' => 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='];
+check(Webhook::verify('whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw', $headers, '{"test": 2432232314}', 300, 1614265330) === ['test' => 2432232314], 'Webhook::verify accepts a good signature');
+try {
+    Webhook::verify('whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw', $headers, '{"test": 1}', 300, 1614265330);
+    check(false, 'a changed body is refused');
+} catch (WebhookVerificationException) {
+    check(true, 'Webhook::verify refuses a changed body');
 }
 
 $client->waitForTenant($ref, 100, 15000);

@@ -15,6 +15,7 @@ import { baseSnapshotService } from './basesnapshots.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { versionService } from './versions.ts';
+import { adminWebhookRoutes } from './webhooks.ts';
 
 /**
  * Admin API for the dashboard (waas-api-plu). Not part of /v1: documented in the README
@@ -117,6 +118,9 @@ export function adminRoutes(deps: Deps) {
     }
     await next();
   });
+
+  // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
+  app.route('/webhooks', adminWebhookRoutes(deps));
 
   async function jobCounts() {
     const { rows } = await pool.query(

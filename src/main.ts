@@ -14,6 +14,7 @@ import { startBoss, startWorker } from './queue.ts';
 import { S3ReleaseStore } from './releases.ts';
 import { Secrets } from './secrets.ts';
 import { startStoreBackups } from './storebackups.ts';
+import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webhooks.ts';
 
 const config = loadConfig();
 await migrate(config.databaseUrl);
@@ -23,8 +24,11 @@ const boss = await startBoss(config.databaseUrl);
 const provisioner: Provisioner = config.coolify ? new CoolifyProvisioner(config.coolify) : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
-const handlers = createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays);
+const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
+// Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
+const handlers = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays), pool, boss, webhooks);
 await startWorker(boss, handlers);
+await startWebhookWorker(boss, pool, secrets, webhooks);
 // Daily off-site backup of this database (docs/db-backups.md), when the S3_* settings are set.
 const dbBackups = config.dbBackup
   ? new DbBackups(pool, new S3(config.dbBackup.s3), backupCipherKey(config.secretsKey), config.dbBackup, () => pgDump(config.databaseUrl))

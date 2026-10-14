@@ -4,6 +4,7 @@ import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/
 import type { S3Config } from './provisioner/s3.ts';
 import { ToSendAdmin, type SendingDomains, type StoreMailKeys } from './tosend.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
+import { loadWebhookConfig, type WebhookConfig } from './webhooks.ts';
 
 export interface Config {
   databaseUrl: string;
@@ -44,6 +45,8 @@ export interface Config {
   publicUrl?: string;
   /** Days the request log (src/requestlog.ts) keeps; 0 turns it off. Default 30. */
   requestLogDays?: number;
+  /** Outgoing webhooks (src/webhooks.ts): WEBHOOK_ALLOW_PRIVATE and WEBHOOK_LOG_DAYS. */
+  webhooks?: WebhookConfig;
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -162,5 +165,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     storeBackup: loadStoreBackupConfig(env),
     requestLogDays: requestLogDays(env.REQUEST_LOG_DAYS),
     publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
+    webhooks: loadWebhookConfig(env),
   };
 }

@@ -8,6 +8,7 @@ import { createApiKey } from '../src/keys.ts';
 import { FakeProvisioner } from '../src/provisioner/fake.ts';
 import { startBoss, startWorker } from '../src/queue.ts';
 import { Secrets } from '../src/secrets.ts';
+import { startWebhookWorker, withWebhooks, type WebhookConfig } from '../src/webhooks.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/waas_test';
 
@@ -45,7 +46,11 @@ export async function setup(): Promise<TestContext> {
   const boss = await startBoss(TEST_DATABASE_URL, { retryDelaySeconds: 1 });
   const provisioner = new FakeProvisioner();
   const secrets = new Secrets(TEST_SECRETS_KEY);
-  await startWorker(boss, createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays), 0.5);
+  // Webhook endpoints in tests are local test servers.
+  const webhooks: WebhookConfig = { allowPrivate: true, logDays: 30 };
+  config.webhooks = webhooks;
+  await startWorker(boss, withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays), pool, boss, webhooks), 0.5);
+  await startWebhookWorker(boss, pool, secrets, webhooks, { retryDelaySeconds: 1, retryLimit: 2, pollingIntervalSeconds: 0.5 });
   const deps: Deps = { config, pool, boss, provisioner, secrets };
   const app = createApp(deps);
 

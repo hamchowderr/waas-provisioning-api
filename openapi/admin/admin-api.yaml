@@ -704,6 +704,168 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/webhooks:
+    get:
+      operationId: adminListWebhooks
+      summary: Every product's webhook endpoints, with how their deliveries went
+      description: Secrets are never listed. See openapi/webhooks.yaml and docs/webhooks.md.
+      parameters:
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: By product name, then oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AdminWebhookEndpoint' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminCreateWebhook
+      summary: Register an endpoint for a product
+      description: Returns the signing secret, the only time it is shown.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEndpointParams'
+                - type: object
+                  required: [productId, url]
+                  properties:
+                    productId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: The endpoint with its secret
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WebhookEndpoint'
+                  - type: object
+                    required: [secret]
+                    properties:
+                      secret: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/webhooks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: adminUpdateWebhook
+      summary: Change an endpoint (turn it off or on, its URL or events)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEndpointParams' }
+      responses:
+        '200':
+          description: The endpoint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteWebhook
+      summary: Remove an endpoint
+      responses:
+        '200':
+          description: The endpoint removed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/webhooks/{id}/rotate-secret:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminRotateWebhookSecret
+      summary: Give an endpoint a new signing secret; the old one stops working at once
+      responses:
+        '200':
+          description: The endpoint with its new secret
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WebhookEndpoint'
+                  - type: object
+                    required: [secret]
+                    properties:
+                      secret: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/webhooks/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminTestWebhook
+      summary: Send a webhook.test event to this endpoint, enabled or not
+      responses:
+        '200':
+          description: The delivery, pending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/webhooks/deliveries:
+    get:
+      operationId: adminListWebhookDeliveries
+      summary: Webhook deliveries across products, newest first
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: endpointId, in: query, schema: { type: string, format: uuid } }
+        - { name: tenantId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, delivered, failed] } }
+      responses:
+        '200':
+          description: One page of deliveries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: '#/components/schemas/WebhookDelivery'
+                            - type: object
+                              required: [url, productId, productName, tenantName]
+                              properties:
+                                url: { type: string }
+                                productId: { type: string, format: uuid }
+                                productName: { type: string }
+                                tenantName: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/webhooks/deliveries/{id}/retry:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminRetryWebhookDelivery
+      summary: Send a delivery again (only once it was delivered or failed; otherwise 400)
+      responses:
+        '200':
+          description: The delivery, pending again
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     adminToken: { type: http, scheme: bearer }
@@ -1013,3 +1175,66 @@ components:
         slug: { $ref: '#/components/schemas/PluginSlug' }
         version: { type: string }
         pinnedAt: { type: string, format: date-time }
+    WebhookEventType:
+      type: string
+      description: See openapi/webhooks.yaml.
+      enum: [tenant.ready, tenant.updated, tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed, tenant.deleted, tenant.restored, tenant.rolled_back, tenant.backup_completed, tenant.backup_failed, tenant.failed, version.ready, version.deleted, version.failed, webhook.test]
+    WebhookEndpointParams:
+      type: object
+      properties:
+        url: { type: string, example: 'https://hooks.example.com/waas' }
+        description: { type: string, nullable: true, maxLength: 200 }
+        eventTypes:
+          description: Empty or left out is every event.
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean }
+    WebhookEndpoint:
+      type: object
+      required: [id, url, description, eventTypes, enabled, dateCreated, dateChanged]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        description: { type: string, nullable: true }
+        eventTypes:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean }
+        dateCreated: { type: string, format: date-time }
+        dateChanged: { type: string, format: date-time }
+    AdminWebhookEndpoint:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEndpoint'
+        - type: object
+          required: [productId, productName, apiKeyId, last24Hours, pending, lastAttemptAt]
+          properties:
+            productId: { type: string, format: uuid }
+            productName: { type: string }
+            apiKeyId: { type: string, format: uuid, nullable: true, description: The API key that registered it; null when added here }
+            last24Hours:
+              type: object
+              additionalProperties: false
+              required: [sent, failed]
+              properties:
+                sent: { type: integer, description: Deliveries created in the last 24 hours }
+                failed: { type: integer, description: Of those, how many failed after their retries }
+            pending: { type: integer, description: Deliveries still being sent or retried }
+            lastAttemptAt: { type: string, format: date-time, nullable: true }
+    WebhookDelivery:
+      type: object
+      required: [id, eventId, eventType, endpointId, tenantId, versionId, status, attempts, responseStatus, responseBody, error, durationMs, dateCreated, lastAttemptAt]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        eventType: { $ref: '#/components/schemas/WebhookEventType' }
+        endpointId: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid, nullable: true }
+        versionId: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [pending, delivered, failed] }
+        attempts: { type: integer }
+        responseStatus: { type: integer, nullable: true }
+        responseBody: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        dateCreated: { type: string, format: date-time }
+        lastAttemptAt: { type: string, format: date-time, nullable: true }

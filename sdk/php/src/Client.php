@@ -342,6 +342,87 @@ final class Client
         return $this->call('deleteBaseSnapshot', 'DELETE', '/v1/basesnapshots', ['id' => $id]);
     }
 
+    // Webhooks (docs/webhooks.md)
+
+    /** @return list<array<string, mixed>> */
+    public function listWebhooks(): array
+    {
+        return $this->call('listWebhookEndpoints', 'GET', '/v1/webhooks');
+    }
+
+    /**
+     * Registers an endpoint. The answer's 'secret' is shown only this once: keep it to verify requests.
+     *
+     * @param array{url: string, description?: string|null, eventTypes?: list<string>, enabled?: bool} $params
+     * @return array<string, mixed>
+     */
+    public function createWebhook(array $params): array
+    {
+        return $this->call('createWebhookEndpoint', 'POST', '/v1/webhooks', [], $params);
+    }
+
+    /** @return array<string, mixed> */
+    public function getWebhook(string $id): array
+    {
+        return $this->call('getWebhookEndpoint', 'GET', '/v1/webhooks/' . rawurlencode($id));
+    }
+
+    /**
+     * Fields left out keep their value; an empty eventTypes is every event.
+     *
+     * @param array{url?: string, description?: string|null, eventTypes?: list<string>, enabled?: bool} $params
+     * @return array<string, mixed>
+     */
+    public function updateWebhook(string $id, array $params): array
+    {
+        return $this->call('updateWebhookEndpoint', 'PUT', '/v1/webhooks/' . rawurlencode($id), [], $params);
+    }
+
+    /** @return array<string, mixed> */
+    public function deleteWebhook(string $id): array
+    {
+        return $this->call('deleteWebhookEndpoint', 'DELETE', '/v1/webhooks/' . rawurlencode($id));
+    }
+
+    /**
+     * A new secret; the old one stops working at once.
+     *
+     * @return array<string, mixed>
+     */
+    public function rotateWebhookSecret(string $id): array
+    {
+        return $this->call('rotateWebhookSecret', 'POST', '/v1/webhooks/' . rawurlencode($id) . '/rotate-secret');
+    }
+
+    /**
+     * Sends a webhook.test event to the endpoint and answers with the pending delivery.
+     *
+     * @return array<string, mixed>
+     */
+    public function testWebhook(string $id): array
+    {
+        return $this->call('testWebhookEndpoint', 'POST', '/v1/webhooks/' . rawurlencode($id) . '/test');
+    }
+
+    /**
+     * @param array{status?: string, tenantId?: string, page?: int, pageSize?: int} $query
+     * @return array{items: list<array<string, mixed>>, total: int, page: int, pageSize: int}
+     */
+    public function listWebhookDeliveries(string $id, array $query = []): array
+    {
+        return $this->call('listWebhookDeliveries', 'GET', '/v1/webhooks/' . rawurlencode($id) . '/deliveries', $query);
+    }
+
+    /**
+     * Sends a delivered or failed delivery again, retries included.
+     *
+     * @return array<string, mixed>
+     */
+    public function retryWebhookDelivery(string $deliveryId): array
+    {
+        return $this->call('retryWebhookDelivery', 'POST', '/v1/webhooks/deliveries/' . rawurlencode($deliveryId) . '/retry');
+    }
+
     /**
      * @param array<string, mixed> $tenant
      * @return array<string, string>

@@ -25,6 +25,7 @@ import { pluginRoutes } from './routes/plugins.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
 import { tenantRoutes } from './routes/tenants.ts';
 import { versionRoutes } from './routes/versions.ts';
+import { webhookRoutes } from './routes/webhooks.ts';
 
 export interface Deps {
   config: Config;
@@ -109,6 +110,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
   app.route('/v1/plugins', pluginRoutes(deps));
   app.route('/v1/keys', keyRoutes(deps));
+  app.route('/v1/webhooks', webhookRoutes(deps));
 
   // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
   oauthRoutes(app, deps);

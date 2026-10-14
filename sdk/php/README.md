@@ -54,6 +54,16 @@ Every tenant call takes a tenant ref: `['externalId' => ...]` (your own id, such
 | Sending domain | `getMailDomain`, `setMailDomain`, `removeMailDomain` |
 | Versions | `listVersions`, `createVersion`, `deleteVersion`, `setProductionVersion` |
 | Snapshots and templates | `listSnapshots`, `downloadSnapshot`, `listTemplates`, `createTemplate`, `deleteTemplate` |
+| Webhooks | `listWebhooks`, `createWebhook`, `getWebhook`, `updateWebhook`, `deleteWebhook`, `rotateWebhookSecret`, `testWebhook`, `listWebhookDeliveries`, `retryWebhookDelivery` |
+
+To check a webhook request from the API ([docs/webhooks.md](../../docs/webhooks.md)), pass the endpoint's secret, the headers and the raw body:
+
+```php
+use Waas\Provisioning\Webhook;
+
+$event = Webhook::verify($secret, getallheaders(), file_get_contents('php://input')); // throws WebhookVerificationException
+if ($event['type'] === 'tenant.ready') { /* $event['data']['tenant'] */ }
+```
 
 ## Develop
 

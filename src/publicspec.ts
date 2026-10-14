@@ -10,6 +10,7 @@ const SOURCES = [
   { file: 'store-mail.yaml', tag: 'TenantMail' },
   { file: 'plugin-updates.yaml', tag: 'PluginUpdates' },
   { file: 'api-keys.yaml', tag: 'ApiKeys' },
+  { file: 'webhooks.yaml', tag: 'Webhooks' },
 ];
 
 const DOCS_BASE = 'https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/';
@@ -34,6 +35,7 @@ const TAGS: Record<string, [string, string]> = {
   Snapshot: ['Snapshots', 'Snapshots of versions.'],
   BaseSnapshot: ['Templates', 'Templates (base snapshots) that new versions start from. Partner keys only.'],
   ApiKeys: ['API keys', 'List, create, rotate and revoke your own API keys. A secret is shown once, in the response that creates the key.'],
+  Webhooks: ['Webhooks', 'Endpoints that get a signed POST when a store or version finishes a change, and their deliveries. How to verify them: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/webhooks.md).'],
   PluginUpdates: ['Plugin updates', 'Update checks made by the WaaS plugins. The response points at a signed release package.'],
 };
 
