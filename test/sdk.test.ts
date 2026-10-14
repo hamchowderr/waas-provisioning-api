@@ -1,6 +1,6 @@
-// Drives the TypeScript SDK (sdk/) against the real app, so a route change the SDK doesn't follow fails here.
+// Drives the TypeScript SDK (sdk/typescript/) against the real app, so a route change the SDK doesn't follow fails here.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { StatusCode, WaasApiError, WaasClient } from '../sdk/src/index.ts';
+import { StatusCode, WaasApiError, WaasClient } from '../sdk/typescript/src/index.ts';
 import { createApiKey } from '../src/keys.ts';
 import { setup, type TestContext } from './helpers.ts';
 

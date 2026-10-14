@@ -1,6 +1,6 @@
 # waas-provisioning-sdk
 
-A typed TypeScript client for the WaaS provisioning API: tenants (stores), their domains, backups and lifecycle, versions, snapshots, templates, store sending domains and Domain Connect links. Request and response types are generated from the API's OpenAPI contract in [`../openapi`](../openapi), so they always match the server in this repo.
+A typed TypeScript client for the WaaS provisioning API: tenants (stores), their domains, backups and lifecycle, versions, snapshots, templates, store sending domains and Domain Connect links. Request and response types are generated from the API's OpenAPI contract in [`openapi/`](../../openapi), so they always match the server in this repo.
 
 Runs anywhere with `fetch`: Node 18+, Deno, Bun and edge runtimes. No runtime dependencies.
 
