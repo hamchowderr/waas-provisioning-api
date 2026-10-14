@@ -53,10 +53,17 @@ const MAIL_ENV = 'WAAS_MAIL_B64';
 /** The id of the store's own relay key (CoolifyProvisionerConfig.mailKeys), to revoke it later. */
 const MAIL_KEY_ENV = 'WAAS_MAIL_KEY_ID';
 
+/**
+ * A variable's value as stored. Not real_value: Coolify hands a literal variable's real_value back
+ * wrapped in single quotes, so writing it back added a layer of quotes on every store start until
+ * the store's .env no longer parsed and it would not start.
+ */
 const envValue = (envs: CoolifyEnv[], key: string) => {
   const env = envs.find((e) => e.key === key);
-  return env && (env.real_value ?? env.value);
+  return env && (env.value ?? env.real_value);
 };
+/** A value without the quotes that envValue's old reading of real_value left around it. */
+const unquote = (value: string | undefined) => value?.replace(/^'+|'+$/g, '');
 const decodeMail = (value: string | undefined): Partial<StoreMail> | null => {
   try {
     return value ? JSON.parse(Buffer.from(value, 'base64').toString()) : null;
@@ -479,8 +486,8 @@ export class CoolifyProvisioner implements Provisioner {
       from = `${mail.from.split('@')[0]}@${sender.domain}`;
     }
     if (this.config.mailKeys) {
-      const keyId = envValue(current, MAIL_KEY_ENV);
-      const held = keyId ? decodeMail(envValue(current, MAIL_ENV)) : null;
+      const keyId = unquote(envValue(current, MAIL_KEY_ENV));
+      const held = keyId ? decodeMail(unquote(envValue(current, MAIL_ENV))) : null;
       if (keyId && held?.pass && held.from === from) {
         envs[MAIL_KEY_ENV] = keyId;
         pass = held.pass;
@@ -531,7 +538,7 @@ export class CoolifyProvisioner implements Provisioner {
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
     // A key the store no longer uses (its value was lost, or it changed domains) is revoked.
-    const oldKeyId = envValue(current, MAIL_KEY_ENV);
+    const oldKeyId = unquote(envValue(current, MAIL_KEY_ENV));
     if (oldKeyId && oldKeyId !== want[MAIL_KEY_ENV]) await this.config.mailKeys?.delete(oldKeyId);
     return had ? 'updated' : 'created';
   }
