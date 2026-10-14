@@ -23,7 +23,7 @@ Coolify 4.3.23 can send its scheduled database backups to an S3-compatible desti
 - its status is visible only in Coolify, not in `/health` or the dashboard;
 - retention is a count or an age, not daily plus weekly.
 
-It is still a fine second copy. To add it (optional, owner only, in https://coolify.otakusolutions.io):
+It is still a fine second copy. To add it (optional, in your Coolify dashboard):
 
 1. In Cloudflare: R2 → Manage API tokens → Create API token, permission **Object Read & Write**, bucket `waas-stores` only. Copy the access key ID and secret.
 2. In Coolify: **S3 Storages** (left menu) → **+ Add**. Name `r2-waas`, Endpoint `https://<account id>.r2.cloudflarestorage.com`, Bucket `waas-stores`, Region `auto`, Access Key and Secret Key from step 1. **Validate Connection**, then save.

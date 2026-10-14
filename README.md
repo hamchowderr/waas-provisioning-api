@@ -2,7 +2,7 @@
 
 The API that creates and runs WordPress websites for a "website as a service" business. A storefront (a WordPress shop running the [WaaS Host plugin](https://github.com/hamchowderr/waas-plugins)) sells a subscription; this API builds the customer's website, gives it a domain and a login, backs it up, and suspends, restores or deletes it as the subscription changes.
 
-It speaks the WPCS v1 API (same paths, parameters and field names), so plugins written for WPCS work with it. It is the backend of [AnyPress](https://anypress.io) and is open source.
+It speaks the WPCS v1 API (same paths, parameters and field names), so plugins written for WPCS work with it. It is the backend of [AnyPress](https://anypress.io) and is open source under GPL-3.0.
 
 | Repository | What it is |
 |---|---|
@@ -30,9 +30,10 @@ The work on the servers websites run on goes through a `Provisioner` (`src/provi
 
 ## Quick start
 
-Run the API and its database with Docker, using the fake provisioner:
+Run the API and its database with Docker, using the fake provisioner. Setting `ADMIN_TOKEN` turns on the admin API, which the dashboard needs:
 
 ```sh
+export ADMIN_TOKEN=$(openssl rand -base64 32)
 docker compose up --build
 docker compose exec api npm run create-key -- --product-name "Example storefront"
 curl -u <key>:<secret> http://localhost:4111/v1/versions
@@ -40,7 +41,7 @@ curl -u <key>:<secret> http://localhost:4111/v1/versions
 
 `create-key` prints a key and secret once. Each key belongs to one storefront. Requests use Basic auth with the key as username and the secret as password.
 
-Without Docker, against your own Postgres 16 or newer:
+Without Docker, with Node 22 or newer and your own Postgres 16 or newer:
 
 ```sh
 npm install
@@ -96,7 +97,7 @@ The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plug
 
 - `GET /v1/plugins/{slug}/update?version=&channel=stable|beta&site=&wp=&php=`, with the storefront's own API key (Basic auth, as for `/v1`). `slug` is `wpcs-waas-host`, `wpcs-waas-client` or `waas-payments`. It answers the release the channel points at (or the product's pin), with `sha256`, the ed25519 `signature` and a `package` URL that works for 10 minutes. 404 when nothing is released on the channel; 503 when updates aren't configured or the bucket can't be read.
 - Every check records the slug, site, version, channel, WordPress and PHP version in `plugin_installs` (also on 404 and 503).
-- The API only reads the releases bucket and never signs. waas-plugins' release workflow uploads `releases/<slug>/<version>/<slug>.zip`, its `manifest.json`, and `releases/<slug>/channels/<channel>.json` (a copy of the manifest the channel points at). The plugin checks the sha256 and the signature of `waas-release-v1\n<slug>\n<version>\n<sha256>` against the public keys built into it, so a wrong manifest here can't make a site install something we didn't sign.
+- The API only reads the releases bucket and never signs. waas-plugins' release workflow uploads `releases/<slug>/<version>/<slug>.zip`, its `manifest.json`, and `releases/<slug>/channels/<channel>.json` (a copy of the manifest the channel points at). The plugin checks the sha256 and the signature of `waas-release-v1\n<slug>\n<version>\n<sha256>` against the public keys built into it, so a wrong manifest here can't make a site install something its key didn't sign. If you run your own API, the plugins need your own release key: see the [self-hosting guide](docs/self-hosting.md#plugin-updates).
 - Stores don't update themselves: waas-client comes with the template version, and a store moves to a newer one through `moveTenantToAVersion`.
 
 | Admin endpoint | What it does |
@@ -170,3 +171,7 @@ npx @redocly/cli lint openapi/waas-provisioning-api.yaml
 ```
 
 Expected: valid, with three warnings (no license, a localhost server entry, one unused schema kept from WPCS).
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).

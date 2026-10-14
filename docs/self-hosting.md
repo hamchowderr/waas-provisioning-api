@@ -30,12 +30,15 @@ No servers, no DNS. The API runs with the in-memory **fake provisioner**: every 
 
 ```sh
 git clone https://github.com/hamchowderr/waas-provisioning-api && cd waas-provisioning-api
+export ADMIN_TOKEN=$(openssl rand -base64 32)   # turns on the admin API for the dashboard
 docker compose up --build
 docker compose exec api npm run create-key -- --product-name "Local storefront"
 curl -u <key>:<secret> http://localhost:4111/v1/versions
 ```
 
-Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with WaaS Host, FluentCart and WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the `ADMIN_TOKEN` you set on the API. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
+Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with WaaS Host, FluentCart and WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the same `ADMIN_TOKEN`. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
+
+The fake provisioner builds no real websites, so a test order on the storefront never reaches **Ready**: WaaS Host waits until the website's address answers over HTTPS. Use Stage 0 to try the API, the dashboard and the storefront's settings, and Stage 1 to see a website go live.
 
 ## Stage 1: one VPS with Coolify
 
@@ -103,7 +106,7 @@ In the **WaaS API** project:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | the bucket from section 3 (`S3_REGION=auto` for R2) |
 | `PLATFORM_DOMAIN` | your domain, e.g. `anypress.io`. Reserves the apex and names like `www`, `api`, `app` |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
-| `STORE_BRAND_NAME`, `STORE_BRAND_URL` | optional: the name on a suspended store's "website unavailable" page |
+| `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
 
 With the `S3_*` values set, the API also backs up its own database to the bucket every night, encrypted ([db-backups.md](db-backups.md)), and backs up every live store every night ([store-backups.md](store-backups.md)).
 
@@ -120,14 +123,14 @@ Stores are copies of a template version. `templates/starter-fluentcart/build.sh`
 Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** with WP Swings' Subscriptions for WooCommerce. Install **WaaS Host** (and **WaaS Payments** for Authorize.Net on FluentCart). Then:
 
 1. In `wp-config.php`, set `WAAS_HOST_KEY_ENCRYPTION_KEY` (`openssl rand -base64 48`) and keep it stable.
-2. In WaaS Host's settings, enter the **API URL**, **API key** and **API secret** (or the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain, so customers' stores are named `<website name>.<domain>`.
+2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`.
 3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role and snapshot group.
 
-The storefront needs a real cron: FluentCart creates stores in the background through Action Scheduler, which otherwise waits for the next page visit. Define `DISABLE_WP_CRON` and run `wp action-scheduler run` and `wp cron event run --due-now` every minute (a Coolify scheduled task works). waas-plugins' `docs/test-storefront.md` shows a full storefront built this way.
+The storefront needs a real cron: FluentCart creates stores in the background through Action Scheduler, which otherwise waits for the next page visit. Define `DISABLE_WP_CRON` and run `wp action-scheduler run` and `wp cron event run --due-now` every minute (a Coolify scheduled task works).
 
 ### 7. The dashboard
 
-Deploy waas-dashboard to Vercel (or any Node host: `npm run build && npm start`). Create a GitHub App (or OAuth app) for sign-in with callback `https://<dashboard>/api/auth/callback/github`, and set `WAAS_API_URL`, `WAAS_ADMIN_TOKEN` (the API's `ADMIN_TOKEN`), `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` and `ALLOWED_GITHUB_LOGINS`. Details in its README.
+Deploy waas-dashboard to Vercel, or to any host with Node 22 or newer (`npm run build && npm start`, plus `AUTH_TRUST_HOST=true` off Vercel). Create a GitHub App (or OAuth app) for sign-in with callback `https://<dashboard>/api/auth/callback/github`, and set `WAAS_API_URL`, `WAAS_ADMIN_TOKEN` (the API's `ADMIN_TOKEN`), `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` and `ALLOWED_GITHUB_LOGINS`. Details in its README.
 
 ### 8. Email
 
@@ -156,7 +159,7 @@ What isn't built yet:
 - Moving a store between servers is by hand: back it up, delete it, and restore it with the new server configured.
 - The API, its database and the storefront stay on the first server. A dead first server stops provisioning, but stores on other servers keep serving.
 
-Stores that a host's terms don't allow (regulated products) belong on their own server with a provider that accepts them in writing: [hosting.md](hosting.md).
+Check your host's terms for what your customers will sell. Products a host doesn't allow belong on a separate server with a provider that accepts them in writing.
 
 ## Stage 3: Kubernetes
 
@@ -165,7 +168,7 @@ Not supported for stores yet. Here is what works today and what a Kubernetes dri
 **The API and dashboard run on Kubernetes today.** Both are plain containers:
 
 - API: the repository's `Dockerfile`, port 4111, readiness and liveness on `GET /health`, environment from a Secret, Postgres 16 from a managed service or an operator (CloudNativePG, for example). Run **one replica**: jobs are safe to share through pg-boss, but the startup checks (store cron, store email, catch-up backups) have only been run from one instance.
-- Dashboard: `npm run build && npm start` in a Node image, behind your Ingress.
+- Dashboard: `npm run build && npm start` in a Node 22 image, behind your Ingress, with `AUTH_TRUST_HOST=true`.
 
 **Stores need a new provisioner.** All store-side work goes through the `Provisioner` interface (`src/provisioner/provisioner.ts`), and the only real implementation drives Coolify. A `PROVISIONER=kubernetes` would implement the same methods with Kubernetes objects. A sketch of the mapping, not built:
 
