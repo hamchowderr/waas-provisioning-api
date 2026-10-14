@@ -1,0 +1,381 @@
+openapi: 3.1.0
+info:
+  title: WaaS Provisioning API - webhooks
+  version: 0.1.0
+  license:
+    name: GPL-3.0-or-later
+    url: https://www.gnu.org/licenses/gpl-3.0.html
+  description: >-
+    Outgoing webhooks (docs/webhooks.md). Not part of the WPCS contract. A storefront registers
+    endpoints with its own API key and secret (Basic auth, as for /v1); an endpoint belongs to the
+    key's product, so every key of that product sees it. When one of the product's stores or
+    versions finishes a change, each enabled endpoint that wants that event type gets a POST, so an
+    integration need not poll GET /v1/tenants for statusCode.
+
+
+    **Signing.** Requests follow the Standard Webhooks specification (standardwebhooks.com):
+    headers `webhook-id` (the event id, the same on every retry), `webhook-timestamp` (Unix seconds)
+    and `webhook-signature` (`v1,<base64 HMAC-SHA256>` of `<webhook-id>.<webhook-timestamp>.<raw
+    body>`, keyed by the base64 bytes after `whsec_` in the endpoint's secret). Its libraries verify
+    them. Reject a timestamp more than 5 minutes off.
+
+
+    **Delivery.** Any 2xx answer within 10 seconds is success; redirects are not followed. Otherwise
+    the delivery is retried 10 times, from 30 seconds apart doubling to an hour (about seven hours in
+    all), then marked failed; POST /v1/webhooks/deliveries/{id}/retry sends it again. Deliveries can
+    arrive out of order and more than once: use `webhook-id` to drop repeats and `timestamp` (or a
+    fresh GET) for the latest state. Endpoints must be https:// on a public address unless the API
+    runs with WEBHOOK_ALLOW_PRIVATE=true. Events and deliveries are kept WEBHOOK_LOG_DAYS (default 30).
+
+
+    The admin API has the same operations across products at /admin/webhooks.
+servers:
+  - url: http://localhost:4111
+    description: Local
+security:
+  - basic: []
+paths:
+  /v1/webhooks:
+    get:
+      operationId: listWebhookEndpoints
+      summary: The product's webhook endpoints
+      responses:
+        '200':
+          description: Oldest first; secrets are never listed
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createWebhookEndpoint
+      summary: Register an endpoint
+      description: 'Returns the signing secret, the only time it is shown. 400 for a bad URL or event type, or at 10 endpoints.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEndpointParams'
+                - required: [url]
+      responses:
+        '201':
+          description: The endpoint with its secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpointWithSecret' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/webhooks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getWebhookEndpoint
+      summary: One endpoint
+      responses:
+        '200':
+          description: The endpoint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateWebhookEndpoint
+      summary: Change an endpoint
+      description: Fields left out keep their value. An empty eventTypes is every event.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEndpointParams' }
+      responses:
+        '200':
+          description: The endpoint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteWebhookEndpoint
+      summary: Remove an endpoint
+      description: Deliveries still being retried stop.
+      responses:
+        '200':
+          description: The endpoint removed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/webhooks/{id}/rotate-secret:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: rotateWebhookSecret
+      summary: Give an endpoint a new signing secret
+      description: The old secret stops working at once, retries of earlier events included.
+      responses:
+        '200':
+          description: The endpoint with its new secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpointWithSecret' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/webhooks/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: testWebhookEndpoint
+      summary: Send a webhook.test event to this endpoint
+      description: Sent even when the endpoint is disabled. Returns the queued delivery; poll its deliveries for the outcome.
+      responses:
+        '200':
+          description: The delivery, pending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/webhooks/{id}/deliveries:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: listWebhookDeliveries
+      summary: The endpoint's deliveries, newest first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, delivered, failed] } }
+        - { name: tenantId, in: query, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: One page of deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, total, page, pageSize]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/WebhookDelivery' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/webhooks/deliveries/{id}/retry:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: retryWebhookDelivery
+      summary: Send a delivery again
+      description: >-
+        Starts it over, retries included, with the same event id and body. Only once it has been
+        delivered or failed; 400 while it is still being sent.
+      responses:
+        '200':
+          description: The delivery, pending again
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+webhooks:
+  tenantEvent:
+    post:
+      operationId: tenantEvent
+      summary: A store finished a change, or failed to
+      description: >-
+        tenant.ready (created and answering), tenant.updated (wpOptions or phpConstants applied),
+        tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed,
+        tenant.deleted (data.tenant is the store as it was), tenant.restored (a deleted store is back),
+        tenant.rolled_back (a live store went back to a backup), tenant.backup_completed and
+        tenant.backup_failed (data.backupId; nightly backups included), and tenant.failed (data.action
+        names what failed, after its retries).
+      parameters: [{ $ref: '#/components/parameters/webhookId' }, { $ref: '#/components/parameters/webhookTimestamp' }, { $ref: '#/components/parameters/webhookSignature' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '204': { description: Any 2xx is success }
+  versionEvent:
+    post:
+      operationId: versionEvent
+      summary: A version finished building, was deleted, or failed
+      description: version.ready, version.deleted and version.failed (data.action is create or delete).
+      parameters: [{ $ref: '#/components/parameters/webhookId' }, { $ref: '#/components/parameters/webhookTimestamp' }, { $ref: '#/components/parameters/webhookSignature' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '204': { description: Any 2xx is success }
+  testEvent:
+    post:
+      operationId: testEvent
+      summary: webhook.test, sent by POST /v1/webhooks/{id}/test
+      parameters: [{ $ref: '#/components/parameters/webhookId' }, { $ref: '#/components/parameters/webhookTimestamp' }, { $ref: '#/components/parameters/webhookSignature' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '204': { description: Any 2xx is success }
+components:
+  securitySchemes:
+    basic: { type: http, scheme: basic }
+  parameters:
+    webhookId: { name: webhook-id, in: header, required: true, description: The event id; the same on every retry, schema: { type: string, format: uuid } }
+    webhookTimestamp: { name: webhook-timestamp, in: header, required: true, description: Unix seconds when this attempt was sent, schema: { type: string, example: '1760430000' } }
+    webhookSignature: { name: webhook-signature, in: header, required: true, description: 'v1,<base64 HMAC-SHA256>', schema: { type: string } }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Invalid API key or secret
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such endpoint or delivery for this product
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [statusCode, message]
+      properties:
+        statusCode: { type: integer }
+        message: { type: string }
+    WebhookEventType:
+      type: string
+      enum:
+        - tenant.ready
+        - tenant.updated
+        - tenant.version_changed
+        - tenant.domains_changed
+        - tenant.suspended
+        - tenant.resumed
+        - tenant.deleted
+        - tenant.restored
+        - tenant.rolled_back
+        - tenant.backup_completed
+        - tenant.backup_failed
+        - tenant.failed
+        - version.ready
+        - version.deleted
+        - version.failed
+        - webhook.test
+    WebhookEndpointParams:
+      type: object
+      properties:
+        url: { type: string, format: uri, example: 'https://hooks.example.com/waas' }
+        description: { type: [string, 'null'], maxLength: 200, example: CRM sync }
+        eventTypes:
+          description: The events to send here; empty or left out is every event.
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean, default: true }
+    WebhookEndpoint:
+      type: object
+      additionalProperties: false
+      required: [id, url, description, eventTypes, enabled, dateCreated, dateChanged]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        description: { type: [string, 'null'] }
+        eventTypes:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean }
+        dateCreated: { type: string, format: date-time }
+        dateChanged: { type: string, format: date-time }
+    WebhookEndpointWithSecret:
+      type: object
+      required: [id, url, description, eventTypes, enabled, dateCreated, dateChanged, secret]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        description: { type: [string, 'null'] }
+        eventTypes:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean }
+        dateCreated: { type: string, format: date-time }
+        dateChanged: { type: string, format: date-time }
+        secret: { type: string, pattern: '^whsec_', description: The signing secret. Keep it; it is not shown again. }
+    WebhookDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, eventId, eventType, endpointId, tenantId, versionId, status, attempts, responseStatus, responseBody, error, durationMs, dateCreated, lastAttemptAt]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, description: The webhook-id header }
+        eventType: { $ref: '#/components/schemas/WebhookEventType' }
+        endpointId: { type: string, format: uuid }
+        tenantId: { type: [string, 'null'], format: uuid }
+        versionId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [pending, delivered, failed] }
+        attempts: { type: integer, description: Attempts so far }
+        responseStatus: { type: [integer, 'null'], description: 'The last attempt''s HTTP status; null when the endpoint never answered' }
+        responseBody: { type: [string, 'null'], description: The start of the last answer (500 characters) }
+        error: { type: [string, 'null'], description: Why the last attempt failed }
+        durationMs: { type: [integer, 'null'] }
+        dateCreated: { type: string, format: date-time }
+        lastAttemptAt: { type: [string, 'null'], format: date-time }
+    WebhookEvent:
+      type: object
+      description: The body of every webhook request.
+      required: [type, timestamp, data]
+      properties:
+        type: { $ref: '#/components/schemas/WebhookEventType' }
+        timestamp: { type: string, format: date-time, description: When the event happened }
+        data:
+          type: object
+          properties:
+            tenant:
+              description: The store, shaped as an item of GET /v1/tenants (tenant.* events).
+              type: object
+              required: [id, externalId, statusCode, statusName]
+              properties:
+                id: { type: string, format: uuid }
+                tenantId: { type: string, format: uuid }
+                externalId: { type: string }
+                name: { type: string }
+                versionId: { type: string, format: uuid }
+                domainName: { type: string }
+                statusCode: { type: integer, enum: [0, 1, 2, 3] }
+                statusName: { type: string }
+                isSuspended: { type: boolean }
+            version:
+              description: The version, shaped as an item of GET /v1/versions (version.* events).
+              type: object
+              required: [id, statusCode, statusName]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+                domain: { type: string }
+                isProduction: { type: boolean }
+                statusCode: { type: integer, enum: [0, 1, 2, 3] }
+                statusName: { type: string }
+            action:
+              description: What failed (tenant.failed, version.failed).
+              type: string
+              enum: [create, update, change_version, change_domains, delete, suspend, resume, restore, roll_back]
+            backupId: { type: string, format: uuid, description: The backup (tenant.backup_completed, tenant.backup_failed) }
+            endpointId: { type: string, format: uuid, description: The endpoint tested (webhook.test) }

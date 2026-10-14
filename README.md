@@ -61,6 +61,7 @@ More detail on single topics:
 
 | | |
 |---|---|
+| [docs/webhooks.md](docs/webhooks.md) | Signed webhooks when a website or version changes, and how to verify them |
 | [docs/store-backups.md](docs/store-backups.md) | Nightly website backups, retention, restoring |
 | [docs/db-backups.md](docs/db-backups.md) | The API's own database backups and how to restore them |
 | [docs/store-email.md](docs/store-email.md) | Website email, per-website keys, customers' own sending domains |
@@ -84,6 +85,7 @@ More detail on single topics:
 | `POST /admin/tenants/{id}/restore` `{"backupId": "…", "takeBackup": true}` | Rolls a live store back to one of its Done backups in place, keeping its domains, version, constants and suspension; backs up what it holds now first (reason `before-restore`) unless `takeBackup` is false |
 | `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
 | `GET /admin/db-backups` | The database-backup status from `/health`, plus each attempt with its object key, size and error |
+| `GET`, `POST /admin/webhooks`; `PUT`, `DELETE /admin/webhooks/{id}`; `GET /admin/webhooks/deliveries` | Every product's webhook endpoints with how their deliveries went, and the deliveries; test, rotate the secret, or send a delivery again ([docs/webhooks.md](docs/webhooks.md)) |
 | `GET /admin/requests` | The request log: every `/v1` call (failed sign-ins included) and admin change, with status, timing, store, key id, IP and user agent; never bodies or secrets. Kept `REQUEST_LOG_DAYS` (30) |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version, and `maxTenants` |
@@ -117,7 +119,7 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 ## The contract
 
-`openapi/waas-provisioning-api.yaml` is the source of truth for the WPCS-compatible API; the admin and plugin-update endpoints have their own files under `openapi/`. What the plugins depend on, and the contract's history: [docs/contract.md](docs/contract.md).
+`openapi/waas-provisioning-api.yaml` is the source of truth for the WPCS-compatible API; the admin, plugin-update, store-mail and webhook endpoints have their own files under `openapi/`. What the plugins depend on, and the contract's history: [docs/contract.md](docs/contract.md).
 
 A public Postman mock of the contract is at `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`, useful for testing a plugin without running the API.
 

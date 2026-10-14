@@ -222,6 +222,8 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
+| `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([docs/webhooks.md](docs/webhooks.md)) |
+| `WEBHOOK_ALLOW_PRIVATE` | off | `true` lets webhook endpoints be `http://` and on private addresses, for an API on a private network |
 | `DB_BACKUP`, `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY` | on, 02:30 UTC, `db-backups/`, 14, 8 | [db-backups.md](db-backups.md) |
 | `STORE_BACKUP`, `STORE_BACKUP_SCHEDULE`, `STORE_BACKUP_KEEP_DAILY`, `STORE_BACKUP_KEEP_WEEKLY` | on, 09:00 UTC, 7, 4 | [store-backups.md](store-backups.md) |
 | `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, –, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |

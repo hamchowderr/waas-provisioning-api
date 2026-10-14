@@ -21,6 +21,7 @@ import { pluginRoutes } from './routes/plugins.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
 import { tenantRoutes } from './routes/tenants.ts';
 import { versionRoutes } from './routes/versions.ts';
+import { webhookRoutes } from './routes/webhooks.ts';
 
 export interface Deps {
   config: Config;
@@ -79,6 +80,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/snapshots', snapshotRoutes(deps));
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
   app.route('/v1/plugins', pluginRoutes(deps));
+  app.route('/v1/webhooks', webhookRoutes(deps));
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ statusCode: err.status, message: err.message }, err.status);
