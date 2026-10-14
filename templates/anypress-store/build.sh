@@ -95,6 +95,9 @@ CLIENT_COMMIT=$(git -C "$PLUGINS_REPO" rev-parse --short HEAD 2>/dev/null || ech
 # and what the client uses to switch plugins on per role.
 mkdir -p "$SITE/wp-content/plugins/waas-client-data"
 cp "$HERE/roles.json" "$SITE/wp-content/plugins/waas-client-data/roles.json"
+# Template settings kept in code (see mu-plugins/anypress-store.php).
+mkdir -p "$SITE/wp-content/mu-plugins"
+cp "$HERE/mu-plugins/anypress-store.php" "$SITE/wp-content/mu-plugins/"
 
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE"
 
@@ -140,6 +143,12 @@ wp option update default_pingback_flag 0
 # The store owner turns this on at launch.
 wp option update blog_public 0
 wp option update users_can_register 0
+
+echo "== Presets"
+# Settings that are the same for every store (presets.php says what each one is for).
+cp "$HERE/presets.php" "$SITE/presets.php"
+wp eval-file /var/www/html/presets.php --user=waas-admin
+rm "$SITE/presets.php"
 wp rewrite flush
 wp transient delete --all
 wp cache flush 2>/dev/null || true
@@ -149,11 +158,18 @@ wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
 EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
 [ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected active plugins" >&2; exit 1; }
-[ "$(wp plugin list --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
+[ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
+
+# Rank Math's sitemap is only served once its rewrite rules exist.
+wp rewrite list --format=csv | grep -q 'sitemap_index' || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
+[ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
+[ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
 
 echo "== Package"
 rm -rf "$WORK/out" && mkdir -p "$WORK/out"
 wp db export /var/www/html/database.sql --add-drop-table --quiet
+# The mu-plugin's first-run marker must not ship, or stores would skip their first run.
+! grep -q anypress_store_home "$SITE/database.sql" || { echo "anypress_store_home left in the dump" >&2; exit 1; }
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}

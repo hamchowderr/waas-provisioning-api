@@ -26,6 +26,29 @@ Pages, settings and users are the same as [Starter store (FluentCart)](../starte
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
 a random password nobody keeps.
 
+## Settings
+
+[`presets.php`](presets.php) runs once on the build and sets what is the same for every store. Each block says why:
+
+- Rank Math: account step skipped and wizard marked done (without that it loads no modules at all), FluentCart
+  products and categories in titles and the sitemap, company knowledge graph, no placeholder opening hours, author
+  archives off, Redirections and 404 Monitor on, account-only modules and IndexNow off until launch.
+- FluentCart: first activation marked done (its first admin visit would otherwise blank the store name), terms
+  checkbox at checkout, cart icon in the menu.
+- FluentCRM: setup wizard skipped, lists Newsletter and Customers, tags Customer, Lead and Subscriber, sending
+  capped at 7 emails a second, IP anonymising, one-click unsubscribe, no Gravatar.
+- Fluent Forms: honeypot and token spam checks; the contact form emails the site's admin address; the
+  subscription form adds people to Newsletter after they confirm (double opt-in).
+- Fluent Support: FluentBooking links in tickets. AutomatorWP: logs cleared after 30 days, no Pro suggestions.
+
+[`mu-plugins/anypress-store.php`](mu-plugins/anypress-store.php) ships in the template and keeps the rest in code:
+WP Fusion's staging-site check off (`WPF_STAGING_MODE` false; every store is a clone), vendor usage stats and
+upgrade nags off, FluentAffiliate's tracking script only once a programme is on, and on each store's first web
+request (and after an address change) fresh install dates, a rewrite-rule flush and a Rank Math sitemap cache clear.
+
+Per-store values (site title, the owner's email and country) come from the purchase, not the template. Until they
+do, the WordPress admin email is `admin@example.invalid`.
+
 Store email is not a plugin: the provisioner's `waas-mail` mu-plugin sends it. Don't add an SMTP plugin.
 
 Pro versions aren't included. They are licensed per site, so a store owner adds their own licence.
