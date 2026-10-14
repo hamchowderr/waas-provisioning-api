@@ -6,7 +6,7 @@ export const AGENT_SCRIPT = readFileSync(new URL('./agent.php', import.meta.url)
 
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
-/** Per-store limits (docs/adr/0001-coolify-provisioner.md). */
+/** Per-store limits (docs/coolify.md). */
 export const LIMITS = { wordpress: { mem: '512m', cpus: 1 }, db: { mem: '384m' }, agent: { mem: '256m' } };
 
 /**

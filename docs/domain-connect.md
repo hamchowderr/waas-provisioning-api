@@ -4,7 +4,7 @@
 
 ## The two templates
 
-A DNS host only applies records from a template it has accepted. Ours are in [`domain-connect/`](../domain-connect), named `<providerId>.<serviceId>.json` as the public [Domain-Connect/Templates](https://github.com/Domain-Connect/Templates) repository requires:
+A DNS host only applies records from a template it has accepted. AnyPress's are in [`domain-connect/`](../domain-connect) (provider id `anypress.io`); if you run your own platform, copy them under your own `PLATFORM_DOMAIN` as the provider id and get them accepted as below. Files are named `<providerId>.<serviceId>.json` as the public [Domain-Connect/Templates](https://github.com/Domain-Connect/Templates) repository requires:
 
 | Template | Records | Variable |
 |---|---|---|
@@ -40,7 +40,7 @@ openssl genrsa -out dc.pem 2048
 openssl rsa -in dc.pem -pubout -outform DER | base64 -w0   # the public key, for DNS
 ```
 
-The public key goes in TXT records on `_dck1.anypress.io`, split into pieces of at most 200 characters: `p=1,a=RS256,d=<first part>`, `p=2,a=RS256,d=<second part>`, … The private key goes in `DOMAIN_CONNECT_PRIVATE_KEY` on the API and nowhere else. To rotate, publish the new key under `_dck2`, switch `DOMAIN_CONNECT_KEY_HOST`, then remove `_dck1`.
+The public key goes in TXT records on `_dck1.<PLATFORM_DOMAIN>`, split into pieces of at most 200 characters: `p=1,a=RS256,d=<first part>`, `p=2,a=RS256,d=<second part>`, … The private key goes in `DOMAIN_CONNECT_PRIVATE_KEY` on the API and nowhere else. To rotate, publish the new key under `_dck2`, switch `DOMAIN_CONNECT_KEY_HOST`, then remove `_dck1`.
 
 ## Getting DNS hosts to accept the templates
 
