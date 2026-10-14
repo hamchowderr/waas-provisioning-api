@@ -37,6 +37,15 @@ export interface Config {
   dbBackup?: DbBackupConfig;
   /** Nightly backups of every live store (src/storebackups.ts); on unless STORE_BACKUP=off. */
   storeBackup?: StoreBackupConfig;
+  /** Days the request log (src/requestlog.ts) keeps; 0 turns it off. Default 30. */
+  requestLogDays?: number;
+}
+
+function requestLogDays(value: string | undefined): number {
+  if (value === undefined || value === '') return 30;
+  const days = Number(value);
+  if (!Number.isInteger(days) || days < 0) throw new Error('REQUEST_LOG_DAYS must be a whole number of days (0 turns the request log off)');
+  return days;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
@@ -146,5 +155,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),
     storeBackup: loadStoreBackupConfig(env),
+    requestLogDays: requestLogDays(env.REQUEST_LOG_DAYS),
   };
 }

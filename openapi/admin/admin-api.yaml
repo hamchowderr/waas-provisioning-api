@@ -536,6 +536,53 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/DbBackup' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/requests:
+    get:
+      operationId: adminListRequests
+      summary: The request log
+      description: >-
+        Every product API call (/v1/*, failed sign-ins included) and every admin change (any /admin
+        request but a GET), newest first. Records who called what and how it went, never what was
+        sent: no bodies, no secrets, no headers but the user agent. The API key is its id (the Basic
+        auth username). Rows older than REQUEST_LOG_DAYS (default 30) are deleted daily; 0 turns the
+        log off.
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+        - { name: productId, in: query, schema: { type: string, format: uuid } }
+        - { name: tenantId, in: query, schema: { type: string, format: uuid } }
+        - { name: source, in: query, schema: { type: string, enum: [v1, admin] } }
+        - name: outcome
+          in: query
+          description: ok is below 400, client-error 4xx, server-error 5xx, error either.
+          schema: { type: string, enum: [ok, client-error, server-error, error] }
+        - { name: method, in: query, schema: { type: string, example: POST } }
+        - { name: path, in: query, description: Matches any part of the path., schema: { type: string } }
+      responses:
+        '200':
+          description: Counts for the last 24 hours and one page of requests
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    required: [items, last24Hours, retentionDays]
+                    properties:
+                      last24Hours:
+                        type: object
+                        additionalProperties: false
+                        required: [total, clientErrors, serverErrors]
+                        properties:
+                          total: { type: integer }
+                          clientErrors: { type: integer }
+                          serverErrors: { type: integer }
+                      retentionDays: { type: integer }
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/RequestLogEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /admin/jobs/failures/{id}/retry:
     post:
       operationId: adminRetryFailure
@@ -699,6 +746,28 @@ components:
         sizeBytes: { type: integer, nullable: true }
         error: { type: string, nullable: true }
         prunedAt: { type: string, format: date-time, nullable: true }
+    RequestLogEntry:
+      type: object
+      additionalProperties: false
+      required: [id, at, source, method, path, query, status, durationMs, productId, productName, apiKeyId, tenantId, tenantName, externalId, ip, userAgent, error]
+      properties:
+        id: { type: string, example: '1042' }
+        at: { type: string, format: date-time }
+        source: { type: string, enum: [v1, admin] }
+        method: { type: string, example: POST }
+        path: { type: string, example: /v1/tenants }
+        query: { type: string, nullable: true, description: The query string without its '?'. }
+        status: { type: integer }
+        durationMs: { type: integer }
+        productId: { type: string, format: uuid, nullable: true, description: Null for admin calls and failed sign-ins. }
+        productName: { type: string, nullable: true }
+        apiKeyId: { type: string, format: uuid, nullable: true }
+        tenantId: { type: string, format: uuid, nullable: true, description: The store in the path or the tenantId parameter. }
+        tenantName: { type: string, nullable: true, description: Null once the store is deleted. }
+        externalId: { type: string, nullable: true, description: The externalId parameter, when given. }
+        ip: { type: string, nullable: true }
+        userAgent: { type: string, nullable: true }
+        error: { type: string, nullable: true, description: The error message of a 4xx or 5xx response. }
     Page:
       type: object
       required: [items, total, page, pageSize]

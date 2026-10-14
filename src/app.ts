@@ -4,8 +4,10 @@ import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
 import { HttpError } from './errors.ts';
+import { isUuid } from './http.ts';
 import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
+import { requestLogger } from './requestlog.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { ReleaseStore } from './releases.ts';
@@ -32,7 +34,7 @@ export interface Deps {
   domainConnectNet?: DomainConnectNet;
 }
 
-export type AppEnv = { Variables: { productId: string } };
+export type AppEnv = { Variables: { productId: string; apiKeyId?: string } };
 
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
@@ -45,6 +47,11 @@ export function createApp(deps: Deps) {
     return c.json(health, health.ok ? 200 : 503);
   });
 
+  // The request log (src/requestlog.ts): every /v1 call, failed sign-ins included, and admin changes.
+  const logDays = deps.config.requestLogDays ?? 30;
+  app.use('/admin/*', requestLogger(deps.pool, 'admin', logDays));
+  app.use('/v1/*', requestLogger(deps.pool, 'v1', logDays));
+
   app.route('/admin', adminRoutes(deps));
 
   // Basic auth with the API key as username and the secret as password. Any failure is 403,
@@ -53,7 +60,11 @@ export function createApp(deps: Deps) {
     const match = /^Basic\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
     const decoded = match ? Buffer.from(match[1]!, 'base64').toString('utf8') : '';
     const colon = decoded.indexOf(':');
-    const productId = colon > 0 ? await authenticate(deps.pool, decoded.slice(0, colon), decoded.slice(colon + 1)) : null;
+    const key = colon > 0 ? decoded.slice(0, colon) : '';
+    // The key is an id, kept in the request log even when the secret is wrong; anything else typed
+    // as the username (a pasted secret, say) is not.
+    if (isUuid(key)) c.set('apiKeyId', key);
+    const productId = key ? await authenticate(deps.pool, key, decoded.slice(colon + 1)) : null;
     if (!productId) return c.json({ statusCode: 403, message: 'Invalid API key or secret' }, 403);
     c.set('productId', productId);
     await next();
