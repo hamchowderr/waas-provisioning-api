@@ -7,6 +7,7 @@ import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
 import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
+import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -15,6 +16,7 @@ import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
 import { domainRoutes } from './routes/domains.ts';
 import { lifecycleRoutes } from './routes/lifecycle.ts';
+import { keyRoutes } from './routes/keys.ts';
 import { domainConnectRoutes } from './routes/domainconnect.ts';
 import { mailDomainRoutes } from './routes/maildomains.ts';
 import { pluginRoutes } from './routes/plugins.ts';
@@ -40,13 +42,23 @@ export type AppEnv = { Variables: { productId: string; apiKeyId?: string } };
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
 
-  // For uptime monitoring; outside the WPCS contract and unauthenticated. 503 when Postgres or
+  // For uptime monitoring; outside /v1 and unauthenticated. 503 when Postgres or
   // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
   // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
   app.get('/health', async (c) => {
     const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup);
     return c.json(health, health.ok ? 200 : 503);
   });
+
+  // The public API reference, unauthenticated like /health. Built on first request, once every
+  // route below is registered, so it lists exactly the operations this server answers.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let publicSpec: any;
+  app.get('/openapi.json', (c) => {
+    publicSpec ??= buildPublicSpec(new Set(app.routes.map((r) => `${r.method} ${r.path}`)));
+    return c.json(publicSpec);
+  });
+  app.get('/docs', (c) => c.html(docsPage));
 
   // The request log (src/requestlog.ts): every /v1 call, failed sign-ins included, and admin changes.
   const logDays = deps.config.requestLogDays ?? 30;
@@ -80,6 +92,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/snapshots', snapshotRoutes(deps));
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
   app.route('/v1/plugins', pluginRoutes(deps));
+  app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
 
   app.onError((err, c) => {

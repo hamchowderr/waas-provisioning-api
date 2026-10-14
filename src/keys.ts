@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
-import type { Pool } from './db.ts';
+import { withTransaction, type Client, type Pool } from './db.ts';
+import { conflict, HttpError } from './errors.ts';
 
 // Secrets are stored as scrypt hashes: "scrypt$N$r$p$<salt b64>$<hash b64>".
 const N = 16384;
@@ -31,9 +32,9 @@ export async function verifySecret(secret: string, stored: string): Promise<bool
 const dummyHash = hashSecret(randomUUID());
 
 /** Creates an API key for a product. The secret is returned once and only its hash is kept. */
-export async function createApiKey(pool: Pool, productId: string, label?: string): Promise<{ key: string; secret: string }> {
+export async function createApiKey(db: Pool | Client, productId: string, label?: string | null): Promise<{ key: string; secret: string }> {
   const secret = randomBytes(32).toString('base64url');
-  const { rows } = await pool.query<{ id: string }>(
+  const { rows } = await db.query<{ id: string }>(
     'INSERT INTO api_keys (product_id, secret_hash, label) VALUES ($1, $2, $3) RETURNING id',
     [productId, await hashSecret(secret), label ?? null],
   );
@@ -42,15 +43,165 @@ export async function createApiKey(pool: Pool, productId: string, label?: string
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Returns the product the key belongs to, or null when the key or secret is wrong. */
+/**
+ * Returns the product the key belongs to, or null when the key or secret is wrong, or the key is
+ * revoked. A rotated key whose revoked_at is still in the future keeps working until then.
+ */
 export async function authenticate(pool: Pool, key: string, secret: string): Promise<string | null> {
   const { rows } = UUID.test(key)
     ? await pool.query<{ product_id: string; secret_hash: string }>(
-        'SELECT product_id, secret_hash FROM api_keys WHERE id = $1 AND revoked_at IS NULL',
+        'SELECT product_id, secret_hash FROM api_keys WHERE id = $1 AND (revoked_at IS NULL OR revoked_at > now())',
         [key],
       )
     : { rows: [] };
   const row = rows[0];
   const ok = await verifySecret(secret, row?.secret_hash ?? (await dummyHash));
-  return ok && row ? row.product_id : null;
+  if (!ok || !row) return null;
+  // At most one write a minute per key, so busy keys don't write on every call.
+  await pool
+    .query("UPDATE api_keys SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')", [key])
+    .catch((err) => console.error('Could not record API key use', err));
+  return row.product_id;
+}
+
+// Self-service key management: the admin API (any product) and /v1/keys (the caller's own product)
+// share these. A secret appears only in the response that creates it; nothing logs it.
+
+/** The most keys a product may have that still work (active or rotated but not yet expired). */
+export const MAX_LIVE_KEYS = 20;
+/** The longest a rotated key may keep working: 30 days. */
+export const MAX_GRACE_HOURS = 720;
+const MAX_LABEL = 100;
+
+export type KeyState = 'active' | 'expiring' | 'revoked';
+
+export interface ApiKeyInfo {
+  id: string;
+  label: string | null;
+  state: KeyState;
+  dateCreated: string;
+  lastUsedAt: string | null;
+  /** When the key stops (stopped) working; null while active. In the future while expiring. */
+  revokedAt: string | null;
+}
+
+export type NewApiKey = ApiKeyInfo & { secret: string };
+
+const KEY_COLUMNS = `id, label, created_at, last_used_at, revoked_at,
+  CASE WHEN revoked_at IS NULL THEN 'active' WHEN revoked_at > now() THEN 'expiring' ELSE 'revoked' END AS state`;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const toInfo = (r: any): ApiKeyInfo => ({
+  id: r.id,
+  label: r.label,
+  state: r.state,
+  dateCreated: new Date(r.created_at).toISOString(),
+  lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
+  revokedAt: r.revoked_at ? new Date(r.revoked_at).toISOString() : null,
+});
+
+/** A key's label from a request body: optional, trimmed, at most 100 characters. */
+export function parseLabel(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw new HttpError(400, 'label must be a string');
+  const label = value.trim();
+  if (label.length > MAX_LABEL) throw new HttpError(400, `label can be at most ${MAX_LABEL} characters`);
+  return label || null;
+}
+
+/** graceHours from a rotate request: whole hours, 0 to 720; 24 when absent. */
+export function parseGraceHours(value: unknown): number {
+  if (value === undefined || value === null) return 24;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_GRACE_HOURS) {
+    throw new HttpError(400, `graceHours must be a whole number from 0 to ${MAX_GRACE_HOURS}`);
+  }
+  return value;
+}
+
+/**
+ * A product's keys, newest first: every working key, and those revoked in the last 30 days so a
+ * recent revocation can still be seen. Never secrets or hashes.
+ */
+export async function listApiKeys(pool: Pool, productId: string): Promise<ApiKeyInfo[]> {
+  const { rows } = await pool.query(
+    `SELECT ${KEY_COLUMNS} FROM api_keys
+      WHERE product_id = $1 AND (revoked_at IS NULL OR revoked_at > now() - interval '30 days')
+      ORDER BY created_at DESC, id`,
+    [productId],
+  );
+  return rows.map(toInfo);
+}
+
+/** Locks the product so concurrent key changes for it run one at a time. */
+async function lockProduct(client: Client, productId: string): Promise<void> {
+  const { rowCount } = await client.query('SELECT 1 FROM products WHERE id = $1 FOR UPDATE', [productId]);
+  if (!rowCount) throw new HttpError(404, `Product ${productId} not found`);
+}
+
+async function keyRow(client: Client, productId: string, keyId: string) {
+  const { rows } = UUID.test(keyId)
+    ? await client.query(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = $1 AND product_id = $2`, [keyId, productId])
+    : { rows: [] };
+  if (!rows[0]) throw new HttpError(404, `API key ${keyId} not found`);
+  return rows[0];
+}
+
+async function insertKey(client: Client, productId: string, label: string | null): Promise<NewApiKey> {
+  const { rows } = await client.query(
+    "SELECT count(*)::int AS n FROM api_keys WHERE product_id = $1 AND (revoked_at IS NULL OR revoked_at > now())",
+    [productId],
+  );
+  if (rows[0].n >= MAX_LIVE_KEYS) {
+    throw conflict(`A storefront can have at most ${MAX_LIVE_KEYS} working keys. Revoke one first.`);
+  }
+  const { key, secret } = await createApiKey(client, productId, label);
+  return { ...toInfo((await client.query(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = $1`, [key])).rows[0]), secret };
+}
+
+/** Creates a key. The secret is in the result only. */
+export function addApiKey(pool: Pool, productId: string, label: string | null): Promise<NewApiKey> {
+  return withTransaction(pool, async (client) => {
+    await lockProduct(client, productId);
+    return insertKey(client, productId, label);
+  });
+}
+
+/**
+ * Replaces an active key with a new one under the same label. The old key keeps working for
+ * graceHours (0: it stops now), so whatever uses it can switch over first.
+ */
+export function rotateApiKey(pool: Pool, productId: string, keyId: string, graceHours: number): Promise<{ key: NewApiKey; replaced: ApiKeyInfo }> {
+  return withTransaction(pool, async (client) => {
+    await lockProduct(client, productId);
+    const old = await keyRow(client, productId, keyId);
+    if (old.state !== 'active') throw conflict('Only an active key can be rotated');
+    const { rows } = await client.query(
+      `UPDATE api_keys SET revoked_at = now() + make_interval(hours => $2::int) WHERE id = $1 RETURNING ${KEY_COLUMNS}`,
+      [keyId, graceHours],
+    );
+    // Counted after the old key's update, so rotating with no grace works at the limit.
+    const key = await insertKey(client, productId, old.label);
+    return { key, replaced: toInfo(rows[0]) };
+  });
+}
+
+/**
+ * Revokes a key now; an expiring key stops early. With keepOne (the product's own requests), the
+ * last active key can't be revoked, so a storefront can't lock itself out.
+ */
+export function revokeApiKey(pool: Pool, productId: string, keyId: string, { keepOne = false } = {}): Promise<ApiKeyInfo> {
+  return withTransaction(pool, async (client) => {
+    await lockProduct(client, productId);
+    const key = await keyRow(client, productId, keyId);
+    if (key.state === 'revoked') return toInfo(key);
+    if (keepOne && key.state === 'active') {
+      const { rows } = await client.query(
+        'SELECT count(*)::int AS n FROM api_keys WHERE product_id = $1 AND revoked_at IS NULL AND id <> $2',
+        [productId, keyId],
+      );
+      if (rows[0].n === 0) throw conflict('This is the last active key. Create or rotate to a new key before revoking it.');
+    }
+    const { rows } = await client.query(`UPDATE api_keys SET revoked_at = now() WHERE id = $1 RETURNING ${KEY_COLUMNS}`, [keyId]);
+    return toInfo(rows[0]);
+  });
 }

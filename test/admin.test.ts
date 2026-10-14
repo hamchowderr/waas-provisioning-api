@@ -1,4 +1,4 @@
-// The admin API (outside the WPCS contract): auth, each endpoint, and the failure-record + retry
+// The admin API (not part of /v1): auth, each endpoint, and the failure-record + retry
 // flow. Responses are validated against openapi/admin/admin-api.yaml.
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -30,7 +30,7 @@ async function admin(method: string, path: string, expected = 200, body?: unknow
     return undefined;
   }
   const parsed = JSON.parse(text);
-  // Admin schemas, and the WPCS schemas the version and template endpoints reuse.
+  // Admin schemas, and the /v1 schemas the version and template endpoints reuse.
   const schema = JSON.parse(
     JSON.stringify(media['application/json'].schema)
       .replaceAll('"#/components', '"admin#/components')
@@ -283,7 +283,7 @@ describe('admin versions and templates (any product)', () => {
     expect(products.find((p: any) => p.id === otherProductId)).toMatchObject({ versionCount: 1, productionVersionId: expect.any(String) });
   });
 
-  it('manages another product\'s versions and templates with the WPCS shapes', async () => {
+  it('manages another product\'s versions and templates with the /v1 shapes', async () => {
     const base = `/admin/products/${otherProductId}`;
     // Same answer as the product's own key gets from /v1.
     expect(await admin('GET', `${base}/versions`)).toEqual(await (await t.call('GET', '/v1/versions', { auth: otherAuth })).json());

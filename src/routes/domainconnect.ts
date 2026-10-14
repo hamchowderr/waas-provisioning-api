@@ -19,7 +19,7 @@ export async function storeDomainConnect(deps: Deps, tenantId: string, domainNam
 
 /**
  * GET /v1/tenants/domain-connect?externalId=&domainName=&service=website|email, for the storefront
- * plugin's customer account page. Outside the WPCS contract (openapi/store-mail.yaml).
+ * plugin's customer account page. Described in openapi/store-mail.yaml.
  */
 export function domainConnectRoutes(deps: Deps) {
   const app = new Hono<AppEnv>();

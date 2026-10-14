@@ -2,7 +2,7 @@
 
 The API that creates and runs WordPress websites for a "website as a service" business. A storefront (a WordPress shop running the [WaaS Host plugin](https://github.com/hamchowderr/waas-plugins)) sells a subscription; this API builds the customer's website, gives it a domain and a login, backs it up, and suspends, restores or deletes it as the subscription changes.
 
-It speaks the WPCS v1 API (same paths, parameters and field names), so plugins written for WPCS work with it. It is the backend of [AnyPress](https://anypress.io) and is open source under GPL-3.0.
+It is the backend of [AnyPress](https://anypress.io) and is open source under GPL-3.0.
 
 | Repository | What it is |
 |---|---|
@@ -39,7 +39,7 @@ docker compose exec api npm run create-key -- --product-name "Example storefront
 curl -u <key>:<secret> http://localhost:4111/v1/versions
 ```
 
-`create-key` prints a key and secret once. Each key belongs to one storefront. Requests use Basic auth with the key as username and the secret as password.
+`create-key` prints a key and secret once. Each key belongs to one storefront. Requests use Basic auth with the key as username and the secret as password. After that first key, a storefront manages its own keys through `/v1/keys` (see [API keys](#api-keys)), and the dashboard can create storefronts and keys without the command line.
 
 Without Docker, with Node 22 or newer and your own Postgres 16 or newer:
 
@@ -70,9 +70,18 @@ More detail on single topics:
 
 `GET /health` (no auth) answers 200 when Postgres and the job queue respond, 503 otherwise. Point an uptime monitor at it.
 
+## API reference
+
+Every server publishes its own API reference, no auth needed:
+
+- `GET /docs`: a browsable reference page where you can also try calls with your API key and secret.
+- `GET /openapi.json`: the same reference as an OpenAPI 3 document, for Postman, code generators and the like.
+
+It covers the `/v1` operations this server actually answers (tenants, domains, sending domains, versions, snapshots, templates, plugin updates), built from the files in `openapi/`. The admin API is not in it.
+
 ## Admin API
 
-`/admin/*` serves the admin dashboard ([waas-dashboard](https://github.com/hamchowderr/waas-dashboard)). It is not part of the WPCS contract; `openapi/admin/admin-api.yaml` describes it. It sees every product and authenticates with `Authorization: Bearer <ADMIN_TOKEN>`. Product keys, a missing header or a wrong token all get 403, and so does every request when `ADMIN_TOKEN` is not set. The token is compared in constant time and never logged.
+`/admin/*` serves the admin dashboard ([waas-dashboard](https://github.com/hamchowderr/waas-dashboard)). `openapi/admin/admin-api.yaml` describes it. It sees every product and authenticates with `Authorization: Bearer <ADMIN_TOKEN>`. Product keys, a missing header or a wrong token all get 403, and so does every request when `ADMIN_TOKEN` is not set. The token is compared in constant time and never logged.
 
 | Endpoint | What it returns |
 |---|---|
@@ -89,6 +98,8 @@ More detail on single topics:
 | `GET /admin/requests` | The request log: every `/v1` call (failed sign-ins included) and admin change, with status, timing, store, key id, IP and user agent; never bodies or secrets. Kept `REQUEST_LOG_DAYS` (30) |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version, and `maxTenants` |
+| `POST /admin/products` `{"name": "Acme Agency", "maxTenants": 10, "keyLabel": "…"}` | A new product (an agency's storefront) and its first API key; the secret is in this response only |
+| `GET`/`POST /admin/products/{productId}/keys`, `POST …/keys/{id}/rotate`, `DELETE …/keys/{id}` | A product's API keys: same as `/v1/keys`, except the last active key can be revoked |
 | `PUT /admin/products/{productId}` `{"maxTenants": 5}` | The most tenants the product may have (`null`: no limit). At the limit, `createTenant` and `restoreTenant` answer 400. Lowering it deletes nothing. |
 | `GET`/`POST /admin/products/{productId}/versions`, `DELETE …/versions/{id}`, `PUT …/versions/{id}/production` | A product's versions: same requests, rules and responses as `listVersions`, `createVersion`, `deleteVersion` and `setProductionVersion` |
 | `GET`/`POST`/`DELETE /admin/products/{productId}/basesnapshots` | A product's templates: same as the base-snapshot operations; `DELETE` takes `?id=` |
@@ -96,9 +107,20 @@ More detail on single topics:
 
 A job that fails its last retry is recorded in `job_failures` (type, tenant or version, error, attempts) before the worker completes it. Job data is never returned: it can hold encrypted secrets.
 
+## API keys
+
+A storefront signs in with an API key and secret. Only a scrypt hash of the secret is stored; the secret is shown in the response that creates the key and never again, and the request log never records bodies. Signed in with any of its keys, a storefront manages its own keys ([`openapi/api-keys.yaml`](openapi/api-keys.yaml)):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/keys` | Working keys and those revoked in the last 30 days: `state` (`active`, `expiring`, `revoked`), `lastUsedAt`, `isCurrent` for the key in use; never secrets |
+| `POST /v1/keys` `{"label": "…"}` | A new key with its secret. At most 20 working keys |
+| `POST /v1/keys/{id}/rotate` `{"graceHours": 24}` | A new key with the same label; the old one keeps working for `graceHours` (default 24, 0 to 720), so whatever uses it can switch over |
+| `DELETE /v1/keys/{id}` | Revokes a key now. The last active key can't be revoked, so a storefront can't lock itself out |
+
 ## Plugin updates
 
-The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plugins) (waas-host, waas-payments) get their updates from this API, never from GitHub or wordpress.org. It is outside the WPCS contract; [`openapi/plugin-updates.yaml`](openapi/plugin-updates.yaml) describes it.
+The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plugins) (waas-host, waas-payments) get their updates from this API, never from GitHub or wordpress.org. [`openapi/plugin-updates.yaml`](openapi/plugin-updates.yaml) describes it.
 
 - `GET /v1/plugins/{slug}/update?version=&channel=stable|beta&site=&wp=&php=`, with the storefront's own API key (Basic auth, as for `/v1`). `slug` is `wpcs-waas-host`, `wpcs-waas-client` or `waas-payments`. It answers the release the channel points at (or the product's pin), with `sha256`, the ed25519 `signature` and a `package` URL that works for 10 minutes. 404 when nothing is released on the channel; 503 when updates aren't configured or the bucket can't be read.
 - Every check records the slug, site, version, channel, WordPress and PHP version in `plugin_installs` (also on 404 and 503).
@@ -119,7 +141,7 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 ## The contract
 
-`openapi/waas-provisioning-api.yaml` is the source of truth for the WPCS-compatible API; the admin, plugin-update, store-mail and webhook endpoints have their own files under `openapi/`. What the plugins depend on, and the contract's history: [docs/contract.md](docs/contract.md).
+`openapi/waas-provisioning-api.yaml` is the source of truth for the provisioning API; the admin, plugin-update, store-mail, API key and webhook endpoints have their own files under `openapi/`. What the plugins depend on, and the contract's history: [docs/contract.md](docs/contract.md).
 
 A public Postman mock of the contract is at `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`, useful for testing a plugin without running the API.
 
@@ -140,7 +162,7 @@ The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown ab
 npx @redocly/cli lint openapi/waas-provisioning-api.yaml
 ```
 
-Expected: valid, with two warnings (a localhost server entry, and one unused schema kept from WPCS).
+Expected: valid, with two warnings (a localhost server entry, and one unused schema kept for older clients).
 
 ## License
 

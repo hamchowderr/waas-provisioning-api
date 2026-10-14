@@ -6,7 +6,7 @@ import { DEFAULT_WEBHOOK_CONFIG, toDelivery, toEndpoint, webhookService } from '
 
 /**
  * A storefront's own webhook endpoints (docs/webhooks.md, openapi/webhooks.yaml). Mounted at
- * /v1/webhooks with the product API's Basic auth; outside the WPCS contract. An endpoint belongs
+ * /v1/webhooks with the product API's Basic auth. An endpoint belongs
  * to the key's product, so every key of that product sees it.
  */
 
