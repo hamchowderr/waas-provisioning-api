@@ -174,3 +174,8 @@ $support->save('global_business_settings', $business);
 // hide the Pro suggestions; no review nag.
 $merge('automatorwp_settings', ['auto_logs_cleanup_days' => '30', 'disable_pro_recommendations' => 'on']);
 update_option('automatorwp_hide_review_notice', 'yes');
+
+// FluentAuth. Saving its settings once is what its first-run wizard does. Its defaults stay (5 failed logins locks
+// an address for 30 minutes, a monthly login digest to the admin email); XML-RPC is off, since no store uses it and
+// it is the usual target for password guessing. Two-factor stays off for the owner to switch on.
+update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), ['disable_xmlrpc' => 'yes']));

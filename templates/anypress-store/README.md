@@ -1,7 +1,7 @@
 # AnyPress store
 
 The store template AnyPress's own shop sells: WordPress with the Fluent suite for selling, marketing,
-bookings, support and affiliates, plus SEO and automation.
+bookings, support and affiliates, plus SEO, automation and login security.
 
 | | |
 |---|---|
@@ -21,6 +21,7 @@ bookings, support and affiliates, plus SEO and automation.
 | Rank Math SEO | `seo-by-rank-math` | 1.0.280 |
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 | AutomatorWP | `automatorwp` | 6.0.4 |
+| FluentAuth | `fluent-security` | 3.0.5 |
 
 Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
@@ -40,6 +41,8 @@ a random password nobody keeps.
 - Fluent Forms: honeypot and token spam checks; the contact form emails the site's admin address; the
   subscription form adds people to Newsletter after they confirm (double opt-in).
 - Fluent Support: FluentBooking links in tickets. AutomatorWP: logs cleared after 30 days, no Pro suggestions.
+- FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
+  login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
 
 [`mu-plugins/anypress-store.php`](mu-plugins/anypress-store.php) ships in the template and keeps the rest in code:
 WP Fusion's staging-site check off (`WPF_STAGING_MODE` false; every store is a clone), vendor usage stats and

@@ -309,7 +309,8 @@ describe('CoolifyProvisioner', () => {
     expect(crons[0]).toMatchObject({ service: store.uuid, container: 'agent', frequency: '* * * * *', timeout: 300, enabled: true });
     const command = crons[0]!.command;
     expect(command.length).toBeLessThanOrEqual(255);
-    expect(command).toContain('wp --path=/var/www/html action-scheduler run --quiet; wp --path=/var/www/html cron event run --due-now --quiet');
+    const wp = 'php -d memory_limit=192M /usr/local/bin/wp';
+    expect(command).toContain(`${wp} action-scheduler run --quiet; ${wp} cron event run --due-now --quiet`);
     // Not while suspended, never overlapping, and nothing Coolify's sh -c '...' would cut.
     expect(command).toMatch(/^\[ -f \/var\/www\/html\/wp-content\/\.waas-suspended \] \|\| flock -n /);
     expect(command).not.toContain("'");

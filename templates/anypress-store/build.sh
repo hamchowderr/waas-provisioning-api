@@ -24,6 +24,7 @@ easy-code-manager 10.56 9a5e416defc7392d7eda39c8991dd9af612bbf963ac12dbe2cb4728a
 seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb9686fa8aa290
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 automatorwp 6.0.4 d6fbd08df660df019fd79ce8c7f00612fd571168f763fab8fa38094fec0b7579
+fluent-security 3.0.5 304c0c61ef704a16534133211fbd2be820040606b6c0ea6a4d0b28942c697b11
 "
 THEME=twentytwentyfive
 THEME_VERSION=${THEME_VERSION:-1.5}
@@ -50,12 +51,13 @@ fetch() { # url sha256 file
     echo "$2  $3" | sha256sum -c --quiet || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 
-# WP-CLI refuses to run as root; as root, run it as www-data (uid 33, as in the stores) instead.
+# WP-CLI refuses to run as root; as root, run it as www-data (uid 33, as in the stores) instead. With every plugin
+# loaded as an admin (the presets step), WP-CLI needs more than the image's 128 MB.
 WP_USER="$(id -u):$(id -g)"
 [ "$(id -u)" = 0 ] && WP_USER=33:33
 wp() {
     docker run --rm --network host --user "$WP_USER" -e HOME=/tmp \
-        -v "$SITE:/var/www/html" "$CLI_IMAGE" wp --path=/var/www/html "$@"
+        -v "$SITE:/var/www/html" "$CLI_IMAGE" php -d memory_limit=512M /usr/local/bin/wp --path=/var/www/html "$@"
 }
 
 cleanup() { docker rm -f "$DB_CONTAINER" >/dev/null 2>&1 || true; }
