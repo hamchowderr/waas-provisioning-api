@@ -5,7 +5,6 @@ For contributors: how the API's OpenAPI contract is organised, and what the Word
 | File | What it is |
 |---|---|
 | `openapi/waas-provisioning-api.yaml` | **The contract.** Version 1.0.0-draft.6. Edit this. |
-| `openapi/reference/wpcs-v1-corrected.json` | The original WPCS v1 spec, recovered from the archived docs.wpcs.io bundle (Wayback capture 2024-09-08) with 27 corrections. Reference only. |
 
 ## Phases
 

@@ -135,7 +135,7 @@ const keys = {
 /**
  * Runs each store as one Coolify Service (WordPress, MariaDB and a WP-CLI agent) in the
  * "WaaS Stores" project, and keeps archives in an S3-compatible bucket. Design and the reasons
- * behind it: docs/adr/0001-coolify-provisioner.md.
+ * behind it: docs/coolify.md.
  *
  * Services are found by name (store-<id>, version-<id>), so every method is idempotent and the
  * API's database holds no Coolify ids. Store-side work runs through the agent as Coolify

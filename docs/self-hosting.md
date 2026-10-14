@@ -42,7 +42,7 @@ The fake provisioner builds no real websites, so a test order on the storefront 
 
 ## Stage 1: one VPS with Coolify
 
-This is how [AnyPress](https://anypress.io) runs: one server with [Coolify](https://coolify.io) v4, Cloudflare R2 for storage, toSend for email and Cloudflare DNS. The API uses `PROVISIONER=coolify`: each store is a Coolify Service with its own WordPress, MariaDB and agent containers ([ADR 0001](adr/0001-coolify-provisioner.md)).
+This is how [AnyPress](https://anypress.io) runs: one server with [Coolify](https://coolify.io) v4, Cloudflare R2 for storage, toSend for email and Cloudflare DNS. The API uses `PROVISIONER=coolify`: each store is a Coolify Service with its own WordPress, MariaDB and agent containers ([coolify.md](coolify.md)).
 
 ### What you need
 

@@ -10,12 +10,12 @@ Stores send their email (password resets, FluentCart order receipts, new-user ma
 - Failures are written to the PHP error log (`WaaS store mail: …`), visible in the store's container logs.
 - Existing stores: on startup the API gives every live store the current settings (`ensureStoreMail`, next to the cron check in `src/maintenance.ts`). A store whose variable already matches is left alone. One that needs it gets the variable, a re-rendered compose if it never had one, **one restart**, and the mu-plugin. Changing any setting (a new key) does the same for every store on the next deploy.
 
-## Settings (on the `waas-api` app in Coolify)
+## Settings (on the API)
 
 | Variable | Default | |
 |---|---|---|
 | `STORE_SMTP_PASSWORD` | | Turns store email on. For toSend: an API key (`tsend_…`) scoped to the sending domain only |
-| `STORE_MAIL_FROM` | | Required with the password. An address on the domain verified with the relay, e.g. `no-reply@anypress.io` |
+| `STORE_MAIL_FROM` | | Required with the password. An address on the domain verified with the relay, e.g. `no-reply@example.com` |
 | `STORE_SMTP_HOST` | `smtp.tosend.com` | |
 | `STORE_SMTP_PORT` | `587` | 465 uses implicit TLS; any other port STARTTLS |
 | `STORE_SMTP_USER` | `tosend` | |
@@ -24,13 +24,13 @@ Stores send their email (password resets, FluentCart order receipts, new-user ma
 
 ## Setting up toSend
 
-1. In toSend, add and verify the sending domain `anypress.io`: add the DNS records it shows in Cloudflare (DNS only) and wait until it shows as verified.
-2. Create an API key scoped to `anypress.io` only. A domain-scoped key limits the damage if it ever leaks.
-3. On `waas-api` in Coolify, add `STORE_SMTP_PASSWORD` (the key) and `STORE_MAIL_FROM` (e.g. `no-reply@anypress.io`), then redeploy.
+1. In toSend, add and verify your sending domain: add the DNS records it shows at your DNS host (in Cloudflare, DNS only) and wait until it shows as verified.
+2. Create an API key scoped to that domain only. A domain-scoped key limits the damage if it ever leaks.
+3. On the API, set `STORE_SMTP_PASSWORD` (the key) and `STORE_MAIL_FROM` (e.g. `no-reply@<your domain>`), then redeploy.
 
 Check the toSend plan's sending limits against the stores' order and password-reset volume before selling at scale.
 
-Another provider works the same way through its SMTP settings (`STORE_SMTP_HOST`, `_PORT`, `_USER`). Check its acceptable-use terms for the stores' products first ([hosting.md](hosting.md), "What needs a written answer from a provider").
+Another provider works the same way through its SMTP settings (`STORE_SMTP_HOST`, `_PORT`, `_USER`). Check its acceptable-use terms for what your stores sell first.
 
 ## Per-store keys
 

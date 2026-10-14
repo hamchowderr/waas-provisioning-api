@@ -25,7 +25,7 @@ TypeScript on [Hono](https://hono.dev), with [pg-boss](https://github.com/timgit
 
 The work on the servers websites run on goes through a `Provisioner` (`src/provisioner/provisioner.ts`). There are two:
 
-- `coolify`: each website is a [Coolify](https://coolify.io) Service with its own WordPress, MariaDB and agent containers. Store-side work runs as WP-CLI commands in the agent. Design: [ADR 0001](docs/adr/0001-coolify-provisioner.md).
+- `coolify`: each website is a [Coolify](https://coolify.io) Service with its own WordPress, MariaDB and agent containers. Store-side work runs as WP-CLI commands in the agent. How: [docs/coolify.md](docs/coolify.md).
 - `fake` (default): in memory, succeeds at once. For trying the API and for tests.
 
 ## Quick start
@@ -64,7 +64,7 @@ More detail on single topics:
 | [docs/store-backups.md](docs/store-backups.md) | Nightly website backups, retention, restoring |
 | [docs/db-backups.md](docs/db-backups.md) | The API's own database backups and how to restore them |
 | [docs/store-email.md](docs/store-email.md) | Website email, per-website keys, customers' own sending domains |
-| [docs/adr/0001-coolify-provisioner.md](docs/adr/0001-coolify-provisioner.md) | How websites run on Coolify |
+| [docs/coolify.md](docs/coolify.md) | How websites run on Coolify |
 
 `GET /health` (no auth) answers 200 when Postgres and the job queue respond, 503 otherwise. Point an uptime monitor at it.
 
@@ -135,7 +135,7 @@ The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown ab
 npx @redocly/cli lint openapi/waas-provisioning-api.yaml
 ```
 
-Expected: valid, with three warnings (no license, a localhost server entry, one unused schema kept from WPCS).
+Expected: valid, with two warnings (a localhost server entry, and one unused schema kept from WPCS).
 
 ## License
 

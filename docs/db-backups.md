@@ -18,7 +18,7 @@ The API's own Postgres (`waas-api-db`: products, API keys, versions, tenants, do
 
 Coolify 4.3.23 can send its scheduled database backups to an S3-compatible destination, and R2 works as one. It was not chosen as the off-site copy because:
 
-- it needs the owner to paste an R2 key pair into Coolify by hand (the API can't read the existing one, and should not);
+- it needs an R2 key pair pasted into Coolify by hand (the API can't read the existing one, and should not);
 - it uploads the dump unencrypted (R2's server-side encryption only);
 - its status is visible only in Coolify, not in `/health` or the dashboard;
 - retention is a count or an age, not daily plus weekly.

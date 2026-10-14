@@ -1,5 +1,8 @@
 openapi: 3.0.1
 info:
+  license:
+    name: GPL-3.0-or-later
+    url: https://www.gnu.org/licenses/gpl-3.0.html
   title: WaaS Provisioning API (WPCS v1 compatible)
   description: 'Contract for our provisioning API, which replaces the shut-down WPCS cloud. Same paths, parameters and field names as WPCS v1, so the forked storefront and client plugins keep working.
 

@@ -1,8 +1,7 @@
 /**
  * Everything that touches the machines stores run on. The API records state in Postgres and
- * calls this from queue jobs; it never talks to a host directly. Which host runs the stores is
- * not decided yet (docs/hosting.md, waas-api-2hl.4), so the only implementation is the in-memory
- * fake. A host driver implements this interface.
+ * calls this from queue jobs; it never talks to a host directly. Two implementations: the in-memory
+ * fake and Coolify (docs/coolify.md). A driver for another host implements this interface.
  *
  * Every method must be idempotent: a queue job can run more than once (retries, a worker that
  * looked dead), so calling a method again with the same input must not fail or duplicate work.

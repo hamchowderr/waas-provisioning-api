@@ -14,7 +14,7 @@ The first store template: a clean WordPress shop that every new store is created
 
 ## Format
 
-`dist/starter-fluentcart.zip` is the archive the Coolify provisioner restores ([ADR 0001](../../docs/adr/0001-coolify-provisioner.md), `restore` in `src/provisioner/coolify/agent.php`):
+`dist/starter-fluentcart.zip` is the archive the Coolify provisioner restores ([docs/coolify.md](../../docs/coolify.md), `restore` in `src/provisioner/coolify/agent.php`):
 
 - `database.sql`: `wp db export` of the whole database, table prefix `wp_` (what the stores' `wp-config.php` uses), home and site URL `https://starter.template.invalid`. The agent imports it and rewrites that host to the store's domain (`wp search-replace`), so it must be a bare `https` host without a port.
 - `wp-content/`: plugins, theme and an empty `uploads`. WordPress core is not included; it comes from the image.

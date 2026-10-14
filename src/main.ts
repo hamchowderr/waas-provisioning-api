@@ -19,7 +19,7 @@ const config = loadConfig();
 await migrate(config.databaseUrl);
 const pool = createPool(config.databaseUrl);
 const boss = await startBoss(config.databaseUrl);
-// Coolify for normal stores (docs/adr/0001-coolify-provisioner.md); the fake for local runs and tests.
+// Coolify for normal stores (docs/coolify.md); the fake for local runs and tests.
 const provisioner: Provisioner = config.coolify ? new CoolifyProvisioner(config.coolify) : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
