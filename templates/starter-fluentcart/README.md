@@ -34,13 +34,9 @@ Downloads are pinned with SHA-256 checksums at the top of `build.sh`. To move to
 ## Publish
 
 ```sh
-WAAS_KEY=<product key> WAAS_SECRET=<secret> templates/starter-fluentcart/publish.sh v1.0.0 --production
+WAAS_API_URL=https://api.example.com WAAS_KEY=<product key> WAAS_SECRET=<secret> templates/starter-fluentcart/publish.sh v1.0.0 --production
 ```
 
-It creates the base snapshot **Starter store - FluentCart** (base snapshot names allow only letters, digits, spaces and dashes) and uploads the zip, creates the version from it, waits until it is Done and, with `--production`, makes it the production version. New stores are then created from it. `WAAS_API_URL` defaults to `https://waas-api.otakusolutions.io`; `WP_VERSION` and `PHP_VERSION` pick the image (default `7.1`, `8.3`; Docker Hub must have `wordpress:<WP>-php<PHP>-apache`).
+It creates the base snapshot **Starter store - FluentCart** (base snapshot names allow only letters, digits, spaces and dashes) and uploads the zip, creates the version from it, waits until it is Done and, with `--production`, makes it the production version. New stores are then created from it. Set `WAAS_API_URL` to your API's address (required); `WP_VERSION` and `PHP_VERSION` pick the image (default `7.1`, `8.3`; Docker Hub must have `wordpress:<WP>-php<PHP>-apache`).
 
 A new template release is a new version (`v1.0.1`, ...) made production; existing stores move to it with `moveTenantToAVersion`.
-
-## Known issues
-
-- WaaS Client 2.2.7 fatals in WordPress's plugin update check when its update feed can't be fetched (`src/Updater/Module.php`, `get_remote_data()` has no `return` after the `WP_Error` check). The build lists plugins with `--skip-update-check` for that reason. The feed also still points at the old upstream's releases. To be fixed in `waas-plugins`.

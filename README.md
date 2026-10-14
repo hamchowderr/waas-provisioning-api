@@ -86,7 +86,7 @@ More detail on single topics:
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version, and `maxTenants` |
 | `PUT /admin/products/{productId}` `{"maxTenants": 5}` | The most tenants the product may have (`null`: no limit). At the limit, `createTenant` and `restoreTenant` answer 400. Lowering it deletes nothing. |
 | `GET`/`POST /admin/products/{productId}/versions`, `DELETE …/versions/{id}`, `PUT …/versions/{id}/production` | A product's versions: same requests, rules and responses as `listVersions`, `createVersion`, `deleteVersion` and `setProductionVersion` |
-| `GET`/`POST`/`DELETE /admin/products/{productId}/basesnapshots` | A product's templates: same as the base-snapshot operations (draft.5); `DELETE` takes `?id=` |
+| `GET`/`POST`/`DELETE /admin/products/{productId}/basesnapshots` | A product's templates: same as the base-snapshot operations; `DELETE` takes `?id=` |
 | `POST /admin/jobs/failures/{id}/retry` | Re-queues a failed job and puts its record back to Pending (Removing for a delete); only while the record is still Failed; idempotent |
 
 A job that fails its last retry is recorded in `job_failures` (type, tenant or version, error, attempts) before the worker completes it. Job data is never returned: it can hold encrypted secrets.
@@ -127,7 +127,7 @@ npm run typecheck
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/waas_test npm test
 ```
 
-The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 22 Phase 1 operations.
+The tests wipe and migrate the database in `TEST_DATABASE_URL` (default shown above), so point it at a throwaway database. `test/contract.test.ts` runs every implemented Phase 1 operation (phases: [docs/contract.md](docs/contract.md#phases)) and validates each response against the OpenAPI schemas; it also checks that the contract still has exactly 22 Phase 1 operations.
 
 ### Validate the contract
 

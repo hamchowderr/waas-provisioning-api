@@ -36,7 +36,7 @@ docker compose exec api npm run create-key -- --product-name "Local storefront"
 curl -u <key>:<secret> http://localhost:4111/v1/versions
 ```
 
-Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with WaaS Host, FluentCart and WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the same `ADMIN_TOKEN`. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
+Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with WaaS Host, WaaS Payments, FluentCart, WooCommerce and Subscriptions for WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the same `ADMIN_TOKEN`. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
 
 The fake provisioner builds no real websites, so a test order on the storefront never reaches **Ready**: WaaS Host waits until the website's address answers over HTTPS. Use Stage 0 to try the API, the dashboard and the storefront's settings, and Stage 1 to see a website go live.
 
@@ -111,7 +111,7 @@ In the **WaaS API** project:
 | `SECRETS_KEY` | `openssl rand -base64 32`. Encrypts store passwords, private constants and the database backups. **Keep a copy off the server**: lose it and those values can't be read |
 | `ADMIN_TOKEN` | `openssl rand -base64 32`. Turns on `/admin/*` for the dashboard |
 | `PROVISIONER` | `coolify` |
-| `COOLIFY_URL`, `COOLIFY_TOKEN` | your Coolify address and the token from step 3 |
+| `COOLIFY_URL`, `COOLIFY_TOKEN` | your Coolify address and the token from step 3 (the token can be left unset only when a proxy in front of Coolify adds credentials) |
 | `COOLIFY_SERVER_UUID` | the server new stores go to (Servers → your server) |
 | `COOLIFY_PROJECT_UUID` | the **WaaS Stores** project |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | the bucket from section 3 (`S3_REGION=auto` for R2) |
@@ -133,14 +133,14 @@ Run the `docker exec …` part once by hand first: it prints `DELETE <n>`. It on
 
 ### 5. A template version
 
-Stores are copies of a template version. `templates/starter-fluentcart/build.sh` builds the starter (WordPress, WaaS Client, FluentCart, Twenty Twenty-Five) and `publish.sh` uploads it through the API and creates a version from it. Set `WAAS_API_URL` to your API's address when you run `publish.sh`; it defaults to AnyPress's. You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
+Stores are copies of a template version. `templates/starter-fluentcart/build.sh` builds the starter (WordPress, WaaS Client, FluentCart, Twenty Twenty-Five) and `publish.sh` uploads it through the API and creates a version from it. `publish.sh` needs `WAAS_API_URL` (your API's address) and a product key and secret (`WAAS_KEY`, `WAAS_SECRET`). You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
 
 ### 6. The storefront
 
 Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** with WP Swings' Subscriptions for WooCommerce. Install **WaaS Host** (and **WaaS Payments** for Authorize.Net on FluentCart). Then:
 
 1. In `wp-config.php`, set `WAAS_HOST_KEY_ENCRYPTION_KEY` (`openssl rand -base64 48`) and keep it stable.
-2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`.
+2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`. Use the same domain as the API's `PLATFORM_DOMAIN`.
 3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role and snapshot group.
 
 The storefront needs a real cron: FluentCart creates stores in the background through Action Scheduler, which otherwise waits for the next page visit. Define `DISABLE_WP_CRON` and run `wp action-scheduler run` and `wp cron event run --due-now` every minute (a Coolify scheduled task works).

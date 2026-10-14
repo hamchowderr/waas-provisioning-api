@@ -2,15 +2,15 @@
 # Uploads dist/starter-fluentcart.zip as a base snapshot through the provisioning API, creates a
 # version from it and, with --production, makes that version the product's production version.
 #
-#   WAAS_KEY=... WAAS_SECRET=... templates/starter-fluentcart/publish.sh <version name> [--production]
+#   WAAS_API_URL=... WAAS_KEY=... WAAS_SECRET=... templates/starter-fluentcart/publish.sh <version name> [--production]
 #
-# WAAS_API_URL defaults to https://waas-api.otakusolutions.io. The key is a product (storefront) key.
+# WAAS_API_URL is the provisioning API's address. The key is a product (storefront) key.
 # Prints the base snapshot id, the version id and its domain.
 set -euo pipefail
 
 VERSION_NAME=${1:?usage: publish.sh <version name> [--production]}
 PRODUCTION=${2:-}
-API=${WAAS_API_URL:-https://waas-api.otakusolutions.io}
+API=${WAAS_API_URL:?set WAAS_API_URL to the provisioning API address}
 : "${WAAS_KEY:?set WAAS_KEY}" "${WAAS_SECRET:?set WAAS_SECRET}"
 # Base snapshot names allow only letters, digits, spaces and dashes (5 to 50).
 BASE_NAME=${BASE_NAME:-Starter store - FluentCart}

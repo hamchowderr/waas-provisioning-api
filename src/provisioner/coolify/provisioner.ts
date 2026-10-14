@@ -6,7 +6,7 @@ import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type
 import { encodeConstants, renderCompose } from './compose.ts';
 
 export interface CoolifyProvisionerConfig {
-  /** e.g. https://coolify.otakusolutions.io */
+  /** e.g. https://coolify.example.com */
   url: string;
   /** API token (read, write, deploy). Unset when a proxy adds credentials. */
   token?: string;
