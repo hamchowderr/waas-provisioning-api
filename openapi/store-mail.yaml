@@ -123,7 +123,7 @@ components:
         accepted the platform's template yet), show the records to copy by hand.
       required: [dnsProvider, supported, url]
       properties:
-        dnsProvider: { type: string, nullable: true, description: The domain's DNS host, when it supports Domain Connect at all, example: Cloudflare }
+        dnsProvider: { type: string, nullable: true, description: "The domain's DNS host, when it supports Domain Connect at all", example: Cloudflare }
         supported: { type: boolean, description: True when url works }
         url: { type: string, nullable: true }
     Error:

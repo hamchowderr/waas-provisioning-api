@@ -7,6 +7,7 @@ import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
 import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
+import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -46,6 +47,16 @@ export function createApp(deps: Deps) {
     const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup);
     return c.json(health, health.ok ? 200 : 503);
   });
+
+  // The public API reference, unauthenticated like /health. Built on first request, once every
+  // route below is registered, so it lists exactly the operations this server answers.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let publicSpec: any;
+  app.get('/openapi.json', (c) => {
+    publicSpec ??= buildPublicSpec(new Set(app.routes.map((r) => `${r.method} ${r.path}`)));
+    return c.json(publicSpec);
+  });
+  app.get('/docs', (c) => c.html(docsPage));
 
   // The request log (src/requestlog.ts): every /v1 call, failed sign-ins included, and admin changes.
   const logDays = deps.config.requestLogDays ?? 30;

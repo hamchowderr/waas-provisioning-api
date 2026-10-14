@@ -69,6 +69,15 @@ More detail on single topics:
 
 `GET /health` (no auth) answers 200 when Postgres and the job queue respond, 503 otherwise. Point an uptime monitor at it.
 
+## API reference
+
+Every server publishes its own API reference, no auth needed:
+
+- `GET /docs`: a browsable reference page where you can also try calls with your API key and secret.
+- `GET /openapi.json`: the same reference as an OpenAPI 3 document, for Postman, code generators and the like.
+
+It covers the `/v1` operations this server actually answers (tenants, domains, sending domains, versions, snapshots, templates, plugin updates), built from the files in `openapi/`. The admin API is not in it.
+
 ## Admin API
 
 `/admin/*` serves the admin dashboard ([waas-dashboard](https://github.com/hamchowderr/waas-dashboard)). It is not part of the WPCS contract; `openapi/admin/admin-api.yaml` describes it. It sees every product and authenticates with `Authorization: Bearer <ADMIN_TOKEN>`. Product keys, a missing header or a wrong token all get 403, and so does every request when `ADMIN_TOKEN` is not set. The token is compared in constant time and never logged.
