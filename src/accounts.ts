@@ -23,7 +23,7 @@ export interface Membership {
 
 export interface SessionCaller {
   /** githubLogin: set when they signed up with GitHub. */
-  user: { id: string; name: string; email: string; image: string | null; githubLogin: string | null };
+  user: { id: string; name: string; email: string; emailVerified: boolean; image: string | null; githubLogin: string | null };
   memberships: Membership[];
   /** The organization the session acts for: the one picked in the session, or the only one. */
   active: Membership | null;
@@ -57,9 +57,9 @@ export async function sessionCaller(deps: Deps, headers: Headers): Promise<Sessi
   }));
   const activeId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
   const active = memberships.find((m) => m.organizationId === activeId) ?? (memberships.length === 1 ? memberships[0]! : null);
-  const { id, name, email, image } = session.user;
+  const { id, name, email, emailVerified, image } = session.user;
   const githubLogin = (session.user as { githubLogin?: string | null }).githubLogin ?? null;
-  return { user: { id, name, email, image: image ?? null, githubLogin }, memberships, active };
+  return { user: { id, name, email, emailVerified: emailVerified === true, image: image ?? null, githubLogin }, memberships, active };
 }
 
 const forbidden = (c: Context, message: string) => c.json({ statusCode: 403, message }, 403);

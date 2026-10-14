@@ -117,7 +117,7 @@ In the **WaaS API** project:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | the bucket from section 3 (`S3_REGION=auto` for R2) |
 | `PLATFORM_DOMAIN` | your domain, e.g. `anypress.io`. Reserves the apex and names like `www`, `api`, `app` |
 | `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth |
-| `AUTH_URL`, `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` | optional: lets customers sign in to the dashboard ([accounts.md](accounts.md)) |
+| `AUTH_URL`, `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM` | optional: lets customers sign in to the dashboard, with GitHub or an emailed link ([accounts.md](accounts.md)) |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
 

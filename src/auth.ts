@@ -1,6 +1,7 @@
 import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
-import { organization } from 'better-auth/plugins';
+import { magicLink, organization } from 'better-auth/plugins';
+import { sendSignInLink, type AuthMail } from './authmail.ts';
 import type { Pool } from './db.ts';
 
 /**
@@ -20,6 +21,8 @@ export interface AuthConfig {
   secret: string;
   github?: { clientId: string; clientSecret: string };
   google?: { clientId: string; clientSecret: string };
+  /** Emailed sign-in links ("Email me a sign-in link"); on when a toSend key and sender are known. */
+  mail?: AuthMail;
 }
 
 /** On when AUTH_URL and AUTH_SECRET are both set; off otherwise, and /api/auth answers 404. */
@@ -37,7 +40,13 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
     if (!clientId || !clientSecret) throw new Error(`${prefix}_ID and ${prefix}_SECRET are needed together`);
     return { clientId, clientSecret };
   };
-  return { url, secret, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE') };
+  // Sign-in links go out like the stores' email unless AUTH_MAIL_KEY / AUTH_MAIL_FROM say otherwise.
+  const mailKey = env.AUTH_MAIL_KEY?.trim() || env.STORE_SMTP_PASSWORD?.trim();
+  const mailFrom = env.AUTH_MAIL_FROM?.trim() || env.STORE_MAIL_FROM?.trim();
+  const mail = mailKey && mailFrom
+    ? { key: mailKey, from: mailFrom, brand: env.AUTH_BRAND?.trim() || 'AnyPress', apiUrl: env.TOSEND_API_URL?.trim() || undefined }
+    : undefined;
+  return { url, secret, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE'), mail };
 }
 
 /** Organization roles. A member may only look; an admin or owner may also make changes. */
@@ -76,6 +85,16 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
           organization: { modelName: 'organization', additionalFields: { productId: { type: 'string', required: true, input: false } } },
         },
       }),
+      ...(config.mail
+        ? [
+            magicLink({
+              // Signing in by link proves the address, so it counts as verified (needed to accept invitations).
+              expiresIn: 15 * 60,
+              storeToken: 'hashed',
+              sendMagicLink: ({ email, url }) => sendSignInLink(config.mail!, email.toLowerCase(), url),
+            }),
+          ]
+        : []),
       ...extraPlugins,
     ],
   });
