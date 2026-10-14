@@ -18,16 +18,30 @@ The API serves the MCP server itself, so there is nothing to run:
 | `https://<your API>/mcp` | All tools |
 | `https://<your API>/mcp/read-only` | Only the tools that read |
 
-Sign in with Basic auth, your product API key as the username and the secret as the password, the same as the `/v1` API. Every tool call goes through the `/v1` routes, so it shows up in the request log.
+### Sign in with OAuth (Claude, ChatGPT and other connectors)
 
-Claude Code:
+Add `https://<your API>/mcp` as a custom connector. The client finds the sign-in on its own, opens the API's approve page, and you sign in there with your product API key and secret. The secret stays on that page; the client only gets a token. You can untick "Allow it to make changes" to give it the read tools only.
+
+What the API implements, per the MCP authorization spec:
+
+- Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and `/mcp/read-only`), pointed to by the `WWW-Authenticate` header of a 401
+- Authorization Server Metadata (RFC 8414) at `/.well-known/oauth-authorization-server`
+- Client ID Metadata Documents, and dynamic client registration (RFC 7591) at `/oauth/register`
+- Authorization code with PKCE (S256 only) at `/oauth/authorize` and `/oauth/token`, refresh tokens that rotate, and revocation (RFC 7009) at `/oauth/revoke`
+- Tokens bound to their endpoint (RFC 8707 `resource`), with scopes `stores:read` and `stores:write`
+
+Access tokens last an hour and refresh tokens 30 days. Both are stored hashed and belong to the API key that approved them: revoking the key cuts the client off. Set `PUBLIC_URL` to the API's public address in production; it is the issuer and the resource clients see.
+
+### Sign in with the API key (Basic auth)
+
+Clients that let you set a request header can skip OAuth and send Basic auth, your product API key as the username and the secret as the password, the same as the `/v1` API. Claude Code:
 
 ```sh
 claude mcp add --transport http waas https://api.example.com/mcp \
   --header "Authorization: Basic $(printf '%s:%s' "$WAAS_API_KEY" "$WAAS_API_SECRET" | base64 -w0)"
 ```
 
-Any client that lets you set a request header works the same way.
+Either way, every tool call goes through the `/v1` routes as that API key, so it shows up in the request log.
 
 ## Run it locally over stdio
 
@@ -92,7 +106,7 @@ Uploading custom snapshots and templates and downloading snapshot zips are left 
 ## Develop
 
 - `npm run mcp` at the repository root starts the stdio server from source; `src/mcp.ts` mounts the HTTP endpoints on the API.
-- `test/mcp.test.ts` drives `/mcp` with a 2026-07-28 client and a 2025-era one against the API itself, including the panel resource.
+- `test/mcp.test.ts` drives `/mcp` with a 2026-07-28 client and a 2025-era one against the API itself, including the panel resource; `test/oauth.test.ts` runs the OAuth sign-in the way a connector does.
 - The panel is `src/view/stores.html`. `src/view.ts` inlines the MCP Apps client bundle into it, since hosts render it in a sandbox that can't load scripts from elsewhere.
 - In this repository `waas-provisioning-sdk` resolves to `../sdk/typescript` (see `tsconfig.json` paths). `npm run build` in this folder needs the published SDK installed.
 

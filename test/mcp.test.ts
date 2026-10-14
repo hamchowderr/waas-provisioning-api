@@ -62,7 +62,7 @@ describe('MCP server', () => {
   it('asks for credentials', async () => {
     const response = await t.app.request('/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     expect(response.status).toBe(401);
-    expect(response.headers.get('WWW-Authenticate')).toMatch(/^Basic/);
+    expect(response.headers.get('WWW-Authenticate')).toMatch(/^Bearer resource_metadata=.*, Basic realm=/);
     const wrong = await t.app.request('/mcp', { method: 'POST', headers: { Authorization: basic('nope', 'nope') }, body: '{}' });
     expect(wrong.status).toBe(401);
   });
