@@ -46,8 +46,12 @@ WP Fusion's staging-site check off (`WPF_STAGING_MODE` false; every store is a c
 upgrade nags off, FluentAffiliate's tracking script only once a programme is on, and on each store's first web
 request (and after an address change) fresh install dates, a rewrite-rule flush and a Rank Math sitemap cache clear.
 
-Per-store values (site title, the owner's email and country) come from the purchase, not the template. Until they
-do, the WordPress admin email is `admin@example.invalid`.
+Per-store values come from the purchase: WaaS Host sends the site title (`blogname`), the buyer's email
+(`admin_email`) and `waas_store_owner` (`{"country":"US"}`) as `wpOptions`. On the store's first web request the
+mu-plugin copies them into the plugins once: FluentCart store name, country and email sender; FluentCRM business
+name and sender (FluentBooking uses it too); FluentAffiliate sender and admin email; FluentBooking default country;
+Fluent Support's first mailbox; Rank Math's organisation and website name. The template also has a Support Portal
+page. Stores created without these options keep `admin@example.invalid` until the owner changes it.
 
 Store email is not a plugin: the provisioner's `waas-mail` mu-plugin sends it. Don't add an SMTP plugin.
 

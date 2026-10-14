@@ -158,6 +158,16 @@ if (isset($formIds['Subscription Form'])) {
 $support = new \FluentSupport\App\Services\EmailNotification\Settings();
 $business = $support->globalBusinessSettings(false);
 $business['enable_fluent_booking_integration'] = 'yes';
+// The customer portal page its setup would create. The mailbox needs the owner's email, so it's made per store.
+$business['portal_page_id'] = wp_insert_post([
+    'post_title' => 'Support Portal',
+    'post_name' => 'support',
+    'post_status' => 'publish',
+    'post_type' => 'page',
+    'comment_status' => 'closed',
+    'ping_status' => 'closed',
+    'post_content' => '<!-- wp:shortcode -->[fluent_support_portal]<!-- /wp:shortcode -->',
+]);
 $support->save('global_business_settings', $business);
 
 // AutomatorWP. Settings: clear its logs after 30 days (they hold form entries and email recipients) and
