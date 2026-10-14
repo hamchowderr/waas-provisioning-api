@@ -31,4 +31,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run sdk:check
       - run: npm test

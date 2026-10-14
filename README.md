@@ -121,6 +121,10 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 A public Postman mock of the contract is at `https://2b5454f2-760b-4b86-8589-344ffae396d4.mock.pstmn.io`, useful for testing a plugin without running the API.
 
+## TypeScript SDK
+
+[`sdk/`](sdk) is a typed client for the `/v1` API, with types generated from the contract. See [sdk/README.md](sdk/README.md).
+
 ## Development
 
 ### Tests
