@@ -1,7 +1,9 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context } from 'hono';
+import { adminAccountRoutes } from '../accounts.ts';
 import type { Deps } from '../app.ts';
-import { withTransaction, type Client } from '../db.ts';
+import type { Config } from '../config.ts';
+import { withTransaction, type Client, type Pool } from '../db.ts';
 import { HttpError, badRequest } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
@@ -105,6 +107,107 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const toPin = (p: any) => ({ productId: p.product_id, slug: p.slug, version: p.version, pinnedAt: iso(p.pinned_at) });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const backupView = (retentionDays: number) => (b: any) => ({
+  id: b.id,
+  tenantId: b.tenant_id,
+  externalId: b.external_id,
+  productId: b.product_id,
+  reason: b.reason,
+  sizeBytes: b.size_bytes === null ? null : Number(b.size_bytes),
+  statusCode: b.status,
+  statusName: statusName(b.status),
+  dateCreated: iso(b.date_created),
+  tenantDeletedAt: iso(b.tenant_deleted_at),
+  expiresAt: b.tenant_deleted_at ? new Date(new Date(b.tenant_deleted_at).getTime() + retentionDays * 86400000).toISOString() : null,
+});
+
+/**
+ * Store backups, newest first: every product's, or one product's (`productId`). Shared by
+ * GET /admin/backups and the signed-in customer's GET /account/backups.
+ */
+export async function listBackups(pool: Pool, retentionDays: number, c: Context, productId: string | null) {
+  const { page: pageNumber, pageSize, offset } = page(c);
+  const params = [
+    productId,
+    uuidQuery(c, 'tenantId') ?? null,
+    c.req.query('externalId') || null,
+    statusQuery(c) ?? null,
+    booleanQuery(c, 'tenantDeleted') ?? null,
+  ];
+  const where = `($1::uuid IS NULL OR product_id = $1) AND ($2::uuid IS NULL OR tenant_id = $2)
+    AND ($3::text IS NULL OR external_id = $3) AND ($4::int IS NULL OR status = $4)
+    AND ($5::boolean IS NULL OR (tenant_deleted_at IS NOT NULL) = $5)`;
+  const [{ rows }, total] = await Promise.all([
+    pool.query(`SELECT * FROM tenant_backups WHERE ${where} ORDER BY date_created DESC, id LIMIT ${pageSize} OFFSET ${offset}`, params),
+    pool.query(`SELECT count(*)::int AS n FROM tenant_backups WHERE ${where}`, params),
+  ]);
+  return c.json({ items: rows.map(backupView(retentionDays)), total: total.rows[0].n, page: pageNumber, pageSize });
+}
+
+/**
+ * The request log (src/requestlog.ts), newest first: every product's, or one product's
+ * (`productId`; its last-24-hours counts then cover only that product too). `outcome`: ok (below
+ * 400), client-error (4xx), server-error (5xx) or error (either). `path` matches any part of the path.
+ * Shared by GET /admin/requests and the signed-in customer's GET /account/requests.
+ */
+export async function listRequests(pool: Pool, config: Config, c: Context, productId: string | null) {
+  const { page: pageNumber, pageSize, offset } = page(c);
+  const source = c.req.query('source') || null;
+  if (source !== null && source !== 'v1' && source !== 'admin') throw badRequest('source must be v1 or admin');
+  const outcome = c.req.query('outcome') || null;
+  const ranges: Record<string, [number, number]> = { ok: [0, 399], 'client-error': [400, 499], 'server-error': [500, 599], error: [400, 599] };
+  if (outcome !== null && !ranges[outcome]) throw badRequest('outcome must be ok, client-error, server-error or error');
+  const method = c.req.query('method')?.toUpperCase() || null;
+  const path = c.req.query('path') || null;
+  const [low, high] = outcome ? ranges[outcome]! : [null, null];
+  const params = [productId, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path];
+  const where = `($1::uuid IS NULL OR r.product_id = $1) AND ($2::uuid IS NULL OR r.tenant_id = $2)
+    AND ($3::text IS NULL OR r.source = $3) AND ($4::int IS NULL OR r.status BETWEEN $4 AND $5)
+    AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)`;
+  const [{ rows }, total, day] = await Promise.all([
+    pool.query(
+      `SELECT r.*, p.name AS product_name, t.name AS tenant_name FROM api_requests r
+         LEFT JOIN products p ON p.id = r.product_id LEFT JOIN tenants t ON t.id = r.tenant_id
+        WHERE ${where} ORDER BY r.at DESC, r.id DESC LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    ),
+    pool.query(`SELECT count(*)::int AS n FROM api_requests r WHERE ${where}`, params),
+    pool.query(
+      `SELECT count(*)::int AS total, count(*) FILTER (WHERE status BETWEEN 400 AND 499)::int AS client_errors,
+              count(*) FILTER (WHERE status >= 500)::int AS server_errors
+         FROM api_requests WHERE at > now() - interval '24 hours' AND ($1::uuid IS NULL OR product_id = $1)`,
+      [productId],
+    ),
+  ]);
+  return c.json({
+    last24Hours: { total: day.rows[0].total, clientErrors: day.rows[0].client_errors, serverErrors: day.rows[0].server_errors },
+    retentionDays: config.requestLogDays ?? 30,
+    items: rows.map((r) => ({
+      id: String(r.id),
+      at: iso(r.at),
+      source: r.source,
+      method: r.method,
+      path: r.path,
+      query: r.query,
+      status: r.status,
+      durationMs: r.duration_ms,
+      productId: r.product_id,
+      productName: r.product_name,
+      apiKeyId: r.api_key_id,
+      tenantId: r.tenant_id,
+      tenantName: r.tenant_name,
+      externalId: r.external_id,
+      ip: r.ip,
+      userAgent: r.user_agent,
+      error: r.error,
+    })),
+    total: total.rows[0].n,
+    page: pageNumber,
+    pageSize,
+  });
+}
+
 export function adminRoutes(deps: Deps) {
   const { config, pool, boss, releases } = deps;
   const versions = versionService(deps);
@@ -118,6 +221,9 @@ export function adminRoutes(deps: Deps) {
     }
     await next();
   });
+
+  // Products' organizations and invitations (src/accounts.ts).
+  app.route('/', adminAccountRoutes(deps));
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));
@@ -348,22 +454,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(removed);
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function toBackup(b: any) {
-    return {
-      id: b.id,
-      tenantId: b.tenant_id,
-      externalId: b.external_id,
-      productId: b.product_id,
-      reason: b.reason,
-      sizeBytes: b.size_bytes === null ? null : Number(b.size_bytes),
-      statusCode: b.status,
-      statusName: statusName(b.status),
-      dateCreated: iso(b.date_created),
-      tenantDeletedAt: iso(b.tenant_deleted_at),
-      expiresAt: b.tenant_deleted_at ? new Date(new Date(b.tenant_deleted_at).getTime() + config.backupRetentionDays * 86400000).toISOString() : null,
-    };
-  }
+  const toBackup = backupView(config.backupRetentionDays);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function toFailure(f: any) {
@@ -380,24 +471,7 @@ export function adminRoutes(deps: Deps) {
     };
   }
 
-  app.get('/backups', async (c) => {
-    const { page: pageNumber, pageSize, offset } = page(c);
-    const params = [
-      uuidQuery(c, 'productId') ?? null,
-      uuidQuery(c, 'tenantId') ?? null,
-      c.req.query('externalId') || null,
-      statusQuery(c) ?? null,
-      booleanQuery(c, 'tenantDeleted') ?? null,
-    ];
-    const where = `($1::uuid IS NULL OR product_id = $1) AND ($2::uuid IS NULL OR tenant_id = $2)
-      AND ($3::text IS NULL OR external_id = $3) AND ($4::int IS NULL OR status = $4)
-      AND ($5::boolean IS NULL OR (tenant_deleted_at IS NOT NULL) = $5)`;
-    const [{ rows }, total] = await Promise.all([
-      pool.query(`SELECT * FROM tenant_backups WHERE ${where} ORDER BY date_created DESC, id LIMIT ${pageSize} OFFSET ${offset}`, params),
-      pool.query(`SELECT count(*)::int AS n FROM tenant_backups WHERE ${where}`, params),
-    ]);
-    return c.json({ items: rows.map(toBackup), total: total.rows[0].n, page: pageNumber, pageSize });
-  });
+  app.get('/backups', (c) => listBackups(pool, config.backupRetentionDays, c, uuidQuery(c, 'productId') ?? null));
 
   app.get('/db-backups', async (c) => {
     const { page: pageNumber, pageSize, offset } = page(c);
@@ -424,63 +498,7 @@ export function adminRoutes(deps: Deps) {
     });
   });
 
-  // The request log (src/requestlog.ts), newest first. `outcome`: ok (below 400), client-error
-  // (4xx), server-error (5xx) or error (either). `path` matches any part of the path.
-  app.get('/requests', async (c) => {
-    const { page: pageNumber, pageSize, offset } = page(c);
-    const source = c.req.query('source') || null;
-    if (source !== null && source !== 'v1' && source !== 'admin') throw badRequest('source must be v1 or admin');
-    const outcome = c.req.query('outcome') || null;
-    const ranges: Record<string, [number, number]> = { ok: [0, 399], 'client-error': [400, 499], 'server-error': [500, 599], error: [400, 599] };
-    if (outcome !== null && !ranges[outcome]) throw badRequest('outcome must be ok, client-error, server-error or error');
-    const method = c.req.query('method')?.toUpperCase() || null;
-    const path = c.req.query('path') || null;
-    const [low, high] = outcome ? ranges[outcome]! : [null, null];
-    const params = [uuidQuery(c, 'productId') ?? null, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path];
-    const where = `($1::uuid IS NULL OR r.product_id = $1) AND ($2::uuid IS NULL OR r.tenant_id = $2)
-      AND ($3::text IS NULL OR r.source = $3) AND ($4::int IS NULL OR r.status BETWEEN $4 AND $5)
-      AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)`;
-    const [{ rows }, total, day] = await Promise.all([
-      pool.query(
-        `SELECT r.*, p.name AS product_name, t.name AS tenant_name FROM api_requests r
-           LEFT JOIN products p ON p.id = r.product_id LEFT JOIN tenants t ON t.id = r.tenant_id
-          WHERE ${where} ORDER BY r.at DESC, r.id DESC LIMIT ${pageSize} OFFSET ${offset}`,
-        params,
-      ),
-      pool.query(`SELECT count(*)::int AS n FROM api_requests r WHERE ${where}`, params),
-      pool.query(
-        `SELECT count(*)::int AS total, count(*) FILTER (WHERE status BETWEEN 400 AND 499)::int AS client_errors,
-                count(*) FILTER (WHERE status >= 500)::int AS server_errors
-           FROM api_requests WHERE at > now() - interval '24 hours'`,
-      ),
-    ]);
-    return c.json({
-      last24Hours: { total: day.rows[0].total, clientErrors: day.rows[0].client_errors, serverErrors: day.rows[0].server_errors },
-      retentionDays: config.requestLogDays ?? 30,
-      items: rows.map((r) => ({
-        id: String(r.id),
-        at: iso(r.at),
-        source: r.source,
-        method: r.method,
-        path: r.path,
-        query: r.query,
-        status: r.status,
-        durationMs: r.duration_ms,
-        productId: r.product_id,
-        productName: r.product_name,
-        apiKeyId: r.api_key_id,
-        tenantId: r.tenant_id,
-        tenantName: r.tenant_name,
-        externalId: r.external_id,
-        ip: r.ip,
-        userAgent: r.user_agent,
-        error: r.error,
-      })),
-      total: total.rows[0].n,
-      page: pageNumber,
-      pageSize,
-    });
-  });
+  app.get('/requests', (c) => listRequests(pool, config, c, uuidQuery(c, 'productId') ?? null));
 
   app.get('/jobs', async (c) => {
     const state = c.req.query('state') ?? 'queued';

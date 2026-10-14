@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
+import { createAuth } from './auth.ts';
 import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { backupCipherKey, DbBackups, pgDump, startDbBackups } from './dbbackup.ts';
@@ -41,8 +42,11 @@ await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner);
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner);
 
-const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets, releases }).fetch, port: config.port }, (info) =>
-  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'})`),
+// Sign-in for people (docs/accounts.md), when AUTH_URL and AUTH_SECRET are set.
+const auth = config.auth ? createAuth(pool, config.auth) : undefined;
+
+const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets, releases, auth }).fetch, port: config.port }, (info) =>
+  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'})`),
 );
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

@@ -1,3 +1,4 @@
+import { loadAuthConfig, type AuthConfig } from './auth.ts';
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import { loadDomainConnectConfig, type DomainConnectConfig } from './domainconnect.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
@@ -47,6 +48,8 @@ export interface Config {
   requestLogDays?: number;
   /** Outgoing webhooks (src/webhooks.ts): WEBHOOK_ALLOW_PRIVATE and WEBHOOK_LOG_DAYS. */
   webhooks?: WebhookConfig;
+  /** Sign-in for people (src/auth.ts): AUTH_URL and AUTH_SECRET, plus AUTH_GITHUB_* and AUTH_GOOGLE_*. */
+  auth?: AuthConfig;
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -166,5 +169,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     requestLogDays: requestLogDays(env.REQUEST_LOG_DAYS),
     publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
     webhooks: loadWebhookConfig(env),
+    auth: loadAuthConfig(env),
   };
 }

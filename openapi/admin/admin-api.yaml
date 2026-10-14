@@ -167,6 +167,106 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/organization:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminGetOrganization
+      summary: A product's organization, its members and pending invitations (docs/accounts.md)
+      description: organization is null until one is made (PUT) or someone is invited.
+      responses:
+        '200':
+          description: The organization
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminPutOrganization
+      summary: Make the product's organization, or rename it
+      description: Each product has at most one organization. name defaults to the product's name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string, minLength: 1, maxLength: 100 } }
+      responses:
+        '200':
+          description: Renamed (or already there)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '201':
+          description: Made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    post:
+      operationId: adminInvite
+      summary: Invite someone to the product's organization by email
+      description: >-
+        Makes the organization if there is none yet. The person signs in with that email address and
+        accepts at acceptUrl within 7 days. A new invitation for the same address replaces a pending
+        one. 503 when sign-in is off (AUTH_URL and AUTH_SECRET unset).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+      responses:
+        '201':
+          description: The invitation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invitation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/invitations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminCancelInvitation
+      summary: Cancel a pending invitation
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/members/{id}:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminRemoveMember
+      summary: Remove someone from the product's organization
+      description: Their account stays; it can no longer reach this product.
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/versions:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -890,6 +990,49 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    OrganizationRole:
+      type: string
+      enum: [owner, admin, member]
+      default: owner
+      description: Owners and admins may make changes; members may only look.
+    Invitation:
+      type: object
+      required: [id, email, role, expiresAt, dateCreated, acceptUrl]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/OrganizationRole' }
+        expiresAt: { type: string, format: date-time }
+        dateCreated: { type: string, format: date-time }
+        acceptUrl: { type: string, nullable: true, description: 'Where the person accepts: AUTH_URL/invite/<id>. null when sign-in is off.' }
+    OrganizationView:
+      type: object
+      required: [organization, members, invitations]
+      properties:
+        organization:
+          type: object
+          nullable: true
+          required: [id, name, productId, dateCreated]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            productId: { type: string, format: uuid }
+            dateCreated: { type: string, format: date-time }
+        members:
+          type: array
+          items:
+            type: object
+            required: [id, userId, name, email, role, dateCreated]
+            properties:
+              id: { type: string, format: uuid }
+              userId: { type: string, format: uuid }
+              name: { type: string }
+              email: { type: string }
+              role: { $ref: '#/components/schemas/OrganizationRole' }
+              dateCreated: { type: string, format: date-time }
+        invitations:
+          type: array
+          items: { $ref: '#/components/schemas/Invitation' }
     DomainConnectLink:
       type: object
       description: >-
