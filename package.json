@@ -12,13 +12,17 @@
     "start": "node --import tsx src/main.ts",
     "create-key": "tsx src/cli/create-key.ts",
     "db-backup": "tsx src/cli/db-backup.ts",
-    "typecheck": "tsc --noEmit && tsc -p sdk/typescript",
+    "typecheck": "tsc --noEmit && tsc -p sdk/typescript && tsc -p mcp",
     "test": "vitest run",
     "sdk:generate": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false",
-    "sdk:check": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false --check && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false --check && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false --check && tsc -p sdk/typescript"
+    "sdk:check": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false --check && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false --check && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false --check && tsc -p sdk/typescript",
+    "mcp": "tsx --tsconfig mcp/tsconfig.json mcp/src/main.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/server": "^2.3.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "hono": "^4.13.13",
@@ -26,7 +30,8 @@
     "pg": "^8.23.1",
     "pg-boss": "^12.37.0",
     "tsx": "^4.23.15",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

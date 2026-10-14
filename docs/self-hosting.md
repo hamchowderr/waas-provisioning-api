@@ -116,6 +116,7 @@ In the **WaaS API** project:
 | `COOLIFY_PROJECT_UUID` | the **WaaS Stores** project |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | the bucket from section 3 (`S3_REGION=auto` for R2) |
 | `PLATFORM_DOMAIN` | your domain, e.g. `anypress.io`. Reserves the apex and names like `www`, `api`, `app` |
+| `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
 
@@ -221,6 +222,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN`, –, `_dck1`, `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
+| `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
 | `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([docs/webhooks.md](docs/webhooks.md)) |
 | `WEBHOOK_ALLOW_PRIVATE` | off | `true` lets webhook endpoints be `http://` and on private addresses, for an API on a private network |

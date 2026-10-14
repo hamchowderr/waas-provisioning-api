@@ -38,6 +38,11 @@ export interface Config {
   dbBackup?: DbBackupConfig;
   /** Nightly backups of every live store (src/storebackups.ts); on unless STORE_BACKUP=off. */
   storeBackup?: StoreBackupConfig;
+  /**
+   * The API's public URL (PUBLIC_URL, e.g. https://api.anypress.io): the OAuth issuer and the MCP
+   * server's resource id. Unset: taken from each request's Host and X-Forwarded-Proto.
+   */
+  publicUrl?: string;
   /** Days the request log (src/requestlog.ts) keeps; 0 turns it off. Default 30. */
   requestLogDays?: number;
   /** Outgoing webhooks (src/webhooks.ts): WEBHOOK_ALLOW_PRIVATE and WEBHOOK_LOG_DAYS. */
@@ -159,6 +164,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbBackup: loadDbBackupConfig(env),
     storeBackup: loadStoreBackupConfig(env),
     requestLogDays: requestLogDays(env.REQUEST_LOG_DAYS),
+    publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
     webhooks: loadWebhookConfig(env),
   };
 }

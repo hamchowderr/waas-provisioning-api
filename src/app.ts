@@ -7,6 +7,8 @@ import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
 import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
+import { mcpRoutes } from './mcp.ts';
+import { oauthRoutes } from './oauth.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
 import { adminRoutes } from './routes/admin.ts';
@@ -35,9 +37,18 @@ export interface Deps {
   releases?: ReleaseStore;
   /** DNS and HTTP for Domain Connect lookups; tests replace it. */
   domainConnectNet?: DomainConnectNet;
+  /** Fetches OAuth Client ID Metadata Documents (src/oauth.ts); tests replace it. */
+  clientMetadataFetch?: typeof fetch;
 }
 
-export type AppEnv = { Variables: { productId: string; apiKeyId?: string } };
+/**
+ * `internalAuth` is only ever set by an in-process call (the MCP server at /mcp, src/mcp.ts), which
+ * has already signed the caller in. Requests from outside can't set Bindings.
+ */
+export type AppEnv = {
+  Bindings: { internalAuth?: { productId: string; apiKeyId: string } };
+  Variables: { productId: string; apiKeyId?: string };
+};
 
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
@@ -70,6 +81,12 @@ export function createApp(deps: Deps) {
   // Basic auth with the API key as username and the secret as password. Any failure is 403,
   // not 401: the storefront plugin's connection test reads 403 as "invalid key or secret".
   app.use('/v1/*', async (c, next) => {
+    const internal = c.env?.internalAuth;
+    if (internal) {
+      c.set('apiKeyId', internal.apiKeyId);
+      c.set('productId', internal.productId);
+      return next();
+    }
     const match = /^Basic\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
     const decoded = match ? Buffer.from(match[1]!, 'base64').toString('utf8') : '';
     const colon = decoded.indexOf(':');
@@ -94,6 +111,10 @@ export function createApp(deps: Deps) {
   app.route('/v1/plugins', pluginRoutes(deps));
   app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
+
+  // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
+  oauthRoutes(app, deps);
+  mcpRoutes(app, deps);
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ statusCode: err.status, message: err.message }, err.status);
