@@ -24,6 +24,7 @@ describe('isReservedDomain', () => {
     expect(isReservedDomain('anypress.io', 'anypress.io')).toBe(true);
     expect(isReservedDomain('www.anypress.io', 'anypress.io')).toBe(true);
     expect(isReservedDomain('stores.anypress.io', 'anypress.io')).toBe(true);
+    expect(isReservedDomain('shop.anypress.io', 'anypress.io')).toBe(true);
     expect(isReservedDomain('my-shop.anypress.io', 'anypress.io')).toBe(false);
     expect(isReservedDomain('www.example.com', 'anypress.io')).toBe(false);
     expect(isReservedDomain('www.notanypress.io', 'anypress.io')).toBe(false);
