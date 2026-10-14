@@ -38,6 +38,108 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Product' }
         '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminCreateProduct
+      summary: A new product (an agency's storefront) with its first API key
+      description: >-
+        The key's secret is in this response only (Cache-Control no-store); hand it to the agency
+        once. They can then manage their own keys at /v1/keys (openapi/api-keys.yaml).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                maxTenants: { type: integer, minimum: 0, nullable: true }
+                keyLabel: { type: string, maxLength: 100, nullable: true }
+      responses:
+        '201':
+          description: The product and its first key with the secret
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product, key]
+                additionalProperties: false
+                properties:
+                  product: { $ref: '#/components/schemas/Product' }
+                  key: { $ref: '../api-keys.yaml#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/products/{productId}/keys:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminListApiKeys
+      summary: A product's API keys
+      description: Working keys and keys revoked in the last 30 days, newest first. Never secrets.
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../api-keys.yaml#/components/schemas/ApiKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminCreateApiKey
+      summary: Create a key for a product (same rules as createApiKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/CreateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/keys/{id}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminRotateApiKey
+      summary: Replace an active key (same rules as rotateApiKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/RotateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once, and the key it replaces
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/RotatedApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/keys/{id}:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminRevokeApiKey
+      summary: Revoke a key now
+      description: Like revokeApiKey, except the product's last active key can be revoked, to cut a storefront off.
+      responses:
+        '200':
+          description: The revoked key
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -618,6 +720,9 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
       description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Refused in the record's current state
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unavailable:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)

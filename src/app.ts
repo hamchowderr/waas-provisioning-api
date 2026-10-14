@@ -15,6 +15,7 @@ import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
 import { domainRoutes } from './routes/domains.ts';
 import { lifecycleRoutes } from './routes/lifecycle.ts';
+import { keyRoutes } from './routes/keys.ts';
 import { domainConnectRoutes } from './routes/domainconnect.ts';
 import { mailDomainRoutes } from './routes/maildomains.ts';
 import { pluginRoutes } from './routes/plugins.ts';
@@ -79,6 +80,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/snapshots', snapshotRoutes(deps));
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
   app.route('/v1/plugins', pluginRoutes(deps));
+  app.route('/v1/keys', keyRoutes(deps));
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ statusCode: err.status, message: err.message }, err.status);

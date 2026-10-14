@@ -39,7 +39,7 @@ docker compose exec api npm run create-key -- --product-name "Example storefront
 curl -u <key>:<secret> http://localhost:4111/v1/versions
 ```
 
-`create-key` prints a key and secret once. Each key belongs to one storefront. Requests use Basic auth with the key as username and the secret as password.
+`create-key` prints a key and secret once. Each key belongs to one storefront. Requests use Basic auth with the key as username and the secret as password. After that first key, a storefront manages its own keys through `/v1/keys` (see [API keys](#api-keys)), and the dashboard can create storefronts and keys without the command line.
 
 Without Docker, with Node 22 or newer and your own Postgres 16 or newer:
 
@@ -87,12 +87,25 @@ More detail on single topics:
 | `GET /admin/requests` | The request log: every `/v1` call (failed sign-ins included) and admin change, with status, timing, store, key id, IP and user agent; never bodies or secrets. Kept `REQUEST_LOG_DAYS` (30) |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version, and `maxTenants` |
+| `POST /admin/products` `{"name": "Acme Agency", "maxTenants": 10, "keyLabel": "…"}` | A new product (an agency's storefront) and its first API key; the secret is in this response only |
+| `GET`/`POST /admin/products/{productId}/keys`, `POST …/keys/{id}/rotate`, `DELETE …/keys/{id}` | A product's API keys: same as `/v1/keys`, except the last active key can be revoked |
 | `PUT /admin/products/{productId}` `{"maxTenants": 5}` | The most tenants the product may have (`null`: no limit). At the limit, `createTenant` and `restoreTenant` answer 400. Lowering it deletes nothing. |
 | `GET`/`POST /admin/products/{productId}/versions`, `DELETE …/versions/{id}`, `PUT …/versions/{id}/production` | A product's versions: same requests, rules and responses as `listVersions`, `createVersion`, `deleteVersion` and `setProductionVersion` |
 | `GET`/`POST`/`DELETE /admin/products/{productId}/basesnapshots` | A product's templates: same as the base-snapshot operations; `DELETE` takes `?id=` |
 | `POST /admin/jobs/failures/{id}/retry` | Re-queues a failed job and puts its record back to Pending (Removing for a delete); only while the record is still Failed; idempotent |
 
 A job that fails its last retry is recorded in `job_failures` (type, tenant or version, error, attempts) before the worker completes it. Job data is never returned: it can hold encrypted secrets.
+
+## API keys
+
+A storefront signs in with an API key and secret. Only a scrypt hash of the secret is stored; the secret is shown in the response that creates the key and never again, and the request log never records bodies. Signed in with any of its keys, a storefront manages its own keys ([`openapi/api-keys.yaml`](openapi/api-keys.yaml)):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/keys` | Working keys and those revoked in the last 30 days: `state` (`active`, `expiring`, `revoked`), `lastUsedAt`, `isCurrent` for the key in use; never secrets |
+| `POST /v1/keys` `{"label": "…"}` | A new key with its secret. At most 20 working keys |
+| `POST /v1/keys/{id}/rotate` `{"graceHours": 24}` | A new key with the same label; the old one keeps working for `graceHours` (default 24, 0 to 720), so whatever uses it can switch over |
+| `DELETE /v1/keys/{id}` | Revokes a key now. The last active key can't be revoked, so a storefront can't lock itself out |
 
 ## Plugin updates
 
