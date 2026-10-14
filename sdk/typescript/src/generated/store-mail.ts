@@ -62,7 +62,7 @@ export interface components {
         /** @description A link that sends the store owner to their DNS host, which adds the records once they approve (docs/domain-connect.md). Without one (the DNS host doesn't support Domain Connect or hasn't accepted the platform's template yet), show the records to copy by hand. */
         DomainConnectLink: {
             /**
-             * @description The domain's DNS host
+             * @description The domain's DNS host, when it supports Domain Connect at all
              * @example Cloudflare
              */
             dnsProvider: string | null;

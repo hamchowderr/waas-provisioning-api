@@ -83,7 +83,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '../api-keys.yaml#/components/schemas/ApiKey' }
+                items: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
@@ -137,7 +137,7 @@ paths:
           description: The revoked key
           content:
             application/json:
-              schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKey' }
+              schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}:

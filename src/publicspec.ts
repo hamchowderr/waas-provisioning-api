@@ -1,7 +1,7 @@
 // The public API reference: GET /openapi.json and the page at GET /docs. Built from the contract
 // files in openapi/ (the admin API is left out), keeping only the operations this server
-// actually answers, with notes meant for us (phases, the WPCS teardown, the Postman mock, Beads
-// ids) taken out. The files themselves stay as they are: request validation and the SDK read them.
+// actually answers, with notes meant for us (phases, plugin file references, the Postman mock,
+// Beads ids) taken out. The files themselves stay as they are: request validation and the SDK read them.
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
@@ -9,11 +9,12 @@ const SOURCES = [
   { file: 'waas-provisioning-api.yaml' },
   { file: 'store-mail.yaml', tag: 'TenantMail' },
   { file: 'plugin-updates.yaml', tag: 'PluginUpdates' },
+  { file: 'api-keys.yaml', tag: 'ApiKeys' },
 ];
 
 const DOCS_BASE = 'https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/';
 
-const DESCRIPTION = `Create and manage WordPress stores: tenants, their domains and sending domains, versions, snapshots and templates. The API speaks the WPCS v1 contract, so storefront plugins written for WPCS work against it unchanged.
+const DESCRIPTION = `Create and manage WordPress stores: tenants, their domains and sending domains, versions, snapshots and templates.
 
 **Authentication.** Every \`/v1\` call uses HTTP Basic auth with your API key as the username and your API secret as the password. A missing or wrong key or secret returns **403**, not 401.
 
@@ -32,6 +33,7 @@ const TAGS: Record<string, [string, string]> = {
   Version: ['Versions', 'Versions of your storefront product: the WordPress install each new store is copied from.'],
   Snapshot: ['Snapshots', 'Snapshots of versions.'],
   BaseSnapshot: ['Templates', 'Templates (base snapshots) that new versions start from. Partner keys only.'],
+  ApiKeys: ['API keys', 'List, create, rotate and revoke your own API keys. A secret is shown once, in the response that creates the key.'],
   PluginUpdates: ['Plugin updates', 'Update checks made by the WaaS plugins. The response points at a signed release package.'],
 };
 
@@ -44,11 +46,8 @@ const INTERNAL: [RegExp, string][] = [
   // Where the storefront plugin makes each call, with file and line references.
   [/^\*\*Storefront plugin:\*\*.*$/gm, ''],
   [/\s*\([^()]*\.php[^()]*\)/g, ''],
-  [/ Sent by the storefront plugin; missing from the original WPCS spec\./g, ''],
-  [/the WPCS Console/g, 'the dashboard'],
-  [/the domain WPCS first adds/g, 'the domain the platform first adds'],
-  [/with regards to WPCS/g, 'by the platform'],
-  // Links into the old WPCS docs site, which is gone.
+  [/ Sent by the storefront plugin; missing from the original spec\./g, ''],
+  // Links into an old docs site that is gone.
   [/\s*(?:For more info see|See) (?:our )?\[[^\]]*\]\(docs\/[^)]*\)\.?/g, ''],
   [/\s*\((?:waas|wpcs)-[a-z0-9]+(?:\.[0-9]+)*\)/gi, ''],
   [/\((docs\/([a-z0-9-]+)\.md)\)/g, `([guide](${DOCS_BASE}$2.md))`],
