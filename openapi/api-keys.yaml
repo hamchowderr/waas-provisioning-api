@@ -1,0 +1,154 @@
+openapi: 3.0.1
+info:
+  title: WaaS Provisioning API - API keys
+  version: 0.1.0
+  description: >-
+    Self-service API keys. A storefront signs in with one of its
+    keys (Basic auth, as for /v1) and manages its own keys: list, create, rotate and revoke. A
+    secret is in the response that creates it and nowhere else: only its hash is stored, and the
+    request log never records bodies. Responses carrying a secret have `Cache-Control: no-store`.
+    The admin API has the same operations at /admin/products/{productId}/keys.
+servers:
+  - url: http://localhost:4111
+    description: Local
+security:
+  - basic: []
+paths:
+  /v1/keys:
+    get:
+      operationId: listApiKeys
+      summary: The storefront's keys
+      description: >-
+        Working keys and keys revoked in the last 30 days, newest first. Never secrets.
+        isCurrent marks the key this request signed in with.
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/ApiKey'
+                    - type: object
+                      required: [isCurrent]
+                      properties: { isCurrent: { type: boolean } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createApiKey
+      summary: Create a key
+      description: At most 20 working keys per storefront (409 beyond that).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/keys/{id}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/keyId'
+    post:
+      operationId: rotateApiKey
+      summary: Replace an active key with a new one
+      description: >-
+        Creates a key with the same label. The old key keeps working for graceHours (default 24,
+        0 stops it now, at most 720) so whatever uses it can switch over; meanwhile its state is
+        expiring. Only an active key can be rotated (409 otherwise).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once, and the key it replaces
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RotatedApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/keys/{id}:
+    parameters:
+      - $ref: '#/components/parameters/keyId'
+    delete:
+      operationId: revokeApiKey
+      summary: Revoke a key now
+      description: >-
+        The key stops working at once; an expiring key stops early. Revoking a revoked key changes
+        nothing. The storefront's last active key can't be revoked (409), so it can't lock itself
+        out: create or rotate to a new key first. The key this request signed in with can be
+        revoked when another active key exists.
+      responses:
+        '200':
+          description: The revoked key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    basic: { type: http, scheme: basic, description: The API key as username, its secret as password }
+  parameters:
+    keyId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Missing, wrong or revoked key or secret
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: No such key for this storefront
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Refused in the key's or storefront's current state
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      required: [statusCode, message]
+      additionalProperties: false
+      properties: { statusCode: { type: integer }, message: { type: string } }
+    ApiKey:
+      type: object
+      required: [id, label, state, dateCreated, lastUsedAt, revokedAt]
+      properties:
+        id: { type: string, format: uuid, description: The key (Basic-auth username). Not a secret. }
+        label: { type: string, nullable: true }
+        state:
+          type: string
+          enum: [active, expiring, revoked]
+          description: expiring is a rotated key that still works until revokedAt
+        dateCreated: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true, description: Last successful sign-in, up to a minute stale }
+        revokedAt: { type: string, format: date-time, nullable: true, description: When it stops (stopped) working; null while active }
+    NewApiKey:
+      allOf:
+        - $ref: '#/components/schemas/ApiKey'
+        - type: object
+          required: [secret]
+          properties: { secret: { type: string, description: Shown once. Store it now; it can't be shown again. } }
+    CreateApiKey:
+      type: object
+      properties: { label: { type: string, maxLength: 100, nullable: true } }
+    RotateApiKey:
+      type: object
+      properties: { graceHours: { type: integer, minimum: 0, maximum: 720, default: 24 } }
+    RotatedApiKey:
+      type: object
+      required: [key, replaced]
+      additionalProperties: false
+      properties:
+        key: { $ref: '#/components/schemas/NewApiKey' }
+        replaced: { $ref: '#/components/schemas/ApiKey' }
