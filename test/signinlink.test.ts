@@ -54,7 +54,7 @@ describe('emailed sign-in links', () => {
 
     const account = await app.request('/account', { headers: { Cookie: cookie.split(';')[0]! } });
     expect(account.status).toBe(200);
-    expect((await account.json()).user).toMatchObject({ email: 'owner@agency.example' });
+    expect((await account.json()).user).toMatchObject({ email: 'owner@agency.example', emailVerified: true });
     const row = await t.pool.query('SELECT "emailVerified" AS email_verified FROM auth."user" WHERE email = $1', ['owner@agency.example']);
     expect(row.rows[0].email_verified).toBe(true);
 
