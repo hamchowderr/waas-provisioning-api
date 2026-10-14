@@ -82,7 +82,12 @@ const AGENT = 'php /tmp/waas-agent.php';
 /** Coolify stores a scheduled task's command in a varchar(255). */
 const MAX_COMMAND = 255;
 const STAGE_CHUNK = 200;
-const WP = 'wp --path=/var/www/html';
+/**
+ * WP-CLI for the cron task. The CLI image's PHP allows 128 MB, and a store with every template plugin needs about
+ * that just to load them in WP-CLI (no opcache), so cron died there. 192 MB fits the agent's 256 MB. No --path: the
+ * agent's working directory is /var/www/html, and the command has to fit Coolify's 255 characters.
+ */
+const WP = 'php -d memory_limit=192M /usr/local/bin/wp';
 
 /**
  * Each store's cron: WP-cron and Action Scheduler every minute, from the agent container (which

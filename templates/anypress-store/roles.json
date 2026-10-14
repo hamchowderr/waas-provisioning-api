@@ -1,0 +1,18 @@
+{
+    "store": {
+        "title": "Store",
+        "plugins": [
+            "fluent-cart/fluent-cart.php",
+            "fluent-crm/fluent-crm.php",
+            "fluentform/fluentform.php",
+            "fluent-booking/fluent-booking.php",
+            "fluent-support/fluent-support.php",
+            "fluent-affiliate/fluent-affiliate.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "automatorwp/automatorwp.php",
+            "fluent-security/fluent-security.php"
+        ]
+    }
+}
