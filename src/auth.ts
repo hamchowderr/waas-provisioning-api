@@ -37,7 +37,11 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
     const clientId = env[`${prefix}_ID`]?.trim();
     const clientSecret = env[`${prefix}_SECRET`]?.trim();
     if (!clientId && !clientSecret) return undefined;
-    if (!clientId || !clientSecret) throw new Error(`${prefix}_ID and ${prefix}_SECRET are needed together`);
+    // Half a pair leaves that button off rather than stopping the API, so emailed links still work.
+    if (!clientId || !clientSecret) {
+      console.warn(`${prefix}_ID and ${prefix}_SECRET are needed together; that sign-in is off until both are set`);
+      return undefined;
+    }
     return { clientId, clientSecret };
   };
   // Sign-in links go out like the stores' email unless AUTH_MAIL_KEY / AUTH_MAIL_FROM say otherwise.

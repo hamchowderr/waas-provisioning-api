@@ -82,6 +82,15 @@ describe('sign-in email settings', () => {
     expect(loadAuthConfig(base)!.mail).toBeUndefined();
   });
 
+  it('leaves GitHub off, without failing, when only half its keys are set', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const config = loadAuthConfig({ ...base, AUTH_GITHUB_ID: '1234567', STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'a@x.example' })!;
+    expect(config.github).toBeUndefined();
+    expect(config.mail).toBeDefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('reports a refused email', async () => {
     const fail = async () => new Response('nope', { status: 422 });
     await expect(sendSignInLink(MAIL, 'a@b.example', 'https://x.example/l', fail as typeof fetch)).rejects.toThrow(/422/);
