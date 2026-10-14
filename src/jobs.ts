@@ -1,11 +1,12 @@
 import type { Pool } from './db.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
+import { pruneRequestLog } from './requestlog.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, TENANT_SELECT } from './tenants.ts';
 
-export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets: Secrets, backupRetentionDays: number): JobHandlers {
+export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets: Secrets, backupRetentionDays: number, requestLogDays = 30): JobHandlers {
   const setTenantStatus = (tenantId: string, status: number, onlyFrom?: number) =>
     pool.query(
       `UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 ${onlyFrom === undefined ? '' : 'AND status = $3'}`,
@@ -115,6 +116,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
 
     async maintenance() {
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
+      await pruneRequestLog(pool, requestLogDays);
     },
 
     async fail(data: JobData, error: unknown, job: { id: string; attempts: number }) {

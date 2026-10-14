@@ -23,7 +23,7 @@ const boss = await startBoss(config.databaseUrl);
 const provisioner: Provisioner = config.coolify ? new CoolifyProvisioner(config.coolify) : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
-const handlers = createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays);
+const handlers = createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays);
 await startWorker(boss, handlers);
 // Daily off-site backup of this database (docs/db-backups.md), when the S3_* settings are set.
 const dbBackups = config.dbBackup

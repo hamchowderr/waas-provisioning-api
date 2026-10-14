@@ -221,6 +221,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN`, –, `_dck1`, `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
+| `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
 | `DB_BACKUP`, `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY` | on, 02:30 UTC, `db-backups/`, 14, 8 | [db-backups.md](db-backups.md) |
 | `STORE_BACKUP`, `STORE_BACKUP_SCHEDULE`, `STORE_BACKUP_KEEP_DAILY`, `STORE_BACKUP_KEEP_WEEKLY` | on, 09:00 UTC, 7, 4 | [store-backups.md](store-backups.md) |
 | `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, –, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |

@@ -84,6 +84,7 @@ More detail on single topics:
 | `POST /admin/tenants/{id}/restore` `{"backupId": "…", "takeBackup": true}` | Rolls a live store back to one of its Done backups in place, keeping its domains, version, constants and suspension; backs up what it holds now first (reason `before-restore`) unless `takeBackup` is false |
 | `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
 | `GET /admin/db-backups` | The database-backup status from `/health`, plus each attempt with its object key, size and error |
+| `GET /admin/requests` | The request log: every `/v1` call (failed sign-ins included) and admin change, with status, timing, store, key id, IP and user agent; never bodies or secrets. Kept `REQUEST_LOG_DAYS` (30) |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version, and `maxTenants` |
 | `PUT /admin/products/{productId}` `{"maxTenants": 5}` | The most tenants the product may have (`null`: no limit). At the limit, `createTenant` and `restoreTenant` answer 400. Lowering it deletes nothing. |

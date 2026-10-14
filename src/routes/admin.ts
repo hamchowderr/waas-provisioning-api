@@ -419,6 +419,64 @@ export function adminRoutes(deps: Deps) {
     });
   });
 
+  // The request log (src/requestlog.ts), newest first. `outcome`: ok (below 400), client-error
+  // (4xx), server-error (5xx) or error (either). `path` matches any part of the path.
+  app.get('/requests', async (c) => {
+    const { page: pageNumber, pageSize, offset } = page(c);
+    const source = c.req.query('source') || null;
+    if (source !== null && source !== 'v1' && source !== 'admin') throw badRequest('source must be v1 or admin');
+    const outcome = c.req.query('outcome') || null;
+    const ranges: Record<string, [number, number]> = { ok: [0, 399], 'client-error': [400, 499], 'server-error': [500, 599], error: [400, 599] };
+    if (outcome !== null && !ranges[outcome]) throw badRequest('outcome must be ok, client-error, server-error or error');
+    const method = c.req.query('method')?.toUpperCase() || null;
+    const path = c.req.query('path') || null;
+    const [low, high] = outcome ? ranges[outcome]! : [null, null];
+    const params = [uuidQuery(c, 'productId') ?? null, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path];
+    const where = `($1::uuid IS NULL OR r.product_id = $1) AND ($2::uuid IS NULL OR r.tenant_id = $2)
+      AND ($3::text IS NULL OR r.source = $3) AND ($4::int IS NULL OR r.status BETWEEN $4 AND $5)
+      AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)`;
+    const [{ rows }, total, day] = await Promise.all([
+      pool.query(
+        `SELECT r.*, p.name AS product_name, t.name AS tenant_name FROM api_requests r
+           LEFT JOIN products p ON p.id = r.product_id LEFT JOIN tenants t ON t.id = r.tenant_id
+          WHERE ${where} ORDER BY r.at DESC, r.id DESC LIMIT ${pageSize} OFFSET ${offset}`,
+        params,
+      ),
+      pool.query(`SELECT count(*)::int AS n FROM api_requests r WHERE ${where}`, params),
+      pool.query(
+        `SELECT count(*)::int AS total, count(*) FILTER (WHERE status BETWEEN 400 AND 499)::int AS client_errors,
+                count(*) FILTER (WHERE status >= 500)::int AS server_errors
+           FROM api_requests WHERE at > now() - interval '24 hours'`,
+      ),
+    ]);
+    return c.json({
+      last24Hours: { total: day.rows[0].total, clientErrors: day.rows[0].client_errors, serverErrors: day.rows[0].server_errors },
+      retentionDays: config.requestLogDays ?? 30,
+      items: rows.map((r) => ({
+        id: String(r.id),
+        at: iso(r.at),
+        source: r.source,
+        method: r.method,
+        path: r.path,
+        query: r.query,
+        status: r.status,
+        durationMs: r.duration_ms,
+        productId: r.product_id,
+        productName: r.product_name,
+        apiKeyId: r.api_key_id,
+        tenantId: r.tenant_id,
+        tenantName: r.tenant_name,
+        externalId: r.external_id,
+        ip: r.ip,
+        userAgent: r.user_agent,
+        error: r.error,
+      })),
+      total: total.rows[0].n,
+      page: pageNumber,
+      pageSize,
+    });
+  });
+
   app.get('/jobs', async (c) => {
     const state = c.req.query('state') ?? 'queued';
     const { page: pageNumber, pageSize, offset } = page(c);
