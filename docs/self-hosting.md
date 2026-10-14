@@ -31,7 +31,7 @@ No servers, no DNS. The API runs with the in-memory **fake provisioner**: every 
 ```sh
 git clone https://github.com/hamchowderr/waas-provisioning-api && cd waas-provisioning-api
 export ADMIN_TOKEN=$(openssl rand -base64 32)   # turns on the admin API for the dashboard
-docker compose up --build
+docker compose up --build -d
 docker compose exec api npm run create-key -- --product-name "Local storefront"
 curl -u <key>:<secret> http://localhost:4111/v1/versions
 ```
@@ -77,7 +77,18 @@ In your domain's zone, all records **DNS only** (on Cloudflare: grey cloud), so 
 
 Customers' stores answer on `<website name>.<domain>`. Each store also keeps an internal name `t-<id8>.stores.<domain>`, and template versions live on `<slug>.versions.<domain>`. Leave out AAAA records until IPv6 to the VPS is confirmed working: Let's Encrypt prefers IPv6, and a broken AAAA fails every certificate.
 
-Per-hostname HTTP-01 certificates are fine below about 40 new stores a week (Let's Encrypt's limit is 50 per registered domain per week). Past that, add a DNS-01 resolver and a wildcard certificate: ADR 0001, "Store domains and TLS".
+Per-hostname HTTP-01 certificates are fine below about 40 new stores a week (Let's Encrypt's limit is 50 per registered domain per week). Past that, switch to one wildcard certificate through DNS-01 (Cloudflare shown):
+
+1. Create a Cloudflare API token with **Zone:DNS:Edit** on your zone only.
+2. In Coolify → Servers → your server → Proxy, add `CF_DNS_API_TOKEN=<token>` to the proxy's environment and these lines to its command, then restart the proxy (this briefly interrupts every site on the server):
+   ```
+   - '--certificatesresolvers.cloudflare.acme.dnschallenge=true'
+   - '--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare'
+   - '--certificatesresolvers.cloudflare.acme.storage=/traefik/acme.json'
+   ```
+3. Add a dynamic configuration that asks the `cloudflare` resolver for `stores.<domain>` with the extra name `*.stores.<domain>` (and the same for `<domain>` itself if you name stores directly under it).
+
+Customers' own domains keep using HTTP-01.
 
 ### 3. Object storage
 
@@ -112,11 +123,17 @@ With the `S3_*` values set, the API also backs up its own database to the bucket
 
 Create the storefront's API key in the application's Terminal: `npm run create-key -- --product-name "My storefront"`. It prints the key and secret once.
 
-One host cron job keeps Coolify's own database small: each store runs a `wp-cron` task every minute, and Coolify keeps 60 days of task history. ADR 0001, "Pruning the executions", has the one-line `crontab` entry that keeps 7 days.
+One host cron job keeps Coolify's own database small: each store runs a `wp-cron` task every minute, and Coolify keeps 60 days of task history. To keep 7 days, open a root shell on the server (Coolify → Servers → your server → Terminal), run `crontab -e` and add:
+
+```
+23 4 * * * docker exec coolify-db psql -U coolify -d coolify -c "DELETE FROM scheduled_task_executions WHERE created_at < now() - interval '7 days'" > /dev/null 2>&1
+```
+
+Run the `docker exec …` part once by hand first: it prints `DELETE <n>`. It only removes the history of past task runs.
 
 ### 5. A template version
 
-Stores are copies of a template version. `templates/starter-fluentcart/build.sh` builds the starter (WordPress, WaaS Client, FluentCart, Twenty Twenty-Five) and `publish.sh` uploads it through the API and creates a version from it. You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
+Stores are copies of a template version. `templates/starter-fluentcart/build.sh` builds the starter (WordPress, WaaS Client, FluentCart, Twenty Twenty-Five) and `publish.sh` uploads it through the API and creates a version from it. Set `WAAS_API_URL` to your API's address when you run `publish.sh`; it defaults to AnyPress's. You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
 
 ### 6. The storefront
 
@@ -159,7 +176,6 @@ What isn't built yet:
 - Moving a store between servers is by hand: back it up, delete it, and restore it with the new server configured.
 - The API, its database and the storefront stay on the first server. A dead first server stops provisioning, but stores on other servers keep serving.
 
-Check your host's terms for what your customers will sell. Products a host doesn't allow belong on a separate server with a provider that accepts them in writing.
 
 ## Stage 3: Kubernetes
 
