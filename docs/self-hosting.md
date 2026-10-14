@@ -162,6 +162,8 @@ Stores have no mailer of their own. To give them one, verify your domain with to
 
 A customer can point their own domain at their store. They add a `CNAME` to the store's `t-<id8>.stores.<domain>` (or an `A` record to the VPS for an apex domain), then the domain is added from the storefront's account page or the dashboard (**Change address**). The API adds it to the store's Service, Traefik gets its certificate over HTTP-01, and the store's URLs are rewritten. The old address keeps answering with a 301.
 
+With Domain Connect, customers whose DNS host supports it add these records (and their sending domain's) with one click instead of copying them. It needs your own templates accepted by the DNS hosts and a signing key: [domain-connect.md](domain-connect.md).
+
 ### Plugin updates
 
 Storefronts update WaaS Host and WaaS Payments from the API (`/v1/plugins/{slug}/update`), never from wordpress.org. Each release is signed with ed25519 and the plugins only install releases signed by a key built into them (`Updater::PUBLIC_KEYS` in waas-plugins). If you run your own channel, generate your own release key, put its public half in `Updater::PUBLIC_KEYS`, sign with the private half (`WAAS_RELEASE_SIGNING_KEY` in the release workflow), and set `RELEASES_S3_BUCKET` on the API. Otherwise set `WAAS_UPDATE_CHANNEL` to `off` in the storefront's `wp-config.php` and install release zips by hand. waas-plugins' `docs/releases.md` has the details.
@@ -215,7 +217,8 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `COOLIFY_URL`, `COOLIFY_TOKEN`, `COOLIFY_SERVER_UUID`, `COOLIFY_PROJECT_UUID` | | With `PROVISIONER=coolify` |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
-| `PLATFORM_DOMAIN` | off | Reserves the platform's own names |
+| `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
+| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN`, –, `_dck1`, `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `DB_BACKUP`, `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY` | on, 02:30 UTC, `db-backups/`, 14, 8 | [db-backups.md](db-backups.md) |

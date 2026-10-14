@@ -47,7 +47,7 @@ The shared `STORE_SMTP_PASSWORD` is still required: it is what stores use withou
 
 With `TOSEND_ADMIN_KEY` set, a store can send from its owner's domain (e.g. `no-reply@shop.example`) instead of `STORE_MAIL_FROM`. The dashboard (or `PUT /admin/tenants/{id}/mail-domain` with `{ "domainName": "shop.example" }`) adds it:
 
-1. The API adds the domain on toSend and returns its DNS records: a DKIM `TXT` on `tosend._domainkey`, and an `MX` and SPF `TXT` on `send`. The owner adds them at their DNS host. Nothing in their DNS is changed for them.
+1. The API adds the domain on toSend and returns its DNS records: a DKIM `TXT` on `tosend._domainkey`, and an `MX` and SPF `TXT` on `send`. The owner adds them at their DNS host, by hand or, where the host supports it, with one click through [Domain Connect](domain-connect.md).
 2. toSend checks DNS every 10 minutes. The API checks toSend on the same cadence (`src/maildomains.ts`, the `mail-domains` queue). Until the domain is verified the store keeps sending from `STORE_MAIL_FROM`, so its email never stops.
 3. Once verified, the store gets a new key restricted to its domain, sends from `STORE_MAIL_FROM`'s name (`no-reply`) at it, and restarts once. The old key is revoked.
 4. `DELETE /admin/tenants/{id}/mail-domain` moves the store back to `STORE_MAIL_FROM` within 10 minutes and removes the domain from toSend. A deleted store's domain is removed from toSend too.
@@ -58,6 +58,5 @@ A store has at most one sending domain. The platform's own domain and its subdom
 
 ## Not covered yet
 
-- Setting the DNS records automatically (Domain Connect).
 - Per-store sending limits, and a toSend team per customer (its own logs and suspension).
 - Without `TOSEND_ADMIN_KEY`, all stores share one key. A store admin cannot read it from wp-admin, but anyone able to run PHP in the store could.

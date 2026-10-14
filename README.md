@@ -64,6 +64,7 @@ More detail on single topics:
 | [docs/store-backups.md](docs/store-backups.md) | Nightly website backups, retention, restoring |
 | [docs/db-backups.md](docs/db-backups.md) | The API's own database backups and how to restore them |
 | [docs/store-email.md](docs/store-email.md) | Website email, per-website keys, customers' own sending domains |
+| [docs/domain-connect.md](docs/domain-connect.md) | One-click DNS records for customers' domains (Domain Connect) |
 | [docs/coolify.md](docs/coolify.md) | How websites run on Coolify |
 
 `GET /health` (no auth) answers 200 when Postgres and the job queue respond, 503 otherwise. Point an uptime monitor at it.
@@ -79,6 +80,7 @@ More detail on single topics:
 | `GET /admin/tenants/{id}` | One tenant: domains, backups, the last 20 jobs and failures; `wpOptions` and `phpConstants` by name only |
 | `PUT /admin/tenants/{id}/domains/main` `{"domainName": "…"}` | Makes a domain the store's main address, adding it if new (like `addTenantDomain` with `setAsMainDomain`, any product); the old main domain stays as a redirect |
 | `GET`, `PUT` `{"domainName": "…"}`, `DELETE /admin/tenants/{id}/mail-domain` | The store's own sending domain with the DNS records to add; the store sends from it once toSend verifies it, and DELETE moves it back to the platform's address ([docs/store-email.md](docs/store-email.md)) |
+| `GET /admin/tenants/{id}/domain-connect?domainName=…&service=website\|email` | A one-click link to add the domain's DNS records at its DNS host, when the host supports Domain Connect ([docs/domain-connect.md](docs/domain-connect.md)) |
 | `POST /admin/tenants/{id}/restore` `{"backupId": "…", "takeBackup": true}` | Rolls a live store back to one of its Done backups in place, keeping its domains, version, constants and suspension; backs up what it holds now first (reason `before-restore`) unless `takeBackup` is false |
 | `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
 | `GET /admin/db-backups` | The database-backup status from `/health`, plus each attempt with its object key, size and error |
