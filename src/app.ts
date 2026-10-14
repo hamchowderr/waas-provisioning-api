@@ -7,6 +7,7 @@ import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
 import { authenticate } from './keys.ts';
 import { checkHealth } from './health.ts';
+import { mcpRoutes } from './mcp.ts';
 import { requestLogger } from './requestlog.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -79,6 +80,8 @@ export function createApp(deps: Deps) {
   app.route('/v1/snapshots', snapshotRoutes(deps));
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
   app.route('/v1/plugins', pluginRoutes(deps));
+
+  mcpRoutes(app, deps.pool);
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ statusCode: err.status, message: err.message }, err.status);

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stores</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: var(--color-background-primary, Canvas);
+    --fg: var(--color-text-primary, CanvasText);
+    --muted: var(--color-text-secondary, color-mix(in srgb, CanvasText 60%, transparent));
+    --line: var(--color-border-primary, color-mix(in srgb, CanvasText 15%, transparent));
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --bad: #cf222e;
+    --radius: var(--border-radius-md, 8px);
+    font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: 14px;
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); }
+  main { padding: 12px 16px; }
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  h1 { font-size: 15px; margin: 0; flex: 1; }
+  .count { color: var(--muted); font-weight: normal; }
+  input[type=search] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: inherit; min-width: 0; width: 180px; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { background: color-mix(in srgb, CanvasText 6%, transparent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.confirm { border-color: var(--bad); color: var(--bad); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .name { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .meta a { color: inherit; }
+  .actions { display: flex; gap: 6px; align-items: start; flex-wrap: wrap; justify-content: end; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; }
+  .done { color: var(--ok); } .pending { color: var(--warn); } .failed { color: var(--bad); } .suspended { color: var(--muted); }
+  .msg { color: var(--muted); padding: 12px 0; }
+  .msg:empty { display: none; }
+  .error { color: var(--bad); }
+  @media (max-width: 480px) { li { grid-template-columns: 1fr; } .actions { justify-content: start; } input[type=search] { width: 120px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Stores <span class="count" id="count"></span></h1>
+    <input type="search" id="filter" placeholder="Filter" aria-label="Filter stores">
+    <button id="refresh">Refresh</button>
+  </header>
+  <div id="status" class="msg">Loading…</div>
+  <ul id="list"></ul>
+</main>
+<script type="module">/*MCP_APPS_BUNDLE*/</script>
+<script type="module">
+  const { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } = globalThis.McpApps;
+  const app = new App({ name: 'WaaS stores', version: '0.1.0' }, {});
+  let stores = [];
+  let readOnly = true;
+  const armed = new Set();
+
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, props = {}, ...children) => {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...children);
+    return node;
+  };
+
+  function applyContext(ctx) {
+    if (!ctx) return;
+    if (ctx.theme) applyDocumentTheme(ctx.theme);
+    if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+    if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+  }
+
+  function status(store) {
+    if (store.isSuspended) return ['Suspended', 'suspended'];
+    return [['Pending', 'Done', 'Failed', 'Removing'][store.statusCode] ?? store.statusName ?? '?', ['pending', 'done', 'failed', 'pending'][store.statusCode] ?? ''];
+  }
+
+  function show(result) {
+    const data = result?.structuredContent;
+    if (result?.isError || !data) {
+      $('status').textContent = result?.content?.[0]?.text ?? 'Could not load stores.';
+      $('status').className = 'msg error';
+      return;
+    }
+    stores = data.stores ?? [];
+    readOnly = !!data.readOnly;
+    render();
+  }
+
+  function render() {
+    const q = $('filter').value.trim().toLowerCase();
+    const shown = stores.filter((s) => !q || [s.name, s.externalId, s.domainName].some((v) => v?.toLowerCase().includes(q)));
+    $('count').textContent = `(${stores.length})`;
+    $('status').className = 'msg';
+    $('status').textContent = stores.length ? (shown.length ? '' : 'No store matches.') : 'No stores yet.';
+    $('list').replaceChildren(...shown.map(row));
+  }
+
+  function row(store) {
+    const [label, cls] = status(store);
+    const link = el('a', { href: `https://${store.domainName}`, textContent: store.domainName });
+    link.addEventListener('click', (e) => { e.preventDefault(); app.openLink({ url: link.href }); });
+    const info = el('div', {},
+      el('div', {}, el('span', { className: 'name', textContent: store.name ?? store.externalId }), ' ', el('span', { className: `pill ${cls}`, textContent: label })),
+      el('div', { className: 'meta' }, ...(store.domainName ? [link] : []), el('span', { textContent: `id ${store.externalId}` }), el('span', { textContent: store.versionName ?? '' })),
+    );
+    const actions = el('div', { className: 'actions' });
+    if (!readOnly && store.statusCode === 1) {
+      actions.append(action(store, 'Back up', 'create_store_backup', false));
+      actions.append(store.isSuspended ? action(store, 'Resume', 'resume_store', false) : action(store, 'Suspend', 'suspend_store', true));
+    }
+    return el('li', {}, info, actions);
+  }
+
+  // Destructive buttons need a second click within 4 seconds.
+  function action(store, label, tool, destructive) {
+    const key = `${tool}:${store.id}`;
+    const button = el('button', { textContent: armed.has(key) ? `Confirm ${label.toLowerCase()}` : label, className: armed.has(key) ? 'confirm' : '' });
+    button.addEventListener('click', async () => {
+      if (destructive && !armed.has(key)) {
+        armed.add(key);
+        render();
+        setTimeout(() => { armed.delete(key); render(); }, 4000);
+        return;
+      }
+      armed.delete(key);
+      button.disabled = true;
+      button.textContent = '…';
+      const result = await app.callServerTool({ name: tool, arguments: { tenantId: store.id } }).catch((e) => ({ isError: true, content: [{ text: String(e) }] }));
+      if (result.isError) {
+        $('status').textContent = result.content?.[0]?.text ?? `${label} failed`;
+        $('status').className = 'msg error';
+      } else {
+        app.updateModelContext?.({ content: [{ type: 'text', text: `User clicked "${label}" for store ${store.externalId} in the store panel.` }] }).catch(() => {});
+      }
+      await refresh();
+    });
+    return button;
+  }
+
+  async function refresh() {
+    $('refresh').disabled = true;
+    try {
+      show(await app.callServerTool({ name: 'show_stores', arguments: {} }));
+    } catch (e) {
+      show({ isError: true, content: [{ text: String(e) }] });
+    } finally {
+      $('refresh').disabled = false;
+    }
+  }
+
+  app.addEventListener('toolresult', show);
+  app.addEventListener('hostcontextchanged', () => applyContext(app.getHostContext()));
+  $('refresh').addEventListener('click', refresh);
+  $('filter').addEventListener('input', render);
+  await app.connect();
+  applyContext(app.getHostContext());
+</script>
+</body>
+</html>

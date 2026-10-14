@@ -10,7 +10,9 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["node"]
+    "types": ["node"],
+    // mcp/ imports the SDK by its package name; in this repo that is ./sdk/typescript.
+    "paths": { "waas-provisioning-sdk": ["./sdk/typescript/src/index.ts"] }
   },
   "include": ["src", "test", "vitest.config.ts"]
 }

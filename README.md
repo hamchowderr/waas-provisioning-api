@@ -128,6 +128,10 @@ Clients for the `/v1` API live in [`sdk/`](sdk), and CI tests both against this 
 - [TypeScript](sdk/typescript/README.md), with types generated from the contract
 - [PHP](sdk/php/README.md)
 
+## MCP server
+
+[`mcp/`](mcp) lets an AI agent (Claude, ChatGPT or any MCP client) create and manage stores. The API serves it at `/mcp` (Basic auth with your API key), it also runs locally over stdio, and it comes with a store panel (MCP App) and an Agent Skill. See [mcp/README.md](mcp/README.md).
+
 ## Development
 
 ### Tests
