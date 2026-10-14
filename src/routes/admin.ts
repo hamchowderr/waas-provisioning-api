@@ -1,11 +1,13 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import { Hono, type Context } from 'hono';
-import type { Deps } from '../app.ts';
-import { withTransaction, type Client } from '../db.ts';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
+import type { AppEnv, Deps } from '../app.ts';
+import type { Config } from '../config.ts';
+import { withTransaction, type Client, type Pool } from '../db.ts';
 import { HttpError, badRequest } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
-import { booleanQuery, isUuid, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
+import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
@@ -21,6 +23,10 @@ import { adminWebhookRoutes } from './webhooks.ts';
  * Admin API for the dashboard (waas-api-plu). Not part of /v1: documented in the README
  * and openapi/admin/admin-api.yaml. Sees every product. Authenticated with ADMIN_TOKEN as a
  * bearer token; product keys get 403.
+ *
+ * The same routes also serve signed-in customers at /account (docs/accounts.md), narrowed to their
+ * organization's product: every list and lookup is filtered to it, another product's records are
+ * 404, and the platform-only routes (new products, limits, plugins, database backups) are 404.
  */
 
 const notFound = (what: string) => new HttpError(404, what);
@@ -62,6 +68,16 @@ function jobTarget(data: any) {
     baseSnapshotId: data?.baseSnapshotId ?? null,
   };
 }
+
+/** A pg-boss job (`j`) that works on one of product $N's stores or versions; any job when $N is null. */
+const jobOfProduct = (n: number) => `($${n}::uuid IS NULL
+  OR EXISTS (SELECT 1 FROM tenants t WHERE t.id::text = j.data->>'tenantId' AND t.product_id = $${n})
+  OR EXISTS (SELECT 1 FROM versions v WHERE v.id::text = j.data->>'versionId' AND v.product_id = $${n}))`;
+
+/** The same for a job failure (`f`). */
+const failureOfProduct = (n: number) => `($${n}::uuid IS NULL
+  OR EXISTS (SELECT 1 FROM tenants t WHERE t.id = f.tenant_id AND t.product_id = $${n})
+  OR EXISTS (SELECT 1 FROM versions v WHERE v.id = f.version_id AND v.product_id = $${n}))`;
 
 /**
  * Puts the record a failed job was working on back to Pending (or Removing for a delete), so the
@@ -105,52 +121,189 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const toPin = (p: any) => ({ productId: p.product_id, slug: p.slug, version: p.version, pinnedAt: iso(p.pinned_at) });
 
-export function adminRoutes(deps: Deps) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const backupView = (retentionDays: number) => (b: any) => ({
+  id: b.id,
+  tenantId: b.tenant_id,
+  externalId: b.external_id,
+  productId: b.product_id,
+  reason: b.reason,
+  sizeBytes: b.size_bytes === null ? null : Number(b.size_bytes),
+  statusCode: b.status,
+  statusName: statusName(b.status),
+  dateCreated: iso(b.date_created),
+  tenantDeletedAt: iso(b.tenant_deleted_at),
+  expiresAt: b.tenant_deleted_at ? new Date(new Date(b.tenant_deleted_at).getTime() + retentionDays * 86400000).toISOString() : null,
+});
+
+/**
+ * Store backups, newest first: every product's, or one product's (`productId`). Shared by
+ * GET /admin/backups and the signed-in customer's GET /account/backups (the same route, narrowed).
+ */
+export async function listBackups(pool: Pool, retentionDays: number, c: Context, productId: string | null) {
+  const { page: pageNumber, pageSize, offset } = page(c);
+  const params = [
+    productId,
+    uuidQuery(c, 'tenantId') ?? null,
+    c.req.query('externalId') || null,
+    statusQuery(c) ?? null,
+    booleanQuery(c, 'tenantDeleted') ?? null,
+  ];
+  const where = `($1::uuid IS NULL OR product_id = $1) AND ($2::uuid IS NULL OR tenant_id = $2)
+    AND ($3::text IS NULL OR external_id = $3) AND ($4::int IS NULL OR status = $4)
+    AND ($5::boolean IS NULL OR (tenant_deleted_at IS NOT NULL) = $5)`;
+  const [{ rows }, total] = await Promise.all([
+    pool.query(`SELECT * FROM tenant_backups WHERE ${where} ORDER BY date_created DESC, id LIMIT ${pageSize} OFFSET ${offset}`, params),
+    pool.query(`SELECT count(*)::int AS n FROM tenant_backups WHERE ${where}`, params),
+  ]);
+  return c.json({ items: rows.map(backupView(retentionDays)), total: total.rows[0].n, page: pageNumber, pageSize });
+}
+
+/**
+ * The request log (src/requestlog.ts), newest first: every product's, or one product's
+ * (`productId`; its last-24-hours counts then cover only that product too). `outcome`: ok (below
+ * 400), client-error (4xx), server-error (5xx) or error (either). `path` matches any part of the path.
+ * Shared by GET /admin/requests and the signed-in customer's GET /account/requests (the same route, narrowed).
+ */
+export async function listRequests(pool: Pool, config: Config, c: Context, productId: string | null) {
+  const { page: pageNumber, pageSize, offset } = page(c);
+  const source = c.req.query('source') || null;
+  if (source !== null && source !== 'v1' && source !== 'admin' && source !== 'account') throw badRequest('source must be v1, admin or account');
+  const outcome = c.req.query('outcome') || null;
+  const ranges: Record<string, [number, number]> = { ok: [0, 399], 'client-error': [400, 499], 'server-error': [500, 599], error: [400, 599] };
+  if (outcome !== null && !ranges[outcome]) throw badRequest('outcome must be ok, client-error, server-error or error');
+  const method = c.req.query('method')?.toUpperCase() || null;
+  const path = c.req.query('path') || null;
+  const [low, high] = outcome ? ranges[outcome]! : [null, null];
+  const params = [productId, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path];
+  const where = `($1::uuid IS NULL OR r.product_id = $1) AND ($2::uuid IS NULL OR r.tenant_id = $2)
+    AND ($3::text IS NULL OR r.source = $3) AND ($4::int IS NULL OR r.status BETWEEN $4 AND $5)
+    AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)`;
+  const [{ rows }, total, day] = await Promise.all([
+    pool.query(
+      `SELECT r.*, p.name AS product_name, t.name AS tenant_name FROM api_requests r
+         LEFT JOIN products p ON p.id = r.product_id LEFT JOIN tenants t ON t.id = r.tenant_id
+        WHERE ${where} ORDER BY r.at DESC, r.id DESC LIMIT ${pageSize} OFFSET ${offset}`,
+      params,
+    ),
+    pool.query(`SELECT count(*)::int AS n FROM api_requests r WHERE ${where}`, params),
+    pool.query(
+      `SELECT count(*)::int AS total, count(*) FILTER (WHERE status BETWEEN 400 AND 499)::int AS client_errors,
+              count(*) FILTER (WHERE status >= 500)::int AS server_errors
+         FROM api_requests WHERE at > now() - interval '24 hours' AND ($1::uuid IS NULL OR product_id = $1)`,
+      [productId],
+    ),
+  ]);
+  return c.json({
+    last24Hours: { total: day.rows[0].total, clientErrors: day.rows[0].client_errors, serverErrors: day.rows[0].server_errors },
+    retentionDays: config.requestLogDays ?? 30,
+    items: rows.map((r) => ({
+      id: String(r.id),
+      at: iso(r.at),
+      source: r.source,
+      method: r.method,
+      path: r.path,
+      query: r.query,
+      status: r.status,
+      durationMs: r.duration_ms,
+      productId: r.product_id,
+      productName: r.product_name,
+      apiKeyId: r.api_key_id,
+      userId: r.user_id,
+      tenantId: r.tenant_id,
+      tenantName: r.tenant_name,
+      externalId: r.external_id,
+      ip: r.ip,
+      userAgent: r.user_agent,
+      error: r.error,
+    })),
+    total: total.rows[0].n,
+    page: pageNumber,
+    pageSize,
+  });
+}
+
+/**
+ * `session`: serve a signed-in customer (/account) instead of the platform admin (/admin). Their
+ * session cookie, passed on by the dashboard's server with X-Session-Auth: 1, picks the product.
+ */
+export function adminRoutes(deps: Deps, { session = false } = {}) {
   const { config, pool, boss, releases } = deps;
   const versions = versionService(deps);
   const templates = baseSnapshotService(deps);
-  const app = new Hono();
+  const app = new Hono<AppEnv>();
 
-  app.use('*', async (c, next) => {
-    const match = /^Bearer\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
-    if (!config.adminToken || !match || !tokenMatches(match[1]!, config.adminToken)) {
-      return c.json({ statusCode: 403, message: 'Admin token required' }, 403);
-    }
+  if (session) {
+    app.use('*', async (c, next) => {
+      if (c.req.header(SESSION_HEADER) !== '1' || c.env?.internalAuth) return c.json({ statusCode: 403, message: 'Sign in first' }, 403);
+      return sessionAuth(deps)(c, async () => {
+        const productId = c.get('productId');
+        if (!productId) throw new HttpError(403, 'Sign in first');
+        c.set('scopeProductId', productId);
+        await next();
+      });
+    });
+  } else {
+    app.use('*', async (c, next) => {
+      const match = /^Bearer\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
+      if (!config.adminToken || !match || !tokenMatches(match[1]!, config.adminToken)) {
+        return c.json({ statusCode: 403, message: 'Admin token required' }, 403);
+      }
+      await next();
+    });
+
+    // Products' organizations and invitations (src/accounts.ts).
+    app.route('/', adminAccountRoutes(deps));
+  }
+
+  /** For the platform admin only; a signed-in customer gets 404, as if the route weren't there. */
+  const adminOnly: MiddlewareHandler = async (c, next) => {
+    if (scopedProduct(c)) throw notFound('Not found');
     await next();
-  });
+  };
+  app.post('/products', adminOnly);
+  app.put('/products/:productId', adminOnly);
+  app.use('/db-backups', adminOnly);
+  app.use('/plugins', adminOnly);
+  app.use('/products/:productId/plugins/*', adminOnly);
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));
 
-  async function jobCounts() {
+  async function jobCounts(productId: string | null) {
     const { rows } = await pool.query(
       `SELECT count(*) FILTER (WHERE state IN ('created', 'retry'))::int AS queued,
               count(*) FILTER (WHERE state = 'active')::int AS running
-         FROM pgboss.job WHERE name = $1`,
-      [QUEUE],
+         FROM pgboss.job j WHERE name = $1 AND state IN ('created', 'retry', 'active') AND ${jobOfProduct(2)}`,
+      [QUEUE, productId],
     );
-    const failed = await pool.query("SELECT count(*)::int AS n FROM job_failures WHERE status = 'failed'");
+    const failed = await pool.query(`SELECT count(*)::int AS n FROM job_failures f WHERE status = 'failed' AND ${failureOfProduct(1)}`, [productId]);
     return { queued: rows[0].queued, running: rows[0].running, failed: failed.rows[0].n };
   }
 
-  const byStatus = async (table: string) => {
-    const { rows } = await pool.query(`SELECT status, count(*)::int AS n FROM ${table} GROUP BY status`);
+  const byStatus = async (table: string, productId: string | null) => {
+    const { rows } = await pool.query(`SELECT status, count(*)::int AS n FROM ${table} WHERE ($1::uuid IS NULL OR product_id = $1) GROUP BY status`, [
+      productId,
+    ]);
     const counts = { pending: 0, done: 0, failed: 0, removing: 0 };
     for (const r of rows) counts[statusName(r.status).toLowerCase() as keyof typeof counts] = r.n;
     return counts;
   };
 
   app.get('/overview', async (c) => {
+    const scope = scopedProduct(c);
     const [health, tenants, versions, backups, jobs, suspended, products] = await Promise.all([
       checkHealth(pool, boss, !!deps.config.dbBackup),
-      byStatus('tenants'),
-      byStatus('versions'),
-      byStatus('tenant_backups'),
-      jobCounts(),
-      pool.query('SELECT count(*)::int AS n FROM tenants WHERE is_suspended'),
+      byStatus('tenants', scope),
+      byStatus('versions', scope),
+      byStatus('tenant_backups', scope),
+      jobCounts(scope),
+      pool.query('SELECT count(*)::int AS n FROM tenants WHERE is_suspended AND ($1::uuid IS NULL OR product_id = $1)', [scope]),
       pool.query(
         `SELECT p.id, p.name, count(t.id)::int AS tenant_count
-           FROM products p LEFT JOIN tenants t ON t.product_id = p.id GROUP BY p.id ORDER BY p.name`,
+           FROM products p LEFT JOIN tenants t ON t.product_id = p.id
+          WHERE ($1::uuid IS NULL OR p.id = $1) GROUP BY p.id ORDER BY p.name`,
+        [scope],
       ),
     ]);
     return c.json({
@@ -167,7 +320,7 @@ export function adminRoutes(deps: Deps) {
     const { page: pageNumber, pageSize, offset } = page(c);
     const q = c.req.query('q')?.trim();
     const params = [
-      uuidQuery(c, 'productId') ?? null,
+      scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null,
       statusQuery(c) ?? null,
       booleanQuery(c, 'suspended') ?? null,
       uuidQuery(c, 'versionId') ?? null,
@@ -217,8 +370,9 @@ export function adminRoutes(deps: Deps) {
     if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
     const { rows } = await pool.query(
       `SELECT t.*, p.name AS product_name, v.name AS version_name FROM tenants t
-         JOIN products p ON p.id = t.product_id JOIN versions v ON v.id = t.version_id WHERE t.id = $1`,
-      [id],
+         JOIN products p ON p.id = t.product_id JOIN versions v ON v.id = t.version_id
+        WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`,
+      [id, scopedProduct(c)],
     );
     const t = rows[0];
     if (!t) throw notFound(`Tenant ${id} not found`);
@@ -273,7 +427,10 @@ export function adminRoutes(deps: Deps) {
     if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
     const body = (await readJson(c)) as { domainName?: unknown };
     if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
-    const { rows } = await pool.query('SELECT id, external_id, status FROM tenants WHERE id = $1', [id]);
+    const { rows } = await pool.query('SELECT id, external_id, status FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)', [
+      id,
+      scopedProduct(c),
+    ]);
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     assertChangeable(rows[0]);
     return c.json(await addTenantDomain(deps, rows[0], body.domainName, true));
@@ -287,7 +444,10 @@ export function adminRoutes(deps: Deps) {
     const body = ((await readJson(c)) ?? {}) as { backupId?: unknown; takeBackup?: unknown };
     if (typeof body.backupId !== 'string' || !isUuid(body.backupId)) throw badRequest('backupId is required');
     if (body.takeBackup !== undefined && typeof body.takeBackup !== 'boolean') throw badRequest('takeBackup must be a boolean');
-    const { rows } = await pool.query('SELECT id, product_id, external_id, status FROM tenants WHERE id = $1', [id]);
+    const { rows } = await pool.query(
+      'SELECT id, product_id, external_id, status FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)',
+      [id, scopedProduct(c)],
+    );
     const tenant = rows[0];
     if (!tenant) throw notFound(`Tenant ${id} not found`);
     assertChangeable(tenant);
@@ -316,7 +476,10 @@ export function adminRoutes(deps: Deps) {
   async function mailTenant(c: Context) {
     const id = c.req.param('id');
     if (!id || !isUuid(id)) throw notFound(`Tenant ${id} not found`);
-    const { rows } = await pool.query('SELECT id, external_id, status FROM tenants WHERE id = $1', [id]);
+    const { rows } = await pool.query('SELECT id, external_id, status FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)', [
+      id,
+      scopedProduct(c),
+    ]);
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     return rows[0];
   }
@@ -348,22 +511,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(removed);
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function toBackup(b: any) {
-    return {
-      id: b.id,
-      tenantId: b.tenant_id,
-      externalId: b.external_id,
-      productId: b.product_id,
-      reason: b.reason,
-      sizeBytes: b.size_bytes === null ? null : Number(b.size_bytes),
-      statusCode: b.status,
-      statusName: statusName(b.status),
-      dateCreated: iso(b.date_created),
-      tenantDeletedAt: iso(b.tenant_deleted_at),
-      expiresAt: b.tenant_deleted_at ? new Date(new Date(b.tenant_deleted_at).getTime() + config.backupRetentionDays * 86400000).toISOString() : null,
-    };
-  }
+  const toBackup = backupView(config.backupRetentionDays);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function toFailure(f: any) {
@@ -380,24 +528,7 @@ export function adminRoutes(deps: Deps) {
     };
   }
 
-  app.get('/backups', async (c) => {
-    const { page: pageNumber, pageSize, offset } = page(c);
-    const params = [
-      uuidQuery(c, 'productId') ?? null,
-      uuidQuery(c, 'tenantId') ?? null,
-      c.req.query('externalId') || null,
-      statusQuery(c) ?? null,
-      booleanQuery(c, 'tenantDeleted') ?? null,
-    ];
-    const where = `($1::uuid IS NULL OR product_id = $1) AND ($2::uuid IS NULL OR tenant_id = $2)
-      AND ($3::text IS NULL OR external_id = $3) AND ($4::int IS NULL OR status = $4)
-      AND ($5::boolean IS NULL OR (tenant_deleted_at IS NOT NULL) = $5)`;
-    const [{ rows }, total] = await Promise.all([
-      pool.query(`SELECT * FROM tenant_backups WHERE ${where} ORDER BY date_created DESC, id LIMIT ${pageSize} OFFSET ${offset}`, params),
-      pool.query(`SELECT count(*)::int AS n FROM tenant_backups WHERE ${where}`, params),
-    ]);
-    return c.json({ items: rows.map(toBackup), total: total.rows[0].n, page: pageNumber, pageSize });
-  });
+  app.get('/backups', (c) => listBackups(pool, config.backupRetentionDays, c, scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null));
 
   app.get('/db-backups', async (c) => {
     const { page: pageNumber, pageSize, offset } = page(c);
@@ -424,80 +555,26 @@ export function adminRoutes(deps: Deps) {
     });
   });
 
-  // The request log (src/requestlog.ts), newest first. `outcome`: ok (below 400), client-error
-  // (4xx), server-error (5xx) or error (either). `path` matches any part of the path.
-  app.get('/requests', async (c) => {
-    const { page: pageNumber, pageSize, offset } = page(c);
-    const source = c.req.query('source') || null;
-    if (source !== null && source !== 'v1' && source !== 'admin') throw badRequest('source must be v1 or admin');
-    const outcome = c.req.query('outcome') || null;
-    const ranges: Record<string, [number, number]> = { ok: [0, 399], 'client-error': [400, 499], 'server-error': [500, 599], error: [400, 599] };
-    if (outcome !== null && !ranges[outcome]) throw badRequest('outcome must be ok, client-error, server-error or error');
-    const method = c.req.query('method')?.toUpperCase() || null;
-    const path = c.req.query('path') || null;
-    const [low, high] = outcome ? ranges[outcome]! : [null, null];
-    const params = [uuidQuery(c, 'productId') ?? null, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path];
-    const where = `($1::uuid IS NULL OR r.product_id = $1) AND ($2::uuid IS NULL OR r.tenant_id = $2)
-      AND ($3::text IS NULL OR r.source = $3) AND ($4::int IS NULL OR r.status BETWEEN $4 AND $5)
-      AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)`;
-    const [{ rows }, total, day] = await Promise.all([
-      pool.query(
-        `SELECT r.*, p.name AS product_name, t.name AS tenant_name FROM api_requests r
-           LEFT JOIN products p ON p.id = r.product_id LEFT JOIN tenants t ON t.id = r.tenant_id
-          WHERE ${where} ORDER BY r.at DESC, r.id DESC LIMIT ${pageSize} OFFSET ${offset}`,
-        params,
-      ),
-      pool.query(`SELECT count(*)::int AS n FROM api_requests r WHERE ${where}`, params),
-      pool.query(
-        `SELECT count(*)::int AS total, count(*) FILTER (WHERE status BETWEEN 400 AND 499)::int AS client_errors,
-                count(*) FILTER (WHERE status >= 500)::int AS server_errors
-           FROM api_requests WHERE at > now() - interval '24 hours'`,
-      ),
-    ]);
-    return c.json({
-      last24Hours: { total: day.rows[0].total, clientErrors: day.rows[0].client_errors, serverErrors: day.rows[0].server_errors },
-      retentionDays: config.requestLogDays ?? 30,
-      items: rows.map((r) => ({
-        id: String(r.id),
-        at: iso(r.at),
-        source: r.source,
-        method: r.method,
-        path: r.path,
-        query: r.query,
-        status: r.status,
-        durationMs: r.duration_ms,
-        productId: r.product_id,
-        productName: r.product_name,
-        apiKeyId: r.api_key_id,
-        tenantId: r.tenant_id,
-        tenantName: r.tenant_name,
-        externalId: r.external_id,
-        ip: r.ip,
-        userAgent: r.user_agent,
-        error: r.error,
-      })),
-      total: total.rows[0].n,
-      page: pageNumber,
-      pageSize,
-    });
-  });
+  app.get('/requests', (c) => listRequests(pool, config, c, scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null));
 
   app.get('/jobs', async (c) => {
     const state = c.req.query('state') ?? 'queued';
     const { page: pageNumber, pageSize, offset } = page(c);
-    const counts = await jobCounts();
+    const scope = scopedProduct(c);
+    const counts = await jobCounts(scope);
     if (state === 'failed') {
       const { rows } = await pool.query(
-        `SELECT * FROM job_failures WHERE status = 'failed' ORDER BY failed_at DESC, id LIMIT ${pageSize} OFFSET ${offset}`,
+        `SELECT * FROM job_failures f WHERE status = 'failed' AND ${failureOfProduct(1)} ORDER BY failed_at DESC, id LIMIT ${pageSize} OFFSET ${offset}`,
+        [scope],
       );
       return c.json({ state, counts, items: rows.map(toFailure), total: counts.failed, page: pageNumber, pageSize });
     }
     if (state !== 'queued' && state !== 'running') throw badRequest('state must be queued, running or failed');
     const states = state === 'queued' ? ['created', 'retry'] : ['active'];
     const { rows } = await pool.query(
-      `SELECT id, data, state, retry_count, created_on, started_on, start_after FROM pgboss.job
-        WHERE name = $1 AND state::text = ANY($2) ORDER BY created_on, id LIMIT ${pageSize} OFFSET ${offset}`,
-      [QUEUE, states],
+      `SELECT id, data, state, retry_count, created_on, started_on, start_after FROM pgboss.job j
+        WHERE name = $1 AND state::text = ANY($2) AND ${jobOfProduct(3)} ORDER BY created_on, id LIMIT ${pageSize} OFFSET ${offset}`,
+      [QUEUE, states, scope],
     );
     return c.json({
       state,
@@ -541,7 +618,7 @@ export function adminRoutes(deps: Deps) {
     }));
   }
 
-  app.get('/products', async (c) => c.json(await products(null)));
+  app.get('/products', async (c) => c.json(await products(scopedProduct(c))));
 
   // The product's settings. Only maxTenants for now: the most tenants it may have, or null for no
   // limit. Lowering it below the current count deletes nothing; it only stops new ones.
@@ -593,6 +670,8 @@ export function adminRoutes(deps: Deps) {
 
   async function product(c: Context): Promise<string> {
     const productId = c.req.param('productId')!;
+    const scope = scopedProduct(c);
+    if (scope && productId !== scope) throw notFound(`Product ${productId} not found`);
     if (!isUuid(productId) || !(await pool.query('SELECT 1 FROM products WHERE id = $1', [productId])).rowCount) {
       throw notFound(`Product ${productId} not found`);
     }
@@ -696,8 +775,9 @@ export function adminRoutes(deps: Deps) {
   app.post('/jobs/failures/:id/retry', async (c) => {
     const id = c.req.param('id');
     if (!isUuid(id)) throw notFound(`Failure ${id} not found`);
+    const scope = scopedProduct(c);
     const failure = await withTransaction(pool, async (client) => {
-      const { rows } = await client.query('SELECT * FROM job_failures WHERE id = $1 FOR UPDATE', [id]);
+      const { rows } = await client.query(`SELECT * FROM job_failures f WHERE id = $1 AND ${failureOfProduct(2)} FOR UPDATE`, [id, scope]);
       const f = rows[0];
       if (!f) throw notFound(`Failure ${id} not found`);
       if (f.status === 'retried') return f;

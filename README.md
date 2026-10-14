@@ -61,6 +61,7 @@ More detail on single topics:
 
 | | |
 |---|---|
+| [docs/accounts.md](docs/accounts.md) | Customer sign-in to the dashboard: organizations, roles and invitations |
 | [docs/webhooks.md](docs/webhooks.md) | Signed webhooks when a website or version changes, and how to verify them |
 | [docs/store-backups.md](docs/store-backups.md) | Nightly website backups, retention, restoring |
 | [docs/db-backups.md](docs/db-backups.md) | The API's own database backups and how to restore them |

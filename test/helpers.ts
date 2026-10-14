@@ -37,7 +37,7 @@ export const basic = (key: string, secret: string) => `Basic ${Buffer.from(`${ke
 export async function setup(): Promise<TestContext> {
   const admin = new pg.Client({ connectionString: TEST_DATABASE_URL });
   await admin.connect();
-  await admin.query('DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS pgboss CASCADE; CREATE SCHEMA public;');
+  await admin.query('DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS pgboss CASCADE; DROP SCHEMA IF EXISTS auth CASCADE; CREATE SCHEMA public;');
   await admin.end();
 
   await migrate(TEST_DATABASE_URL);

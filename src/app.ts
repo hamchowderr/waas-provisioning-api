@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import type { PgBoss } from 'pg-boss';
+import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
+import type { Auth } from './auth.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
@@ -39,6 +41,8 @@ export interface Deps {
   domainConnectNet?: DomainConnectNet;
   /** Fetches OAuth Client ID Metadata Documents (src/oauth.ts); tests replace it. */
   clientMetadataFetch?: typeof fetch;
+  /** Sign-in for people (src/auth.ts); absent when AUTH_URL and AUTH_SECRET are not set. */
+  auth?: Auth;
 }
 
 /**
@@ -47,7 +51,8 @@ export interface Deps {
  */
 export type AppEnv = {
   Bindings: { internalAuth?: { productId: string; apiKeyId: string } };
-  Variables: { productId: string; apiKeyId?: string };
+  /** scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts). */
+  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string };
 };
 
 export function createApp(deps: Deps) {
@@ -78,9 +83,20 @@ export function createApp(deps: Deps) {
 
   app.route('/admin', adminRoutes(deps));
 
+  // Better Auth's own routes (src/auth.ts). The dashboard proxies /api/auth/* here from its origin.
+  app.on(['GET', 'POST'], '/api/auth/*', (c) =>
+    deps.auth ? deps.auth.handler(c.req.raw) : c.json({ statusCode: 404, message: 'Sign-in is off on this server' }, 404),
+  );
+  app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
+  app.route('/account', accountRoutes(deps));
+
+  // A signed-in customer, passed on by the dashboard's server, acts as their organization's product.
+  app.use('/v1/*', sessionAuth(deps));
+
   // Basic auth with the API key as username and the secret as password. Any failure is 403,
   // not 401: the storefront plugin's connection test reads 403 as "invalid key or secret".
   app.use('/v1/*', async (c, next) => {
+    if (c.get('userId')) return next();
     const internal = c.env?.internalAuth;
     if (internal) {
       c.set('apiKeyId', internal.apiKeyId);
