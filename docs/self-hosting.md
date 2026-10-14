@@ -12,7 +12,7 @@ The platform is three repositories:
 
 ```
  customer ──► storefront (WordPress + WaaS Host)
-                 │  WPCS v1 calls, Basic auth (API key + secret)
+                 │  /v1 calls, Basic auth (API key + secret)
                  ▼
             provisioning API ──► Postgres (state + job queue)
                  │        └────► S3 bucket (snapshots, backups, DB backups)

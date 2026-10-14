@@ -46,7 +46,7 @@ function slug(name: string): string {
 }
 
 /**
- * The version operations, for one product. Used by the WPCS routes below (product from the API
+ * The version operations, for one product. Used by the /v1 routes below (product from the API
  * key) and the admin routes (product from the path), so both behave and answer the same.
  */
 export function versionService({ config, pool, boss, provisioner }: Deps) {

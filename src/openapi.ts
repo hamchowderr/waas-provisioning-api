@@ -19,7 +19,7 @@ export function createAjv(options: Options = {}): Ajv {
 }
 
 // Request bodies: drop fields the contract doesn't define instead of rejecting them,
-// as WPCS (a .NET API) did. Types and required fields are still enforced.
+// as the original API did. Types and required fields are still enforced.
 const requestAjv = createAjv({ removeAdditional: true });
 const validators = new Map<string, ValidateFunction>();
 
