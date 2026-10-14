@@ -192,6 +192,70 @@ describe('a signed-in owner', () => {
     expect(backups.status).toBe(200);
     expect((await backups.json()).items.every((b: { productId: string }) => b.productId === t.productId)).toBe(true);
   });
+
+  it("gets the dashboard's overview, stores and jobs for their product only", async () => {
+    const overview = await (await asUser(owner.cookie, 'GET', '/account/overview')).json();
+    expect(overview.products).toEqual([expect.objectContaining({ id: t.productId })]);
+    const ownStores = (await t.pool.query('SELECT count(*)::int AS n FROM tenants WHERE product_id = $1', [t.productId])).rows[0].n;
+    const total = overview.tenants.pending + overview.tenants.done + overview.tenants.failed + overview.tenants.removing;
+    expect(total).toBe(ownStores);
+
+    const stores = await (await asUser(owner.cookie, 'GET', `/account/tenants?productId=${otherProductId}`)).json();
+    expect(stores.items.map((x: { id: string }) => x.id)).toContain(mine.id);
+    expect(stores.items.every((x: { productId: string }) => x.productId === t.productId)).toBe(true);
+    expect((await asUser(owner.cookie, 'GET', `/account/tenants/${mine.id}`)).status).toBe(200);
+    expect((await asUser(owner.cookie, 'GET', `/account/tenants/${theirs.id}`)).status).toBe(404);
+    expect((await asUser(owner.cookie, 'GET', `/account/tenants/${theirs.id}/mail-domain`)).status).toBe(404);
+    expect((await asUser(owner.cookie, 'PUT', `/account/tenants/${theirs.id}/domains/main`, { domainName: 'x.example.com' })).status).toBe(404);
+    expect((await asUser(owner.cookie, 'POST', `/account/tenants/${theirs.id}/restore`, { backupId: theirs.id })).status).toBe(404);
+
+    for (const state of ['queued', 'running', 'failed']) {
+      expect((await asUser(owner.cookie, 'GET', `/account/jobs?state=${state}`)).status).toBe(200);
+    }
+    const failure = await t.pool.query<{ id: string }>(
+      `INSERT INTO job_failures (job_id, job_type, job_data, tenant_id, error_message, attempts)
+       VALUES (gen_random_uuid(), 'tenant.update', $1, $2, 'boom', 3) RETURNING id`,
+      [{ type: 'tenant.update', tenantId: theirs.id }, theirs.id],
+    );
+    const failed = await (await asUser(owner.cookie, 'GET', '/account/jobs?state=failed')).json();
+    expect(failed.items.map((f: { id: string }) => f.id)).not.toContain(failure.rows[0]!.id);
+    expect((await asUser(owner.cookie, 'POST', `/account/jobs/failures/${failure.rows[0]!.id}/retry`)).status).toBe(404);
+    await t.pool.query('DELETE FROM job_failures WHERE id = $1', [failure.rows[0]!.id]);
+  });
+
+  it("manages their product's keys and webhooks, and nothing of another product's", async () => {
+    expect((await asUser(owner.cookie, 'GET', `/account/products/${t.productId}/keys`)).status).toBe(200);
+    expect((await asUser(owner.cookie, 'GET', `/account/products/${otherProductId}/keys`)).status).toBe(404);
+    expect((await asUser(owner.cookie, 'POST', `/account/products/${otherProductId}/keys`, { label: 'x' })).status).toBe(404);
+
+    const created = await asUser(owner.cookie, 'POST', '/account/webhooks', { url: 'https://hooks.example.com/a', events: ['tenant.created'] });
+    expect(created.status).toBe(201);
+    const listed = await (await asUser(owner.cookie, 'GET', `/account/webhooks?productId=${otherProductId}`)).json();
+    expect(listed.every((w: { productId: string }) => w.productId === t.productId)).toBe(true);
+    expect((await asUser(owner.cookie, 'POST', '/account/webhooks', { productId: otherProductId, url: 'https://hooks.example.com/b' })).status).toBe(400);
+    const theirHook = await t.call('POST', '/v1/webhooks', { body: { url: 'https://hooks.example.com/c', events: ['tenant.created'] }, auth: otherAuth });
+    const theirId = ((await theirHook.json()) as { id: string }).id;
+    expect((await asUser(owner.cookie, 'DELETE', `/account/webhooks/${theirId}`)).status).toBe(404);
+  });
+
+  it("can't reach what only the platform admin may do", async () => {
+    expect((await asUser(owner.cookie, 'GET', '/account/products')).status).toBe(200);
+    expect(await (await asUser(owner.cookie, 'GET', '/account/products')).json()).toEqual([expect.objectContaining({ id: t.productId })]);
+    expect((await asUser(owner.cookie, 'POST', '/account/products', { name: 'Mine now' })).status).toBe(404);
+    expect((await asUser(owner.cookie, 'PUT', `/account/products/${t.productId}`, { maxTenants: null })).status).toBe(404);
+    expect((await asUser(owner.cookie, 'GET', '/account/db-backups')).status).toBe(404);
+    expect((await asUser(owner.cookie, 'GET', '/account/plugins')).status).toBe(404);
+    expect((await asUser(owner.cookie, 'GET', `/account/products/${t.productId}/organization`)).status).toBe(404);
+    expect((await asUser(owner.cookie, 'POST', `/account/products/${t.productId}/invitations`, { email: 'x@example.com' })).status).toBe(404);
+  });
+
+  it('has their changes in the request log, with who made them', async () => {
+    await asUser(owner.cookie, 'POST', `/account/products/${t.productId}/keys`, { label: 'Logged' });
+    const { rows } = await t.pool.query("SELECT source, product_id, user_id FROM api_requests WHERE path = $1 AND method = 'POST' ORDER BY id DESC LIMIT 1", [
+      `/account/products/${t.productId}/keys`,
+    ]);
+    expect(rows[0]).toEqual({ source: 'account', product_id: t.productId, user_id: owner.userId });
+  });
 });
 
 describe('a signed-in member', () => {
@@ -208,6 +272,8 @@ describe('a signed-in member', () => {
     const res = await asUser(member.cookie, 'POST', '/v1/keys', { label: 'Nope' });
     expect(res.status).toBe(403);
     expect((await res.json()).message).toMatch(/only look/);
+    expect((await asUser(member.cookie, 'GET', '/account/overview')).status).toBe(200);
+    expect((await asUser(member.cookie, 'POST', `/account/products/${t.productId}/keys`, { label: 'Nope' })).status).toBe(403);
   });
 
   it('loses access once removed', async () => {
@@ -232,6 +298,9 @@ describe('who cannot get in', () => {
     expect((await asUser('better-auth.session_token=forged.value', 'GET', '/v1/keys')).status).toBe(403);
     expect((await app.request('/account')).status).toBe(403);
     expect((await app.request('/account/requests')).status).toBe(403);
+    // A browser's own request (no X-Session-Auth) never reaches the account routes.
+    const { cookie } = await signedIn('browser@example.com');
+    expect((await app.request('/account/overview', { headers: { Cookie: cookie } })).status).toBe(403);
   });
 
   it('a session cookie without X-Session-Auth goes to the API key check', async () => {

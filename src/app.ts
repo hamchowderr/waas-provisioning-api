@@ -51,7 +51,8 @@ export interface Deps {
  */
 export type AppEnv = {
   Bindings: { internalAuth?: { productId: string; apiKeyId: string } };
-  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller };
+  /** scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts). */
+  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string };
 };
 
 export function createApp(deps: Deps) {
@@ -86,6 +87,7 @@ export function createApp(deps: Deps) {
   app.on(['GET', 'POST'], '/api/auth/*', (c) =>
     deps.auth ? deps.auth.handler(c.req.raw) : c.json({ statusCode: 404, message: 'Sign-in is off on this server' }, 404),
   );
+  app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
   app.route('/account', accountRoutes(deps));
 
   // A signed-in customer, passed on by the dashboard's server, acts as their organization's product.

@@ -48,3 +48,11 @@ export function booleanQuery(c: Context, name: string): boolean | undefined {
 export function compact<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== null && v !== undefined)) as T;
 }
+
+/**
+ * The product a signed-in customer acts for on /account (src/accounts.ts), or null on /admin, which
+ * sees every product. The admin routes narrow every list and lookup to it when it is set.
+ */
+export function scopedProduct(c: Context): string | null {
+  return (c.get('scopeProductId') as string | undefined) ?? null;
+}

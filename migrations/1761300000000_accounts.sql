@@ -5,7 +5,9 @@
 -- invitation's inviter may be empty, for invitations the platform admin sends.
 CREATE SCHEMA IF NOT EXISTS auth;
 
-CREATE TABLE auth."user" ("id" uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY, "name" text NOT NULL, "email" text NOT NULL UNIQUE, "emailVerified" boolean NOT NULL, "image" text, "createdAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL, "updatedAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL);
+-- githubLogin: the GitHub username of someone who signed in with GitHub, for the dashboard's
+-- ALLOWED_GITHUB_LOGINS (the platform admins).
+CREATE TABLE auth."user" ("id" uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY, "name" text NOT NULL, "email" text NOT NULL UNIQUE, "emailVerified" boolean NOT NULL, "image" text, "githubLogin" text, "createdAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL, "updatedAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL);
 
 CREATE TABLE auth."session" ("id" uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY, "expiresAt" timestamptz NOT NULL, "token" text NOT NULL UNIQUE, "createdAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL, "updatedAt" timestamptz NOT NULL, "ipAddress" text, "userAgent" text, "userId" uuid NOT NULL REFERENCES auth."user" ("id") ON DELETE CASCADE, "activeOrganizationId" text);
 
@@ -30,5 +32,14 @@ CREATE UNIQUE INDEX "member_organization_user" ON auth."member" ("organizationId
 CREATE INDEX "invitation_organizationId_idx" ON auth."invitation" ("organizationId");
 CREATE INDEX "invitation_email_idx" ON auth."invitation" ("email");
 
+-- The request log also records changes signed-in customers make on /account, and who made them.
+ALTER TABLE api_requests DROP CONSTRAINT api_requests_source_check;
+ALTER TABLE api_requests ADD CONSTRAINT api_requests_source_check CHECK (source IN ('v1', 'admin', 'account'));
+ALTER TABLE api_requests ADD COLUMN user_id uuid;
+
 -- Down Migration
+DELETE FROM api_requests WHERE source = 'account';
+ALTER TABLE api_requests DROP COLUMN user_id;
+ALTER TABLE api_requests DROP CONSTRAINT api_requests_source_check;
+ALTER TABLE api_requests ADD CONSTRAINT api_requests_source_check CHECK (source IN ('v1', 'admin'));
 DROP SCHEMA auth CASCADE;

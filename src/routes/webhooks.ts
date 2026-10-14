@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { badRequest } from '../errors.ts';
-import { isUuid, readJson, uuidQuery } from '../http.ts';
+import { isUuid, readJson, scopedProduct, uuidQuery } from '../http.ts';
 import { DEFAULT_WEBHOOK_CONFIG, toDelivery, toEndpoint, webhookService } from '../webhooks.ts';
 
 /**
@@ -63,7 +63,8 @@ export function webhookRoutes(deps: Deps) {
 
 /**
  * The same for the admin API (mounted at /admin/webhooks behind the admin token): every
- * product's endpoints, with how their deliveries have gone, for the dashboard.
+ * product's endpoints, with how their deliveries have gone, for the dashboard. At /account/webhooks
+ * a signed-in customer gets the same, for their own product only.
  */
 export function adminWebhookRoutes(deps: Deps) {
   const { pool } = deps;
@@ -71,7 +72,7 @@ export function adminWebhookRoutes(deps: Deps) {
   const app = new Hono();
 
   app.get('/', async (c) => {
-    const productId = uuidQuery(c, 'productId') ?? null;
+    const productId = scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null;
     const { rows } = await pool.query(
       `SELECT w.*, p.name AS product_name,
               (SELECT count(*)::int FROM webhook_deliveries d WHERE d.endpoint_id = w.id AND d.date_created > now() - interval '24 hours') AS sent_24h,
@@ -97,8 +98,10 @@ export function adminWebhookRoutes(deps: Deps) {
 
   app.post('/', async (c) => {
     const body = ((await readJson(c)) ?? {}) as Record<string, unknown>;
+    const scope = scopedProduct(c);
+    if (scope) body.productId ??= scope;
     if (typeof body.productId !== 'string' || !isUuid(body.productId)) throw badRequest('productId is required');
-    const { rowCount } = await pool.query('SELECT 1 FROM products WHERE id = $1', [body.productId]);
+    const { rowCount } = await pool.query('SELECT 1 FROM products WHERE id = $1 AND ($2::uuid IS NULL OR id = $2)', [body.productId, scope]);
     if (!rowCount) throw badRequest(`Product ${body.productId} not found`);
     return c.json(await service.create(body.productId, body, null), 201);
   });
@@ -106,7 +109,7 @@ export function adminWebhookRoutes(deps: Deps) {
   app.get('/deliveries', async (c) => {
     const { page: pageNumber, pageSize, offset } = page(c);
     const { rows, total } = await service.deliveries(
-      uuidQuery(c, 'productId') ?? null,
+      scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null,
       { endpointId: uuidQuery(c, 'endpointId'), status: c.req.query('status') || undefined, tenantId: uuidQuery(c, 'tenantId') },
       pageSize,
       offset,
@@ -118,12 +121,12 @@ export function adminWebhookRoutes(deps: Deps) {
       pageSize,
     });
   });
-  app.post('/deliveries/:id/retry', async (c) => c.json(await service.redeliver(null, idParam(c))));
+  app.post('/deliveries/:id/retry', async (c) => c.json(await service.redeliver(scopedProduct(c), idParam(c))));
 
-  app.put('/:id', async (c) => c.json(await service.update(null, idParam(c), ((await readJson(c)) ?? {}) as object)));
-  app.delete('/:id', async (c) => c.json(await service.remove(null, idParam(c))));
-  app.post('/:id/rotate-secret', async (c) => c.json(await service.rotateSecret(null, idParam(c))));
-  app.post('/:id/test', async (c) => c.json(await service.test(null, idParam(c))));
+  app.put('/:id', async (c) => c.json(await service.update(scopedProduct(c), idParam(c), ((await readJson(c)) ?? {}) as object)));
+  app.delete('/:id', async (c) => c.json(await service.remove(scopedProduct(c), idParam(c))));
+  app.post('/:id/rotate-secret', async (c) => c.json(await service.rotateSecret(scopedProduct(c), idParam(c))));
+  app.post('/:id/test', async (c) => c.json(await service.test(scopedProduct(c), idParam(c))));
 
   return app;
 }

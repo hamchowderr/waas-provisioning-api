@@ -55,8 +55,11 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
     database: { dialect: new PostgresDialect({ pool }), type: 'postgres', schemaName: 'auth', casing: 'snake' },
     telemetry: { enabled: false },
     advanced: { database: { generateId: 'uuid' } },
+    // githubLogin: the GitHub username, so the dashboard can tell its platform admins
+    // (ALLOWED_GITHUB_LOGINS) from customers. Set from GitHub only, never from what the user sends.
+    user: { additionalFields: { githubLogin: { type: 'string', required: false, input: false } } },
     socialProviders: {
-      ...(config.github ? { github: config.github } : {}),
+      ...(config.github ? { github: { ...config.github, mapProfileToUser: (profile) => ({ githubLogin: profile.login }) } } : {}),
       ...(config.google ? { google: config.google } : {}),
     },
     plugins: [

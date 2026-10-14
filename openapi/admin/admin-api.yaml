@@ -8,6 +8,12 @@ info:
     same responses as their /v1 operations (schemas referenced from openapi/waas-provisioning-api.yaml). They see every
     product. Authenticate with `Authorization: Bearer <ADMIN_TOKEN>`; anything else, product keys
     included, gets 403. When ADMIN_TOKEN is not set, every request gets 403.
+
+
+    The same endpoints answer a signed-in customer at /account instead of /admin (docs/accounts.md),
+    narrowed to their organization's product: lists hold only that product, another product's records
+    are 404, and the platform-only endpoints (creating products, product limits, plugins, database
+    backups, organizations) are 404.
 servers:
   - url: http://localhost:4111
     description: Local
@@ -753,7 +759,7 @@ paths:
         - $ref: '#/components/parameters/pageSize'
         - { name: productId, in: query, schema: { type: string, format: uuid } }
         - { name: tenantId, in: query, schema: { type: string, format: uuid } }
-        - { name: source, in: query, schema: { type: string, enum: [v1, admin] } }
+        - { name: source, in: query, schema: { type: string, enum: [v1, admin, account] } }
         - name: outcome
           in: query
           description: ok is below 400, client-error 4xx, server-error 5xx, error either.
@@ -1159,11 +1165,11 @@ components:
     RequestLogEntry:
       type: object
       additionalProperties: false
-      required: [id, at, source, method, path, query, status, durationMs, productId, productName, apiKeyId, tenantId, tenantName, externalId, ip, userAgent, error]
+      required: [id, at, source, method, path, query, status, durationMs, productId, productName, apiKeyId, userId, tenantId, tenantName, externalId, ip, userAgent, error]
       properties:
         id: { type: string, example: '1042' }
         at: { type: string, format: date-time }
-        source: { type: string, enum: [v1, admin] }
+        source: { type: string, enum: [v1, admin, account], description: 'account: a change a signed-in customer made from the dashboard.' }
         method: { type: string, example: POST }
         path: { type: string, example: /v1/tenants }
         query: { type: string, nullable: true, description: The query string without its '?'. }
@@ -1172,6 +1178,7 @@ components:
         productId: { type: string, format: uuid, nullable: true, description: Null for admin calls and failed sign-ins. }
         productName: { type: string, nullable: true }
         apiKeyId: { type: string, format: uuid, nullable: true }
+        userId: { type: string, format: uuid, nullable: true, description: The signed-in person who made the call, for calls made from the dashboard by a customer. }
         tenantId: { type: string, format: uuid, nullable: true, description: The store in the path or the tenantId parameter. }
         tenantName: { type: string, nullable: true, description: Null once the store is deleted. }
         externalId: { type: string, nullable: true, description: The externalId parameter, when given. }

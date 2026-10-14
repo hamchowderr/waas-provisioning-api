@@ -10,7 +10,7 @@ Sign-in runs on [Better Auth](https://www.better-auth.com) inside the API. Its t
 |---|---|
 | `AUTH_URL` | the dashboard's address, e.g. `https://app.anypress.io`. People sign in there |
 | `AUTH_SECRET` | `openssl rand -base64 32`. Signs session cookies. Changing it signs everyone out |
-| `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` | a GitHub App or OAuth app with callback `<AUTH_URL>/api/auth/callback/github` |
+| `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` | a GitHub App or OAuth app with callback `<AUTH_URL>/api/auth/callback/github`. A GitHub App needs the account permission "Email addresses: read" |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | optional: a Google OAuth client with callback `<AUTH_URL>/api/auth/callback/google` |
 
 Without `AUTH_URL` and `AUTH_SECRET`, sign-in is off: `/api/auth/*` answers 404 and session requests get 403.
@@ -45,7 +45,8 @@ These calls need the session cookie and `X-Session-Auth: 1`:
 
 - `/v1/*`: the whole provisioning API, as the organization's product.
 - `GET /account`: who is signed in, their organizations, and the active one. This works before they belong to any organization.
-- `GET /account/requests`: the product's request log, with the same filters as `GET /admin/requests`.
-- `GET /account/backups`: the product's store backups, with the same filters as `GET /admin/backups`.
+- `/account/*`: the admin API's endpoints (`/admin/overview` becomes `/account/overview`, and so on), narrowed to the product. Lists hold only that product's records, another product's store, key or webhook answers 404, and the platform-only endpoints (creating products, product limits, plugins, database backups, organizations) answer 404. This is what the dashboard shows a signed-in customer.
+
+Changes made through `/account` go into the request log with source `account` and the person's user id.
 
 Someone who belongs to more than one organization picks one with Better Auth's `POST /api/auth/organization/set-active`. Until then, their requests get 403.

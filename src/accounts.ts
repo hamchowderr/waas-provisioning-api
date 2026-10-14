@@ -4,13 +4,13 @@ import { INVITATION_DAYS, ORG_ROLES, type OrgRole } from './auth.ts';
 import { withTransaction } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
-import { listBackups, listRequests } from './routes/admin.ts';
+import { adminRoutes } from './routes/admin.ts';
 
 /**
  * Customer accounts (docs/accounts.md): people who sign in (src/auth.ts) and belong to a product's
  * organization. A signed-in person reaches /v1 as that product, the way its API key does, and
- * /account for what the dashboard shows beyond /v1. Owners and admins may make changes; members
- * may only look.
+ * /account: the admin API's routes narrowed to that product, for the dashboard. Owners and admins
+ * may make changes; members may only look.
  */
 
 export interface Membership {
@@ -22,7 +22,8 @@ export interface Membership {
 }
 
 export interface SessionCaller {
-  user: { id: string; name: string; email: string; image: string | null };
+  /** githubLogin: set when they signed up with GitHub. */
+  user: { id: string; name: string; email: string; image: string | null; githubLogin: string | null };
   memberships: Membership[];
   /** The organization the session acts for: the one picked in the session, or the only one. */
   active: Membership | null;
@@ -57,7 +58,8 @@ export async function sessionCaller(deps: Deps, headers: Headers): Promise<Sessi
   const activeId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
   const active = memberships.find((m) => m.organizationId === activeId) ?? (memberships.length === 1 ? memberships[0]! : null);
   const { id, name, email, image } = session.user;
-  return { user: { id, name, email, image: image ?? null }, memberships, active };
+  const githubLogin = (session.user as { githubLogin?: string | null }).githubLogin ?? null;
+  return { user: { id, name, email, image: image ?? null, githubLogin }, memberships, active };
 }
 
 const forbidden = (c: Context, message: string) => c.json({ statusCode: 403, message }, 403);
@@ -82,9 +84,8 @@ export function sessionAuth(deps: Deps): MiddlewareHandler<AppEnv> {
   };
 }
 
-/** GET /account and what the dashboard shows a signed-in customer beyond /v1. Session only. */
+/** GET /account, then the admin API's routes for the signed-in customer's product. Session only. */
 export function accountRoutes(deps: Deps) {
-  const { pool, config } = deps;
   const app = new Hono<AppEnv>();
 
   // Who is signed in and which organizations they belong to, before one is picked too.
@@ -95,14 +96,8 @@ export function accountRoutes(deps: Deps) {
     return c.json(caller);
   });
 
-  const scoped = new Hono<AppEnv>();
-  scoped.use('*', async (c, next) => {
-    if (c.req.header(SESSION_HEADER) !== '1') return forbidden(c, 'Sign in first');
-    return sessionAuth(deps)(c, next);
-  });
-  scoped.get('/requests', (c) => listRequests(pool, config, c, c.get('productId')));
-  scoped.get('/backups', (c) => listBackups(pool, config.backupRetentionDays, c, c.get('productId')));
-  app.route('/', scoped);
+  // Overview, stores, backups, jobs, request log, versions, templates, API keys and webhooks.
+  app.route('/', adminRoutes(deps, { session: true }));
 
   return app;
 }
