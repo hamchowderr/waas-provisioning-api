@@ -20,6 +20,12 @@ export interface Config {
    * www, api and stores are then never given to a store. Unset: nothing is reserved.
    */
   platformDomain?: string;
+  /**
+   * The platform's own brand domain (BRAND_DOMAIN, e.g. anypress.io), when stores live on a separate
+   * one (PLATFORM_DOMAIN anypress.site). No store may take it or any name under it, since stores
+   * under the same registrable domain could set its cookies. Unset: nothing extra is reserved.
+   */
+  brandDomain?: string;
   /** 32 random bytes, base64. Encrypts the values stores need back in plain form (src/secrets.ts). */
   secretsKey: string;
   /** Days a deleted tenant's backups are kept. */
@@ -31,7 +37,7 @@ export interface Config {
   coolify?: CoolifyProvisionerConfig;
   /** Stores' own sending domains on toSend (src/maildomains.ts); set with TOSEND_ADMIN_KEY. */
   sendingDomains?: SendingDomains;
-  /** Domain Connect links for store owners' DNS (src/domainconnect.ts); on when PLATFORM_DOMAIN is set. */
+  /** Domain Connect links for store owners' DNS (src/domainconnect.ts); on when PLATFORM_DOMAIN or BRAND_DOMAIN is set. */
   domainConnect?: DomainConnectConfig;
   /** The plugin releases bucket (waas-hw4). Unset: update checks get 503. */
   releases?: S3Config;
@@ -150,19 +156,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (provisioner !== 'fake' && provisioner !== 'coolify') throw new Error('PROVISIONER must be fake or coolify');
   const coolify = provisioner === 'coolify' ? loadCoolify(env) : undefined;
   const platformDomain = env.PLATFORM_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined;
+  const brandDomain = env.BRAND_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined;
   return {
     databaseUrl,
     port: Number(env.PORT ?? 4111),
     storesDomain: env.STORES_DOMAIN ?? 'stores.waas.example',
     versionsDomain: env.VERSIONS_DOMAIN ?? 'versions.waas.example',
     platformDomain,
+    brandDomain,
     secretsKey,
     backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
     adminToken: env.ADMIN_TOKEN || undefined,
     provisioner,
     coolify,
     sendingDomains: coolify?.mailKeys instanceof ToSendAdmin ? coolify.mailKeys : undefined,
-    domainConnect: loadDomainConnectConfig(env, platformDomain),
+    domainConnect: loadDomainConnectConfig(env, brandDomain ?? platformDomain),
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),
     storeBackup: loadStoreBackupConfig(env),
