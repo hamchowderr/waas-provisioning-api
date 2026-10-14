@@ -29,9 +29,9 @@ Both set `syncPubKeyDomain`, so a DNS host only applies a link we signed: someon
 
 | Variable | |
 |---|---|
-| `PLATFORM_DOMAIN` | Turns Domain Connect on; it is the templates' `providerId` (override with `DOMAIN_CONNECT_PROVIDER_ID`). `DOMAIN_CONNECT=off` turns it off. |
+| `BRAND_DOMAIN`, else `PLATFORM_DOMAIN` | Turns Domain Connect on; it is the templates' `providerId` (override with `DOMAIN_CONNECT_PROVIDER_ID`). `DOMAIN_CONNECT=off` turns it off. |
 | `DOMAIN_CONNECT_PRIVATE_KEY` | PEM RSA private key (or base64 of the PEM) that signs links. Without it links are unsigned, and hosts refuse them because the templates require signatures. |
-| `DOMAIN_CONNECT_KEY_HOST` | Where the public key is published under `PLATFORM_DOMAIN`; default `_dck1`. |
+| `DOMAIN_CONNECT_KEY_HOST` | Where the public key is published under the provider id's domain; default `_dck1`. |
 
 Making the key (once):
 
@@ -40,7 +40,7 @@ openssl genrsa -out dc.pem 2048
 openssl rsa -in dc.pem -pubout -outform DER | base64 -w0   # the public key, for DNS
 ```
 
-The public key goes in TXT records on `_dck1.<PLATFORM_DOMAIN>`, split into pieces of at most 200 characters: `p=1,a=RS256,d=<first part>`, `p=2,a=RS256,d=<second part>`, … The private key goes in `DOMAIN_CONNECT_PRIVATE_KEY` on the API and nowhere else. To rotate, publish the new key under `_dck2`, switch `DOMAIN_CONNECT_KEY_HOST`, then remove `_dck1`.
+The public key goes in TXT records on `_dck1.<provider id>`, split into pieces of at most 200 characters: `p=1,a=RS256,d=<first part>`, `p=2,a=RS256,d=<second part>`, … The private key goes in `DOMAIN_CONNECT_PRIVATE_KEY` on the API and nowhere else. To rotate, publish the new key under `_dck2`, switch `DOMAIN_CONNECT_KEY_HOST`, then remove `_dck1`.
 
 ## Getting DNS hosts to accept the templates
 

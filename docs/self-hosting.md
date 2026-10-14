@@ -115,7 +115,8 @@ In the **WaaS API** project:
 | `COOLIFY_SERVER_UUID` | the server new stores go to (Servers → your server) |
 | `COOLIFY_PROJECT_UUID` | the **WaaS Stores** project |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | the bucket from section 3 (`S3_REGION=auto` for R2) |
-| `PLATFORM_DOMAIN` | your domain, e.g. `anypress.io`. Reserves the apex and names like `www`, `api`, `app` |
+| `PLATFORM_DOMAIN` | the domain stores are named under, e.g. `anypress.site`. Reserves the apex and names like `www`, `api`, `app` |
+| `BRAND_DOMAIN` | your own domain when stores live on a separate one, e.g. `anypress.io`. No store can take it or any name under it. Keep your sign-in sites (storefront, dashboard) here, not under `PLATFORM_DOMAIN`: stores under the same domain could set their cookies |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
 
@@ -218,7 +219,8 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
 | `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
-| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN`, –, `_dck1`, `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
+| `BRAND_DOMAIN` | off | Reserves this domain and every name under it |
+| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN` or `BRAND_DOMAIN`, –, `_dck1`, `BRAND_DOMAIN` else `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `DB_BACKUP`, `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY` | on, 02:30 UTC, `db-backups/`, 14, 8 | [db-backups.md](db-backups.md) |

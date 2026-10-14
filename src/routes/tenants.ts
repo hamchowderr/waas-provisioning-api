@@ -96,7 +96,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     const baseDomain = `${dnsSafeLabel(`t-${id.slice(0, 8)}`, 's')}.${config.storesDomain}`;
     const customDomain = body.customDomainName?.trim() ? normalizeDomain(body.customDomainName) : undefined;
     if (customDomain) {
-      if (await domainInUse(pool, customDomain, config.platformDomain)) throw badRequest(`Domain ${customDomain} is already in use`);
+      if (await domainInUse(pool, customDomain, config.platformDomain, config.brandDomain)) throw badRequest(`Domain ${customDomain} is already in use`);
     }
 
     const userName = body.wordPressUserName ?? body.tenantName;
