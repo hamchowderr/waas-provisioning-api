@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    // In this repo the SDK comes from ../sdk/typescript; a published install gets it from npm.
+    "paths": {
+      "waas-provisioning-sdk": ["../sdk/typescript/src/index.ts"]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src"]
+}

@@ -7,6 +7,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY tsconfig.json ./
 COPY src ./src
+# The MCP server at /mcp (src/mcp.ts) and the TypeScript SDK it is built on.
+COPY mcp/src ./mcp/src
+COPY sdk/typescript/src ./sdk/typescript/src
 COPY migrations ./migrations
 COPY openapi ./openapi
 ENV NODE_ENV=production PORT=4111 PATH=/usr/libexec/postgresql16:$PATH
