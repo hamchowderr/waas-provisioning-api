@@ -39,9 +39,11 @@ curl -X POST "$API/admin/products/$PRODUCT_ID/invitations" \
   -d '{"email": "owner@agency.example", "role": "owner"}'
 ```
 
-The answer's `acceptUrl` (`<AUTH_URL>/invite/<id>`) is where the person accepts, after signing in with that same email address. The address must be verified, which it is for emailed links, GitHub and Google. Invitations last 7 days, and a new one for the same address replaces the old one.
+The invitation is emailed to them through toSend when sign-in email is set up (the same key and sender as the sign-in links), and the answer's `emailed` says whether it went. Its `acceptUrl` (`<AUTH_URL>/invite/<id>`) is where the person accepts, after signing in with that same email address; send it yourself when `emailed` is false. The address must be verified, which it is for emailed links, GitHub and Google. Invitations last 7 days, and a new one for the same address replaces the old one.
 
-`GET /admin/products/{id}/organization` lists the members and pending invitations. `DELETE /admin/products/{id}/members/{memberId}` removes someone, and `DELETE /admin/products/{id}/invitations/{invitationId}` cancels an invitation. All are in [openapi/admin/admin-api.yaml](../openapi/admin/admin-api.yaml).
+`GET /admin/products/{id}/organization` lists the members and pending invitations. `PATCH /admin/products/{id}/members/{memberId}` with `{"role": "admin"}` changes someone's role, `DELETE /admin/products/{id}/members/{memberId}` removes someone, and `DELETE /admin/products/{id}/invitations/{invitationId}` cancels an invitation. All are in [openapi/admin/admin-api.yaml](../openapi/admin/admin-api.yaml).
+
+After that the team runs itself from the dashboard's Team page, which calls the same endpoints under `/account` for its own product. Owners and admins invite people (as members unless they choose otherwise), change roles and remove people. Only an owner invites, changes or removes an owner. Nobody removes themselves or changes their own role, and a team always keeps at least one owner.
 
 ## What a signed-in person can call
 
@@ -49,7 +51,7 @@ These calls need the session cookie and `X-Session-Auth: 1`:
 
 - `/v1/*`: the whole provisioning API, as the organization's product.
 - `GET /account`: who is signed in, their organizations, and the active one. This works before they belong to any organization.
-- `/account/*`: the admin API's endpoints (`/admin/overview` becomes `/account/overview`, and so on), narrowed to the product. Lists hold only that product's records, another product's store, key or webhook answers 404, and the platform-only endpoints (creating products, product limits, plugins, database backups, organizations) answer 404. This is what the dashboard shows a signed-in customer.
+- `/account/*`: the admin API's endpoints (`/admin/overview` becomes `/account/overview`, and so on), narrowed to the product. Lists hold only that product's records, another product's store, key or webhook answers 404, and the platform-only endpoints (creating products, product limits, plugins, database backups, renaming the organization) answer 404. This is what the dashboard shows a signed-in customer.
 
 Changes made through `/account` go into the request log with source `account` and the person's user id.
 

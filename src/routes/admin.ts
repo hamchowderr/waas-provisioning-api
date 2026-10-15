@@ -251,9 +251,6 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       }
       await next();
     });
-
-    // Products' organizations and invitations (src/accounts.ts).
-    app.route('/', adminAccountRoutes(deps));
   }
 
   /** For the platform admin only; a signed-in customer gets 404, as if the route weren't there. */
@@ -266,6 +263,10 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/db-backups', adminOnly);
   app.use('/plugins', adminOnly);
   app.use('/products/:productId/plugins/*', adminOnly);
+  app.put('/products/:productId/organization', adminOnly);
+
+  // Products' organizations, members and invitations: the Team page (src/accounts.ts).
+  app.route('/', adminAccountRoutes(deps));
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));

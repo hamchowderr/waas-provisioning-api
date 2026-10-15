@@ -83,7 +83,7 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
         disableOrganizationDeletion: true,
         invitationExpiresIn: INVITATION_DAYS * 24 * 60 * 60,
         requireEmailVerificationOnInvitation: true,
-        // The dashboard shows the invitation link; emailing it is a later step (waas-api-0pq.3).
+        // Invitations are made and emailed by our own routes (src/accounts.ts), not Better Auth's.
         async sendInvitationEmail() {},
         schema: {
           organization: { modelName: 'organization', additionalFields: { productId: { type: 'string', required: true, input: false } } },
