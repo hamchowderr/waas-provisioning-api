@@ -291,7 +291,10 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   };
 
   app.get('/overview', async (c) => {
-    const scope = scopedProduct(c);
+    // Counts for one storefront (?productId, or the customer's own); the product list stays whole
+    // for the platform admin, so the storefront switcher keeps every choice.
+    const own = scopedProduct(c);
+    const scope = own ?? uuidQuery(c, 'productId') ?? null;
     const [health, tenants, versions, backups, jobs, suspended, products] = await Promise.all([
       checkHealth(pool, boss, !!deps.config.dbBackup),
       byStatus('tenants', scope),
@@ -303,7 +306,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         `SELECT p.id, p.name, count(t.id)::int AS tenant_count
            FROM products p LEFT JOIN tenants t ON t.product_id = p.id
           WHERE ($1::uuid IS NULL OR p.id = $1) GROUP BY p.id ORDER BY p.name`,
-        [scope],
+        [own],
       ),
     ]);
     return c.json({
