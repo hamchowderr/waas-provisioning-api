@@ -159,10 +159,28 @@ export async function listBackups(pool: Pool, retentionDays: number, c: Context,
   return c.json({ items: rows.map(backupView(retentionDays)), total: total.rows[0].n, page: pageNumber, pageSize });
 }
 
+/** A `from`/`to` query parameter: an ISO 8601 date-time, or undefined when absent. */
+function timeQuery(c: Context, name: string): string | undefined {
+  const value = c.req.query(name);
+  if (value === undefined || value === '') return undefined;
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) throw badRequest(`${name} must be an ISO 8601 date-time`);
+  return new Date(time).toISOString();
+}
+
+/**
+ * The rows of request log `r` that belong to product $N; every row when $N is null. A product's own
+ * calls, plus failed sign-ins with one of its key ids (wrong or old secret, revoked key), which carry
+ * no product: the key id is the product's, so the attempt is theirs to see.
+ */
+const requestOfProduct = (n: number) => `($${n}::uuid IS NULL OR r.product_id = $${n}
+  OR (r.product_id IS NULL AND r.api_key_id IN (SELECT id FROM api_keys WHERE product_id = $${n})))`;
+
 /**
  * The request log (src/requestlog.ts), newest first: every product's, or one product's
  * (`productId`; its last-24-hours counts then cover only that product too). `outcome`: ok (below
  * 400), client-error (4xx), server-error (5xx) or error (either). `path` matches any part of the path.
+ * `from` and `to` (ISO 8601) bound the time: from inclusive, to exclusive.
  * Shared by GET /admin/requests and the signed-in customer's GET /account/requests (the same route, narrowed).
  */
 export async function listRequests(pool: Pool, config: Config, c: Context, productId: string | null) {
@@ -175,14 +193,18 @@ export async function listRequests(pool: Pool, config: Config, c: Context, produ
   const method = c.req.query('method')?.toUpperCase() || null;
   const path = c.req.query('path') || null;
   const [low, high] = outcome ? ranges[outcome]! : [null, null];
-  const params = [productId, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path];
-  const where = `($1::uuid IS NULL OR r.product_id = $1) AND ($2::uuid IS NULL OR r.tenant_id = $2)
+  const params = [productId, uuidQuery(c, 'tenantId') ?? null, source, low, high, method, path, timeQuery(c, 'from') ?? null, timeQuery(c, 'to') ?? null];
+  const where = `${requestOfProduct(1)} AND ($2::uuid IS NULL OR r.tenant_id = $2)
     AND ($3::text IS NULL OR r.source = $3) AND ($4::int IS NULL OR r.status BETWEEN $4 AND $5)
-    AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)`;
+    AND ($6::text IS NULL OR r.method = $6) AND ($7::text IS NULL OR strpos(r.path, $7) > 0)
+    AND ($8::timestamptz IS NULL OR r.at >= $8) AND ($9::timestamptz IS NULL OR r.at < $9)`;
   const [{ rows }, total, day] = await Promise.all([
+    // A store's name only when it's the product's own: a call can name another product's store id.
     pool.query(
-      `SELECT r.*, p.name AS product_name, t.name AS tenant_name FROM api_requests r
-         LEFT JOIN products p ON p.id = r.product_id LEFT JOIN tenants t ON t.id = r.tenant_id
+      `SELECT r.*, p.name AS product_name, t.name AS tenant_name, k.label AS api_key_label FROM api_requests r
+         LEFT JOIN products p ON p.id = r.product_id
+         LEFT JOIN tenants t ON t.id = r.tenant_id AND ($1::uuid IS NULL OR t.product_id = $1)
+         LEFT JOIN api_keys k ON k.id = r.api_key_id
         WHERE ${where} ORDER BY r.at DESC, r.id DESC LIMIT ${pageSize} OFFSET ${offset}`,
       params,
     ),
@@ -190,7 +212,7 @@ export async function listRequests(pool: Pool, config: Config, c: Context, produ
     pool.query(
       `SELECT count(*)::int AS total, count(*) FILTER (WHERE status BETWEEN 400 AND 499)::int AS client_errors,
               count(*) FILTER (WHERE status >= 500)::int AS server_errors
-         FROM api_requests WHERE at > now() - interval '24 hours' AND ($1::uuid IS NULL OR product_id = $1)`,
+         FROM api_requests r WHERE r.at > now() - interval '24 hours' AND ${requestOfProduct(1)}`,
       [productId],
     ),
   ]);
@@ -209,6 +231,7 @@ export async function listRequests(pool: Pool, config: Config, c: Context, produ
       productId: r.product_id,
       productName: r.product_name,
       apiKeyId: r.api_key_id,
+      apiKeyLabel: r.api_key_label,
       userId: r.user_id,
       tenantId: r.tenant_id,
       tenantName: r.tenant_name,

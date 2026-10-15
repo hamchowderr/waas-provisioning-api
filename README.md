@@ -96,7 +96,7 @@ It covers the `/v1` operations this server actually answers (tenants, domains, s
 | `GET /admin/backups` | Backups including deleted tenants', with `expiresAt`; filters `productId`, `tenantId`, `externalId`, `status`, `tenantDeleted` |
 | `GET /admin/db-backups` | The database-backup status from `/health`, plus each attempt with its object key, size and error |
 | `GET`, `POST /admin/webhooks`; `PUT`, `DELETE /admin/webhooks/{id}`; `GET /admin/webhooks/deliveries` | Every product's webhook endpoints with how their deliveries went, and the deliveries; test, rotate the secret, or send a delivery again ([docs/webhooks.md](docs/webhooks.md)) |
-| `GET /admin/requests` | The request log: every `/v1` call (failed sign-ins included) and admin change, with status, timing, store, key id, IP and user agent; never bodies or secrets. Kept `REQUEST_LOG_DAYS` (30) |
+| `GET /admin/requests` | The request log: every `/v1` call (failed sign-ins included) and admin change, with status, timing, store, key id and label, IP and user agent; never bodies or secrets. Filter by product, store, source, outcome, method, path and time (`from`, `to`). Kept `REQUEST_LOG_DAYS` (30) |
 | `GET /admin/jobs?state=queued\|running\|failed` | One tab of jobs plus counts for all three |
 | `GET /admin/products` | Products (storefronts) with tenant and version counts and the production version, and `maxTenants` |
 | `POST /admin/products` `{"name": "Acme Agency", "maxTenants": 10, "keyLabel": "…"}` | A new product (an agency's storefront) and its first API key; the secret is in this response only |

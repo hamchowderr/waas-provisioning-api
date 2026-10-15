@@ -125,6 +125,30 @@ describe('request log', () => {
     expect(res.status).toBe(400);
   });
 
+  it('narrows to a time range', async () => {
+    await t.call('GET', '/v1/versions');
+    await t.pool.query(
+      "INSERT INTO api_requests (at, source, method, path, status, duration_ms) VALUES (now() - interval '3 days', 'v1', 'GET', '/v1/tenants', 200, 1)",
+    );
+    const dayAgo = new Date(Date.now() - 86400000).toISOString();
+    expect((await requests(`?from=${dayAgo}`)).items.map((r: any) => r.path)).toEqual(['/v1/versions']);
+    expect((await requests(`?to=${dayAgo}`)).items.map((r: any) => r.path)).toEqual(['/v1/tenants']);
+    expect((await t.call('GET', '/admin/requests?from=yesterday', { auth: ADMIN })).status).toBe(400);
+  });
+
+  it("counts a failed sign-in with a product's key as that product's, and names the key", async () => {
+    await t.pool.query("UPDATE api_keys SET label = 'Shop plugin' WHERE id = $1", [key]);
+    await t.call('GET', '/v1/versions', { auth: basic(key, 'wrong-secret') });
+    await t.call('GET', '/v1/versions', { auth: basic(key, secret) });
+    const { items, last24Hours } = await requests(`?productId=${t.productId}`);
+    expect(items.map((r: any) => [r.status, r.productId, r.apiKeyLabel])).toEqual([
+      [200, t.productId, 'Shop plugin'],
+      [403, null, 'Shop plugin'],
+    ]);
+    expect(last24Hours).toMatchObject({ total: 2, clientErrors: 1 });
+    expect((await requests(`?productId=${randomUUID()}`)).total).toBe(0);
+  });
+
   it('pages newest first', async () => {
     for (let i = 0; i < 3; i++) await t.call('GET', `/v1/versions?versionName=v${i}`);
     const first = await requests('?pageSize=2');
