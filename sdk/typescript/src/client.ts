@@ -82,8 +82,9 @@ type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 /**
- * A typed client for the WaaS provisioning API (the WPCS v1 compatible /v1 API, plus store
- * sending domains and Domain Connect). Request and response types come from openapi/*.yaml.
+ * A typed client for the WaaS Provisioning API: stores (tenants), domains, backups, versions,
+ * templates, sending domains, Domain Connect links and webhooks. Request and response types come
+ * from the API's OpenAPI files (openapi/*.yaml).
  */
 export class WaasClient {
   readonly #baseUrl: string;
@@ -133,7 +134,7 @@ export class WaasClient {
     checkAvailability: (domain: string) => this.#call('checkDomainAvailability', 'GET', '/v1/tenants/domains/available', { domain }),
   };
 
-  /** The store's own sending domain for email (not part of the WPCS contract). */
+  /** The store's own sending domain for email. */
   readonly mailDomain = {
     /** The sending domain with the DNS records to add, or null when the store sends from the platform's address. */
     get: async (ref: TenantRef): Promise<MailDomain | null> =>

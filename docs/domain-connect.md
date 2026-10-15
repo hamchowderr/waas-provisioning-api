@@ -1,6 +1,6 @@
 # Domain Connect
 
-[Domain Connect](https://www.domainconnect.org/) lets a store owner add a store's DNS records with one click: they are sent to their DNS host (Cloudflare, GoDaddy, IONOS, …), approve, and the host adds the records. Without it they copy the records by hand, which still works everywhere.
+For whoever runs the API. [Domain Connect](https://www.domainconnect.org/) lets a store owner add a store's DNS records with one click: they are sent to their DNS host (Cloudflare, GoDaddy, IONOS, …), approve, and the host adds the records. Without it they copy the records by hand, which still works everywhere.
 
 ## The two templates
 

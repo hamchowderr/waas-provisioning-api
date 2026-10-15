@@ -1,12 +1,14 @@
 # Webhooks
 
-The API tells your integration when a website or version finishes a change, so it doesn't have to poll `GET /v1/tenants` for `statusCode`. Everything runs inside the API on its own Postgres and pg-boss: no outside service is needed.
+The API tells your server when a store or version finishes a change, so you don't have to poll `GET /v1/tenants` for `statusCode`. Everything runs inside the API on its own Postgres and pg-boss: no outside service is needed.
+
+With an SDK, `waas.webhooks.create()` registers an endpoint and `verifyWebhook()` checks a request ([TypeScript](../sdk/typescript/README.md#webhooks)); in PHP it is `createWebhook()` and `Webhook::verify()` ([PHP](../sdk/php/README.md#webhooks)). The rest of this page is what happens on the wire.
 
 The endpoints are in [openapi/webhooks.yaml](../openapi/webhooks.yaml), and the admin endpoints are in [openapi/admin/admin-api.yaml](../openapi/admin/admin-api.yaml) under `/admin/webhooks`.
 
 ## Register an endpoint
 
-Authenticate with the storefront's API key and secret (Basic auth, as for every `/v1` call). An endpoint belongs to the key's product, so every key of that product sees it. A product can have up to 10.
+Sign in with the storefront's API key and secret (Basic auth, as for every `/v1` call). An endpoint belongs to the key's product (storefront), so every key of that product sees it. A product can have up to 10.
 
 ```sh
 curl -u "$KEY:$SECRET" -H 'Content-Type: application/json' \
@@ -24,14 +26,14 @@ Each request body is `{"type": "...", "timestamp": "<ISO time>", "data": {...}}`
 
 | Type | When | `data` |
 |---|---|---|
-| `tenant.ready` | A new website is created and answering | `tenant` |
+| `tenant.ready` | A new store is created and answering | `tenant` |
 | `tenant.updated` | `wpOptions` or `phpConstants` were applied | `tenant` |
-| `tenant.version_changed` | The website moved to another version | `tenant` |
+| `tenant.version_changed` | The store moved to another version | `tenant` |
 | `tenant.domains_changed` | Its domains were applied | `tenant` |
 | `tenant.suspended`, `tenant.resumed` | Taken offline, or back online | `tenant` |
-| `tenant.deleted` | The website is gone | `tenant` as it was |
-| `tenant.restored` | A deleted website is back from its backup | `tenant` |
-| `tenant.rolled_back` | A live website went back to one of its backups | `tenant` |
+| `tenant.deleted` | The store is gone | `tenant` as it was |
+| `tenant.restored` | A deleted store is back from its backup | `tenant` |
+| `tenant.rolled_back` | A live store went back to one of its backups | `tenant` |
 | `tenant.backup_completed`, `tenant.backup_failed` | A backup finished or failed, nightly ones included | `tenant`, `backupId` |
 | `tenant.failed` | A change still failed after its retries | `tenant`, `action` (`create`, `update`, `change_version`, `change_domains`, `delete`, `suspend`, `resume`, `restore`, `roll_back`) |
 | `version.ready`, `version.deleted` | A version finished building, or is gone | `version` |
@@ -95,4 +97,4 @@ Sign over the raw body exactly as received, not over JSON you parsed and encoded
 | Records | `GET /v1/webhooks/{id}/deliveries` lists each delivery with its attempts, the last HTTP status, the start of the last answer (500 characters) and the error. Events and deliveries are kept `WEBHOOK_LOG_DAYS` (30) and deleted by the daily maintenance job. |
 | Secrets | Stored encrypted under `SECRETS_KEY`, like private PHP constants. |
 
-A webhook problem never fails the website job that sent it: if an event can't be recorded, the job still finishes and the error goes to the API's log.
+A webhook problem never fails the store job that sent it: if an event can't be recorded, the job still finishes and the error goes to the API's log.

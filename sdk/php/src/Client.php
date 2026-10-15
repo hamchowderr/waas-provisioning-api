@@ -10,9 +10,9 @@ use Waas\Provisioning\Http\CurlTransport;
 use Waas\Provisioning\Http\Transport;
 
 /**
- * A client for the WaaS provisioning API: the WPCS v1 compatible /v1 API, plus store sending
- * domains and Domain Connect. Field names follow openapi/waas-provisioning-api.yaml and
- * openapi/store-mail.yaml; results are the API's JSON as associative arrays.
+ * A client for the WaaS Provisioning API: stores (tenants), domains, backups, versions, templates,
+ * sending domains, Domain Connect links and webhooks. Field names follow the API's OpenAPI files
+ * (openapi/*.yaml); results are the API's JSON as associative arrays.
  *
  * Tenant calls take a tenant ref: ['externalId' => 'order-1042'] (your own id) or ['tenantId' => '<uuid>'].
  */
@@ -224,7 +224,7 @@ final class Client
         return $this->call('checkDomainAvailability', 'GET', '/v1/tenants/domains/available', ['domain' => $domain]);
     }
 
-    // The store's own sending domain for email (not part of the WPCS contract)
+    // The store's own sending domain for email
 
     /**
      * The sending domain with the DNS records to add, or null when the store sends from the platform's address.

@@ -1,0 +1,50 @@
+# Copies sdk/php to its own read-only repository when a tag like sdk-php-v0.1.0 is pushed, and tags
+# it v0.1.0 there. Packagist reads that repository. Needs the PHP_SDK_DEPLOY_KEY repository secret.
+# Steps for maintainers: docs/publishing.md.
+name: Release PHP SDK
+
+on:
+  push:
+    tags: ['sdk-php-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    env:
+      SPLIT_REPO: hamchowderr/waas-provisioning-sdk-php
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the tag and the package
+        run: |
+          version="${GITHUB_REF_NAME#sdk-php-v}"
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::Tag $GITHUB_REF_NAME is not sdk-php-v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          composer validate --strict --working-dir=sdk/php
+          find sdk/php/src -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Split sdk/php into its own history
+        run: git subtree split --prefix=sdk/php -b php-sdk
+      - name: Push to the PHP SDK repository
+        env:
+          DEPLOY_KEY: ${{ secrets.PHP_SDK_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::The PHP_SDK_DEPLOY_KEY secret is not set (see docs/publishing.md)"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/php_sdk_deploy_key
+          chmod 600 ~/.ssh/php_sdk_deploy_key
+          # GitHub's published SSH host key (docs.github.com, "GitHub's SSH key fingerprints").
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/php_sdk_deploy_key -o IdentitiesOnly=yes"
+          git tag "v$VERSION" php-sdk
+          git push "git@github.com:$SPLIT_REPO.git" php-sdk:refs/heads/main
+          git push "git@github.com:$SPLIT_REPO.git" "refs/tags/v$VERSION"
