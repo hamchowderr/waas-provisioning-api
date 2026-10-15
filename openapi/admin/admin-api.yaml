@@ -24,12 +24,18 @@ paths:
     get:
       operationId: adminOverview
       summary: Counts, health and products
+      parameters:
+        - name: productId
+          in: query
+          description: Counts for this storefront only. The product list still holds every product.
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: Overview
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Overview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /admin/products:
     get:

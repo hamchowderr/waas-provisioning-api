@@ -104,6 +104,10 @@ describe('admin endpoints', () => {
     expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false } });
     expect(overview.tenants.done).toBe(2);
     expect(overview.products.map((p: any) => p.name).sort()).toEqual(['Example storefront', 'Other storefront']);
+    const other = await admin('GET', `/admin/overview?productId=${otherProductId}`);
+    expect(other.tenants.done).toBe(1);
+    expect(other.products).toHaveLength(2);
+    await admin('GET', '/admin/overview?productId=nope', 400);
   });
 
   it('tenants: across products, with filters, search and paging', async () => {
