@@ -1,6 +1,6 @@
 # Self-hosting
 
-How to run the whole platform yourself: one VPS with Coolify, then more servers, then Kubernetes. Stage 0 is an optional test run on your own computer with no server. Each stage says what the code supports today and what it doesn't.
+How to run the whole platform yourself: one VPS with Coolify, then more servers, then Kubernetes. The words used here (store, storefront, product, version) are explained in the [main README](../README.md#words-used-in-these-docs). Stage 0 is an optional test run on your own computer with no server. Each stage says what the code supports today and what it doesn't.
 
 The platform is three repositories:
 
@@ -8,7 +8,7 @@ The platform is three repositories:
 |---|---|---|
 | [waas-provisioning-api](https://github.com/hamchowderr/waas-provisioning-api) | The provisioning API (Hono + pg-boss on Postgres). Creates, changes, backs up and deletes stores. | A container, next to Postgres 16 |
 | [waas-dashboard](https://github.com/hamchowderr/waas-dashboard) | The admin dashboard (Next.js). Reads and changes everything through the API's `/admin/*`. | Vercel, or any Node host |
-| [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins: **WaaS Host** (the storefront that sells websites), **WaaS Client** (inside every store), **WaaS Payments** (Authorize.Net for FluentCart) | Your storefront WordPress, and each store |
+| [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins: **WaaS Host** (turns a WordPress shop into the storefront that sells stores), **WaaS Client** (inside every store), **WaaS Payments** (Authorize.Net for FluentCart) | Your storefront WordPress, and each store |
 
 ```
  customer ──► storefront (WordPress + WaaS Host)
@@ -38,7 +38,7 @@ curl -u <key>:<secret> http://localhost:4111/v1/versions
 
 Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with WaaS Host, WaaS Payments, FluentCart, WooCommerce and Subscriptions for WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the same `ADMIN_TOKEN`. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
 
-The fake provisioner builds no real websites, so a test order on the storefront never reaches **Ready**: WaaS Host waits until the website's address answers over HTTPS. Use Stage 0 to try the API, the dashboard and the storefront's settings, and Stage 1 to see a website go live.
+The fake provisioner builds no real stores, so a test order on the storefront never reaches **Ready**: WaaS Host waits until the store's address answers over HTTPS. Use Stage 0 to try the API, the dashboard and the storefront's settings, and Stage 1 to see a store go live.
 
 ## Stage 1: one VPS with Coolify
 
@@ -62,7 +62,7 @@ Follow Coolify's installer on the VPS, open its dashboard over HTTPS, and keep i
 
 - **WaaS API**: the API and its database.
 - **WaaS Stores**: the stores. The API creates environments `stores` and `versions` in it and never touches anything outside this project.
-- **WaaS Storefront**: your storefront, the WordPress site that sells the websites.
+- **WaaS Storefront**: your storefront, the WordPress site that sells the stores.
 
 ### 2. DNS
 
@@ -220,15 +220,15 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
 | `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
-| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN`, –, `_dck1`, `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
+| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN`, none, `_dck1`, `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
-| `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([docs/webhooks.md](docs/webhooks.md)) |
+| `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([webhooks.md](webhooks.md)) |
 | `WEBHOOK_ALLOW_PRIVATE` | off | `true` lets webhook endpoints be `http://` and on private addresses, for an API on a private network |
 | `DB_BACKUP`, `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY` | on, 02:30 UTC, `db-backups/`, 14, 8 | [db-backups.md](db-backups.md) |
 | `STORE_BACKUP`, `STORE_BACKUP_SCHEDULE`, `STORE_BACKUP_KEEP_DAILY`, `STORE_BACKUP_KEEP_WEEKLY` | on, 09:00 UTC, 7, 4 | [store-backups.md](store-backups.md) |
-| `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, –, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |
+| `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, none, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |
 | `TOSEND_ADMIN_KEY`, `TOSEND_API_URL` | off, `https://api.tosend.com` | Per-store keys and stores' own sending domains |
 | `RELEASES_S3_BUCKET` and `RELEASES_S3_*` | off | The plugin update channel; the other values default to `S3_*` |

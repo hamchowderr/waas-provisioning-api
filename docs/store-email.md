@@ -1,6 +1,6 @@
 # Store email
 
-Stores send their email (password resets, FluentCart order receipts, new-user mail) through one SMTP relay for the whole platform. The default is [toSend](https://tosend.com) over SMTP (`smtp.tosend.com`, port 587 with STARTTLS, user `tosend`, an API key as the password). Before this, stores sent nothing: the official WordPress image has no mailer, so `wp_mail()` failed quietly.
+For whoever runs the API. Stores send their email (password resets, FluentCart order receipts, new-user mail) through one SMTP relay for the whole platform. The default is [toSend](https://tosend.com) over SMTP (`smtp.tosend.com`, port 587 with STARTTLS, user `tosend`, an API key as the password). The official WordPress image has no mailer of its own, so without this a store's `wp_mail()` fails quietly.
 
 ## How it works
 

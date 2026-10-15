@@ -1,6 +1,6 @@
-# How websites run on Coolify
+# How stores run on Coolify
 
-The `coolify` provisioner (`src/provisioner/coolify/`) runs every website on a [Coolify](https://coolify.io) v4 server. This page explains how: what each website is made of, how the API runs commands inside it, and what each provisioner method does. To set a server up, follow [self-hosting.md](self-hosting.md).
+For anyone self-hosting or working on the code. The `coolify` provisioner (`src/provisioner/coolify/`) runs every store on a [Coolify](https://coolify.io) v4 server. This page explains how: what each store is made of, how the API runs commands inside it, and what each provisioner method does. To set a server up, follow [self-hosting.md](self-hosting.md).
 
 ## One store = one Coolify Service
 
@@ -77,7 +77,7 @@ Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on d
 [ -f /var/www/html/wp-content/.waas-suspended ] || flock -n /tmp/waas-cron.lock sh -c "wp --path=/var/www/html action-scheduler run --quiet; wp --path=/var/www/html cron event run --due-now --quiet"
 ```
 
-It runs as the agent container's user (33, like WordPress), skips a suspended store (the contract stops a suspended store's cron), and `flock` keeps a slow run from overlapping the next one. No single quotes: Coolify wraps the command in `sh -c '...'`. `createStore` adds it once the store is configured; it is found by name, so a retry reuses it and a differing or duplicate `wp-cron` task is replaced. On startup the API runs `ensureStoreCron` for every live (Done) store in the background; a store that has no `wp-cron` task yet predates this, so its compose is re-rendered (for `DISABLE_WP_CRON`) and it is restarted once before the task is added. Version sites take no orders and get no task; they share the compose, so their WP-cron does not run. Cost: Coolify records one execution per store per minute (~1,440 rows a day per store, in `scheduled_task_executions` in Coolify's own Postgres).
+It runs as the agent container's user (33, like WordPress), skips a suspended store (a suspended store runs no cron), and `flock` keeps a slow run from overlapping the next one. No single quotes: Coolify wraps the command in `sh -c '...'`. `createStore` adds it once the store is configured; it is found by name, so a retry reuses it and a differing or duplicate `wp-cron` task is replaced. On startup the API runs `ensureStoreCron` for every live (Done) store in the background; a store that has no `wp-cron` task yet predates this, so its compose is re-rendered (for `DISABLE_WP_CRON`) and it is restarted once before the task is added. Version sites take no orders and get no task; they share the compose, so their WP-cron does not run. Cost: Coolify records one execution per store per minute (~1,440 rows a day per store, in `scheduled_task_executions` in Coolify's own Postgres).
 
 **Pruning the executions.** Coolify trims that table itself, but only to 60 days: its scheduler runs `php artisan cleanup:database --yes` daily (`app/Console/Kernel.php`, not on dev instances), which deletes `scheduled_task_executions` rows older than `--keep-days` (default 60; no setting in the UI or API changes it). That leaves ~86,000 rows per store. The API cannot delete executions (no endpoint), so keep 7 days with one daily host cron job (step 4 of [self-hosting.md](self-hosting.md)). In Coolify → Servers → your server → Terminal (a root shell on the host), run `crontab -e` and add:
 
@@ -87,7 +87,7 @@ It runs as the agent container's user (33, like WordPress), skips a suspended st
 
 Run the `docker exec ...` part once by hand first: it prints `DELETE <n>`. It touches only execution history (status and output of past runs), never tasks, and covers every Coolify resource's tasks, not only stores'. (`docker exec coolify php artisan cleanup:database --yes --keep-days=7` would also work, but it trims sessions, the activity log and deployment history to 7 days as well.)
 
-Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 the contract asks for. The 503 body is one shared "website unavailable" page (the agent's `render_unavailable_page`), branded per suspend and written to `wp-content/waas-unavailable.html`: Apache serves it as the 503 error document, and the guard mu-plugin serves it if a request reaches PHP. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
+Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 a suspended store must answer with. The 503 body is one shared "website unavailable" page (the agent's `render_unavailable_page`), branded per suspend and written to `wp-content/waas-unavailable.html`: Apache serves it as the 503 error document, and the guard mu-plugin serves it if a request reaches PHP. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
 
 ## Object storage
 

@@ -1,6 +1,6 @@
 # Store backups (nightly)
 
-Every live store gets a full backup (its files under `wp-content` and its MariaDB database) every night, on top of the manual and suspend backups the contract already has. Each store keeps its own backups; nothing is shared between stores.
+For whoever runs the API. Every live store gets a full backup (its files under `wp-content` and its MariaDB database) every night, on top of the backups taken by hand (`POST /v1/tenants/backups`) and when a store is suspended. Each store keeps its own backups; nothing is shared between stores.
 
 ## What runs
 

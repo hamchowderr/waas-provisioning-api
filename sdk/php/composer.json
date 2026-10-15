@@ -1,14 +1,24 @@
 {
   "name": "otakusolutions/waas-provisioning-sdk",
-  "description": "PHP client for the WaaS provisioning API (WPCS v1 compatible)",
+  "description": "PHP client for the WaaS Provisioning API: create and manage WordPress stores from your own code.",
   "type": "library",
   "license": "GPL-3.0-or-later",
+  "keywords": ["wordpress", "waas", "website-as-a-service", "provisioning", "hosting", "sdk", "api-client"],
+  "homepage": "https://github.com/hamchowderr/waas-provisioning-api/tree/main/sdk/php",
+  "authors": [
+    { "name": "Otaku Solutions", "homepage": "https://github.com/hamchowderr" }
+  ],
+  "support": {
+    "issues": "https://github.com/hamchowderr/waas-provisioning-api/issues",
+    "source": "https://github.com/hamchowderr/waas-provisioning-api/tree/main/sdk/php",
+    "docs": "https://github.com/hamchowderr/waas-provisioning-api/tree/main/sdk/php#readme"
+  },
   "require": {
     "php": ">=8.1",
     "ext-json": "*"
   },
   "suggest": {
-    "ext-curl": "For the default CurlTransport (not needed inside WordPress, which can use WordPressTransport)"
+    "ext-curl": "Needed by the default CurlTransport. Not needed inside WordPress if you use WordPressTransport."
   },
   "autoload": {
     "psr-4": {

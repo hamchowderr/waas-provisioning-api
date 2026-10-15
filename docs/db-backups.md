@@ -1,6 +1,6 @@
 # Database backups (off-site)
 
-The API's own Postgres (products, API keys, versions, tenants, domains, backups records, the pg-boss job queue) is the platform's state. Coolify's own database backups (if you turned them on) stay on the server's disk, so losing the server would lose the database and its backups together. The API therefore also backs it up off-site, to the S3 bucket it already uses for store archives (Cloudflare R2 in the examples).
+For whoever runs the API. The API's own Postgres (products, API keys, versions, tenants, domains, backups records, the pg-boss job queue) is the platform's state. Coolify's own database backups (if you turned them on) stay on the server's disk, so losing the server would lose the database and its backups together. The API therefore also backs it up off-site, to the S3 bucket it already uses for store archives (Cloudflare R2 in the examples).
 
 ## What runs
 
