@@ -26,6 +26,11 @@ wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf
 automatorwp 6.0.4 d6fbd08df660df019fd79ce8c7f00612fd571168f763fab8fa38094fec0b7579
 fluent-security 3.0.5 304c0c61ef704a16534133211fbd2be820040606b6c0ea6a4d0b28942c697b11
 "
+# Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
+# FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
+VENDORED="
+fluent-toolkit 2.1.3 e501b6f0abf9bf5db30c4f60b31702b3ffda217de0c85db408ff4ce210f51123
+"
 THEME=twentytwentyfive
 THEME_VERSION=${THEME_VERSION:-1.5}
 THEME_SHA256=${THEME_SHA256:-f333ce53aaa4049639298247d03480a4bd9b56fa8f0fea0440da262d7d595ba4}
@@ -71,6 +76,10 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     fetch "https://downloads.wordpress.org/plugin/$slug.$version.zip" "$sha" "$WORK/downloads/$slug.$version.zip"
 done <<<"$PLUGINS"
+while read -r slug version sha; do
+    [ -n "$slug" ] || continue
+    echo "$sha  $HERE/plugins/$slug-$version.zip" | sha256sum -c --quiet || { echo "checksum mismatch: plugins/$slug-$version.zip" >&2; exit 1; }
+done <<<"$VENDORED"
 fetch "https://downloads.wordpress.org/theme/$THEME.$THEME_VERSION.zip" "$THEME_SHA256" "$WORK/downloads/$THEME.zip"
 
 echo "== WordPress $WP_VERSION"
@@ -83,7 +92,11 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$WORK/downloads/$slug.$version.zip" -d "$SITE/wp-content/plugins"
 done <<<"$PLUGINS"
-SLUGS=$(awk 'NF {print $1}' <<<"$PLUGINS" | sort | tr '\n' ' ')
+while read -r slug version sha; do
+    [ -n "$slug" ] || continue
+    unzip -q "$HERE/plugins/$slug-$version.zip" -d "$SITE/wp-content/plugins"
+done <<<"$VENDORED"
+SLUGS=$(awk 'NF {print $1}' <<<"$PLUGINS$VENDORED" | sort | tr '\n' ' ')
 
 echo "== WaaS Client from $PLUGINS_REPO"
 # Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
@@ -175,7 +188,7 @@ wp db export /var/www/html/database.sql --add-drop-table --quiet
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS") \
+PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

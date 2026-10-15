@@ -23,6 +23,10 @@ bookings, support and affiliates, plus SEO, automation and login security.
 | AutomatorWP | `automatorwp` | 6.0.4 |
 | FluentAuth | `fluent-security` | 3.0.5 |
 
+Plus FluentToolkit 2.1.3 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
+on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
+once installed it updates itself from the vendor.
+
 Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
 a random password nobody keeps.
@@ -75,5 +79,5 @@ templates/anypress-store/build.sh ../waas-plugins
 WAAS_API_URL=https://api.example.com WAAS_KEY=<product key> WAAS_SECRET=<secret> templates/anypress-store/publish.sh v1.0.0 --production
 ```
 
-Plugin versions and SHA-256 checksums are pinned in `PLUGINS` at the top of `build.sh`. Otherwise both scripts work as
+Plugin versions and SHA-256 checksums are pinned in `PLUGINS` (and `VENDORED`) at the top of `build.sh`. Otherwise both scripts work as
 described in the [starter template's README](../starter-fluentcart/README.md).
