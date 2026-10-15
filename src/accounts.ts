@@ -5,6 +5,7 @@ import { sendInvitation } from './authmail.ts';
 import { withTransaction } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
+import { connectRoutes } from './oauth.ts';
 import { adminRoutes } from './routes/admin.ts';
 
 /**
@@ -96,6 +97,13 @@ export function accountRoutes(deps: Deps) {
     if (!caller) return forbidden(c, 'Sign in first');
     return c.json(caller);
   });
+
+  // Connecting an AI app to /mcp as this person (src/oauth.ts). Needs no organization picked yet.
+  app.use('/oauth/*', async (c, next) => {
+    if (c.req.header(SESSION_HEADER) !== '1') return forbidden(c, 'Sign in first');
+    await next();
+  });
+  app.route('/', connectRoutes(deps, (c) => sessionCaller(deps, c.req.raw.headers)));
 
   // Overview, stores, backups, jobs, request log, versions, templates, API keys and webhooks.
   app.route('/', adminRoutes(deps, { session: true }));

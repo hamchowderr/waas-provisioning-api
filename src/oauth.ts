@@ -2,16 +2,20 @@
 // server: Claude, ChatGPT and other MCP clients find this authorization server through the
 // Protected Resource Metadata document (RFC 9728), register themselves (RFC 7591) or identify
 // themselves with a Client ID Metadata Document, and get tokens with PKCE. Approving a client means
-// signing in with a product API key and secret on our own page, so the secret is never typed into
-// the client. Every code and token belongs to that API key: once the key is revoked (or a rotated
-// key's grace period ends), the client is cut off.
+// either signing in with a product API key and secret on our own page, so the secret is never typed
+// into the client, or, when sign-in is on, signing in as a person on the dashboard (AUTH_URL/connect)
+// and picking a storefront. A code or token belongs to that API key, or to that person and product:
+// once the key is revoked (or a rotated key's grace period ends), or the person leaves the team, the
+// client is cut off, and a person who may only look gets read-only access whatever they approved.
 import { createHash, randomBytes } from 'node:crypto';
 import { OAuthError, type AuthInfo } from '@modelcontextprotocol/server';
-import type { Context, Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv, Deps } from './app.ts';
 import type { Pool } from './db.ts';
-import { isUuid } from './http.ts';
+import type { SessionCaller } from './accounts.ts';
+import { badRequest, HttpError } from './errors.ts';
+import { isUuid, readJson } from './http.ts';
 import { authenticate } from './keys.ts';
 
 export const SCOPE_READ = 'stores:read';
@@ -41,26 +45,56 @@ export function protectedResourceMetadataUrl(base: string, path: string): string
 const sha256 = (value: string) => createHash('sha256').update(value).digest('base64url');
 const randomToken = () => randomBytes(32).toString('base64url');
 
-export interface TokenOwner {
-  productId: string;
-  apiKeyId: string;
+/** Who a token acts as: an API key, or a person on a product's team (userId). */
+export type TokenOwner = { productId: string; apiKeyId: string; userId?: undefined } | { productId: string; userId: string; apiKeyId?: undefined };
+
+/**
+ * Whether a code or token's owner may still use it: the API key still works, or the person is still
+ * on the product's team. `role` is the person's role there (null when not), for trimming write access.
+ */
+const OWNER_CHECK = (alias: string) => `
+  CASE WHEN ${alias}.api_key_id IS NOT NULL
+       THEN EXISTS (SELECT 1 FROM api_keys k WHERE k.id = ${alias}.api_key_id AND (k.revoked_at IS NULL OR k.revoked_at > now()))
+       ELSE EXISTS (SELECT 1 FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId"
+                     WHERE m."userId" = ${alias}.user_id AND o."productId" = ${alias}.product_id) END`;
+const OWNER_ROLE = (alias: string) => `(SELECT m.role FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId"
+                     WHERE m."userId" = ${alias}.user_id AND o."productId" = ${alias}.product_id)`;
+
+/** Owners and admins may make changes; a member only looks. */
+const mayChange = (role: string | null) => !!role && role.split(',').some((r) => ['owner', 'admin'].includes(r.trim()));
+
+/** A person's token keeps stores:write only while their role allows changes. */
+function allowedScope(scope: string, userId: string | null, role: string | null): string {
+  if (!userId || mayChange(role)) return scope;
+  return scope.split(' ').filter((s) => s !== SCOPE_WRITE).join(' ');
 }
 
 /** Checks an access token for /mcp. Throws OAuthError invalid_token, as the SDK's bearer helpers expect. */
 export async function verifyAccessToken(pool: Pool, token: string): Promise<AuthInfo> {
-  const { rows } = await pool.query<{ client_id: string; scope: string; resource: string; expires_at: Date; api_key_id: string; product_id: string }>(
-    `SELECT t.client_id, t.scope, t.resource, t.expires_at, t.api_key_id, k.product_id
-       FROM oauth_tokens t JOIN api_keys k ON k.id = t.api_key_id
-      WHERE t.token_hash = $1 AND t.kind = 'access' AND t.revoked_at IS NULL AND (k.revoked_at IS NULL OR k.revoked_at > now())`,
+  const { rows } = await pool.query<{
+    client_id: string;
+    scope: string;
+    resource: string;
+    expires_at: Date;
+    api_key_id: string | null;
+    user_id: string | null;
+    product_id: string;
+    role: string | null;
+  }>(
+    `SELECT t.client_id, t.scope, t.resource, t.expires_at, t.api_key_id, t.user_id,
+            COALESCE((SELECT k.product_id FROM api_keys k WHERE k.id = t.api_key_id), t.product_id) AS product_id,
+            ${OWNER_ROLE('t')} AS role
+       FROM oauth_tokens t
+      WHERE t.token_hash = $1 AND t.kind = 'access' AND t.revoked_at IS NULL AND ${OWNER_CHECK('t')}`,
     [sha256(token)],
   );
   const row = rows[0];
   if (!row) throw new OAuthError('invalid_token', 'Unknown or revoked access token');
-  const owner: TokenOwner = { productId: row.product_id, apiKeyId: row.api_key_id };
+  const owner: TokenOwner = row.user_id ? { productId: row.product_id, userId: row.user_id } : { productId: row.product_id, apiKeyId: row.api_key_id! };
   return {
     token,
     clientId: row.client_id,
-    scopes: row.scope.split(' '),
+    scopes: allowedScope(row.scope, row.user_id, row.role).split(' '),
     expiresAt: Math.floor(row.expires_at.getTime() / 1000),
     resource: new URL(row.resource),
     extra: { ...owner },
@@ -87,6 +121,8 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   const base = (c: Context<AppEnv>) => publicBase(c, deps.config.publicUrl);
   const fetchMetadata: typeof fetch = (input, init) => (deps.clientMetadataFetch ?? fetch)(input, init);
   const documents = new Map<string, { client: Client | null; until: number }>();
+  /** The brand on the "Sign in to …" button, when people can sign in (AUTH_URL set); else none. */
+  const signInBrand = () => (deps.config.auth ? (deps.config.auth.mail?.brand ?? 'AnyPress') : undefined);
 
   // Browser-based MCP clients (the MCP Inspector, for one) call these cross-origin.
   const open = cors({ origin: '*', allowHeaders: ['Authorization', 'Content-Type', 'MCP-Protocol-Version'], exposeHeaders: ['WWW-Authenticate'] });
@@ -221,7 +257,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     const parsed = await parseAuthorize(c, c.req.query());
     if ('page' in parsed) return page(c, errorPage(parsed.page!), 400);
     if ('redirect' in parsed) return c.redirect(parsed.redirect!);
-    return page(c, approvePage(parsed.request, c.req.query()));
+    return page(c, approvePage(parsed.request, c.req.query(), undefined, signInBrand()));
   });
 
   app.post('/oauth/authorize', async (c) => {
@@ -230,25 +266,27 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     if ('page' in parsed) return page(c, errorPage(parsed.page!), 400);
     if ('redirect' in parsed) return c.redirect(parsed.redirect!, 302);
     const { request } = parsed;
+    // Sign in as a person instead: the dashboard (where the session cookie lives) finishes the approval.
+    const auth = deps.config.auth;
+    if (form.action === 'signin' && auth) {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO oauth_requests (client_id, client_name, redirect_uri, state, code_challenge, scope, resource, issuer, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + make_interval(secs => $9)) RETURNING id`,
+        [request.client.clientId, request.client.name, request.redirectUri, request.state ?? null, request.codeChallenge, request.scope.join(' '), request.resource, base(c), CODE_TTL_S],
+      );
+      await pool.query("DELETE FROM oauth_requests WHERE expires_at < now() - interval '1 day'");
+      return c.redirect(`${auth.url}/connect/${rows[0]!.id}`, 302);
+    }
     if (form.action !== 'approve') {
       return c.redirect(errorRedirect(request.redirectUri, 'access_denied', 'The user declined', request.state, base(c)), 302);
     }
     const key = (form.api_key ?? '').trim();
     const productId = key && isUuid(key) ? await authenticate(pool, key, (form.api_secret ?? '').trim()) : null;
-    if (!productId) return page(c, approvePage(request, form, 'That API key and secret did not match. Check them and try again.'), 401);
+    if (!productId) return page(c, approvePage(request, form, 'That API key and secret did not match. Check them and try again.', signInBrand()), 401);
     // Changes need both the client asking for them and the box being ticked.
     const scope = request.scope.filter((s) => s !== SCOPE_WRITE || form.allow_write === 'on');
-    const code = randomToken();
-    await pool.query(
-      `INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, api_key_id, scope, resource, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(secs => $8))`,
-      [sha256(code), request.client.clientId, request.redirectUri, request.codeChallenge, key, scope.join(' '), request.resource, CODE_TTL_S],
-    );
-    const target = new URL(request.redirectUri);
-    target.searchParams.set('code', code);
-    if (request.state !== undefined) target.searchParams.set('state', request.state);
-    target.searchParams.set('iss', base(c));
-    return c.redirect(target.toString(), 302);
+    const code = await issueCode(pool, { clientId: request.client.clientId, redirectUri: request.redirectUri, codeChallenge: request.codeChallenge, resource: request.resource }, { apiKeyId: key, productId }, scope.join(' '));
+    return c.redirect(codeRedirect(request.redirectUri, code, request.state, base(c)), 302);
   });
 
   app.post('/oauth/token', async (c) => {
@@ -258,40 +296,54 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
 
     if (form.grant_type === 'authorization_code') {
       if (!form.code || !form.code_verifier || !form.client_id) return fail('invalid_request', 'code, code_verifier and client_id are required');
-      const { rows } = await pool.query<{ client_id: string; redirect_uri: string; code_challenge: string; api_key_id: string; scope: string; resource: string }>(
+      const { rows } = await pool.query<{
+        client_id: string;
+        redirect_uri: string;
+        code_challenge: string;
+        api_key_id: string | null;
+        user_id: string | null;
+        product_id: string | null;
+        scope: string;
+        resource: string;
+      }>(
         `UPDATE oauth_codes c SET used_at = now()
-           FROM api_keys k
-          WHERE c.code_hash = $1 AND c.used_at IS NULL AND c.expires_at > now()
-            AND k.id = c.api_key_id AND (k.revoked_at IS NULL OR k.revoked_at > now())
-          RETURNING c.client_id, c.redirect_uri, c.code_challenge, c.api_key_id, c.scope, c.resource`,
+          WHERE c.code_hash = $1 AND c.used_at IS NULL AND c.expires_at > now() AND ${OWNER_CHECK('c')}
+          RETURNING c.client_id, c.redirect_uri, c.code_challenge, c.api_key_id, c.user_id, c.product_id, c.scope, c.resource`,
         [sha256(form.code)],
       );
       const row = rows[0];
       if (!row || row.client_id !== form.client_id) return fail('invalid_grant', 'The code is unknown, used or expired');
       if (form.redirect_uri !== undefined && form.redirect_uri !== row.redirect_uri) return fail('invalid_grant', 'redirect_uri does not match');
       if (sha256(form.code_verifier) !== row.code_challenge) return fail('invalid_grant', 'code_verifier does not match');
-      return c.json(await issueTokens(row.client_id, row.api_key_id, row.scope, row.resource), 200, { 'Cache-Control': 'no-store' });
+      return c.json(await issueTokens(row.client_id, row, row.scope, row.resource), 200, { 'Cache-Control': 'no-store' });
     }
 
     if (form.grant_type === 'refresh_token') {
       if (!form.refresh_token || !form.client_id) return fail('invalid_request', 'refresh_token and client_id are required');
       // Refresh tokens rotate: this one is spent, whatever happens next.
-      const { rows } = await pool.query<{ client_id: string; api_key_id: string; scope: string; resource: string; key_revoked: boolean }>(
+      const { rows } = await pool.query<{
+        client_id: string;
+        api_key_id: string | null;
+        user_id: string | null;
+        product_id: string | null;
+        scope: string;
+        resource: string;
+        owner_ok: boolean;
+      }>(
         `UPDATE oauth_tokens t SET revoked_at = now()
-           FROM api_keys k
-          WHERE t.token_hash = $1 AND t.kind = 'refresh' AND t.revoked_at IS NULL AND t.expires_at > now() AND k.id = t.api_key_id
-          RETURNING t.client_id, t.api_key_id, t.scope, t.resource, k.revoked_at IS NOT NULL AND k.revoked_at <= now() AS key_revoked`,
+          WHERE t.token_hash = $1 AND t.kind = 'refresh' AND t.revoked_at IS NULL AND t.expires_at > now()
+          RETURNING t.client_id, t.api_key_id, t.user_id, t.product_id, t.scope, t.resource, ${OWNER_CHECK('t')} AS owner_ok`,
         [sha256(form.refresh_token)],
       );
       const row = rows[0];
-      if (!row || row.key_revoked || row.client_id !== form.client_id) return fail('invalid_grant', 'The refresh token is unknown, used, expired or revoked');
+      if (!row || !row.owner_ok || row.client_id !== form.client_id) return fail('invalid_grant', 'The refresh token is unknown, used, expired or revoked');
       let scope = row.scope;
       if (form.scope) {
         const narrower = form.scope.split(' ').filter(Boolean);
         if (narrower.some((s) => !row.scope.split(' ').includes(s))) return fail('invalid_scope', 'A refresh can only keep or narrow the scope');
         scope = narrower.join(' ');
       }
-      return c.json(await issueTokens(row.client_id, row.api_key_id, scope, row.resource), 200, { 'Cache-Control': 'no-store' });
+      return c.json(await issueTokens(row.client_id, row, scope, row.resource), 200, { 'Cache-Control': 'no-store' });
     }
 
     return fail('unsupported_grant_type', 'Use authorization_code or refresh_token');
@@ -304,20 +356,109 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     return c.body(null, 200);
   });
 
-  async function issueTokens(clientId: string, apiKeyId: string, scope: string, resource: string) {
+  async function issueTokens(clientId: string, owner: { api_key_id: string | null; user_id: string | null; product_id: string | null }, scope: string, resource: string) {
     const access = randomToken();
     const refresh = randomToken();
     await pool.query(
-      `INSERT INTO oauth_tokens (token_hash, kind, client_id, api_key_id, scope, resource, expires_at) VALUES
-         ($1, 'access', $3, $4, $5, $6, now() + make_interval(secs => $7)),
-         ($2, 'refresh', $3, $4, $5, $6, now() + make_interval(secs => $8))`,
-      [sha256(access), sha256(refresh), clientId, apiKeyId, scope, resource, ACCESS_TTL_S, REFRESH_TTL_S],
+      `INSERT INTO oauth_tokens (token_hash, kind, client_id, api_key_id, user_id, product_id, scope, resource, expires_at) VALUES
+         ($1, 'access', $3, $4, $5, $6, $7, $8, now() + make_interval(secs => $9)),
+         ($2, 'refresh', $3, $4, $5, $6, $7, $8, now() + make_interval(secs => $10))`,
+      [sha256(access), sha256(refresh), clientId, owner.api_key_id, owner.user_id, owner.user_id ? owner.product_id : null, scope, resource, ACCESS_TTL_S, REFRESH_TTL_S],
     );
     // Housekeeping: codes and tokens a day past expiry are of no use to anyone.
     await pool.query("DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 day'");
     await pool.query("DELETE FROM oauth_tokens WHERE expires_at < now() - interval '1 day'");
     return { access_token: access, token_type: 'Bearer', expires_in: ACCESS_TTL_S, refresh_token: refresh, scope };
   }
+}
+
+interface CodeRequest {
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  resource: string;
+}
+
+async function issueCode(pool: Pool, request: CodeRequest, owner: TokenOwner, scope: string): Promise<string> {
+  const code = randomToken();
+  await pool.query(
+    `INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, api_key_id, user_id, product_id, scope, resource, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(secs => $10))`,
+    [sha256(code), request.clientId, request.redirectUri, request.codeChallenge, owner.apiKeyId ?? null, owner.userId ?? null, owner.userId ? owner.productId : null, scope, request.resource, CODE_TTL_S],
+  );
+  return code;
+}
+
+function codeRedirect(redirectUri: string, code: string, state: string | null | undefined, issuer: string): string {
+  const target = new URL(redirectUri);
+  target.searchParams.set('code', code);
+  if (state !== undefined && state !== null) target.searchParams.set('state', state);
+  target.searchParams.set('iss', issuer);
+  return target.toString();
+}
+
+/**
+ * The dashboard's half of signing in as a person (AUTH_URL/connect/<id>): read a waiting approval,
+ * then approve it for one of the person's storefronts, or decline. Mounted in /account, so the
+ * caller is the signed-in person whose session the dashboard's server passes on.
+ */
+export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promise<SessionCaller | null>) {
+  const { pool } = deps;
+  const app = new Hono<AppEnv>();
+  type Row = { id: string; client_id: string; client_name: string; redirect_uri: string; state: string | null; code_challenge: string; scope: string; resource: string; issuer: string };
+
+  async function load(c: Context<AppEnv>) {
+    const me = await caller(c);
+    if (!me) throw new HttpError(403, 'Sign in first');
+    const id = c.req.param('id')!;
+    const { rows } = isUuid(id) ? await pool.query<Row>('SELECT * FROM oauth_requests WHERE id = $1 AND expires_at > now()', [id]) : { rows: [] };
+    if (!rows[0]) throw new HttpError(404, 'This connection request has expired. Go back to the app and connect again.');
+    return { me, row: rows[0] };
+  }
+
+  app.get('/oauth/requests/:id', async (c) => {
+    const { me, row } = await load(c);
+    const returnTo = new URL(row.redirect_uri);
+    return c.json({
+      id: row.id,
+      clientName: row.client_name,
+      returnTo: returnTo.protocol === 'https:' || returnTo.protocol === 'http:' ? returnTo.host : `${returnTo.protocol}//`,
+      wantsWrite: row.scope.split(' ').includes(SCOPE_WRITE),
+      readOnly: row.resource.endsWith('/read-only'),
+      storefronts: me.memberships.map((m) => ({ productId: m.productId, name: m.productName, role: m.role, canChange: mayChange(m.role) })),
+    });
+  });
+
+  // { action: 'approve', productId, allowWrite } or { action: 'deny' }. Answers where to send the browser.
+  app.post('/oauth/requests/:id', async (c) => {
+    const { me, row } = await load(c);
+    const body = ((await readJson(c)) ?? {}) as { action?: unknown; productId?: unknown; allowWrite?: unknown };
+    if (body.action !== 'approve' && body.action !== 'deny') throw badRequest("action must be 'approve' or 'deny'");
+    const membership = me.memberships.find((m) => m.productId === body.productId);
+    if (body.action === 'approve' && !membership) throw badRequest('Choose one of your storefronts');
+    // Single use, whichever way it goes.
+    const { rowCount } = await pool.query('DELETE FROM oauth_requests WHERE id = $1', [row.id]);
+    if (!rowCount) throw new HttpError(404, 'This connection request was already used. Go back to the app and connect again.');
+    let redirectUrl: string;
+    if (body.action === 'deny') {
+      redirectUrl = errorRedirect(row.redirect_uri, 'access_denied', 'The user declined', row.state ?? undefined, row.issuer);
+    } else if (membership) {
+      // Changes need the app asking for them, the box ticked and a role that may make them.
+      const scope = row.scope.split(' ').filter((s) => s !== SCOPE_WRITE || (body.allowWrite === true && mayChange(membership.role)));
+      const code = await issueCode(
+        pool,
+        { clientId: row.client_id, redirectUri: row.redirect_uri, codeChallenge: row.code_challenge, resource: row.resource },
+        { productId: membership.productId, userId: me.user.id },
+        scope.join(' '),
+      );
+      redirectUrl = codeRedirect(row.redirect_uri, code, row.state, row.issuer);
+    } else {
+      throw badRequest('Choose one of your storefronts');
+    }
+    return c.json({ redirectUrl });
+  });
+
+  return app;
 }
 
 async function readForm(c: Context<AppEnv>): Promise<Record<string, unknown>> {
@@ -412,6 +553,7 @@ const STYLE = `
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; flex: 1; }
   .error { color: var(--bad); font-weight: 600; }
   code { font-size: 13px; }
+  .or { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 `;
 
 function shell(title: string, body: string): string {
@@ -422,7 +564,7 @@ function errorPage(message: string): string {
   return shell('Cannot connect', `<h1>Cannot connect this app</h1><p>${esc(message)}</p><p class="muted">Go back to the app and try connecting again.</p>`);
 }
 
-function approvePage(request: AuthorizeRequest, params: Record<string, string | undefined>, error?: string): string {
+function approvePage(request: AuthorizeRequest, params: Record<string, string | undefined>, error?: string, signIn?: string): string {
   const keep = ['client_id', 'redirect_uri', 'response_type', 'code_challenge', 'code_challenge_method', 'state', 'scope', 'resource'];
   const hidden = keep
     .filter((name) => params[name] !== undefined)
@@ -436,7 +578,13 @@ function approvePage(request: AuthorizeRequest, params: Record<string, string | 
     `<h1>Connect ${esc(request.client.name)}</h1>
 <p><strong>${esc(request.client.name)}</strong> wants to use your stores. It will be able to:</p>
 <ul><li>See your stores, their domains, backups and versions</li>${wantsWrite ? '<li>Create, change, suspend, restore and delete stores, if you allow it below</li>' : ''}</ul>
-<p class="muted">After you approve, you go back to <code>${esc(where)}</code>. Sign in with the API key and secret of the product whose stores it should manage. They stay here and are not shared with the app.</p>
+<p class="muted">After you approve, you go back to <code>${esc(where)}</code>.${signIn ? '' : ' Sign in with the API key and secret of the product whose stores it should manage. They stay here and are not shared with the app.'}</p>
+${
+  signIn
+    ? `<form method="post" action="/oauth/authorize">${hidden}<div class="buttons"><button type="submit" name="action" value="signin" class="primary">Sign in to ${esc(signIn)}</button></div></form>
+<p class="muted or">Or use the API key and secret of the product whose stores it should manage. They stay here and are not shared with the app.</p>`
+    : ''
+}
 ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}
 <form method="post" action="/oauth/authorize" autocomplete="off">${hidden}
 <label for="api_key">API key</label><input type="text" id="api_key" name="api_key" required spellcheck="false" value="${esc(params.api_key ?? '')}">

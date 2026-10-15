@@ -20,7 +20,12 @@ The API serves the MCP server itself, so there is nothing to run:
 
 ### Sign in with OAuth (Claude, ChatGPT and other connectors)
 
-Add `https://<your API>/mcp` as a custom connector. The client finds the sign-in on its own, opens the API's approve page, and you sign in there with your product API key and secret. The secret stays on that page; the client only gets a token. You can untick "Allow it to make changes" to give it the read tools only.
+Add `https://<your API>/mcp` as a custom connector. The client finds the sign-in on its own and opens the API's approve page. There you either:
+
+- **Sign in** (when sign-in is on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront and approve. The app then acts as you, with your role: someone who may only look gets the read tools only.
+- Or sign in with your product **API key and secret**. The secret stays on that page.
+
+Either way the client only gets a token. You can untick "Allow it to make changes" to give it the read tools only.
 
 What the API implements, per the MCP authorization spec:
 
@@ -30,7 +35,7 @@ What the API implements, per the MCP authorization spec:
 - Authorization code with PKCE (S256 only) at `/oauth/authorize` and `/oauth/token`, refresh tokens that rotate, and revocation (RFC 7009) at `/oauth/revoke`
 - Tokens bound to their endpoint (RFC 8707 `resource`), with scopes `stores:read` and `stores:write`
 
-Access tokens last an hour and refresh tokens 30 days. Both are stored hashed and belong to the API key that approved them: revoking the key cuts the client off. Set `PUBLIC_URL` to the API's public address in production; it is the issuer and the resource clients see.
+Access tokens last an hour and refresh tokens 30 days. Both are stored hashed and belong to the API key that approved them (revoking the key cuts the client off) or to the person who signed in and their storefront (leaving its team cuts the client off, and becoming a member who only looks takes away the write tools). Set `PUBLIC_URL` to the API's public address in production; it is the issuer and the resource clients see.
 
 ### Sign in with the API key (Basic auth)
 
