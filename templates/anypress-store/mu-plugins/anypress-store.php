@@ -15,6 +15,12 @@ add_filter('fluent_booking/allow_share_stats', '__return_false');
 add_filter('fluentsupport_allow_share_essential', '__return_false');
 add_filter('wp_fusion_hide_upgrade_nags', '__return_true');
 
+// When a store gets its owner's email, WordPress mails the old address about the change. The template's old address
+// is admin@example.invalid, so that notice can't be delivered; don't send it.
+add_filter('send_site_admin_email_change_email', function ($send, $old_email) {
+    return $send && substr((string) $old_email, -8) !== '.invalid';
+}, 10, 2);
+
 // FluentAffiliate's tracking script loads on every page once an integration is on (the template switches on
 // FluentCart's), so hold it back until the store has an active affiliate whose links could bring visitors.
 add_filter('fluent_affiliate/will_load_tracker_js', function ($load) {
