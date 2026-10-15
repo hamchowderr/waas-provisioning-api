@@ -175,8 +175,9 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
 [ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected active plugins" >&2; exit 1; }
 [ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
 
-# Rank Math's sitemap is only served once its rewrite rules exist.
-wp rewrite list --format=csv | grep -q 'sitemap_index' || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
+# Rank Math's sitemap is only served once its rewrite rules exist. Read the whole list first: grep -q stops at the
+# first match, and with pipefail the cut-off wp counts as a failure.
+grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
 
