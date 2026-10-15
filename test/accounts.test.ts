@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { testUtils } from 'better-auth/plugins';
 import { parse } from 'yaml';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { createAuth, type AuthConfig } from '../src/auth.ts';
 import { createApiKey } from '../src/keys.ts';
@@ -245,8 +245,9 @@ describe('a signed-in owner', () => {
     expect((await asUser(owner.cookie, 'PUT', `/account/products/${t.productId}`, { maxTenants: null })).status).toBe(404);
     expect((await asUser(owner.cookie, 'GET', '/account/db-backups')).status).toBe(404);
     expect((await asUser(owner.cookie, 'GET', '/account/plugins')).status).toBe(404);
-    expect((await asUser(owner.cookie, 'GET', `/account/products/${t.productId}/organization`)).status).toBe(404);
-    expect((await asUser(owner.cookie, 'POST', `/account/products/${t.productId}/invitations`, { email: 'x@example.com' })).status).toBe(404);
+    expect((await asUser(owner.cookie, 'PUT', `/account/products/${t.productId}/organization`, { name: 'Renamed' })).status).toBe(404);
+    expect((await asUser(owner.cookie, 'GET', `/account/products/${otherProductId}/organization`)).status).toBe(404);
+    expect((await asUser(owner.cookie, 'POST', `/account/products/${otherProductId}/invitations`, { email: 'x@example.com' })).status).toBe(404);
   });
 
   it('has their changes in the request log, with who made them', async () => {
@@ -283,6 +284,127 @@ describe('a signed-in member', () => {
     const res = await asUser(member.cookie, 'GET', '/v1/keys');
     expect(res.status).toBe(403);
     expect((await res.json()).message).toMatch(/not part of an organization/);
+  });
+});
+
+describe('the Team page (/account, the team running itself)', () => {
+  let productId: string;
+  let owner: { userId: string; cookie: string };
+  let admin2: { userId: string; cookie: string };
+  let viewer: { userId: string; cookie: string };
+  const sent: { to: string; subject: string; text: string }[] = [];
+  const team = (cookie: string, method: string, path = '', body?: unknown) => asUser(cookie, method, `/account/products/${productId}${path}`, body);
+  const memberId = async (userId: string) =>
+    ((await (await admin('GET', `/products/${productId}/organization`)).json()).members as { id: string; userId: string }[]).find((m) => m.userId === userId)!.id;
+
+  /** Signs someone up and has them accept an invitation `by` the admin token or a team cookie. */
+  async function join(email: string, role: string, by?: string) {
+    const person = await signedIn(email);
+    const res = by ? await team(by, 'POST', '/invitations', { email, role }) : await admin('POST', `/products/${productId}/invitations`, { email, role });
+    expect(res.status).toBe(201);
+    expect((await accept(person.cookie, ((await res.json()) as { id: string }).id)).status).toBe(200);
+    return person;
+  }
+
+  beforeAll(async () => {
+    productId = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Team storefront') RETURNING id")).rows[0]!.id;
+    owner = await join('team-owner@agency.example', 'owner');
+    admin2 = await join('team-admin@agency.example', 'admin', owner.cookie);
+    viewer = await join('team-viewer@agency.example', 'member', owner.cookie);
+    // Sign-in email on, with toSend answered here.
+    t.deps.config.auth = { ...AUTH, mail: { key: 'test-key', from: 'no-reply@anypress.example', brand: 'AnyPress' } };
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.startsWith('https://api.tosend.com/')) return realFetch(input, init);
+      const body = JSON.parse(String(init!.body));
+      if (body.to[0].email === 'bounce@example.com') return new Response('{"message":"nope"}', { status: 422 });
+      sent.push({ to: body.to[0].email, subject: body.subject, text: body.text });
+      return new Response('{"id":"e1"}', { status: 200 });
+    });
+  });
+
+  afterEach(() => void sent.splice(0));
+  afterAll(() => {
+    vi.unstubAllGlobals();
+    t.deps.config.auth = AUTH;
+  });
+
+  it('lists the team to everyone on it, members included', async () => {
+    const res = await team(viewer.cookie, 'GET', '/organization');
+    expect(res.status).toBe(200);
+    const view = await res.json();
+    expect(view.members.map((m: { email: string; role: string }) => `${m.email}:${m.role}`)).toEqual([
+      'team-owner@agency.example:owner',
+      'team-admin@agency.example:admin',
+      'team-viewer@agency.example:member',
+    ]);
+  });
+
+  it('emails an invitation from an owner, as a member unless told otherwise', async () => {
+    const res = await team(owner.cookie, 'POST', '/invitations', { email: 'New@Agency.example' });
+    expect(res.status).toBe(201);
+    const invitation = await res.json();
+    expect(invitation).toMatchObject({ email: 'new@agency.example', role: 'member', emailed: true, acceptUrl: `${AUTH.url}/invite/${invitation.id}` });
+    expect(sent).toEqual([
+      {
+        to: 'new@agency.example',
+        subject: 'Join Team storefront on AnyPress',
+        text: expect.stringContaining(`team-owner invited you to join Team storefront on AnyPress.\n\n${invitation.acceptUrl}`),
+      },
+    ]);
+    const { rows } = await t.pool.query('SELECT "inviterId" FROM auth.invitation WHERE id = $1', [invitation.id]);
+    expect(rows[0].inviterId).toBe(owner.userId);
+  });
+
+  it("keeps the invitation when the email doesn't go, so its link can be sent by hand", async () => {
+    const res = await team(owner.cookie, 'POST', '/invitations', { email: 'bounce@example.com' });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ emailed: false, acceptUrl: expect.stringContaining('/invite/') });
+  });
+
+  it('emails invitations the platform admin sends too', async () => {
+    const res = await admin('POST', `/products/${productId}/invitations`, { email: 'first@agency.example' });
+    expect(await res.json()).toMatchObject({ role: 'owner', emailed: true });
+    expect(sent[0]!.text).toMatch(/^You've been invited to join Team storefront on AnyPress\./);
+  });
+
+  it('lets admins invite and remove people, but not owners', async () => {
+    expect((await team(admin2.cookie, 'POST', '/invitations', { email: 'helper@agency.example', role: 'admin' })).status).toBe(201);
+    const res = await team(admin2.cookie, 'POST', '/invitations', { email: 'boss@agency.example', role: 'owner' });
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toMatch(/Only an owner/);
+    expect((await team(admin2.cookie, 'DELETE', `/members/${await memberId(owner.userId)}`)).status).toBe(403);
+    expect((await team(admin2.cookie, 'PATCH', `/members/${await memberId(viewer.userId)}`, { role: 'owner' })).status).toBe(403);
+  });
+
+  it("doesn't let members change anything", async () => {
+    expect((await team(viewer.cookie, 'POST', '/invitations', { email: 'x@agency.example' })).status).toBe(403);
+    expect((await team(viewer.cookie, 'DELETE', `/members/${await memberId(admin2.userId)}`)).status).toBe(403);
+  });
+
+  it('changes roles, and nobody changes or removes themselves', async () => {
+    const res = await team(owner.cookie, 'PATCH', `/members/${await memberId(viewer.userId)}`, { role: 'admin' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).members.find((m: { userId: string }) => m.userId === viewer.userId).role).toBe('admin');
+    expect((await team(owner.cookie, 'PATCH', `/members/${await memberId(viewer.userId)}`, { role: 'member' })).status).toBe(200);
+    expect((await team(owner.cookie, 'PATCH', `/members/${await memberId(viewer.userId)}`, { role: 'god' })).status).toBe(400);
+    expect((await team(owner.cookie, 'DELETE', `/members/${await memberId(owner.userId)}`)).status).toBe(403);
+    expect((await team(admin2.cookie, 'PATCH', `/members/${await memberId(admin2.userId)}`, { role: 'member' })).status).toBe(403);
+  });
+
+  it('always keeps an owner', async () => {
+    const res = await admin('PATCH', `/products/${productId}/members/${await memberId(owner.userId)}`, { role: 'admin' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toMatch(/at least one owner/);
+  });
+
+  it('removes someone and cancels an invitation', async () => {
+    const view = await (await team(admin2.cookie, 'DELETE', `/members/${await memberId(viewer.userId)}`)).json();
+    expect(view.members.map((m: { userId: string }) => m.userId)).not.toContain(viewer.userId);
+    const id = view.invitations.find((i: { email: string }) => i.email === 'helper@agency.example').id;
+    expect((await team(admin2.cookie, 'DELETE', `/invitations/${id}`)).status).toBe(200);
+    expect((await team(viewer.cookie, 'GET', '/organization')).status).toBe(403);
   });
 });
 

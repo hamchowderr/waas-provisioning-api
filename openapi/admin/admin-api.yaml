@@ -13,7 +13,8 @@ info:
     The same endpoints answer a signed-in customer at /account instead of /admin (docs/accounts.md),
     narrowed to their organization's product: lists hold only that product, another product's records
     are 404, and the platform-only endpoints (creating products, product limits, plugins, database
-    backups, organizations) are 404.
+    backups, renaming the organization) are 404. Their own organization's members and invitations
+    (the dashboard's Team page) are at /account/products/{productId}/....
 servers:
   - url: http://localhost:4111
     description: Local
@@ -225,9 +226,11 @@ paths:
       operationId: adminInvite
       summary: Invite someone to the product's organization by email
       description: >-
-        Makes the organization if there is none yet. The person signs in with that email address and
-        accepts at acceptUrl within 7 days. A new invitation for the same address replaces a pending
-        one. 503 when sign-in is off (AUTH_URL and AUTH_SECRET unset).
+        Makes the organization if there is none yet, and emails the invitation through toSend when
+        sign-in email is set up (emailed says whether it went). The person signs in with that email
+        address and accepts at acceptUrl within 7 days. A new invitation for the same address replaces
+        a pending one. role defaults to owner here and to member at /account, where only an owner may
+        invite an owner. 503 when sign-in is off (AUTH_URL and AUTH_SECRET unset).
       requestBody:
         required: true
         content:
@@ -270,7 +273,9 @@ paths:
     delete:
       operationId: adminRemoveMember
       summary: Remove someone from the product's organization
-      description: Their account stays; it can no longer reach this product.
+      description: >-
+        Their account stays; it can no longer reach this product. At /account nobody removes
+        themselves, only an owner removes an owner, and the last owner stays (403).
       responses:
         '200':
           description: The organization after the change
@@ -279,6 +284,31 @@ paths:
               schema: { $ref: '#/components/schemas/OrganizationView' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: adminSetMemberRole
+      summary: Change someone's role in the product's organization
+      description: >-
+        Owners and admins may make changes; members may only look. At /account nobody changes their
+        own role and only an owner gives or takes the owner role. 409 when it would leave no owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/products/{productId}/versions:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -1017,6 +1047,7 @@ components:
         expiresAt: { type: string, format: date-time }
         dateCreated: { type: string, format: date-time }
         acceptUrl: { type: string, nullable: true, description: 'Where the person accepts: AUTH_URL/invite/<id>. null when sign-in is off.' }
+        emailed: { type: boolean, description: 'Only when just made: whether the invitation was emailed. When false, send acceptUrl yourself.' }
     OrganizationView:
       type: object
       required: [organization, members, invitations]
