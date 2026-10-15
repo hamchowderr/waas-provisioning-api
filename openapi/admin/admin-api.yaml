@@ -789,7 +789,8 @@ paths:
         request but a GET), newest first. Records who called what and how it went, never what was
         sent: no bodies, no secrets, no headers but the user agent. The API key is its id (the Basic
         auth username). Rows older than REQUEST_LOG_DAYS (default 30) are deleted daily; 0 turns the
-        log off.
+        log off. At /account, and with productId, the log is one product's: its own calls and dashboard
+        changes, plus failed sign-ins with one of its key ids.
       parameters:
         - $ref: '#/components/parameters/page'
         - $ref: '#/components/parameters/pageSize'
@@ -802,6 +803,8 @@ paths:
           schema: { type: string, enum: [ok, client-error, server-error, error] }
         - { name: method, in: query, schema: { type: string, example: POST } }
         - { name: path, in: query, description: Matches any part of the path., schema: { type: string } }
+        - { name: from, in: query, description: Only requests at or after this time., schema: { type: string, format: date-time } }
+        - { name: to, in: query, description: Only requests before this time., schema: { type: string, format: date-time } }
       responses:
         '200':
           description: Counts for the last 24 hours and one page of requests
@@ -1202,7 +1205,7 @@ components:
     RequestLogEntry:
       type: object
       additionalProperties: false
-      required: [id, at, source, method, path, query, status, durationMs, productId, productName, apiKeyId, userId, tenantId, tenantName, externalId, ip, userAgent, error]
+      required: [id, at, source, method, path, query, status, durationMs, productId, productName, apiKeyId, apiKeyLabel, userId, tenantId, tenantName, externalId, ip, userAgent, error]
       properties:
         id: { type: string, example: '1042' }
         at: { type: string, format: date-time }
@@ -1215,9 +1218,10 @@ components:
         productId: { type: string, format: uuid, nullable: true, description: Null for admin calls and failed sign-ins. }
         productName: { type: string, nullable: true }
         apiKeyId: { type: string, format: uuid, nullable: true }
+        apiKeyLabel: { type: string, nullable: true, description: The key's label, when the key exists and has one. }
         userId: { type: string, format: uuid, nullable: true, description: The signed-in person who made the call, for calls made from the dashboard by a customer. }
         tenantId: { type: string, format: uuid, nullable: true, description: The store in the path or the tenantId parameter. }
-        tenantName: { type: string, nullable: true, description: Null once the store is deleted. }
+        tenantName: { type: string, nullable: true, description: Null once the store is deleted, and at /account for a store that is not the product's. }
         externalId: { type: string, nullable: true, description: The externalId parameter, when given. }
         ip: { type: string, nullable: true }
         userAgent: { type: string, nullable: true }

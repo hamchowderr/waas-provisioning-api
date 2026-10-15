@@ -59,6 +59,6 @@ The MCP server's approve page (`/oauth/authorize`, see [mcp/README.md](../mcp/RE
 
 The app's token then acts as that person on that storefront. Its calls are in the request log under their user id, it keeps write access only while their role allows changes, and it stops working once they leave the team.
 
-Changes made through `/account` go into the request log with source `account` and the person's user id.
+Changes made through `/account` go into the request log with source `account` and the person's user id. A signed-in person's request log (`GET /account/requests`) is their product's only: its keys' calls, its people's changes, and failed sign-ins with one of its key ids (a wrong or old secret, a revoked key), so an agency can see why its integration is refused. A call that names another product's store shows that store's id but never its name.
 
 Someone who belongs to more than one organization picks one with Better Auth's `POST /api/auth/organization/set-active`. Until then, their requests get 403.

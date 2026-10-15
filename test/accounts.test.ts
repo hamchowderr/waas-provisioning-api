@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { testUtils } from 'better-auth/plugins';
 import { parse } from 'yaml';
@@ -191,6 +192,39 @@ describe('a signed-in owner', () => {
     const backups = await asUser(owner.cookie, 'GET', '/account/backups');
     expect(backups.status).toBe(200);
     expect((await backups.json()).items.every((b: { productId: string }) => b.productId === t.productId)).toBe(true);
+  });
+
+  it("sees failed sign-ins with their own keys, but nothing of another product's, nor its store names", async () => {
+    const own = await createApiKey(t.pool, t.productId);
+    const other = await createApiKey(t.pool, otherProductId);
+    const marker = randomUUID();
+    // A wrong secret for each product's key, another product's successful call, and a call of ours
+    // that names another product's store.
+    await t.call('GET', `/v1/versions?versionName=${marker}`, { auth: basic(own.key, 'wrong') });
+    await t.call('GET', `/v1/versions?versionName=${marker}`, { auth: basic(other.key, 'wrong') });
+    await t.call('GET', `/v1/versions?versionName=${marker}`, { auth: otherAuth });
+    await t.call('GET', `/v1/tenants?tenantId=${theirs.id}&versionName=${marker}`);
+    const res = await asUser(owner.cookie, 'GET', '/account/requests?path=/v1/');
+    expect(res.status).toBe(200);
+    const log = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const marked = log.items.filter((r: any) => r.query?.includes(marker));
+    expect(marked).toHaveLength(2);
+    expect(marked).toContainEqual(expect.objectContaining({ apiKeyId: own.key, productId: null, status: 403 }));
+    expect(marked).toContainEqual(expect.objectContaining({ productId: t.productId, tenantId: theirs.id, tenantName: null }));
+    expect(JSON.stringify(log)).not.toContain(other.key);
+    expect(JSON.stringify(log)).not.toContain(otherProductId);
+    expect(JSON.stringify(log)).not.toContain('Other store');
+    // Asking for the other product, or its key's store, changes nothing: the session picks the product.
+    const asked = await (await asUser(owner.cookie, 'GET', `/account/requests?productId=${otherProductId}`)).json();
+    expect(JSON.stringify(asked)).not.toContain(otherProductId);
+    // The platform admin still sees all of it, store names included.
+    const all = await (await admin('GET', '/requests')).json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allMarked = all.items.filter((r: any) => r.query?.includes(marker));
+    expect(allMarked).toHaveLength(4);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(allMarked.find((r: any) => r.tenantId === theirs.id).tenantName).toBe('Other store');
   });
 
   it("gets the dashboard's overview, stores and jobs for their product only", async () => {
