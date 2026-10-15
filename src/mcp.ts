@@ -16,8 +16,8 @@ type Caller = TokenOwner & { readOnly: boolean; [key: string]: unknown };
 export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
   const handler = createMcpHandler(
     (ctx) => {
-      const { productId, apiKeyId, readOnly } = ctx.authInfo!.extra as unknown as Caller;
-      const internalAuth = { productId, apiKeyId };
+      const { productId, apiKeyId, userId, readOnly } = ctx.authInfo!.extra as unknown as Caller;
+      const internalAuth = { productId, apiKeyId, userId };
       // The /v1 routes sign this caller in from internalAuth; the key and secret here are never checked.
       const client = new WaasClient({
         baseUrl: 'http://in-process',

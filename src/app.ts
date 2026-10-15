@@ -50,7 +50,7 @@ export interface Deps {
  * has already signed the caller in. Requests from outside can't set Bindings.
  */
 export type AppEnv = {
-  Bindings: { internalAuth?: { productId: string; apiKeyId: string } };
+  Bindings: { internalAuth?: { productId: string; apiKeyId?: string; userId?: string } };
   /** scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts). */
   Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string };
 };
@@ -99,7 +99,9 @@ export function createApp(deps: Deps) {
     if (c.get('userId')) return next();
     const internal = c.env?.internalAuth;
     if (internal) {
-      c.set('apiKeyId', internal.apiKeyId);
+      // An API key, or a person who connected an AI app by signing in (src/oauth.ts).
+      if (internal.apiKeyId) c.set('apiKeyId', internal.apiKeyId);
+      if (internal.userId) c.set('userId', internal.userId);
       c.set('productId', internal.productId);
       return next();
     }

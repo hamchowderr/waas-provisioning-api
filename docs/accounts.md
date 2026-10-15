@@ -53,6 +53,12 @@ These calls need the session cookie and `X-Session-Auth: 1`:
 - `GET /account`: who is signed in, their organizations, and the active one. This works before they belong to any organization.
 - `/account/*`: the admin API's endpoints (`/admin/overview` becomes `/account/overview`, and so on), narrowed to the product. Lists hold only that product's records, another product's store, key or webhook answers 404, and the platform-only endpoints (creating products, product limits, plugins, database backups, renaming the organization) answer 404. This is what the dashboard shows a signed-in customer.
 
+## Connecting an AI app as yourself
+
+The MCP server's approve page (`/oauth/authorize`, see [mcp/README.md](../mcp/README.md)) has a **Sign in** button when sign-in is on. It sends the person to the dashboard at `<AUTH_URL>/connect/<id>`, where they sign in, pick one of their storefronts and approve. The dashboard's server reads that request with `GET /account/oauth/requests/{id}` and answers it with `POST /account/oauth/requests/{id}` (`{"action": "approve", "productId": "…", "allowWrite": true}` or `{"action": "deny"}`), which returns the address to send the browser back to. A request lasts 10 minutes and works once.
+
+The app's token then acts as that person on that storefront. Its calls are in the request log under their user id, it keeps write access only while their role allows changes, and it stops working once they leave the team.
+
 Changes made through `/account` go into the request log with source `account` and the person's user id.
 
 Someone who belongs to more than one organization picks one with Better Auth's `POST /api/auth/organization/set-active`. Until then, their requests get 403.
