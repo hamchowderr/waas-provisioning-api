@@ -35,18 +35,21 @@ a random password nobody keeps.
   products and categories in titles and the sitemap, company knowledge graph, no placeholder opening hours, author
   archives off, Redirections and 404 Monitor on, account-only modules and IndexNow off until launch.
 - FluentCart: first activation marked done (its first admin visit would otherwise blank the store name), terms
-  checkbox at checkout, cart icon in the menu.
-- FluentCRM: setup wizard skipped, lists Newsletter and Customers, tags Customer, Lead and Subscriber, sending
-  capped at 7 emails a second, IP anonymising, one-click unsubscribe, no Gravatar.
+  checkbox at checkout, cart icon in the menu, renewal reminders on (monthly plans 7 days before each charge,
+  plus the yearly and trial-end ones).
+- FluentCRM: setup wizard skipped, lists Newsletter and Customers, tags Customer, Lead and Subscriber, an unticked
+  newsletter box at checkout (double opt-in, into Newsletter), WordPress users synced as contacts, sending capped at 7
+  emails a second, IP anonymising, one-click unsubscribe, no Gravatar.
 - Fluent Forms: honeypot and token spam checks; the contact form emails the site's admin address; the
   subscription form adds people to Newsletter after they confirm (double opt-in).
+- FluentAffiliate: FluentCart integration on, so store orders count as referrals.
 - Fluent Support: FluentBooking links in tickets. AutomatorWP: logs cleared after 30 days, no Pro suggestions.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
   login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
 
 [`mu-plugins/anypress-store.php`](mu-plugins/anypress-store.php) ships in the template and keeps the rest in code:
 WP Fusion's staging-site check off (`WPF_STAGING_MODE` false; every store is a clone), vendor usage stats and
-upgrade nags off, FluentAffiliate's tracking script only once a programme is on, and on each store's first web
+upgrade nags off, FluentAffiliate's tracking script only once the store has an active affiliate, and on each store's first web
 request (and after an address change) fresh install dates, a rewrite-rule flush and a Rank Math sitemap cache clear.
 
 Per-store values come from the purchase: WaaS Host sends the site title (`blogname`), the buyer's email
