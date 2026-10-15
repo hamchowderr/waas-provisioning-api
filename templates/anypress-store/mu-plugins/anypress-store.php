@@ -15,12 +15,14 @@ add_filter('fluent_booking/allow_share_stats', '__return_false');
 add_filter('fluentsupport_allow_share_essential', '__return_false');
 add_filter('wp_fusion_hide_upgrade_nags', '__return_true');
 
-// FluentAffiliate's tracking script loads on every page, even with no affiliate programme switched on.
+// FluentAffiliate's tracking script loads on every page once an integration is on (the template switches on
+// FluentCart's), so hold it back until the store has an active affiliate whose links could bring visitors.
 add_filter('fluent_affiliate/will_load_tracker_js', function ($load) {
-    if (!class_exists('\FluentAffiliate\App\Helper\Utility')) {
+    if (!$load || !class_exists('\FluentAffiliate\App\Models\Affiliate')) {
         return $load;
     }
-    return $load && !empty(\FluentAffiliate\App\Helper\Utility::getReferralSetting('enabled_integrations'));
+    return !empty(\FluentAffiliate\App\Helper\Utility::getReferralSetting('enabled_integrations'))
+        && \FluentAffiliate\App\Models\Affiliate::where('status', 'active')->exists();
 });
 
 // Once per store, and again whenever the store's address changes: the template's dates and rewrite rules

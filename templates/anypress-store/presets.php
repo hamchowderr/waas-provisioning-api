@@ -69,7 +69,13 @@ delete_option('rank_math_flush_rewrite');
 // onboarding wizard; the build already did what that wizard does (pages, currency).
 update_option('fluent_cart_plugin_once_activated', '1');
 delete_option('fluent_cart_do_activation_redirect');
-(new \FluentCart\Api\StoreSettings())->save(['show_cart_icon_in_nav' => 'yes']);
+(new \FluentCart\Api\StoreSettings())->save([
+    'show_cart_icon_in_nav' => 'yes',
+    // Settings → Reminders. Nothing is sent while the master switch is off; monthly plans (the usual kind) get
+    // a reminder 7 days before each charge, on top of the yearly and trial-end ones that are already on.
+    'reminders_enabled' => 'yes',
+    'monthly_renewal_reminders_enabled' => 'yes',
+]);
 // Settings → Checkout fields: a terms checkbox buyers must tick.
 $fields = \FluentCart\App\Services\Renderer\CheckoutFieldsSchema::getFieldsSettings();
 $fields['agree_terms'] = ['enabled' => 'yes', 'required' => 'yes', 'text' => 'I agree to the terms and conditions.'];
@@ -87,6 +93,13 @@ foreach (['Newsletter', 'Customers'] as $title) {
 foreach (['Customer', 'Lead', 'Subscriber'] as $title) {
     \FluentCrm\App\Models\Tag::firstOrCreate(['slug' => sanitize_title($title)], ['title' => $title]);
 }
+// Settings → SmartCodes & Integrations: an unticked newsletter box at FluentCart checkout (double opt-in, into
+// Newsletter), and WordPress users kept in sync as contacts, so customers who make accounts show up in the CRM.
+fluentcrm_update_option('fluent_cart_checkout_form_subscribe_settings', array_merge(
+    (new \FluentCrm\App\Services\AutoSubscribe())->getFluentCartCheckoutSettings(),
+    ['status' => 'yes', 'auto_checked' => 'no', 'double_optin' => 'yes', 'show_only_new' => 'yes', 'target_list' => (string) $lists['Newsletter']]
+));
+fluentcrm_update_option('user_syncing_settings', ['status' => 'yes', 'delete_contact_on_user_delete' => 'no']);
 // Email speed. The value saved on activation sits under a key nothing reads; the real default is 15 a
 // second. 10 caps it at 7 a second (FluentCRM keeps 3 in reserve), well inside the relay's limit.
 $crm = get_option('fluentcrm-global-settings', []);
@@ -169,6 +182,14 @@ $business['portal_page_id'] = wp_insert_post([
     'post_content' => '<!-- wp:shortcode -->[fluent_support_portal]<!-- /wp:shortcode -->',
 ]);
 $support->save('global_business_settings', $business);
+
+// FluentAffiliate. Integrations → FluentCart on, so referrals are tracked from store orders once the owner opens a
+// programme. Same two writes as its integration switch.
+\FluentAffiliate\App\Helper\Utility::updateOption('_fluent_cart_connector_config', ['is_enabled' => 'yes']);
+$referral = \FluentAffiliate\App\Helper\Utility::getReferralSettings(false);
+\FluentAffiliate\App\Helper\Utility::updateReferralSettings([
+    'enabled_integrations' => array_values(array_unique(array_merge((array) ($referral['enabled_integrations'] ?? []), ['fluent_cart']))),
+]);
 
 // AutomatorWP. Settings: clear its logs after 30 days (they hold form entries and email recipients) and
 // hide the Pro suggestions; no review nag.
