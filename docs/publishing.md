@@ -15,7 +15,7 @@ The two SDKs are versioned separately. Both follow semantic versioning.
 
 Releases use npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers): npm trusts this repository's `release-sdk-typescript.yml` workflow through GitHub's OIDC token, so no npm token is stored anywhere. This is already set up for `waas-provisioning-sdk`.
 
-To set it up again (for example after moving the repository), sign in with the npm account that owns the package and run:
+To set it up again (for example after moving the repository), sign in with the npm account that owns the package and run this. `npm trust` needs npm 11.15.0 or newer (check with `npm -v`; upgrade with `npm install -g npm@latest`):
 
 ```sh
 npm trust github waas-provisioning-sdk --file release-sdk-typescript.yml --repo hamchowderr/waas-provisioning-api --allow-publish
