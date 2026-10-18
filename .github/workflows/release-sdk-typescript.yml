@@ -1,5 +1,5 @@
 # Publishes sdk/typescript to npm as waas-provisioning-sdk when a tag like sdk-ts-v0.1.0 is pushed.
-# Needs the NPM_TOKEN repository secret. Steps for maintainers: docs/publishing.md.
+# Uses npm Trusted Publishing (GitHub's OIDC token), so no npm token is stored. Steps for maintainers: docs/publishing.md.
 name: Release TypeScript SDK
 
 on:
@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance
+  id-token: write # npm Trusted Publishing and provenance
 
 jobs:
   publish:
@@ -28,10 +28,10 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json (expected $expected)"
             exit 1
           fi
+      # Trusted Publishing needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      - run: npm install -g npm@11.6.2
       - run: npm ci
       - run: npm run sdk:check
       - name: Publish
         working-directory: sdk/typescript
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
