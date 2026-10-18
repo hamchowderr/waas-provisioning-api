@@ -130,7 +130,12 @@ export async function storeVariables(
     if (!ip) throw badRequest(`The address of ${storesDomain} could not be looked up`);
     // The template sets AAAA too, so an old IPv6 address on the domain is replaced, not left behind.
     const [ipv6 = fallbackIpv6] = await net.resolve6(`www.${storesDomain}`).catch(() => [] as string[]);
-    return { domain, variables: ipv6 ? { ip, ipv6 } : { ip } };
+    if (!ipv6) {
+      // The template needs %ipv6%, so a link without it couldn't be applied.
+      const conflict = `The stores' IPv6 address is unknown (www.${storesDomain} has no AAAA record and DOMAIN_CONNECT_IPV6 is not set), so add the records by hand.`;
+      return { domain, variables: { ip }, conflict };
+    }
+    return { domain, variables: { ip, ipv6 } };
   }
   const mail = await getMailDomain(pool, sendingDomains, tenantId);
   if (!mail || mail.domainName !== domain) throw badRequest(`${domain} is not this store's sending domain`);

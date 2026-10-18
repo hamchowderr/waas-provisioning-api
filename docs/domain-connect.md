@@ -38,7 +38,7 @@ Cloudflare checked the templates and listed these cases; the table says how each
 2. Template check: the DNS host answers 200 for `…/domainTemplates/providers/anypress.io/services/<service>` only once it has accepted our template.
 3. The apply link carries the zone, host and variable, signed with `DOMAIN_CONNECT_PRIVATE_KEY` (RS256 over the query string, plus `key=<DOMAIN_CONNECT_KEY_HOST>`).
 
-`supported: false` with `conflict` set means the DNS host could apply the template but shouldn't (see above); show `conflict` with the records to edit. Otherwise `supported: false` with a `dnsProvider` means the host supports Domain Connect but hasn't accepted our template yet; `dnsProvider: null` means it doesn't support Domain Connect. Either way the caller shows the records to copy. The domain must be the store's own (`website`) or its sending domain (`email`), so a link can't be made for anything else.
+`supported: false` with `conflict` set means the DNS host could apply the template but shouldn't (see above), or the stores' IPv6 address is unknown (no AAAA on `www.<STORES_DOMAIN>` and no `DOMAIN_CONNECT_IPV6`), which the website template needs; show `conflict` with the records to edit. Otherwise `supported: false` with a `dnsProvider` means the host supports Domain Connect but hasn't accepted our template yet; `dnsProvider: null` means it doesn't support Domain Connect. Either way the caller shows the records to copy. The domain must be the store's own (`website`) or its sending domain (`email`), so a link can't be made for anything else.
 
 ## Settings
 

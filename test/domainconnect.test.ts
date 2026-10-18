@@ -125,9 +125,11 @@ describe('store Domain Connect routes', () => {
   const storefront = (query: string) => t.call('GET', `/v1/tenants/domain-connect?externalId=${tenant.externalId}&${query}`);
 
   it("links a store's own domain to the stores' address", async () => {
+    net.ipv6.push('2001:db8::8');
     const res = await storefront('domainName=shop.example.com&service=website');
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { url: string }).url).toContain('/services/website/apply?domain=example.com&host=shop&ip=203.0.113.7');
+    expect(((await res.json()) as { url: string }).url).toContain('/services/website/apply?domain=example.com&host=shop&ip=203.0.113.7&ipv6=2001%3Adb8%3A%3A8');
+    net.ipv6.length = 0;
   });
 
   it("refuses a domain that isn't the store's, and a bad service", async () => {
@@ -156,6 +158,11 @@ describe('store Domain Connect routes', () => {
     expect(url).toContain('&ipv6=2001%3Adb8%3A%3A8');
     net.ipv6.length = 0;
     t.deps.config.domainConnect = config;
+
+    const link = (await (await storefront('domainName=shop.example.com&service=website')).json()) as { supported: boolean; url: string | null; conflict?: string };
+    expect(validateLink(link)).toBe(true);
+    expect(link).toMatchObject({ supported: false, url: null });
+    expect(link.conflict).toContain('IPv6 address is unknown');
   });
 
   it('gives no link when the domain already has a different DKIM key, since some hosts would keep both', async () => {
