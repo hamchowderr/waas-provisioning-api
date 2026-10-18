@@ -69,6 +69,8 @@ export interface components {
             /** @description True when url works */
             supported: boolean;
             url: string | null;
+            /** @description Set when there is no link because the domain already has a record the DNS host would keep beside the template's (an older DKIM key); show it with the records to edit by hand */
+            conflict?: string;
         };
         Error: {
             statusCode: number;
