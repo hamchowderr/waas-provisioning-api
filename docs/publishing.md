@@ -13,11 +13,15 @@ The two SDKs are versioned separately. Both follow semantic versioning.
 
 ### npm
 
-1. Sign in to [npmjs.com](https://www.npmjs.com) with the account that will own the package, and turn on two-factor authentication.
-2. Create a token: profile menu, **Access Tokens**, **Generate New Token**, **Granular Access Token**. Give it **Read and write** on packages. For the first release the package doesn't exist yet, so choose **All packages**; after it is published you can replace the token with one limited to `waas-provisioning-sdk`.
-3. In this GitHub repository: **Settings**, **Secrets and variables**, **Actions**, **New repository secret**. Name `NPM_TOKEN`, value the token.
+Releases use npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers): npm trusts this repository's `release-sdk-typescript.yml` workflow through GitHub's OIDC token, so no npm token is stored anywhere. This is already set up for `waas-provisioning-sdk`.
 
-Optional, after the first release: on the package's npm page, **Settings**, **Trusted Publisher**, add GitHub Actions with repository `hamchowderr/waas-provisioning-api` and workflow `release-sdk-typescript.yml`. Then npm accepts this workflow without a token and you can delete `NPM_TOKEN`.
+To set it up again (for example after moving the repository), sign in with the npm account that owns the package and run this. `npm trust` needs npm 11.15.0 or newer (check with `npm -v`; upgrade with `npm install -g npm@latest`):
+
+```sh
+npm trust github waas-provisioning-sdk --file release-sdk-typescript.yml --repo hamchowderr/waas-provisioning-api --allow-publish
+```
+
+`npm trust list waas-provisioning-sdk` shows what is trusted. You can also manage it on the package's npm page under **Settings**, **Trusted Publisher**.
 
 ### Packagist
 
