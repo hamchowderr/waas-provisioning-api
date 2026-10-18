@@ -8,12 +8,27 @@ A DNS host only applies records from a template it has accepted. AnyPress's are 
 
 | Template | Records | Variable |
 |---|---|---|
-| `anypress.io.website` | `A @` → the store server | `ip`: looked up from the stores' wildcard name (`www.<STORES_DOMAIN>`) |
+| `anypress.io.website` | `A @` and `AAAA @` → the store server | `ip` and `ipv6`: looked up from the stores' wildcard name (`www.<STORES_DOMAIN>`); `ipv6` falls back to `DOMAIN_CONNECT_IPV6` |
 | `anypress.io.email` | DKIM `TXT tosend._domainkey`, `MX send` → toSend's bounce host, SPF on `send` | `dkim`: the sending domain's DKIM key from toSend ([store-email.md](store-email.md)) |
 
 Both are applied to the domain the owner entered: for `shop.example.com` the zone is `example.com` and the host is `shop`. Both pass `dc-template-linter -merge-or-fail` (the templates repository's fast track).
 
 Both set `syncPubKeyDomain`, so a DNS host only applies a link we signed: someone else can't send an owner a link that points their domain at another server.
+
+Both carry `logoUrl` (https://anypress.io/logo.svg), which DNS hosts show on the consent page.
+
+### What happens to records already on the domain
+
+Cloudflare checked the templates and listed these cases; the table says how each is handled.
+
+| Existing record | What the DNS host does | Handled by |
+|---|---|---|
+| `A` on the domain | Replaced | The template |
+| `AAAA` on the domain | Kept by an A-only template, so IPv6 visitors (and Let's Encrypt's HTTP check, which tries IPv6 first) would reach the old host | The website template sets `AAAA` too (version 2), which replaces it. The store server answers on IPv6. |
+| `www.<domain>` | Untouched: the template only sets the domain the owner entered | Nothing to do. A store serves only the domains added to it; the owner adds `www.<domain>` as its own domain if they want it. |
+| `MX` on `send.<domain>` | Replaced | Nothing to do: `send.` is the bounce subdomain toSend needs. |
+| SPF on `send.<domain>` | Merged into one record ending in `~all` | Nothing to do. |
+| A different `tosend._domainkey` key | Cloudflare ignores `txtConflictMatchingMode` and adds the new key beside the old one, and two keys there make receivers fail the signature | The API looks first: when the name already has a different key it gives no link, sets `conflict`, and the owner edits the record by hand. |
 
 ## How a link is made
 
@@ -23,7 +38,7 @@ Both set `syncPubKeyDomain`, so a DNS host only applies a link we signed: someon
 2. Template check: the DNS host answers 200 for `…/domainTemplates/providers/anypress.io/services/<service>` only once it has accepted our template.
 3. The apply link carries the zone, host and variable, signed with `DOMAIN_CONNECT_PRIVATE_KEY` (RS256 over the query string, plus `key=<DOMAIN_CONNECT_KEY_HOST>`).
 
-`supported: false` with a `dnsProvider` means the host supports Domain Connect but hasn't accepted our template yet; `dnsProvider: null` means it doesn't support Domain Connect. Either way the caller shows the records to copy. The domain must be the store's own (`website`) or its sending domain (`email`), so a link can't be made for anything else.
+`supported: false` with `conflict` set means the DNS host could apply the template but shouldn't (see above), or the stores' IPv6 address is unknown (no AAAA on `www.<STORES_DOMAIN>` and no `DOMAIN_CONNECT_IPV6`), which the website template needs; show `conflict` with the records to edit. Otherwise `supported: false` with a `dnsProvider` means the host supports Domain Connect but hasn't accepted our template yet; `dnsProvider: null` means it doesn't support Domain Connect. Either way the caller shows the records to copy. The domain must be the store's own (`website`) or its sending domain (`email`), so a link can't be made for anything else.
 
 ## Settings
 
@@ -32,6 +47,7 @@ Both set `syncPubKeyDomain`, so a DNS host only applies a link we signed: someon
 | `BRAND_DOMAIN`, else `PLATFORM_DOMAIN` | Turns Domain Connect on; it is the templates' `providerId` (override with `DOMAIN_CONNECT_PROVIDER_ID`). `DOMAIN_CONNECT=off` turns it off. |
 | `DOMAIN_CONNECT_PRIVATE_KEY` | PEM RSA private key (or base64 of the PEM) that signs links. Without it links are unsigned, and hosts refuse them because the templates require signatures. |
 | `DOMAIN_CONNECT_KEY_HOST` | Where the public key is published under the provider id's domain; default `_dck1`. |
+| `DOMAIN_CONNECT_IPV6` | The store server's IPv6 address, used when the stores' wildcard name has no `AAAA` record. Without either, no website link is given, since the version 2 website template needs it. |
 
 Making the key (once):
 

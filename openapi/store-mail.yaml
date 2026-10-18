@@ -126,6 +126,7 @@ components:
         dnsProvider: { type: string, nullable: true, description: "The domain's DNS host, when it supports Domain Connect at all", example: Cloudflare }
         supported: { type: boolean, description: True when url works }
         url: { type: string, nullable: true }
+        conflict: { type: string, description: "Set when there is no link though the DNS host has the template: the domain already has a record the host would keep beside the template's (an older DKIM key), or the stores' IPv6 address is unknown; show it with the records to edit by hand" }
     Error:
       type: object
       required: [statusCode, message]

@@ -257,7 +257,7 @@ final class Client
      *
      * @param array{externalId?: string, tenantId?: string} $tenant
      * @param 'website'|'email' $service
-     * @return array{dnsProvider: ?string, supported: bool, url: ?string}
+     * @return array{dnsProvider: ?string, supported: bool, url: ?string, conflict?: string}
      */
     public function domainConnect(array $tenant, string $domainName, string $service): array
     {

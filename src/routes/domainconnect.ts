@@ -13,8 +13,11 @@ export async function storeDomainConnect(deps: Deps, tenantId: string, domainNam
   if (!config.domainConnect) throw badRequest('Domain Connect is off: PLATFORM_DOMAIN is not set on the API');
   if (!domainName?.trim()) throw badRequest('domainName is required');
   const service = parseService(serviceName);
-  const { domain, variables } = await storeVariables(pool, config.sendingDomains, config.storesDomain, tenantId, domainName, service, deps.domainConnectNet);
-  return domainConnectLink(config.domainConnect, domain, service, variables, deps.domainConnectNet);
+  const { domain, variables, conflict } = await storeVariables(
+    pool, config.sendingDomains, config.storesDomain, tenantId, domainName, service, deps.domainConnectNet, config.domainConnect.ipv6,
+  );
+  const link = await domainConnectLink(config.domainConnect, domain, service, variables, deps.domainConnectNet);
+  return conflict && link.supported ? { ...link, supported: false, url: null, conflict } : link;
 }
 
 /**

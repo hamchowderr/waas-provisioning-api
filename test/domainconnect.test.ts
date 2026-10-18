@@ -19,17 +19,25 @@ ajv.addSchema({ components: storeSpec.components }, 'store');
 const validateLink = ajv.compile({ $ref: 'store#/components/schemas/DomainConnectLink' });
 
 /** example.com and its subdomains are at a Domain Connect DNS host that has `templates`. */
-function fakeNet(templates: string[]): DomainConnectNet & { fetched: string[] } {
+function fakeNet(templates: string[]): DomainConnectNet & { fetched: string[]; txt: Record<string, string[][]>; ipv6: string[] } {
   const fetched: string[] = [];
+  const txt: Record<string, string[][]> = { '_domainconnect.example.com': [['api.dnshost.example/dc']] };
+  const ipv6: string[] = [];
   return {
     fetched,
+    txt,
+    ipv6,
     async resolveTxt(name) {
-      if (name === '_domainconnect.example.com') return [['api.dnshost.example/dc']];
+      if (txt[name]) return txt[name]!;
       throw new Error('ENOTFOUND');
     },
     async resolve4(name) {
       if (name === 'www.stores.waas.example') return ['203.0.113.7'];
       throw new Error('ENOTFOUND');
+    },
+    async resolve6(name) {
+      if (name === 'www.stores.waas.example' && ipv6.length) return ipv6;
+      throw new Error('ENODATA');
     },
     fetch: (async (url: string) => {
       fetched.push(url);
@@ -92,6 +100,7 @@ class FakeDomains implements SendingDomains {
 describe('store Domain Connect routes', () => {
   let t: TestContext;
   let tenant: { id: string; externalId: string };
+  let net: ReturnType<typeof fakeNet>;
 
   beforeAll(async () => {
     t = await setup();
@@ -99,7 +108,8 @@ describe('store Domain Connect routes', () => {
     t.deps.config.sendingDomains = new FakeDomains();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     t.deps.config.coolify = { mail: { from: 'no-reply@waas.example' } } as any;
-    t.deps.domainConnectNet = fakeNet(['website', 'email']);
+    net = fakeNet(['website', 'email']);
+    t.deps.domainConnectNet = net;
     const res = await t.call('POST', '/v1/versions', { body: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true } });
     const versionId = ((await res.json()) as { id: string }).id;
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as any[])[0]?.statusCode === Status.Done);
@@ -115,9 +125,11 @@ describe('store Domain Connect routes', () => {
   const storefront = (query: string) => t.call('GET', `/v1/tenants/domain-connect?externalId=${tenant.externalId}&${query}`);
 
   it("links a store's own domain to the stores' address", async () => {
+    net.ipv6.push('2001:db8::8');
     const res = await storefront('domainName=shop.example.com&service=website');
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { url: string }).url).toContain('/services/website/apply?domain=example.com&host=shop&ip=203.0.113.7');
+    expect(((await res.json()) as { url: string }).url).toContain('/services/website/apply?domain=example.com&host=shop&ip=203.0.113.7&ipv6=2001%3Adb8%3A%3A8');
+    net.ipv6.length = 0;
   });
 
   it("refuses a domain that isn't the store's, and a bad service", async () => {
@@ -135,5 +147,34 @@ describe('store Domain Connect routes', () => {
     expect(admin.status).toBe(200);
     expect(adminSpec.paths['/admin/tenants/{id}/domain-connect'].get.responses['200']).toBeDefined();
     expect(((await admin.json()) as { supported: boolean }).supported).toBe(true);
+  });
+
+  it("adds the server's IPv6 address, from the wildcard's AAAA or else DOMAIN_CONNECT_IPV6", async () => {
+    t.deps.config.domainConnect = { ...config, ipv6: '2001:db8::7' };
+    let url = ((await (await storefront('domainName=shop.example.com&service=website')).json()) as { url: string }).url;
+    expect(url).toContain('&ip=203.0.113.7&ipv6=2001%3Adb8%3A%3A7');
+    net.ipv6.push('2001:db8::8');
+    url = ((await (await storefront('domainName=shop.example.com&service=website')).json()) as { url: string }).url;
+    expect(url).toContain('&ipv6=2001%3Adb8%3A%3A8');
+    net.ipv6.length = 0;
+    t.deps.config.domainConnect = config;
+
+    const link = (await (await storefront('domainName=shop.example.com&service=website')).json()) as { supported: boolean; url: string | null; conflict?: string };
+    expect(validateLink(link)).toBe(true);
+    expect(link).toMatchObject({ supported: false, url: null });
+    expect(link.conflict).toContain('IPv6 address is unknown');
+  });
+
+  it('gives no link when the domain already has a different DKIM key, since some hosts would keep both', async () => {
+    net.txt['tosend._domainkey.mail.example.com'] = [['p=OLD']];
+    const res = await storefront('domainName=mail.example.com&service=email');
+    const link = (await res.json()) as { supported: boolean; url: string | null; conflict?: string };
+    expect(validateLink(link)).toBe(true);
+    expect(link).toMatchObject({ dnsProvider: 'Example DNS', supported: false, url: null });
+    expect(link.conflict).toContain('tosend._domainkey.mail.example.com already has a different DKIM key');
+
+    net.txt['tosend._domainkey.mail.example.com'] = [['p=', 'KEY']];
+    expect(((await (await storefront('domainName=mail.example.com&service=email')).json()) as { supported: boolean }).supported).toBe(true);
+    delete net.txt['tosend._domainkey.mail.example.com'];
   });
 });

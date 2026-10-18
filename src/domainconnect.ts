@@ -1,5 +1,5 @@
 import { createSign } from 'node:crypto';
-import { resolve4, resolveTxt } from 'node:dns/promises';
+import { resolve4, resolve6, resolveTxt } from 'node:dns/promises';
 import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
 import { getMailDomain } from './maildomains.ts';
@@ -23,6 +23,8 @@ export interface DomainConnectConfig {
   /** PEM RSA private key whose public half is published at `<keyHost>.<providerId>` (TXT); signs apply links. */
   privateKey?: string;
   keyHost: string;
+  /** The store server's IPv6 address (DOMAIN_CONNECT_IPV6), when the stores' wildcard name has no AAAA record. */
+  ipv6?: string;
 }
 
 export interface DomainConnectLink {
@@ -32,6 +34,11 @@ export interface DomainConnectLink {
   supported: boolean;
   /** Opens the DNS host's page that adds the records once the owner approves. */
   url: string | null;
+  /**
+   * Why there is no link even though the DNS host could make one: a record already on the domain
+   * that the template would sit beside instead of replacing. The owner edits it by hand instead.
+   */
+  conflict?: string;
 }
 
 interface Settings {
@@ -44,10 +51,11 @@ interface Settings {
 export interface DomainConnectNet {
   resolveTxt(name: string): Promise<string[][]>;
   resolve4(name: string): Promise<string[]>;
+  resolve6(name: string): Promise<string[]>;
   fetch: typeof fetch;
 }
 
-const defaultNet: DomainConnectNet = { resolveTxt, resolve4, fetch: (...args) => fetch(...args) };
+const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, fetch: (...args) => fetch(...args) };
 
 /** The zone a name sits in at a Domain Connect DNS host, and its settings there; null when none. */
 async function discover(name: string, net: DomainConnectNet): Promise<{ zone: string; host: string; settings: Settings } | null> {
@@ -99,8 +107,9 @@ export async function domainConnectLink(
 }
 
 /**
- * The template variables for one of a store's domains: the website's server address, or the DKIM
- * key of its sending domain. Refuses a domain the store doesn't have.
+ * The template variables for one of a store's domains: the website's server addresses, or the DKIM
+ * key of its sending domain. Refuses a domain the store doesn't have. `conflict` is set when the
+ * domain already has a record the DNS host would keep next to the template's (see DomainConnectLink).
  */
 export async function storeVariables(
   pool: Pool,
@@ -110,7 +119,8 @@ export async function storeVariables(
   domainName: string,
   service: DomainConnectService,
   net: DomainConnectNet = defaultNet,
-): Promise<{ domain: string; variables: Record<string, string> }> {
+  fallbackIpv6?: string,
+): Promise<{ domain: string; variables: Record<string, string>; conflict?: string }> {
   const domain = normalizeDomain(domainName);
   if (service === 'website') {
     const { rowCount } = await pool.query('SELECT 1 FROM tenant_domains WHERE tenant_id = $1 AND domain_name = $2', [tenantId, domain]);
@@ -118,13 +128,27 @@ export async function storeVariables(
     // Custom domains point where the stores' own names do; the wildcard tells us the address.
     const [ip] = await net.resolve4(`www.${storesDomain}`).catch(() => [] as string[]);
     if (!ip) throw badRequest(`The address of ${storesDomain} could not be looked up`);
-    return { domain, variables: { ip } };
+    // The template sets AAAA too, so an old IPv6 address on the domain is replaced, not left behind.
+    const [ipv6 = fallbackIpv6] = await net.resolve6(`www.${storesDomain}`).catch(() => [] as string[]);
+    if (!ipv6) {
+      // The template needs %ipv6%, so a link without it couldn't be applied.
+      const conflict = `The stores' IPv6 address is unknown (www.${storesDomain} has no AAAA record and DOMAIN_CONNECT_IPV6 is not set), so add the records by hand.`;
+      return { domain, variables: { ip }, conflict };
+    }
+    return { domain, variables: { ip, ipv6 } };
   }
   const mail = await getMailDomain(pool, sendingDomains, tenantId);
   if (!mail || mail.domainName !== domain) throw badRequest(`${domain} is not this store's sending domain`);
   const dkim = mail.records?.find((r) => r.type === 'TXT' && r.name.endsWith('_domainkey'));
   if (!dkim) throw badRequest(`The DNS records for ${domain} could not be loaded from toSend; try again`);
-  return { domain, variables: { dkim: dkim.value } };
+  // Some DNS hosts (Cloudflare) add the DKIM key beside an older one with the same name instead of
+  // replacing it, and two keys there make receivers fail the signature. Then the owner edits it by hand.
+  const existing = await net.resolveTxt(`${dkim.name}.${domain}`).catch(() => [] as string[][]);
+  const values = existing.map((r) => r.join(''));
+  const conflict = values.length && !values.includes(dkim.value)
+    ? `${dkim.name}.${domain} already has a different DKIM key. Replace it with the one below by hand; adding it automatically would leave both.`
+    : undefined;
+  return { domain, variables: { dkim: dkim.value }, ...(conflict ? { conflict } : {}) };
 }
 
 /** Reads `service` from a query string: website or email. */
@@ -135,7 +159,8 @@ export function parseService(value: string | undefined): DomainConnectService {
 
 /**
  * DOMAIN_CONNECT_PROVIDER_ID (default: BRAND_DOMAIN, else PLATFORM_DOMAIN) turns Domain Connect on;
- * DOMAIN_CONNECT_PRIVATE_KEY (PEM, or base64 of it) signs the links.
+ * DOMAIN_CONNECT_PRIVATE_KEY (PEM, or base64 of it) signs the links; DOMAIN_CONNECT_IPV6 is the
+ * store server's IPv6 address when the stores' wildcard name has no AAAA record.
  */
 export function loadDomainConnectConfig(env: NodeJS.ProcessEnv, platformDomain: string | undefined): DomainConnectConfig | undefined {
   if (env.DOMAIN_CONNECT === 'off') return undefined;
@@ -144,5 +169,6 @@ export function loadDomainConnectConfig(env: NodeJS.ProcessEnv, platformDomain: 
   let privateKey = env.DOMAIN_CONNECT_PRIVATE_KEY?.trim() || undefined;
   if (privateKey && !privateKey.includes('-----BEGIN')) privateKey = Buffer.from(privateKey, 'base64').toString('utf8');
   if (privateKey && !privateKey.includes('PRIVATE KEY')) throw new Error('DOMAIN_CONNECT_PRIVATE_KEY must be a PEM private key (or base64 of one)');
-  return { providerId, privateKey, keyHost: env.DOMAIN_CONNECT_KEY_HOST?.trim() || '_dck1' };
+  const ipv6 = env.DOMAIN_CONNECT_IPV6?.trim() || undefined;
+  return { providerId, privateKey, keyHost: env.DOMAIN_CONNECT_KEY_HOST?.trim() || '_dck1', ...(ipv6 ? { ipv6 } : {}) };
 }
