@@ -42,6 +42,9 @@ describe('tenant domains', () => {
       ((await (await t.call('GET', `/v1/tenants/domains/available?domain=${domain}`)).json()) as { available: boolean }).available;
     for (const domain of ['waas.example', 'www.waas.example', 'API.waas.example', 'stores.waas.example']) expect(await available(domain), domain).toBe(false);
     for (const domain of ['my-shop.waas.example', 'www.example.com', 'shop.www.waas.example']) expect(await available(domain), domain).toBe(true);
+    // The brand domain is kept whole: stores live on the platform domain, never under the brand.
+    for (const domain of ['brand.example', 'shop.brand.example', 'a.b.brand.example']) expect(await available(domain), domain).toBe(false);
+    expect(await available('notbrand.example')).toBe(true);
 
     const create = await t.call('POST', '/v1/tenants', { body: { name: 'Www', customDomainName: 'www.waas.example' } });
     expect(create.status).toBe(400);

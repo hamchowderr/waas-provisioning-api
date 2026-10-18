@@ -72,12 +72,16 @@ export async function checkTenantCap(client: Client, productId: string): Promise
  */
 export const RESERVED_LABELS = new Set([
   'about', 'account', 'accounts', 'admin', 'api', 'app', 'assets', 'auth', 'billing', 'blog', 'cdn', 'dashboard',
-  'dev', 'docs', 'email', 'ftp', 'help', 'imap', 'login', 'mail', 'mx', 'ns1', 'ns2', 'pop', 'portal', 'smtp',
+  'dev', 'docs', 'email', 'ftp', 'help', 'imap', 'login', 'mail', 'mx', 'ns1', 'ns2', 'pop', 'portal', 'shop', 'smtp',
   'staging', 'static', 'status', 'store', 'stores', 'support', 'test', 'versions', 'webmail', 'www',
 ]);
 
-/** Whether a domain is the platform domain itself or a reserved name directly under it. */
-export function isReservedDomain(domain: string, platformDomain: string | undefined): boolean {
+/**
+ * Whether a domain is the platform domain itself or a reserved name directly under it, or the brand
+ * domain or any name under it.
+ */
+export function isReservedDomain(domain: string, platformDomain: string | undefined, brandDomain?: string): boolean {
+  if (brandDomain && (domain === brandDomain || domain.endsWith(`.${brandDomain}`))) return true;
   if (!platformDomain) return false;
   if (domain === platformDomain) return true;
   if (!domain.endsWith(`.${platformDomain}`)) return false;
@@ -86,8 +90,8 @@ export function isReservedDomain(domain: string, platformDomain: string | undefi
 }
 
 /** Whether any store or version already answers on this domain, or the platform keeps it for itself. */
-export async function domainInUse(pool: Pool, domain: string, platformDomain?: string): Promise<boolean> {
-  if (isReservedDomain(domain, platformDomain)) return true;
+export async function domainInUse(pool: Pool, domain: string, platformDomain?: string, brandDomain?: string): Promise<boolean> {
+  if (isReservedDomain(domain, platformDomain, brandDomain)) return true;
   const { rowCount } = await pool.query(
     'SELECT 1 FROM tenant_domains WHERE domain_name = $1 UNION ALL SELECT 1 FROM versions WHERE domain = $1',
     [domain],

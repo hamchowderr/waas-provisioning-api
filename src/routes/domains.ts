@@ -40,7 +40,7 @@ export async function addTenantDomain(deps: Deps, tenant: any, domainName: strin
   const domain = normalizeDomain(domainName);
   const { rows } = await pool.query('SELECT id FROM tenant_domains WHERE tenant_id = $1 AND domain_name = $2', [tenant.id, domain]);
   const existing = rows[0];
-  if (!existing && (await domainInUse(pool, domain, config.platformDomain))) throw badRequest(`Domain ${domain} is already in use`);
+  if (!existing && (await domainInUse(pool, domain, config.platformDomain, config.brandDomain))) throw badRequest(`Domain ${domain} is already in use`);
 
   if (!existing || setAsMain) {
     await applyDomains(deps, tenant.id, async (client) => {
@@ -116,7 +116,7 @@ export function domainRoutes(deps: Deps) {
   // 400 means "not a valid domain" to the storefront plugin; otherwise it reads `available`.
   app.get('/domains/available', async (c) => {
     const domain = normalizeDomain(c.req.query('domain') ?? '');
-    return c.json({ available: !(await domainInUse(pool, domain, config.platformDomain)) });
+    return c.json({ available: !(await domainInUse(pool, domain, config.platformDomain, config.brandDomain)) });
   });
 
   return app;

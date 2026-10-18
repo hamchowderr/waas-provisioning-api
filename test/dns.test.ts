@@ -24,9 +24,19 @@ describe('isReservedDomain', () => {
     expect(isReservedDomain('anypress.io', 'anypress.io')).toBe(true);
     expect(isReservedDomain('www.anypress.io', 'anypress.io')).toBe(true);
     expect(isReservedDomain('stores.anypress.io', 'anypress.io')).toBe(true);
+    expect(isReservedDomain('shop.anypress.io', 'anypress.io')).toBe(true);
     expect(isReservedDomain('my-shop.anypress.io', 'anypress.io')).toBe(false);
     expect(isReservedDomain('www.example.com', 'anypress.io')).toBe(false);
     expect(isReservedDomain('www.notanypress.io', 'anypress.io')).toBe(false);
+  });
+
+  it('reserves the brand domain and every name under it', () => {
+    expect(isReservedDomain('anypress.io', 'anypress.site', 'anypress.io')).toBe(true);
+    expect(isReservedDomain('shop.anypress.io', 'anypress.site', 'anypress.io')).toBe(true);
+    expect(isReservedDomain('my.shop.anypress.io', 'anypress.site', 'anypress.io')).toBe(true);
+    expect(isReservedDomain('my-shop.anypress.site', 'anypress.site', 'anypress.io')).toBe(false);
+    expect(isReservedDomain('www.anypress.site', 'anypress.site', 'anypress.io')).toBe(true);
+    expect(isReservedDomain('notanypress.io', 'anypress.site', 'anypress.io')).toBe(false);
   });
 
   it('reserves nothing when no platform domain is set', () => {

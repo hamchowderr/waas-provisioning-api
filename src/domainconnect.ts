@@ -158,7 +158,7 @@ export function parseService(value: string | undefined): DomainConnectService {
 }
 
 /**
- * DOMAIN_CONNECT_PROVIDER_ID (default: PLATFORM_DOMAIN) turns Domain Connect on;
+ * DOMAIN_CONNECT_PROVIDER_ID (default: BRAND_DOMAIN, else PLATFORM_DOMAIN) turns Domain Connect on;
  * DOMAIN_CONNECT_PRIVATE_KEY (PEM, or base64 of it) signs the links; DOMAIN_CONNECT_IPV6 is the
  * store server's IPv6 address when the stores' wildcard name has no AAAA record.
  */
