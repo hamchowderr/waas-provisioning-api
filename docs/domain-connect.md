@@ -4,7 +4,7 @@ For whoever runs the API. [Domain Connect](https://www.domainconnect.org/) lets 
 
 ## The two templates
 
-A DNS host only applies records from a template it has accepted. AnyPress's are in [`domain-connect/`](../domain-connect) (provider id `anypress.io`); if you run your own platform, copy them under your own `PLATFORM_DOMAIN` as the provider id and get them accepted as below. Files are named `<providerId>.<serviceId>.json` as the public [Domain-Connect/Templates](https://github.com/Domain-Connect/Templates) repository requires:
+A DNS host only applies records from a template it has accepted. AnyPress's are in [`domain-connect/`](../domain-connect) (provider id `anypress.io`); if you run your own platform, copy them under your own provider id (`BRAND_DOMAIN` if you set it, else `PLATFORM_DOMAIN`) and get them accepted as below. Files are named `<providerId>.<serviceId>.json` as the public [Domain-Connect/Templates](https://github.com/Domain-Connect/Templates) repository requires:
 
 | Template | Records | Variable |
 |---|---|---|
