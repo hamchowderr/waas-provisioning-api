@@ -4,6 +4,13 @@
  * Description: Settings the AnyPress store template keeps in code: telemetry and upgrade nags off, WP Fusion kept out of staging mode, and per-store first-run steps. Part of the store template.
  */
 
+// The plugins that were on when this request started, before WaaS Client switches any on or off for the site type.
+$GLOBALS['anypress_boot_plugins'] = (array) get_option('active_plugins', []);
+function anypress_boot_plugins(): array
+{
+    return (array) ($GLOBALS['anypress_boot_plugins'] ?? []);
+}
+
 // WP Fusion compares the site URL with the one it was set up on and stops syncing when they differ. Every
 // store is a clone of the template, and stores change domain, so that check would switch it off for real stores.
 if (!defined('WPF_STAGING_MODE')) {
@@ -60,20 +67,49 @@ add_action('init', function () {
 /*
  * The owner's details. The platform sets the site title and admin email from the purchase when it creates the
  * store, and `waas_store_owner` (JSON: name, country). The plugins keep their own copies of a sender and a
- * business name, so fill those in once, the first time a real admin email is there. Owners change them later in
- * each plugin's settings; this never runs again.
+ * business name, so fill those in once per plugin, the first time a real admin email is there and the plugin is on.
+ * Owners change them later in each plugin's settings; a step never runs twice.
  */
 add_action('init', function () {
     // The platform writes these options one WP-CLI call at a time; wait for a web request, when all are there.
-    if ((defined('WP_CLI') && WP_CLI) || get_option('anypress_owner_applied') !== false) {
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+    // The plugins each step fills in. A store's site type switches some of them off, and an upgrade switches them
+    // on later, so each step runs once, the first time its plugin is on.
+    $files = [
+        'fluent-cart' => 'fluent-cart/fluent-cart.php',
+        'fluent-crm' => 'fluent-crm/fluent-crm.php',
+        'fluent-affiliate' => 'fluent-affiliate/fluent-affiliate.php',
+        'fluent-booking' => 'fluent-booking/fluent-booking.php',
+        'fluent-support' => 'fluent-support/fluent-support.php',
+        'wp-fusion-lite' => 'wp-fusion-lite/wp-fusion-lite.php',
+        'rank-math' => 'seo-by-rank-math/rank-math.php',
+    ];
+    $applied = get_option('anypress_owner_applied');
+    if (is_string($applied)) {
+        // Stores from before site types ran every step at once, with every plugin on.
+        return;
+    }
+    $applied = is_array($applied) ? $applied : [];
+    // Plugins on when this request started. One the site type switched on during it hasn't loaded yet.
+    $due = array_diff(array_keys(array_intersect($files, anypress_boot_plugins())), $applied);
+    if (!$due) {
         return;
     }
     $email = (string) get_option('admin_email');
     if (!is_email($email) || substr($email, -8) === '.invalid') {
         return;
     }
-    // Two first requests at once: only one applies.
-    if (!add_option('anypress_owner_applied', gmdate('c'), '', false)) {
+    // Two requests at once: only one applies. A lock older than a minute was left by a request that died.
+    $lock = get_option('anypress_owner_lock');
+    if ($lock !== false && time() - (int) $lock < 60) {
+        return;
+    }
+    if ($lock !== false) {
+        delete_option('anypress_owner_lock');
+    }
+    if (!add_option('anypress_owner_lock', time(), '', false)) {
         return;
     }
     $name = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
@@ -173,11 +209,61 @@ add_action('init', function () {
             update_option('rank-math-options-titles', $titles);
         },
     ];
-    foreach ($steps as $plugin => $step) {
+    foreach ($due as $plugin) {
         try {
-            $step();
+            $steps[$plugin]();
         } catch (\Throwable $e) {
             error_log("AnyPress store: owner details for $plugin: " . $e->getMessage());
         }
+        $applied[] = $plugin;
     }
+    update_option('anypress_owner_applied', $applied, false);
+    delete_option('anypress_owner_lock');
+}, 9999);
+
+/*
+ * Site types. Each store's plan role (roles.json) switches the template's plugins on or off, and WaaS Client does
+ * that on `init`. Pages that only work with one plugin (FluentCart's shop, cart and checkout, Fluent Support's
+ * portal) carry `_anypress_needs`: they go back to draft while their plugin is off and come back when it's on, so
+ * menus and the home page never show an empty shop. With the shop hidden, the home page shows the latest posts.
+ * Runs only when the set of active plugins changes.
+ */
+add_action('init', function () {
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+    $active = array_values((array) get_option('active_plugins', []));
+    sort($active);
+    $seen = md5(implode(',', $active));
+    if (get_option('anypress_site_type_plugins') === $seen) {
+        return;
+    }
+    $pages = get_posts([
+        'post_type' => 'page',
+        'post_status' => ['publish', 'draft'],
+        'meta_key' => '_anypress_needs',
+        'numberposts' => -1,
+        'suppress_filters' => true,
+    ]);
+    foreach ($pages as $page) {
+        $on = in_array(get_post_meta($page->ID, '_anypress_needs', true), $active, true);
+        if (!$on && $page->post_status === 'publish') {
+            update_post_meta($page->ID, '_anypress_hidden', 1);
+            wp_update_post(['ID' => $page->ID, 'post_status' => 'draft']);
+        } elseif ($on && $page->post_status === 'draft' && get_post_meta($page->ID, '_anypress_hidden', true)) {
+            // Only pages hidden here: a page the owner drafted stays a draft.
+            delete_post_meta($page->ID, '_anypress_hidden');
+            wp_update_post(['ID' => $page->ID, 'post_status' => 'publish']);
+        }
+    }
+    $front = (int) get_option('page_on_front');
+    $saved = (int) get_option('anypress_front_page');
+    if (get_option('show_on_front') === 'page' && $front && get_post_status($front) !== 'publish') {
+        update_option('show_on_front', 'posts');
+        update_option('anypress_front_page', $front, false);
+    } elseif (get_option('show_on_front') === 'posts' && $saved && get_post_status($saved) === 'publish') {
+        update_option('show_on_front', 'page');
+        delete_option('anypress_front_page');
+    }
+    update_option('anypress_site_type_plugins', $seen, true);
 }, 9999);

@@ -180,6 +180,8 @@ $business['portal_page_id'] = wp_insert_post([
     'comment_status' => 'closed',
     'ping_status' => 'closed',
     'post_content' => '<!-- wp:shortcode -->[fluent_support_portal]<!-- /wp:shortcode -->',
+    // Hidden on site types without Fluent Support (mu-plugins/anypress-store.php).
+    'meta_input' => ['_anypress_needs' => 'fluent-support/fluent-support.php'],
 ]);
 $support->save('global_business_settings', $business);
 

@@ -1,6 +1,83 @@
 {
+    "website": {
+        "title": "Website",
+        "plugins": [
+            "fluent-crm/fluent-crm.php",
+            "fluentform/fluentform.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "automatorwp/automatorwp.php",
+            "fluent-security/fluent-security.php",
+            "fluent-toolkit/fluent-toolkit.php"
+        ]
+    },
+    "bookings": {
+        "title": "Bookings",
+        "plugins": [
+            "fluent-booking/fluent-booking.php",
+            "fluent-support/fluent-support.php",
+            "fluent-crm/fluent-crm.php",
+            "fluentform/fluentform.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "automatorwp/automatorwp.php",
+            "fluent-security/fluent-security.php",
+            "fluent-toolkit/fluent-toolkit.php"
+        ]
+    },
+    "online-store": {
+        "title": "Online store",
+        "plugins": [
+            "fluent-cart/fluent-cart.php",
+            "fluent-support/fluent-support.php",
+            "fluent-affiliate/fluent-affiliate.php",
+            "fluent-crm/fluent-crm.php",
+            "fluentform/fluentform.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "automatorwp/automatorwp.php",
+            "fluent-security/fluent-security.php",
+            "fluent-toolkit/fluent-toolkit.php"
+        ]
+    },
+    "community": {
+        "title": "Community & courses",
+        "plugins": [
+            "fluent-community/fluent-community.php",
+            "fluent-cart/fluent-cart.php",
+            "fluent-crm/fluent-crm.php",
+            "fluentform/fluentform.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "automatorwp/automatorwp.php",
+            "fluent-security/fluent-security.php",
+            "fluent-toolkit/fluent-toolkit.php"
+        ]
+    },
+    "everything": {
+        "title": "Everything",
+        "plugins": [
+            "fluent-cart/fluent-cart.php",
+            "fluent-crm/fluent-crm.php",
+            "fluentform/fluentform.php",
+            "fluent-booking/fluent-booking.php",
+            "fluent-support/fluent-support.php",
+            "fluent-affiliate/fluent-affiliate.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "automatorwp/automatorwp.php",
+            "fluent-security/fluent-security.php",
+            "fluent-community/fluent-community.php",
+            "fluent-toolkit/fluent-toolkit.php"
+        ]
+    },
     "store": {
-        "title": "Store",
+        "title": "Everything (stores bought before site types)",
         "plugins": [
             "fluent-cart/fluent-cart.php",
             "fluent-crm/fluent-crm.php",
