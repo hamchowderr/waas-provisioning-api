@@ -117,7 +117,7 @@ const isCronTask = (t: CoolifyTask) =>
 /**
  * What the driver keeps in a Service's description, so it needs no table of its own. Coolify
  * allows only letters, digits, spaces and some punctuation there (no JSON), hence a plain format:
- * "WaaS version, WordPress 6.8, PHP 8.3" or "WaaS store, version <id>".
+ * "WaaS version, WordPress 6.8, PHP 8.3" or "WaaS store, version <id>, setup <n>" (no setup: 1).
  */
 export interface VersionMeta {
   kind: 'version';
@@ -127,7 +127,17 @@ export interface VersionMeta {
 export interface StoreMeta {
   kind: 'store';
   versionId: string;
+  /** The STORE_SETUP the store's compose and agent files were last brought to; new stores get the current one. */
+  setup?: number;
 }
+
+/**
+ * Which store setup new stores get. Bump it when a change to the compose file (compose.ts) or to the files the
+ * agent installs (install_guard in agent.php) should reach existing stores: on the API's next start,
+ * ensureStoreSetup gives each older store the new compose, restarts it once and reinstalls the agent's files.
+ * 2: at most 8 Apache workers, and the page cache.
+ */
+export const STORE_SETUP = 2;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -459,6 +469,23 @@ export class CoolifyProvisioner implements Provisioner {
   }
 
   /**
+   * Brings a store set up before STORE_SETUP to it: the current compose file, one restart, then the
+   * agent's files (configure). The description is updated last, so a store that fails part-way is
+   * tried again on the next start.
+   */
+  async ensureStoreSetup({ storeId }: { storeId: string }): Promise<'updated' | 'unchanged'> {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const meta = parseMeta(store.description);
+    if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
+    if ((meta.setup ?? 1) >= STORE_SETUP) return 'unchanged';
+    await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
+    await this.restart(store.uuid);
+    await this.exec(store.uuid, 'configure', {});
+    await this.coolify.updateService(store.uuid, { description: formatMeta({ ...meta, setup: STORE_SETUP }) });
+    return 'updated';
+  }
+
+  /**
    * Gives a store created before stores had a cron task its task. Such a store's compose also
    * predates DISABLE_WP_CRON, so it is re-rendered from the store's version and the store restarted
    * once, before the task is added: a store with the task is left alone, so this runs once.
@@ -573,8 +600,10 @@ export class CoolifyProvisioner implements Provisioner {
   async moveStore({ storeId, targetVersionId }: { storeId: string; targetVersionId: string }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const version = await this.versionMeta(targetVersionId);
+    // The agent's files are not reinstalled here, so the store keeps its setup for ensureStoreSetup to finish.
+    const current = parseMeta(store.description);
     await this.coolify.updateService(store.uuid, {
-      description: formatMeta({ kind: 'store', versionId: targetVersionId }),
+      description: formatMeta({ kind: 'store', versionId: targetVersionId, setup: current?.kind === 'store' ? current.setup : 1 }),
       docker_compose_raw: b64(renderCompose(version)),
     });
     await this.restart(store.uuid);
@@ -655,12 +684,14 @@ function allHealthy(statuses: string[]): boolean {
 }
 
 export function formatMeta(meta: VersionMeta | StoreMeta): string {
-  return meta.kind === 'version' ? `WaaS version, WordPress ${meta.wordPressVersion}, PHP ${meta.phpVersion}` : `WaaS store, version ${meta.versionId}`;
+  return meta.kind === 'version'
+    ? `WaaS version, WordPress ${meta.wordPressVersion}, PHP ${meta.phpVersion}`
+    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}`;
 }
 
 export function parseMeta(description: string | null | undefined): VersionMeta | StoreMeta | null {
   const version = /^WaaS version, WordPress ([\d.]+), PHP ([\d.]+)$/.exec(description ?? '');
   if (version) return { kind: 'version', wordPressVersion: version[1]!, phpVersion: version[2]! };
-  const store = /^WaaS store, version ([\w-]+)$/.exec(description ?? '');
-  return store ? { kind: 'store', versionId: store[1]! } : null;
+  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?$/.exec(description ?? '');
+  return store ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1) } : null;
 }

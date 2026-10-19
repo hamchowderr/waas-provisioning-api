@@ -35,13 +35,15 @@ const WORDPRESS_ENTRYPOINT = ['sh', '-c', `printf '${WORKERS_CONF}\\n' > /etc/ap
  *
  * WP-cron does not run on page loads (DISABLE_WP_CRON): a quiet store would run its scheduled
  * jobs late or never. The store's `wp-cron` scheduled task runs them every minute instead
- * (CRON_TASK in provisioner.ts). A phpConstant of the same name comes first and wins.
+ * (CRON_TASK in provisioner.ts). WP_CACHE loads the page cache drop-in the agent installs (install_cache in
+ * agent.php). A phpConstant of the same name comes first and wins.
  */
 const CONFIG_EXTRA = [
   "@array_map('define',",
   "array_keys(json_decode(base64_decode((string) getenv('WAAS_CONSTANTS_B64')), true) ?: []),",
   "array_values(json_decode(base64_decode((string) getenv('WAAS_CONSTANTS_B64')), true) ?: []));",
   "defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);",
+  "defined('WP_CACHE') || define('WP_CACHE', true);",
 ].join(' ');
 
 /** The image a store or version site runs, e.g. wordpress:6.8-php8.3-apache. */

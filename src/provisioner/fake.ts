@@ -166,6 +166,11 @@ export class FakeProvisioner implements Provisioner {
     this.stores.delete(storeId);
   }
 
+  async ensureStoreSetup(_input: { storeId: string }): Promise<'updated' | 'unchanged'> {
+    this.check('ensureStoreSetup');
+    return 'unchanged';
+  }
+
   async ensureStoreCron(_input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
     this.check('ensureStoreCron');
     return 'unchanged';

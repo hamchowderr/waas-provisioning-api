@@ -97,6 +97,16 @@ All archives live in one private S3-compatible bucket, with these prefixes: `upl
 
 Per store: WordPress 512 MB / 1 CPU limit with at most 8 Apache workers (more visitors at once wait in Apache's queue instead of running the store out of memory), MariaDB 384 MB, agent 256 MB (it loads WordPress with all plugins for the store's cron every minute). Limits cap a busy or broken store; they are not reservations. Measured use is about 273 MB per store when warm. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database. To grow past one server, see [self-hosting.md](self-hosting.md).
 
+## Page cache
+
+Every store has a page cache, installed by the agent with its other files (`install_cache` in `agent.php`): `wp-content/advanced-cache.php` (loaded because the compose file turns on `WP_CACHE`) and `mu-plugins/waas-cache.php`. A logged-out visitor's page is saved under `wp-content/cache/waas-pages/` and the next visitors get that copy before WordPress and its plugins load (response header `X-WaaS-Cache: hit`). Never cached: requests with a query string or any cookie other than a few analytics ones (logged-in users, carts, password-protected posts), `wp-admin`, `wp-json` and `.php` URLs, FluentCart's cart, checkout, receipt and account pages, and any page that is not a 200, sets a cookie or says `no-cache`/`private`. Saved pages expire after 10 minutes and are all cleared when content changes (posts, terms, menus, comments, theme, plugins, FluentCart products and paid orders) and on every agent install (restore, configure, suspend). A drop-in another cache plugin wrote is left alone, and ours then stays out of the way.
+
+Measured on a local copy with FluentCart, FluentCRM, Fluent Forms and Rank Math and the live limits: about 400 cached pages a second with no errors at 50 visitors at once, against about 14 a second through WordPress, with memory staying under 180 MB.
+
+## Store setup
+
+`STORE_SETUP` (`provisioner.ts`) numbers what the compose file and the agent's files give a store; a store's Coolify description records the number it has (`WaaS store, version <id>, setup <n>`). On every API start, `ensureStoreSetup` brings each older live store to the current one: the new compose file, one restart, then `configure` to reinstall the agent's files. Bump `STORE_SETUP` with any such change that existing stores should get. Setup 2 is the Apache worker cap and the page cache.
+
 ## Security
 
 - **Isolation between stores.** Each store has its own containers, volumes, Docker network and generated database password. Store containers are not on Coolify's shared `coolify` network (`connect_to_docker_network: false`), so they cannot reach the provisioning API, its Postgres or other apps on the server by container name. They share the kernel with everything else on the server: this is container isolation. Stores that need stronger separation belong on a server of their own.

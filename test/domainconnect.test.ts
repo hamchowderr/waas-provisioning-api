@@ -162,7 +162,7 @@ describe('store Domain Connect routes', () => {
     const link = (await (await storefront('domainName=shop.example.com&service=website')).json()) as { supported: boolean; url: string | null; conflict?: string };
     expect(validateLink(link)).toBe(true);
     expect(link).toMatchObject({ supported: false, url: null });
-    expect(link.conflict).toContain('IPv6 address is unknown');
+    expect(link.conflict).toBe('One-click setup is not available for this domain right now. Add the records below by hand.');
   });
 
   it('gives no link when the domain already has a different DKIM key, since some hosts would keep both', async () => {
@@ -171,7 +171,7 @@ describe('store Domain Connect routes', () => {
     const link = (await res.json()) as { supported: boolean; url: string | null; conflict?: string };
     expect(validateLink(link)).toBe(true);
     expect(link).toMatchObject({ dnsProvider: 'Example DNS', supported: false, url: null });
-    expect(link.conflict).toContain('tosend._domainkey.mail.example.com already has a different DKIM key');
+    expect(link.conflict).toContain('tosend._domainkey.mail.example.com already has a different email signing (DKIM) key');
 
     net.txt['tosend._domainkey.mail.example.com'] = [['p=', 'KEY']];
     expect(((await (await storefront('domainName=mail.example.com&service=email')).json()) as { supported: boolean }).supported).toBe(true);

@@ -185,7 +185,7 @@ HTML;
 }
 
 /**
- * The mu-plugins and .htaccess block behind suspension, redirect domains and outgoing mail. $brand re-renders the
+ * The mu-plugins and .htaccess block behind suspension, redirect domains and outgoing mail, and the page cache. $brand re-renders the
  * unavailable page; without it the page already there is kept (or the default one written).
  */
 function install_guard(?array $brand = null): void
@@ -263,6 +263,142 @@ PHP);
     $current = is_file($htaccess) ? file_get_contents($htaccess) : '';
     $current = preg_replace('/# BEGIN WaaS\n.*?# END WaaS\n/s', '', $current);
     file_put_contents($htaccess, $block . $current);
+    install_cache();
+}
+
+/**
+ * The page cache: advanced-cache.php serves a saved copy of a page to visitors who are not logged in, before WordPress
+ * and its plugins load (WP_CACHE is on in every store's wp-config, compose.ts), and mu-plugins/waas-cache.php saves
+ * pages and clears them when content changes. A drop-in another cache plugin put there is left alone; ours then serves
+ * nothing and saves nothing. Saved pages live in wp-content/cache, which snapshots and code exports skip, and are
+ * cleared on every install, so a restored, moved or reconfigured store never serves a page from before.
+ */
+function install_cache(): void
+{
+    $dropin = CONTENT . '/advanced-cache.php';
+    $current = is_file($dropin) ? (string) file_get_contents($dropin) : null;
+    if ($current === null || strpos($current, 'WaaS page cache') !== false) {
+        file_put_contents($dropin, <<<'PHP'
+<?php
+/*
+ * WaaS page cache: serves saved pages. Managed by the WaaS provisioner; edits are overwritten.
+ * Saved by mu-plugins/waas-cache.php, which also says which requests are cached.
+ */
+defined('WAAS_CACHE_TTL') || define('WAAS_CACHE_TTL', 600);
+if (PHP_SAPI === 'cli') return;
+$waas_method = $_SERVER['REQUEST_METHOD'] ?? '';
+$waas_uri = $_SERVER['REQUEST_URI'] ?? '';
+$waas_host = strtolower(preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? ''));
+// Plain page loads only: no query string (searches, previews, cart links), no WordPress internals, no PHP files.
+$waas_cacheable = ($waas_method === 'GET' || $waas_method === 'HEAD')
+    && preg_match('#^/[^?]*$#', $waas_uri)
+    && !preg_match('#^/(wp-admin|wp-json|wp-content|wp-includes)(/|$)|\.php$#', $waas_uri)
+    && preg_match('/^[a-z0-9.-]+$/', $waas_host)
+    && !file_exists(WP_CONTENT_DIR . '/.waas-suspended');
+// Any cookie but a few analytics ones means a visitor WordPress may treat differently: logged in, a cart, a
+// password-protected post, a saved comment name. They always get WordPress.
+foreach (array_keys($_COOKIE) as $waas_cookie) {
+    if (!preg_match('/^(_ga|_gid$|_gat|_gcl_|_fbp$|_fbc$|_clck$|_clsk$|wordpress_test_cookie$)/', (string) $waas_cookie)) $waas_cacheable = false;
+}
+if ($waas_cacheable) {
+    $waas_file = WP_CONTENT_DIR . '/cache/waas-pages/' . md5($waas_host . $waas_uri) . '.html';
+    $waas_saved = @filemtime($waas_file);
+    if ($waas_saved && time() - $waas_saved < WAAS_CACHE_TTL) {
+        header('Content-Type: text/html; charset=UTF-8');
+        header('X-WaaS-Cache: hit');
+        if ($waas_method === 'GET') readfile($waas_file);
+        exit;
+    }
+    // The page may be saved once WordPress has rendered it (mu-plugins/waas-cache.php decides).
+    define('WAAS_CACHE_FILE', $waas_file);
+}
+PHP) !== false || fail('cannot write the page cache drop-in');
+    }
+    file_put_contents(CONTENT . '/mu-plugins/waas-cache.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: WaaS page cache
+ * Description: Saves pages for visitors who are not logged in and clears them when content changes. Managed by the WaaS provisioner; edits are overwritten.
+ */
+defined('WAAS_CACHE_TTL') || define('WAAS_CACHE_TTL', 600);
+
+/** Removes every saved page, or only the expired ones. */
+function waas_cache_clear(bool $expiredOnly = false): void
+{
+    foreach (glob(WP_CONTENT_DIR . '/cache/waas-pages/*.html') ?: [] as $file) {
+        if (!$expiredOnly || time() - (int) @filemtime($file) >= WAAS_CACHE_TTL) @unlink($file);
+    }
+}
+
+// Content changes clear the whole cache once, at the end of the request: a post can show on the home page,
+// archives and menus, so clearing one page would not be enough. Saved pages also expire after WAAS_CACHE_TTL,
+// which covers what no hook announces (stock levels, scheduled posts going live).
+function waas_cache_clear_later(): void
+{
+    static $queued = false;
+    if (!$queued) add_action('shutdown', 'waas_cache_clear', 0);
+    $queued = true;
+}
+foreach ([
+    'deleted_post', 'trashed_post', 'untrashed_post', 'edited_term', 'delete_term', 'comment_post', 'edit_comment',
+    'wp_set_comment_status', 'switch_theme', 'customize_save_after', 'wp_update_nav_menu', 'activated_plugin',
+    'deactivated_plugin', 'upgrader_process_complete', 'update_option_blogname', 'update_option_blogdescription',
+    'update_option_permalink_structure', 'update_option_page_on_front', 'update_option_show_on_front',
+    'update_option_sidebars_widgets', 'update_option_fluent_cart_store_settings', 'fluent_cart/product_updated',
+    'fluent_cart/product/variants_updated', 'fluent_cart/order_paid_done',
+] as $waas_hook) {
+    add_action($waas_hook, 'waas_cache_clear_later');
+}
+// Posts of internal types (embeds WordPress caches as posts, scheduled actions) change without changing any page.
+add_action('save_post', function ($id, $post) {
+    if (in_array($post->post_type, ['revision', 'oembed_cache', 'customize_changeset', 'scheduled-action', 'user_request'], true)) return;
+    waas_cache_clear_later();
+}, 10, 2);
+
+if (!defined('WAAS_CACHE_FILE')) return;
+
+/** Whether the page WordPress just rendered is the same for every visitor who isn't logged in. */
+function waas_cache_saveable(string $html): bool
+{
+    if (http_response_code() !== 200 || is_user_logged_in() || (defined('DONOTCACHEPAGE') && DONOTCACHEPAGE)) return false;
+    if (is_search() || is_404() || is_feed() || is_preview() || is_robots() || is_trackback()) return false;
+    if (is_singular() && post_password_required()) return false;
+    if (stripos($html, '</html>') === false) return false;
+    foreach (headers_list() as $header) {
+        [$name, $value] = array_map('trim', explode(':', $header, 2) + [1 => '']);
+        $name = strtolower($name);
+        if ($name === 'set-cookie') return false;
+        if ($name === 'content-type' && stripos($value, 'text/html') !== 0) return false;
+        if ($name === 'cache-control' && preg_match('/no-cache|no-store|private/i', $value)) return false;
+    }
+    // FluentCart's cart, checkout, receipt and account pages (with the account's sub-pages under it).
+    $settings = get_option('fluent_cart_store_settings');
+    $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    foreach (['cart_page_id', 'checkout_page_id', 'receipt_page_id', 'customer_profile_page_id'] as $key) {
+        $id = is_array($settings) ? (int) ($settings[$key] ?? 0) : 0;
+        if (!$id) continue;
+        $page = rtrim((string) parse_url((string) get_permalink($id), PHP_URL_PATH), '/');
+        if ($page !== '' && ($path === $page || strpos($path, "$page/") === 0)) return false;
+    }
+    return true;
+}
+
+add_action('template_redirect', function () {
+    ob_start(function ($html) {
+        if (is_string($html) && waas_cache_saveable($html)) {
+            $dir = dirname(WAAS_CACHE_FILE);
+            if (is_dir($dir) || @mkdir($dir, 0755, true)) {
+                // Written whole, then moved into place, so a visitor never gets half a page.
+                $tmp = WAAS_CACHE_FILE . '.' . getmypid();
+                if (@file_put_contents($tmp, $html) !== false) @rename($tmp, WAAS_CACHE_FILE);
+            }
+            if (mt_rand(1, 50) === 1) waas_cache_clear(true);
+        }
+        return $html;
+    });
+}, PHP_INT_MAX);
+PHP) !== false || fail('cannot write the page cache mu-plugin');
+    run('rm -rf ' . escapeshellarg(CONTENT . '/cache/waas-pages'), true);
 }
 
 // Commands run as root in the container; drop to www-data so WordPress can manage its files.
