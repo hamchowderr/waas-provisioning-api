@@ -6,7 +6,7 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 | | |
 |---|---|
 | WordPress | 7.1.3 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
-| Theme | Twenty Twenty-Five 1.5, the only theme installed |
+| Theme | [Ollie](https://wordpress.org/themes/ollie/) 1.6.5, a free block theme with a library of ready-made sections; the only theme installed |
 | Plugins | WaaS Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`) and these free wordpress.org plugins, all active: |
 
 | Plugin | Slug | Version |
@@ -27,6 +27,10 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 Plus FluentToolkit 2.1.3 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
+
+Ollie's header lists every page when the site has no menu, and its footer is the theme's own demo (sample links, social
+icons, a download pitch), so [`presets.php`](presets.php) adds a Main menu (Shop, Cart, Account, Support; links to pages a
+site type hides show nothing) and a plain footer (site title and the same menu). Owners change both in Appearance → Editor.
 
 Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
@@ -49,6 +53,7 @@ a random password nobody keeps.
   subscription form adds people to Newsletter after they confirm (double opt-in).
 - FluentAffiliate: FluentCart integration on, so store orders count as referrals.
 - Fluent Support: FluentBooking links in tickets. AutomatorWP: logs cleared after 30 days, no Pro suggestions.
+- Theme: the Main menu and the plain footer above.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
   login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
 
