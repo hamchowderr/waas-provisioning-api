@@ -69,7 +69,7 @@ export interface components {
             /** @description True when url works */
             supported: boolean;
             url: string | null;
-            /** @description Set when there is no link though the DNS host has the template: the domain already has a record the host would keep beside the template's (an older DKIM key), or the stores' IPv6 address is unknown; show it with the records to edit by hand */
+            /** @description Set when there is no link though the DNS host has the template: the domain already has a record the host would keep beside the template's (an older DKIM key), or the platform can't fill in the template right now; written for the customer: show it with the records to add by hand */
             conflict?: string;
         };
         Error: {

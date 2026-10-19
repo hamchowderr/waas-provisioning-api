@@ -131,8 +131,10 @@ export async function storeVariables(
     // The template sets AAAA too, so an old IPv6 address on the domain is replaced, not left behind.
     const [ipv6 = fallbackIpv6] = await net.resolve6(`www.${storesDomain}`).catch(() => [] as string[]);
     if (!ipv6) {
-      // The template needs %ipv6%, so a link without it couldn't be applied.
-      const conflict = `The stores' IPv6 address is unknown (www.${storesDomain} has no AAAA record and DOMAIN_CONNECT_IPV6 is not set), so add the records by hand.`;
+      // The template needs %ipv6%, so a link without it couldn't be applied. The customer sees the
+      // conflict, so it says what to do; what to fix on the platform goes to the log.
+      console.warn(`Domain Connect: no IPv6 address for stores (www.${storesDomain} has no AAAA record and DOMAIN_CONNECT_IPV6 is not set), so ${domain} gets no link`);
+      const conflict = 'One-click setup is not available for this domain right now. Add the records below by hand.';
       return { domain, variables: { ip }, conflict };
     }
     return { domain, variables: { ip, ipv6 } };
@@ -146,7 +148,7 @@ export async function storeVariables(
   const existing = await net.resolveTxt(`${dkim.name}.${domain}`).catch(() => [] as string[][]);
   const values = existing.map((r) => r.join(''));
   const conflict = values.length && !values.includes(dkim.value)
-    ? `${dkim.name}.${domain} already has a different DKIM key. Replace it with the one below by hand; adding it automatically would leave both.`
+    ? `${dkim.name}.${domain} already has a different email signing (DKIM) key. Replace it with the one below by hand: one-click setup would add a second key next to it, and email would fail its checks.`
     : undefined;
   return { domain, variables: { dkim: dkim.value }, ...(conflict ? { conflict } : {}) };
 }
