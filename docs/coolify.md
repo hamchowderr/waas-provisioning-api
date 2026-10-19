@@ -95,7 +95,7 @@ All archives live in one private S3-compatible bucket, with these prefixes: `upl
 
 ## Resource limits
 
-Per store: WordPress 512 MB / 1 CPU limit, MariaDB 384 MB, agent 256 MB (it loads WordPress with all plugins for the store's cron every minute). Limits cap a busy or broken store; they are not reservations. Measured use is about 273 MB per store when warm. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database. To grow past one server, see [self-hosting.md](self-hosting.md).
+Per store: WordPress 512 MB / 1 CPU limit with at most 8 Apache workers (more visitors at once wait in Apache's queue instead of running the store out of memory), MariaDB 384 MB, agent 256 MB (it loads WordPress with all plugins for the store's cron every minute). Limits cap a busy or broken store; they are not reservations. Measured use is about 273 MB per store when warm. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database. To grow past one server, see [self-hosting.md](self-hosting.md).
 
 ## Security
 
