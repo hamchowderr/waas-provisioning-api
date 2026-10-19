@@ -5,6 +5,7 @@ import { isUniqueViolation, withTransaction } from '../db.ts';
 import { badRequest, conflict } from '../errors.ts';
 import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
+import { DEFAULT_SIZE, type Size } from '../plans.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
@@ -28,11 +29,13 @@ interface CreateTenantParams {
   uploadCustomSnapshot?: boolean;
   wpOptions?: Record<string, string> | null;
   phpConstants?: Record<string, PhpConstant> | null;
+  size?: Size;
 }
 
 interface UpdateTenantParams {
   wpOptions?: Record<string, string> | null;
   phpConstants?: Record<string, PhpConstant> | null;
+  size?: Size;
 }
 
 const EXTERNAL_ID = /^[A-Za-z0-9-]+$/;
@@ -109,8 +112,8 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     const raced = await withTransaction(pool, async (client) => {
       await checkTenantCap(client, productId);
       await client.query(
-        `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status, size)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           id,
           productId,
@@ -123,6 +126,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
           body.wpOptions ?? {},
           encodePhpConstants(secrets, body.phpConstants ?? {}),
           Status.Pending,
+          body.size ?? DEFAULT_SIZE,
         ],
       );
       await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_base, is_main) VALUES ($1, $2, true, $3)', [id, baseDomain, !customDomain]);
@@ -158,12 +162,12 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
 
   /**
    * The store already created with this externalId, as POST answered for it, when the request asks for that same
-   * store (same name, and the same domain, version, snapshot and group where they are given). Null when no store
+   * store (same name, and the same domain, version, snapshot, group and size where they are given). Null when no store
    * has the externalId; 409 when one has it but the request asks for something else, or it is being removed.
    */
   async function existingTenant(productId: string, externalId: string, body: CreateTenantParams) {
     const { rows } = await pool.query(
-      `SELECT t.id, t.name, t.status, t.version_id, t.snapshot_id, t.snapshot_group_name,
+      `SELECT t.id, t.name, t.status, t.version_id, t.snapshot_id, t.snapshot_group_name, t.size,
          (SELECT d.domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_base) AS base_domain,
          COALESCE((SELECT array_agg(d.domain_name) FROM tenant_domains d WHERE d.tenant_id = t.id), '{}') AS domains
        FROM tenants t WHERE t.product_id = $1 AND t.external_id = $2`,
@@ -177,7 +181,8 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
       (!customDomain || t.domains.includes(customDomain)) &&
       (!body.versionId || t.version_id === body.versionId) &&
       (!body.snapshotId || t.snapshot_id === body.snapshotId) &&
-      (!body.groupName || t.snapshot_group_name === body.groupName);
+      (!body.groupName || t.snapshot_group_name === body.groupName) &&
+      (!body.size || t.size === body.size);
     if (!same) throw conflict(`externalId ${externalId} is already in use by another store`);
     if (t.status === Status.Removing) throw conflict(`externalId ${externalId} belongs to a store that is being removed`);
     return compact({ id: t.id, externalId, baseDomain: t.base_domain, customDomain });
@@ -190,13 +195,16 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
     if (tenant.status === Status.Failed) throw badRequest(`Tenant ${tenant.external_id} failed and cannot be updated`);
     const wpOptions = body.wpOptions ?? {};
     const phpConstants = body.phpConstants ?? {};
-    if (Object.keys(wpOptions).length || Object.keys(phpConstants).length) {
+    // The size it already has is no change: no job, no restart.
+    const size = body.size && body.size !== tenant.size ? body.size : undefined;
+    if (Object.keys(wpOptions).length || Object.keys(phpConstants).length || size) {
       await withTransaction(pool, async (client) => {
         await client.query(
-          `UPDATE tenants SET wp_options = wp_options || $2, php_constants = php_constants || $3, status = $4, date_changed = now() WHERE id = $1`,
-          [tenant.id, wpOptions, encodePhpConstants(secrets, phpConstants), Status.Pending],
+          `UPDATE tenants SET wp_options = wp_options || $2, php_constants = php_constants || $3, status = $4, size = COALESCE($5, size), date_changed = now()
+            WHERE id = $1`,
+          [tenant.id, wpOptions, encodePhpConstants(secrets, phpConstants), Status.Pending, size ?? null],
         );
-        await enqueue(boss, client, { type: 'tenant.update', tenantId: tenant.id, wpOptions, phpConstantNames: Object.keys(phpConstants) });
+        await enqueue(boss, client, { type: 'tenant.update', tenantId: tenant.id, wpOptions, phpConstantNames: Object.keys(phpConstants), ...(size && { size }) });
       });
     }
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id });

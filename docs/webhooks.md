@@ -27,7 +27,7 @@ Each request body is `{"type": "...", "timestamp": "<ISO time>", "data": {...}}`
 | Type | When | `data` |
 |---|---|---|
 | `tenant.ready` | A new store is created and answering | `tenant` |
-| `tenant.updated` | `wpOptions` or `phpConstants` were applied | `tenant` |
+| `tenant.updated` | `wpOptions`, `phpConstants` or a new `size` were applied | `tenant` |
 | `tenant.version_changed` | The store moved to another version | `tenant` |
 | `tenant.domains_changed` | Its domains were applied | `tenant` |
 | `tenant.suspended`, `tenant.resumed` | Taken offline, or back online | `tenant` |

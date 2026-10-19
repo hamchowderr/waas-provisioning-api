@@ -152,7 +152,10 @@ paths:
       description: 'Phase 1 (storefront plugin).
 
 
-        Schedule an update of a Tenant specifically for WP Options or PHP Constants
+        Schedule an update of a Tenant specifically for WP Options or PHP Constants, or its `size`
+
+
+        **`size`:** a size other than the tenant''s current one moves it to that size (its CPU, memory, storage and monthly email quota), restarting the store once; the tenant is Pending until it is done. Its current size changes nothing.
 
 
         **Storefront plugin:** `?externalId=` with `phpConstants` (updated roles) and/or `wpOptions`. `WPCSService.php:126-141`.'
@@ -2061,6 +2064,8 @@ components:
           type: string
           description: The password for the user that will be created in the Tenant.
           example: oneV3rryStr0ngP@ss
+        size:
+          $ref: '#/components/schemas/TenantSize'
         uploadCustomSnapshot:
           type: boolean
           description: Whether to use a custom Snapshot when creating this Tenant. If true an UploadURL will be specified in the response to wich a Gzipped Tar can be uploaded, containing files and a database export.
@@ -2519,6 +2524,8 @@ components:
           nullable: true
           readOnly: true
           example: null
+        size:
+          $ref: '#/components/schemas/TenantSize'
       additionalProperties: false
     GetVersionQueryResult:
       type: object
@@ -2714,6 +2721,14 @@ components:
           nullable: true
           example: 3f6d2c1e-8a4b-4f0e-9c7d-5b2a1e0f9d84
       additionalProperties: false
+    TenantSize:
+      type: string
+      enum:
+      - small
+      - medium
+      - large
+      description: "The tenant's size: what its WordPress may use and its plan's quotas. Storage counts wp-content and the database; uploads past it are refused. Email counts what the store sends in a calendar month (UTC); past it the store sends none until the next month.\r\nsmall: 1 CPU, 512 MB, 5 GB storage, 5,000 emails a month\r\nmedium: 2 CPUs, 512 MB, 10 GB storage, 20,000 emails a month\r\nlarge: 4 CPUs, 768 MB, 25 GB storage, 50,000 emails a month\r\nOptional when creating a tenant: small when omitted."
+      example: small
     UpdateTenantCommandResult:
       type: object
       properties:
@@ -2741,6 +2756,8 @@ components:
             $ref: '#/components/schemas/PhpConstantParams'
           description: "A collection of key value pairs with an additional boolean value to obfuscate the value in the Console\r\nUse the key as PHP Constant name. The value will be set as `define(key, value);`"
           nullable: true
+        size:
+          $ref: '#/components/schemas/TenantSize'
       additionalProperties: false
   securitySchemes:
     basic:

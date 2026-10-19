@@ -46,7 +46,7 @@ Repeating `create_store` with the same `externalId` answers with the store it al
 
 ## WordPress settings
 
-`update_store_options` sets WordPress options (`wpOptions`: option name to value) and PHP constants (`phpConstants`: name to `{ value, isPrivate }`). Mark secrets such as license keys `isPrivate: true`.
+`update_store_options` sets WordPress options (`wpOptions`: option name to value) and PHP constants (`phpConstants`: name to `{ value, isPrivate }`). Mark secrets such as license keys `isPrivate: true`. Its `size` (`small`, `medium` or `large`) moves the store to another size, restarting it once; `create_store` takes a `size` too (small when omitted).
 
 ## Versions
 

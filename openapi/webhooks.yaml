@@ -198,7 +198,7 @@ x-webhooks:
       operationId: tenantEvent
       summary: A store finished a change, or failed to
       description: >-
-        tenant.ready (created and answering), tenant.updated (wpOptions or phpConstants applied),
+        tenant.ready (created and answering), tenant.updated (wpOptions, phpConstants or a new size applied),
         tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed,
         tenant.deleted (data.tenant is the store as it was), tenant.restored (a deleted store is back),
         tenant.rolled_back (a live store went back to a backup), tenant.backup_completed and
@@ -363,6 +363,7 @@ components:
                 domainName: { type: string }
                 statusCode: { type: integer, enum: [0, 1, 2, 3] }
                 statusName: { type: string }
+                size: { type: string, enum: [small, medium, large] }
                 isSuspended: { type: boolean }
             version:
               description: The version, shaped as an item of GET /v1/versions (version.* events).

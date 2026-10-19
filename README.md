@@ -72,6 +72,8 @@ curl -u "$KEY:$SECRET" "$API/v1/tenants?externalId=order-1042"
 
 The store is ready when `statusCode` is `1` (Done). `domainName` is its address.
 
+Stores come in three sizes, `small` (the default), `medium` and `large`, with more CPU, storage and email a month as they grow ([docs/coolify.md](docs/coolify.md#resource-limits)). Send `size` when creating a store, or `PUT /v1/tenants` with a new one.
+
 When something is wrong, the API answers with an HTTP error and a message. A wrong key or secret gets 403:
 
 ```sh

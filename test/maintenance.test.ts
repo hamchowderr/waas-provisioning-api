@@ -10,7 +10,7 @@ describe('maintainStores', () => {
       query: async (sql: string, params: unknown[]) => {
         if (sql.includes('tenant_mail_domains')) return { rows: [{ tenant_id: 'c', domain_name: 'shop.example', tosend_domain_id: 'd1' }] };
         queries.push(params);
-        return { rows: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] };
+        return { rows: [{ id: 'a', size: 'small' }, { id: 'b', size: 'large' }, { id: 'c', size: 'small' }] };
       },
     } as unknown as Pool;
     const provisioner = new FakeProvisioner();
@@ -25,12 +25,18 @@ describe('maintainStores', () => {
       senders.push(sender);
       return storeId === 'c' ? 'updated' : 'unchanged';
     };
-    provisioner.ensureStoreSetup = async ({ storeId }) => (storeId === 'b' ? 'updated' : 'unchanged');
+    const sizes: string[] = [];
+    provisioner.ensureStoreSetup = async ({ storeId, size }) => {
+      sizes.push(size);
+      return storeId === 'b' ? 'updated' : 'unchanged';
+    };
     const logs: string[] = [];
     const errors: string[] = [];
     await maintainStores(pool, provisioner, { log: (m: string) => logs.push(m), error: (m: string) => errors.push(m) });
     expect(queries).toEqual([[1]]); // Status.Done only
     expect(seen).toEqual(['a', 'b', 'c']);
+    // Each store is set up at the size it has on record.
+    expect(sizes).toEqual(['small', 'large', 'small']);
     // A failed cron step still lets the store's mail step run.
     expect(logs).toEqual(['Store a: cron task created', 'Store b: store setup updated', 'Store c: mail settings updated']);
     expect(errors).toEqual(['Store b: cron task not ensured: Coolify down']);

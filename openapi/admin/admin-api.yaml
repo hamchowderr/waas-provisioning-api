@@ -1238,7 +1238,7 @@ components:
     TenantRow:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, isSuspended, latestBackupAt, dateCreated]
+      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, isSuspended, latestBackupAt, dateCreated]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -1251,13 +1251,14 @@ components:
         domainCount: { type: integer }
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
+        size: { type: string, enum: [small, medium, large] }
         isSuspended: { type: boolean }
         latestBackupAt: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }
     TenantDetail:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, isSuspended, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
+      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, isSuspended, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -1270,6 +1271,7 @@ components:
         snapshotGroupName: { type: string, nullable: true }
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
+        size: { type: string, enum: [small, medium, large] }
         isSuspended: { type: boolean }
         dateSuspended: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }

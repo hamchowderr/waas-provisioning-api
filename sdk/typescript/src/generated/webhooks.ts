@@ -240,6 +240,8 @@ export interface components {
                     /** @enum {integer} */
                     statusCode: 0 | 1 | 2 | 3;
                     statusName: string;
+                    /** @enum {string} */
+                    size?: "small" | "medium" | "large";
                     isSuspended?: boolean;
                 };
                 /** @description The version, shaped as an item of GET /v1/versions (version.* events). */
