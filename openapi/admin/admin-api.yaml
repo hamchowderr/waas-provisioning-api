@@ -116,6 +116,56 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/storefront:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminGetStorefront
+      summary: A product's ready-made storefront
+      description: The WordPress site with WaaS Host the platform built for this product, or null when it has none.
+      responses:
+        '200':
+          description: The storefront (a store of the storefront product), or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '../waas-provisioning-api.yaml#/components/schemas/GetTenantQueryResult'
+                  - type: 'null'
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminCreateStorefront
+      summary: Build a ready-made storefront for a product
+      description: >-
+        Platform admin only. Builds a WordPress site with WaaS Host from the storefront product's production version
+        (STOREFRONT_PRODUCT_ID) and connects it to this product: a new API key labelled "Ready-made storefront" is made,
+        and its key, secret and the API's address are written into the site's wp-config. The secret is never answered.
+        The site's owner signs in to WordPress with a password reset. One per product.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: { type: string, maxLength: 100, description: The site's title }
+                email: { type: string, format: email, description: 'The owner: WordPress administrator and admin email' }
+                subdomain:
+                  type: string
+                  pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+                  description: The site answers on <subdomain>.<platform domain>. Without it, only on its generated base domain
+      responses:
+        '201':
+          description: The storefront, being built
+          content:
+            application/json:
+              schema: { $ref: '../waas-provisioning-api.yaml#/components/schemas/GetTenantQueryResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/products/{productId}/keys/{id}/rotate:
     parameters:
       - $ref: '#/components/parameters/productId'

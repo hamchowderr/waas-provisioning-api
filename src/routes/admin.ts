@@ -12,7 +12,9 @@ import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.t
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
+import { publicBase } from '../oauth.ts';
 import { Status, statusName } from '../status.ts';
+import { createStorefront, getStorefront, type NewStorefront } from '../storefronts.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
@@ -283,6 +285,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   };
   app.post('/products', adminOnly);
   app.put('/products/:productId', adminOnly);
+  app.post('/products/:productId/storefront', adminOnly);
   app.use('/db-backups', adminOnly);
   app.use('/plugins', adminOnly);
   app.use('/products/:productId/plugins/*', adminOnly);
@@ -696,6 +699,15 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json(result, 201);
   });
   app.delete('/products/:productId/keys/:id', async (c) => c.json(await revokeApiKey(pool, await product(c), c.req.param('id'))));
+
+  // The product's ready-made storefront (src/storefronts.ts): a WordPress site with WaaS Host, already
+  // connected. GET answers null when it has none; POST builds it (platform admin only).
+  app.get('/products/:productId/storefront', async (c) => c.json(await getStorefront(deps, await product(c))));
+  app.post('/products/:productId/storefront', async (c) => {
+    const productId = await product(c);
+    const body = (await readJson(c)) as NewStorefront;
+    return c.json(await createStorefront(deps, productId, body, publicBase(c, config.publicUrl)), 201);
+  });
 
   async function product(c: Context): Promise<string> {
     const productId = c.req.param('productId')!;
