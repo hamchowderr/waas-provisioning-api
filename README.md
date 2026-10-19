@@ -185,6 +185,7 @@ The first key comes from `npm run create-key` or from the dashboard. After that,
 | `GET /admin/products` | Products (storefronts) with store and version counts, the production version, and `maxTenants` |
 | `POST /admin/products` `{"name": "Acme Agency", "maxTenants": 10, "keyLabel": "…"}` | A new product and its first API key. The secret is in this answer only |
 | `GET`, `POST /admin/products/{productId}/keys`; `POST …/keys/{id}/rotate`; `DELETE …/keys/{id}` | A product's API keys. Same as `/v1/keys`, except the last active key can be revoked |
+| `GET`, `POST /admin/products/{productId}/storefront` `{"name": "Acme Agency", "email": "owner@acme.example", "subdomain": "acme"}` | The product's ready-made storefront: a WordPress site with WaaS Host, built from [`templates/agency-storefront`](templates/agency-storefront) and already connected with a new key of the product. One per product; needs `STOREFRONT_PRODUCT_ID`. `GET` answers `null` when there is none |
 | `PUT /admin/products/{productId}` `{"maxTenants": 5}` | The most stores the product may have (`null`: no limit). At the limit, creating or restoring a store answers 400. Lowering it deletes nothing |
 | `GET`, `POST /admin/products/{productId}/versions`; `DELETE …/versions/{id}`; `PUT …/versions/{id}/production` | A product's versions. Same requests, rules and answers as the `/v1/versions` calls |
 | `GET`, `POST`, `DELETE /admin/products/{productId}/basesnapshots` | A product's templates. Same as `/v1/basesnapshots`; `DELETE` takes `?id=` |
