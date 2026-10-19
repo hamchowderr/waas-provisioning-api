@@ -4,7 +4,8 @@ import type { Provisioner, StoreSender } from './provisioner/provisioner.ts';
 import { Status } from './status.ts';
 
 /**
- * Brings every live store up to what new stores get: its scheduled jobs run on their own
+ * Brings every live store up to what new stores get: the current compose file and agent files
+ * (Provisioner.ensureStoreSetup), its scheduled jobs run on their own
  * (Provisioner.ensureStoreCron) and it sends email through the mail relay
  * (Provisioner.ensureStoreMail), from its own domain when it has a verified one. Run on startup. One store or step failing does not stop the
  * others; it is logged and tried again on the next start.
@@ -20,6 +21,7 @@ export async function maintainStores(pool: Pool, provisioner: Provisioner, log: 
     return;
   }
   const steps = [
+    { what: 'store setup', run: (storeId: string) => provisioner.ensureStoreSetup({ storeId }) },
     { what: 'cron task', run: (storeId: string) => provisioner.ensureStoreCron({ storeId }) },
     { what: 'mail settings', run: (storeId: string) => provisioner.ensureStoreMail({ storeId, sender: senders.get(storeId) }) },
   ];

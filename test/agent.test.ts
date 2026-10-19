@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -145,5 +145,105 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
 
   it('changes nothing without relay settings (version sites)', () => {
     expect(send({ WAAS_MAIL_B64: '' }, { from: 'a@b.example', fromName: 'x' })).toMatchObject({ mailer: 'mail', From: 'a@b.example', Host: null });
+  });
+});
+
+describe.skipIf(!hasPhp)('store agent: page cache', () => {
+  let root: string;
+  let server: ChildProcess;
+  let base: string;
+  const content = () => join(root, 'wp-content');
+  const configure = () => execFileSync('php', [AGENT, 'configure', Buffer.from('{}').toString('base64')], { env: { ...process.env, WAAS_ROOT: root } });
+  /**
+   * A stand-in WordPress behind PHP's built-in web server: the drop-in first (which may answer from the cache and
+   * exit), then the mu-plugin, the page and the end of the request. Test headers say what WordPress would do:
+   * x-body is the page, x-logged-in a logged-in user, x-change a save_post of that post type, x-status the status.
+   */
+  const ROUTER = `<?php
+$hooks = [];
+function add_action($hook, $fn, $priority = 10, $args = 1) { global $hooks; $hooks[$hook][] = $fn; }
+function do_action($hook, ...$args) { global $hooks; foreach ($hooks[$hook] ?? [] as $fn) $fn(...$args); }
+function is_user_logged_in() { return isset($_SERVER['HTTP_X_LOGGED_IN']); }
+foreach (['is_search', 'is_404', 'is_feed', 'is_preview', 'is_robots', 'is_trackback', 'is_singular', 'post_password_required'] as $fn) eval("function $fn() { return false; }");
+function get_option($name) { return $name === 'fluent_cart_store_settings' ? ['checkout_page_id' => 7, 'cart_page_id' => 0] : false; }
+function get_permalink($id) { return 'https://shop.example/checkout/'; }
+define('WP_CONTENT_DIR', getenv('WAAS_TEST_CONTENT'));
+include WP_CONTENT_DIR . '/advanced-cache.php';
+include WP_CONTENT_DIR . '/mu-plugins/waas-cache.php';
+http_response_code((int) ($_SERVER['HTTP_X_STATUS'] ?? 200));
+do_action('template_redirect');
+if (isset($_SERVER['HTTP_X_CHANGE'])) do_action('save_post', 1, (object) ['post_type' => $_SERVER['HTTP_X_CHANGE']]);
+echo $_SERVER['HTTP_X_BODY'] ?? '<html>fresh</html>';
+while (ob_get_level()) ob_end_flush();
+do_action('shutdown');
+`;
+  const visit = async (path = '/', headers: Record<string, string> = {}) => {
+    const res = await fetch(base + path, { headers: { host: 'shop.example', ...headers } });
+    return { body: await res.text(), cache: res.headers.get('x-waas-cache') };
+  };
+  const saved = () => (existsSync(join(content(), 'cache/waas-pages')) ? readdirSync(join(content(), 'cache/waas-pages')) : []);
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    mkdirSync(content());
+    chmodSync(root, 0o777);
+    chmodSync(content(), 0o777);
+    configure();
+    // The web server here runs as the test's user while the agent drops to uid 33; in a store both are www-data.
+    mkdirSync(join(content(), 'cache/waas-pages'), { recursive: true });
+    chmodSync(join(content(), 'cache/waas-pages'), 0o777);
+    writeFileSync(join(root, 'router.php'), ROUTER);
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    base = `http://127.0.0.1:${port}`;
+    server = spawn('php', ['-S', `127.0.0.1:${port}`, join(root, 'router.php')], { env: { ...process.env, WAAS_TEST_CONTENT: content() }, stdio: 'ignore' });
+    for (let i = 0; i < 50; i++) {
+      if (await fetch(base + '/ready', { method: 'POST' }).then(() => true, () => false)) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  });
+  afterEach(() => {
+    server.kill();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('saves a page for a logged-out visitor and serves the next visitor the saved copy', async () => {
+    expect(await visit('/about/', { 'x-body': '<html>first</html>' })).toEqual({ body: '<html>first</html>', cache: null });
+    expect(saved()).toHaveLength(1);
+    expect(await visit('/about/', { 'x-body': '<html>second</html>', cookie: '_ga=GA1.1' })).toEqual({ body: '<html>first</html>', cache: 'hit' });
+  });
+
+  it('never serves or saves the cache for logged-in visitors, carts, query strings or checkout', async () => {
+    await visit('/about/', { 'x-body': '<html>first</html>' });
+    expect((await visit('/about/', { 'x-body': '<html>mine</html>', cookie: 'wordpress_logged_in_abc=1' })).body).toBe('<html>mine</html>');
+    expect((await visit('/about/', { 'x-body': '<html>cart</html>', cookie: 'fct_cart_hash=xyz' })).body).toBe('<html>cart</html>');
+    expect((await visit('/about/?s=shoes', { 'x-body': '<html>search</html>' })).body).toBe('<html>search</html>');
+    await visit('/checkout/', { 'x-body': '<html>checkout</html>' });
+    await visit('/checkout/step/', { 'x-body': '<html>checkout</html>' });
+    await visit('/private/', { 'x-body': '<html>private</html>', 'x-logged-in': '1' });
+    await visit('/missing/', { 'x-body': '<html>nope</html>', 'x-status': '404' });
+    await visit('/partial/', { 'x-body': 'not a whole page' });
+    expect(saved()).toHaveLength(1);
+  });
+
+  it('clears saved pages when content changes, but not for internal post types', async () => {
+    await visit('/about/');
+    await visit('/other/', { 'x-change': 'oembed_cache' });
+    expect(saved()).toHaveLength(2);
+    await visit('/third/', { 'x-change': 'page', cookie: 'wordpress_logged_in_abc=1' });
+    expect(saved()).toHaveLength(0);
+  });
+
+  it('serves nothing from the cache while the store is suspended, and configure clears it', async () => {
+    await visit('/about/', { 'x-body': '<html>first</html>' });
+    writeFileSync(join(content(), '.waas-suspended'), '');
+    expect((await visit('/about/', { 'x-body': '<html>live</html>' })).cache).toBeNull();
+    configure();
+    expect(saved()).toHaveLength(0);
+  });
+
+  it("leaves another cache plugin's drop-in alone", () => {
+    writeFileSync(join(content(), 'advanced-cache.php'), '<?php // Another cache plugin');
+    configure();
+    expect(readFileSync(join(content(), 'advanced-cache.php'), 'utf8')).toBe('<?php // Another cache plugin');
   });
 });

@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
-import { CRON_TASK, CoolifyProvisioner } from '../src/provisioner/coolify/provisioner.ts';
+import { CRON_TASK, CoolifyProvisioner, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
 const COOLIFY = 'https://coolify.test';
@@ -268,7 +268,7 @@ describe('CoolifyProvisioner', () => {
     expect(stores).toHaveLength(1);
     const store = stores[0]!;
     expect(store.environment_id).toBe(11);
-    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}`);
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}`);
     expect(store.urls).toEqual([{ name: 'wordpress', url: 'https://shop.example.com,https://t-0b8f6a0e.stores.example.com' }]);
     const compose = parse(store.compose);
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
@@ -355,6 +355,33 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
     expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('brings a store from an older setup to the current one: new compose, one restart, agent files, then the description', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}`;
+    store.compose = 'old compose';
+    const starts = store.started;
+
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('updated');
+    const wordpress = parse(store.compose).services.wordpress;
+    expect(wordpress.environment.WORDPRESS_CONFIG_EXTRA).toContain("define('WP_CACHE', true)");
+    expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 8');
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: {} });
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}`);
+
+    // Again: nothing to do, no restart.
+    cloud.calls = [];
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('unchanged');
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('leaves a new store alone: it already has the current setup', async () => {
+    await p.createStore(storeInput);
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('unchanged');
   });
 
   it('gives a new store the mail relay settings as a variable, never in a command', async () => {
@@ -653,7 +680,7 @@ describe('CoolifyProvisioner', () => {
     await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(parse(store.compose).services.wordpress.image).toBe('wordpress:6.9-php8.4-apache');
-    expect(store.description).toBe('WaaS store, version v9');
+    expect(store.description).toBe(`WaaS store, version v9, setup ${STORE_SETUP}`);
     expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['code-import', 'update-db']);
   });
 
@@ -687,8 +714,14 @@ describe('Store compose file', () => {
 
   it('turns off WP-cron on page loads, after the phpConstants so a constant of that name wins', () => {
     const extra: string = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA;
-    expect(extra.endsWith("defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);")).toBe(true);
+    expect(extra).toContain("defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);");
     expect(extra.indexOf('WAAS_CONSTANTS_B64')).toBeLessThan(extra.indexOf('DISABLE_WP_CRON'));
+  });
+
+  it('turns on the page cache drop-in, after the phpConstants so a constant of that name wins', () => {
+    const extra: string = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA;
+    expect(extra.endsWith("defined('WP_CACHE') || define('WP_CACHE', true);")).toBe(true);
+    expect(extra).not.toContain('$');
   });
 
   it('caps Apache at 8 workers so a burst of visitors queues instead of running the store out of memory', () => {

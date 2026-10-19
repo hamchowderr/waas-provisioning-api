@@ -105,6 +105,13 @@ export interface Provisioner {
   deleteStore(input: { storeId: string }): Promise<void>;
 
   /**
+   * Brings a store created under an older store setup (its compose file and the files the agent
+   * installs, such as the page cache) to the current one, restarting it once. createStore already
+   * gives new stores the current setup; the API calls it for every live store on startup.
+   */
+  ensureStoreSetup(input: { storeId: string }): Promise<'updated' | 'unchanged'>;
+
+  /**
    * Makes sure a store's scheduled jobs (WP-cron, Action Scheduler) run on their own, without page
    * traffic. createStore already does this; the API calls it for every live store on startup so
    * stores created before it get it too.

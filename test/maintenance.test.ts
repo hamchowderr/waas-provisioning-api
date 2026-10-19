@@ -25,13 +25,14 @@ describe('maintainStores', () => {
       senders.push(sender);
       return storeId === 'c' ? 'updated' : 'unchanged';
     };
+    provisioner.ensureStoreSetup = async ({ storeId }) => (storeId === 'b' ? 'updated' : 'unchanged');
     const logs: string[] = [];
     const errors: string[] = [];
     await maintainStores(pool, provisioner, { log: (m: string) => logs.push(m), error: (m: string) => errors.push(m) });
     expect(queries).toEqual([[1]]); // Status.Done only
     expect(seen).toEqual(['a', 'b', 'c']);
     // A failed cron step still lets the store's mail step run.
-    expect(logs).toEqual(['Store a: cron task created', 'Store c: mail settings updated']);
+    expect(logs).toEqual(['Store a: cron task created', 'Store b: store setup updated', 'Store c: mail settings updated']);
     expect(errors).toEqual(['Store b: cron task not ensured: Coolify down']);
     // A store with a verified sending domain keeps sending from it.
     expect(senders).toEqual([undefined, undefined, { domain: 'shop.example', domainId: 'd1' }]);
