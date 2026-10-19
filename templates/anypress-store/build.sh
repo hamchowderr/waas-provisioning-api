@@ -25,6 +25,7 @@ seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb968
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 automatorwp 6.0.4 d6fbd08df660df019fd79ce8c7f00612fd571168f763fab8fa38094fec0b7579
 fluent-security 3.0.5 304c0c61ef704a16534133211fbd2be820040606b6c0ea6a4d0b28942c697b11
+fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
