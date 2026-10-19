@@ -70,8 +70,22 @@ Pro versions aren't included. They are licensed per site, so a store owner adds 
 
 ## Roles
 
-[`roles.json`](roles.json) has one role, `store`, with every plugin on. To sell plans with different plugin sets, add
-a role per plan; WaaS Client switches plugins on and off per role.
+[`roles.json`](roles.json) has one role per site type. Each shop product picks one, and WaaS Client switches the
+store's plugins to that role's list:
+
+| Role | Site type | Plugins on |
+|---|---|---|
+| `website` | Website | FluentCRM, Fluent Forms, FluentSnippets, Rank Math, WP Fusion Lite, AutomatorWP, FluentAuth, FluentToolkit |
+| `bookings` | Bookings | Website's, plus FluentBooking and Fluent Support |
+| `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
+| `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
+| `everything` | Everything | all of them |
+| `store` | Everything, for stores bought before site types | all of them |
+
+Pages that need one plugin carry the post meta `_anypress_needs` (FluentCart's six pages and the Support Portal). The
+mu-plugin puts them back to draft while that plugin is off, and the home page shows the latest posts while the shop is
+hidden. When a plan change turns the plugin on, the pages come back, and the owner details step for that plugin runs
+then.
 
 ## Build and publish
 

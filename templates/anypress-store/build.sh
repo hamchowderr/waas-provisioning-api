@@ -147,6 +147,8 @@ wp widget reset --all 2>/dev/null || true
 wp eval --user=waas-admin '(new \FluentCart\App\CPT\Pages())->createPages();'
 wp option update show_on_front page
 wp option update page_on_front "$(wp post list --post_type=page --name=shop --field=ID)"
+# Site types without FluentCart hide these pages and show posts on the home page (mu-plugins/anypress-store.php).
+for PAGE in $(wp post list --post_type=page --format=ids); do wp post meta update "$PAGE" _anypress_needs fluent-cart/fluent-cart.php --quiet; done
 
 wp option update timezone_string UTC
 wp option update gmt_offset 0
@@ -179,6 +181,7 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
 # Rank Math's sitemap is only served once its rewrite rules exist. Read the whole list first: grep -q stops at the
 # first match, and with pipefail the cut-off wp counts as a failure.
 grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
+[ "$(wp post list --post_type=page --meta_key=_anypress_needs --format=count)" -ge 7 ] || { echo "pages missing their site-type marker" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
 
@@ -186,7 +189,9 @@ echo "== Package"
 rm -rf "$WORK/out" && mkdir -p "$WORK/out"
 wp db export /var/www/html/database.sql --add-drop-table --quiet
 # The mu-plugin's first-run marker must not ship, or stores would skip their first run.
-! grep -q anypress_store_home "$SITE/database.sql" || { echo "anypress_store_home left in the dump" >&2; exit 1; }
+for MARKER in anypress_store_home anypress_site_type_plugins anypress_owner_applied; do
+    ! grep -q "$MARKER" "$SITE/database.sql" || { echo "$MARKER left in the dump" >&2; exit 1; }
+done
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
