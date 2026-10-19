@@ -691,6 +691,16 @@ describe('Store compose file', () => {
     expect(extra.indexOf('WAAS_CONSTANTS_B64')).toBeLessThan(extra.indexOf('DISABLE_WP_CRON'));
   });
 
+  it('caps Apache at 8 workers so a burst of visitors queues instead of running the store out of memory', () => {
+    const wordpress = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress;
+    const [shell, flag, script] = wordpress.entrypoint;
+    expect([shell, flag]).toEqual(['sh', '-c']);
+    expect(script).toContain('MaxRequestWorkers 8');
+    expect(script).toContain('> /etc/apache2/conf-enabled/waas-workers.conf');
+    // The official image still sets WordPress up: its entrypoint only does that for an apache2* command.
+    expect(script.endsWith('&& exec docker-entrypoint.sh apache2-foreground')).toBe(true);
+  });
+
   it('rejects versions that would not make a valid image tag', () => {
     expect(() => renderCompose({ wordPressVersion: 'latest; rm -rf /', phpVersion: '8.3' })).toThrow(/Unsupported/);
   });

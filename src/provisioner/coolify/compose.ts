@@ -7,7 +7,25 @@ export const AGENT_SCRIPT = readFileSync(new URL('./agent.php', import.meta.url)
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
 /** Per-store limits (docs/coolify.md). */
-export const LIMITS = { wordpress: { mem: '512m', cpus: 1 }, db: { mem: '384m' }, agent: { mem: '256m' } };
+export const LIMITS = { wordpress: { mem: '512m', cpus: 1, workers: 8 }, db: { mem: '384m' }, agent: { mem: '256m' } };
+
+/**
+ * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
+ * visitors at once push a store with every template plugin past its 512 MB, and the kernel then kills
+ * workers mid-request. With 8 (about 30 MB each) a store stays near 270 MB and later visitors wait in
+ * Apache's queue; one CPU is busy from about 5 at once, so more workers would not serve pages any faster.
+ * conf-enabled loads after mods-enabled, so these values win. No `$`: Coolify would interpolate it.
+ */
+const WORKERS_CONF = [
+  '<IfModule mpm_prefork_module>',
+  'StartServers 2',
+  'MinSpareServers 2',
+  'MaxSpareServers 4',
+  `MaxRequestWorkers ${LIMITS.wordpress.workers}`,
+  'MaxConnectionsPerChild 500',
+  '</IfModule>',
+].join('\\n');
+const WORDPRESS_ENTRYPOINT = ['sh', '-c', `printf '${WORKERS_CONF}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && exec docker-entrypoint.sh apache2-foreground`];
 
 /**
  * Defines every phpConstant from WAAS_CONSTANTS_B64 (base64 JSON) in wp-config, through the
@@ -52,6 +70,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
       wordpress: {
         image,
         restart: 'unless-stopped',
+        entrypoint: WORDPRESS_ENTRYPOINT,
         environment: wpEnv,
         volumes: ['wp:/var/www/html'],
         depends_on: { db: { condition: 'service_healthy' } },
