@@ -343,16 +343,22 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     expect(plan(quotas, { waas_plan_usage: { bytes: 0.5 * GB } }, `do_action('admin_notices');`).out).toBe('');
   });
 
-  it('stops sending email at the month quota, until the next month', () => {
+  it('counts email per month and pauses only bulk email past the quota', () => {
     const send = `echo json_encode(apply_filters('pre_wp_mail', null)); do_action('wp_mail_succeeded');`;
+    const bulk = `echo json_encode(apply_filters('fluent_crm/disable_email_processing', false));`;
     const { options, out } = plan(quotas, { waas_plan_mail: { month: month(), sent: 8 } }, send);
     expect(out).toBe('null');
     expect(options.waas_plan_mail).toEqual({ month: month(), sent: 9 });
+    expect(plan(quotas, { waas_plan_mail: { month: month(), sent: 9 } }, bulk).out).toBe('false');
 
+    // Used up: FluentCRM's campaigns and sequences wait; other email still goes out.
     const full = { waas_plan_mail: { month: month(), sent: 10 } };
-    expect(plan(quotas, full, `echo json_encode(apply_filters('pre_wp_mail', null));`).out).toBe('false');
-    expect(plan(quotas, full, `do_action('admin_notices');`).out).toContain('has sent all 10 of its emails for this month');
-    expect(plan(quotas, { waas_plan_mail: { month: month(), sent: 8 } }, `do_action('admin_notices');`).out).toContain('has sent 8 of its 10 emails');
+    expect(plan(quotas, full, bulk).out).toBe('true');
+    expect(plan(quotas, full, `echo json_encode(apply_filters('pre_wp_mail', null));`).out).toBe('null');
+    expect(plan(quotas, full, `do_action('admin_notices');`).out).toContain('has sent all 10 of the emails its plan includes this month. Campaigns and sequences are paused until');
+    expect(plan(quotas, { waas_plan_mail: { month: month(), sent: 8 } }, `do_action('admin_notices');`).out).toContain('has sent 8 of the 10 emails its plan includes');
+    // Last month's count doesn't pause this month's.
+    expect(plan(quotas, { waas_plan_mail: { month: '2000-01', sent: 99 } }, bulk).out).toBe('false');
 
     // A new month starts again at 0.
     const old = plan(quotas, { waas_plan_mail: { month: '2000-01', sent: 99 } }, send);

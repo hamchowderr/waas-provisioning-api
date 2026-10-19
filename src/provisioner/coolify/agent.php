@@ -337,18 +337,26 @@ function waas_plan_mail(): array
     $mail = get_option('waas_plan_mail');
     return ['month' => $month, 'sent' => is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0];
 }
-add_filter('pre_wp_mail', function ($return) {
-    $limit = waas_plan_limits()['emails'];
-    if ($return !== null || !$limit || waas_plan_mail()['sent'] < $limit) return $return;
-    static $logged = false;
-    if (!$logged) error_log(sprintf("WaaS store plan: email not sent, this month's %d are used", $limit));
-    $logged = true;
-    return false;
-});
 add_action('wp_mail_succeeded', function () {
     $mail = waas_plan_mail();
     $mail['sent']++;
     update_option('waas_plan_mail', $mail, false);
+});
+
+/** Whether this month's emails are used up. */
+function waas_plan_mail_used_up(): bool
+{
+    $limits = waas_plan_limits();
+    return $limits['emails'] > 0 && waas_plan_mail()['sent'] >= $limits['emails'];
+}
+/*
+ * Past the allowance, bulk email waits: FluentCRM's campaigns, sequences and automation emails stay in its queue and
+ * go out when the next month starts. Everything else (order receipts, account emails, bookings, support replies)
+ * still sends, so the store keeps working. A FluentCRM run already sending finishes its batch, so a campaign can go
+ * a little past.
+ */
+add_filter('fluent_crm/disable_email_processing', function ($disabled) {
+    return $disabled || waas_plan_mail_used_up();
 });
 
 // The store's administrators see it coming: from 80% of either quota, and once it is used up.
@@ -367,9 +375,9 @@ add_action('admin_notices', function () {
     if ($limits['emails']) {
         $sent = waas_plan_mail()['sent'];
         if ($sent >= $limits['emails']) {
-            $notices[] = ['error', sprintf('This website has sent all %s of its emails for this month, so it sends no more until the 1st (UTC). Move to a bigger plan to send more.', number_format($limits['emails']))];
+            $notices[] = ['error', sprintf('This website has sent all %s of the emails its plan includes this month. Campaigns and sequences are paused until %s; order, account and booking emails still go out. Move to a bigger plan to send more.', number_format($limits['emails']), gmdate('F j', strtotime('first day of next month')))];
         } elseif ($sent >= 0.8 * $limits['emails']) {
-            $notices[] = ['warning', sprintf('This website has sent %s of its %s emails for this month. After that it sends none until the 1st (UTC), unless it moves to a bigger plan.', number_format($sent), number_format($limits['emails']))];
+            $notices[] = ['warning', sprintf('This website has sent %s of the %s emails its plan includes this month. Campaigns and sequences pause when it reaches %2$s; order, account and booking emails always go out.', number_format($sent), number_format($limits['emails']))];
         }
     }
     foreach ($notices as [$type, $text]) printf('<div class="notice notice-%s"><p>%s</p></div>', $type, esc_html($text));
