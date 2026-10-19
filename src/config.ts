@@ -1,6 +1,7 @@
 import { loadAuthConfig, type AuthConfig } from './auth.ts';
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import { loadDomainConnectConfig, type DomainConnectConfig } from './domainconnect.ts';
+import { isUuid } from './http.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
 import { ToSendAdmin, type SendingDomains, type StoreMailKeys } from './tosend.ts';
@@ -56,6 +57,11 @@ export interface Config {
   webhooks?: WebhookConfig;
   /** Sign-in for people (src/auth.ts): AUTH_URL and AUTH_SECRET, plus AUTH_GITHUB_* and AUTH_GOOGLE_*. */
   auth?: AuthConfig;
+  /**
+   * The platform's own product whose production version is the agency storefront template
+   * (STOREFRONT_PRODUCT_ID). Ready-made storefronts (src/storefronts.ts) are its stores. Unset: off.
+   */
+  storefrontProductId?: string;
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -178,5 +184,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
     webhooks: loadWebhookConfig(env),
     auth: loadAuthConfig(env),
+    storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
   };
+}
+
+function loadStorefrontProductId(value: string | undefined): string | undefined {
+  const id = value?.trim().toLowerCase();
+  if (!id) return undefined;
+  if (!isUuid(id)) throw new Error('STOREFRONT_PRODUCT_ID must be a product id (a UUID)');
+  return id;
 }
