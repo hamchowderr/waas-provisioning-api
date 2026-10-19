@@ -13,6 +13,7 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
+            "fluent-community/fluent-community.php",
             "fluent-toolkit/fluent-toolkit.php"
         ]
     }

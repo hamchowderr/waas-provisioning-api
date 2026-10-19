@@ -1,7 +1,7 @@
 # AnyPress store
 
 The store template AnyPress's own shop sells: WordPress with the Fluent suite for selling, marketing,
-bookings, support and affiliates, plus SEO, automation and login security.
+bookings, support, affiliates and an online community with courses, plus SEO, automation and login security.
 
 | | |
 |---|---|
@@ -22,6 +22,7 @@ bookings, support and affiliates, plus SEO, automation and login security.
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 | AutomatorWP | `automatorwp` | 6.0.4 |
 | FluentAuth | `fluent-security` | 3.0.5 |
+| FluentCommunity | `fluent-community` | 2.12.0 |
 
 Plus FluentToolkit 2.1.3 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
