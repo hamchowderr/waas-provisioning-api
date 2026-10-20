@@ -62,6 +62,11 @@ export interface Config {
    * (STOREFRONT_PRODUCT_ID). Ready-made storefronts (src/storefronts.ts) are its stores. Unset: off.
    */
   storefrontProductId?: string;
+  /**
+   * Who is emailed when someone applies to sell (src/applications.ts): APPLICATION_NOTIFY_EMAILS,
+   * comma-separated. Empty: applications only show on the dashboard.
+   */
+  applicationNotify?: string[];
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -185,6 +190,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhooks: loadWebhookConfig(env),
     auth: loadAuthConfig(env),
     storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
+    applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
   };
 }
 
@@ -193,4 +199,10 @@ function loadStorefrontProductId(value: string | undefined): string | undefined 
   if (!id) return undefined;
   if (!isUuid(id)) throw new Error('STOREFRONT_PRODUCT_ID must be a product id (a UUID)');
   return id;
+}
+
+function loadEmails(name: string, value: string | undefined): string[] | undefined {
+  const emails = (value ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  for (const e of emails) if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw new Error(`${name}: ${e} is not an email address`);
+  return emails.length ? emails : undefined;
 }

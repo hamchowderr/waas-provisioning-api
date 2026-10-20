@@ -1,6 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
+import { adminApplicationRoutes } from '../applications.ts';
 import type { AppEnv, Deps } from '../app.ts';
 import type { Config } from '../config.ts';
 import { withTransaction, type Client, type Pool } from '../db.ts';
@@ -290,9 +291,14 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/plugins', adminOnly);
   app.use('/products/:productId/plugins/*', adminOnly);
   app.put('/products/:productId/organization', adminOnly);
+  app.use('/applications', adminOnly);
+  app.use('/applications/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
+
+  // Applications to sell on the platform, waiting for the platform admin (src/applications.ts).
+  app.route('/applications', adminApplicationRoutes(deps));
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));
