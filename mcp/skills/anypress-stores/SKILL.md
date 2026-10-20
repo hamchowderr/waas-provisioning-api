@@ -14,7 +14,7 @@ The `waas-provisioning` MCP server exposes the store API as tools. A store is ca
 - **Ask before anything destructive.** `delete_store`, `restore_store` (it replaces the live files and database), `suspend_store` (takes the site offline), `remove_store_domain`, `remove_store_mail_domain` and `delete_version` need the user's explicit yes for that store. Name the store and what will happen.
 - **Show, don't dump.** When the user wants to see their stores, call `show_stores`: clients that support MCP Apps render an interactive panel. Otherwise summarize: name, status, main domain. Don't paste raw JSON unless asked.
 - **Errors carry the API's reason.** A tool error reads `The API refused <operation> (HTTP <status>): <message>`. Relay the message plainly and suggest the fix; don't retry a 400 unchanged.
-- If a tool is missing, the server may be read-only (`/mcp/read-only` or `WAAS_MCP_READ_ONLY=1`). Say so instead of looking for a workaround.
+- If a tool is missing, the server may be read-only (`/mcp/read-only` or `WAAS_MCP_READ_ONLY=1`), or the connection wasn't allowed that area: whoever connected the app ticks what it may see and change per area (stores, backups, domains, email, versions, website pages and design). Say so, and that reconnecting can allow more, instead of looking for a workaround.
 
 ## Launch a store
 

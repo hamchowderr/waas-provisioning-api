@@ -2,11 +2,17 @@ import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from '@model
 import { McpServer, type CallToolResult, type ToolAnnotations } from '@modelcontextprotocol/server';
 import { TenantFailedError, WaasApiError, type TenantRef, type WaasClient } from 'waas-provisioning-sdk';
 import { z } from 'zod';
+import { AREA_LABELS, AREAS, ALL_SCOPES, scopeOf, type Access, type Area } from './scopes.js';
 import { storesViewHtml, STORES_VIEW_URI } from './view.js';
 
 export interface WaasMcpOptions {
   /** Registers only the tools that read; nothing the agent calls can change a store. */
   readOnly?: boolean;
+  /**
+   * The scopes this connection was granted (scopes.ts), e.g. ['stores:read', 'backups:read'].
+   * Only the tools whose scope is granted are offered. Every scope when omitted.
+   */
+  scopes?: readonly string[];
   /**
    * Connected to one store only (its owner's "Sign in with your website"): registers only the site
    * tools, and they act on this store whatever store the agent names.
@@ -65,6 +71,11 @@ function failure(error: unknown): CallToolResult {
  * createMcpHandler from @modelcontextprotocol/server; it is built per connection or request.
  */
 export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions = {}): McpServer {
+  const granted = new Set(options.scopes ?? ALL_SCOPES);
+  /** Whether this connection may read or change an area. */
+  const may = (area: Area, access: Access) => granted.has(scopeOf(area, access)) && !(options.readOnly && access === 'write');
+  // What the connection may not do, for the instructions: "see or change backups", "change domains".
+  const withheld = AREAS.filter((area) => !may(area, 'write')).map((area) => `${may(area, 'read') ? 'change' : 'see or change'} ${AREA_LABELS[area].name.toLowerCase()}`);
   const server = new McpServer(
     { name: 'waas-provisioning', version: '0.1.0' },
     {
@@ -76,6 +87,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so. ' +
         'For a whole new page, start from a starter page (find_patterns with category anypress/pages: home pages per site type, about, services, contact) and then rewrite its text for the business.' +
         (options.readOnly ? ' This server is read-only: it cannot change anything.' : '') +
+        (!options.readOnly && !options.store && withheld.length ? ` This connection was not allowed to ${withheld.join(', ')}, so those tools are not offered; the user can reconnect to allow more.` : '') +
         (options.store ? ' This connection is for one website only: the site tools act on it, and the store ids can be left out.' : ''),
     },
   );
@@ -84,10 +96,10 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   const tool = <Shape extends z.ZodRawShape>(
     name: string,
-    config: { title: string; description: string; input: Shape; annotations: ToolAnnotations },
+    config: { title: string; description: string; area: Area; input: Shape; annotations: ToolAnnotations },
     run: (args: z.infer<z.ZodObject<Shape>>) => Promise<unknown>,
   ) => {
-    if (options.readOnly && !config.annotations.readOnlyHint) return;
+    if (!may(config.area, config.annotations.readOnlyHint ? 'read' : 'write')) return;
     if (options.store && !siteTools) return;
     server.registerTool(
       name,
@@ -105,7 +117,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   // MCP App: a store panel that renders in clients supporting MCP Apps (Claude, ChatGPT, VS Code...).
   // Clients without it get the same list as text. A store's own connection has no stores to list.
 
-  if (!options.store) {
+  if (!options.store && may('stores', 'read')) {
     registerAppTool(
       server,
       'show_stores',
@@ -124,7 +136,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
           const summary = stores.length === 1 ? '1 store' : `${stores.length} stores`;
           return {
             content: [{ type: 'text', text: `${summary}:\n${JSON.stringify(stores, null, 2)}` }],
-            structuredContent: { stores, readOnly: !!options.readOnly },
+            structuredContent: { stores, readOnly: !may('stores', 'write') && !may('backups', 'write'), canBackup: may('backups', 'write'), canChange: may('stores', 'write') },
           };
         } catch (error) {
           return failure(error);
@@ -141,20 +153,20 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'list_stores',
-    { title: 'List stores', description: 'Lists every store of your product with its status, version and main domain.', input: {}, annotations: READ },
+    { title: 'List stores', area: 'stores', description: 'Lists every store of your product with its status, version and main domain.', input: {}, annotations: READ },
     () => client.tenants.list(),
   );
 
   tool(
     'get_store',
-    { title: 'Get a store', description: 'One store: status, version, snapshot, main domain and dates. Null when no store has that id.', input: ref, annotations: READ },
+    { title: 'Get a store', area: 'stores', description: 'One store: status, version, snapshot, main domain and dates. Null when no store has that id.', input: ref, annotations: READ },
     (args) => client.tenants.get(toRef(args)),
   );
 
   tool(
     'wait_for_store',
     {
-      title: 'Wait for a store',
+      title: 'Wait for a store', area: 'stores',
       description:
         'Polls the store until it is Done (returns it) or Failed (an error), for up to timeoutSeconds. ' +
         'If it is still working when the time is up, returns { done: false, store } so you can call again.',
@@ -176,7 +188,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'create_store',
     {
-      title: 'Create a store',
+      title: 'Create a store', area: 'stores',
       description:
         'Creates a new WordPress store on the production version (or versionId), from the newest snapshot (or snapshotId / groupName).' +
         ' Repeating a create with the same externalId answers with the store it already made.' +
@@ -204,7 +216,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'update_store_options',
     {
-      title: 'Set WordPress options, PHP constants and size',
+      title: 'Set WordPress options, PHP constants and size', area: 'stores',
       description: 'Sets WordPress options and PHP constants on a store, or moves it to another size (restarting it once).' + ASYNC_NOTE,
       input: { ...ref, wpOptions: stringMap.optional(), phpConstants: phpConstants.optional(), size: size.optional() },
       annotations: { ...WRITE, idempotentHint: true },
@@ -215,7 +227,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'suspend_store',
     {
-      title: 'Suspend a store',
+      title: 'Suspend a store', area: 'stores',
       description: 'Takes the store offline, backing it up first unless takeBackup is false. resume_store brings it back.',
       input: { ...ref, takeBackup: z.boolean().default(true) },
       annotations: DESTRUCTIVE,
@@ -225,14 +237,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'resume_store',
-    { title: 'Resume a store', description: 'Brings a suspended store back online.', input: ref, annotations: { ...WRITE, idempotentHint: true } },
+    { title: 'Resume a store', area: 'stores', description: 'Brings a suspended store back online.', input: ref, annotations: { ...WRITE, idempotentHint: true } },
     (args) => client.tenants.resume(toRef(args)),
   );
 
   tool(
     'delete_store',
     {
-      title: 'Delete a store',
+      title: 'Delete a store', area: 'stores',
       description: 'Deletes the store. Its backups are kept for the retention period, so restore_store can bring it back until then.',
       input: ref,
       annotations: DESTRUCTIVE,
@@ -243,7 +255,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'restore_store',
     {
-      title: 'Restore a store from a backup',
+      title: 'Restore a store from a backup', area: 'backups',
       description:
         'Re-creates a deleted store, or rolls a live one back, from a backup (the newest finished one when backupId is omitted). ' +
         'Rolling back replaces the live files and database.' +
@@ -257,7 +269,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'move_store_to_version',
     {
-      title: 'Move a store to another version',
+      title: 'Move a store to another version', area: 'stores',
       description: 'Moves the store to another version of your product (see list_versions).' + ASYNC_NOTE,
       input: { ...ref, targetVersionId: z.string() },
       annotations: WRITE,
@@ -269,13 +281,13 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'list_store_backups',
-    { title: 'List backups', description: "A store's backups with their status and dates.", input: ref, annotations: READ },
+    { title: 'List backups', area: 'backups', description: "A store's backups with their status and dates.", input: ref, annotations: READ },
     (args) => client.tenants.listBackups(toRef(args)),
   );
 
   tool(
     'create_store_backup',
-    { title: 'Back up a store', description: 'Takes a full backup (files and database). Poll list_store_backups for its status.', input: ref, annotations: WRITE },
+    { title: 'Back up a store', area: 'backups', description: 'Takes a full backup (files and database). Poll list_store_backups for its status.', input: ref, annotations: WRITE },
     (args) => client.tenants.createBackup(toRef(args)),
   );
 
@@ -283,20 +295,20 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'list_store_domains',
-    { title: 'List domains', description: "A store's domains, including which one is main.", input: ref, annotations: READ },
+    { title: 'List domains', area: 'domains', description: "A store's domains, including which one is main.", input: ref, annotations: READ },
     (args) => client.domains.list(toRef(args)),
   );
 
   tool(
     'check_domain_availability',
-    { title: 'Check a domain', description: 'Whether a domain is free to use as a store domain.', input: { domain: z.string() }, annotations: READ },
+    { title: 'Check a domain', area: 'domains', description: 'Whether a domain is free to use as a store domain.', input: { domain: z.string() }, annotations: READ },
     ({ domain }) => client.domains.checkAvailability(domain),
   );
 
   tool(
     'add_store_domain',
     {
-      title: 'Add a domain',
+      title: 'Add a domain', area: 'domains',
       description:
         'Adds a custom domain to the store, optionally as its main domain. The domain must point at the platform; get_domain_connect_link can set that up.' +
         ASYNC_NOTE,
@@ -309,7 +321,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'set_store_main_domain',
     {
-      title: 'Set the main domain',
+      title: 'Set the main domain', area: 'domains',
       description: 'Makes one of the store’s domains its main domain (the address WordPress uses).' + ASYNC_NOTE,
       input: { ...ref, domainName: z.string() },
       annotations: { ...WRITE, idempotentHint: true },
@@ -319,14 +331,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'remove_store_domain',
-    { title: 'Remove a domain', description: 'Removes a domain from the store.' + ASYNC_NOTE, input: { ...ref, domainName: z.string() }, annotations: DESTRUCTIVE },
+    { title: 'Remove a domain', area: 'domains', description: 'Removes a domain from the store.' + ASYNC_NOTE, input: { ...ref, domainName: z.string() }, annotations: DESTRUCTIVE },
     ({ domainName, ...args }) => client.domains.remove(toRef(args), { domainName }),
   );
 
   tool(
     'get_domain_connect_link',
     {
-      title: 'Get a Domain Connect link',
+      title: 'Get a Domain Connect link', area: 'domains',
       description:
         "A link the domain's owner opens to add the store's DNS records at their DNS host in one click, when the host supports Domain Connect. " +
         "service 'website' points the domain at the store; 'email' adds the sending domain's records.",
@@ -341,7 +353,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'get_store_mail_domain',
     {
-      title: 'Get the sending domain',
+      title: 'Get the sending domain', area: 'email',
       description: "The store's own email sending domain with the DNS records to add and whether they verify. Null when the store sends from the platform address.",
       input: ref,
       annotations: READ,
@@ -352,7 +364,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'set_store_mail_domain',
     {
-      title: 'Set the sending domain',
+      title: 'Set the sending domain', area: 'email',
       description: 'Makes the store send email from its own domain. Returns the DNS records the domain needs.',
       input: { ...ref, domainName: z.string() },
       annotations: { ...WRITE, idempotentHint: true },
@@ -362,7 +374,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'remove_store_mail_domain',
-    { title: 'Remove the sending domain', description: 'The store goes back to sending from the platform address.', input: ref, annotations: DESTRUCTIVE },
+    { title: 'Remove the sending domain', area: 'email', description: 'The store goes back to sending from the platform address.', input: ref, annotations: DESTRUCTIVE },
     (args) => client.mailDomain.remove(toRef(args)),
   );
 
@@ -370,14 +382,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'list_versions',
-    { title: 'List versions', description: 'Versions of your product (PHP and WordPress versions, which is production).', input: {}, annotations: READ },
+    { title: 'List versions', area: 'versions', description: 'Versions of your product (PHP and WordPress versions, which is production).', input: {}, annotations: READ },
     () => client.versions.list(),
   );
 
   tool(
     'create_version',
     {
-      title: 'Create a version',
+      title: 'Create a version', area: 'versions',
       description: 'Creates a version: a staging WordPress that new stores can be made from. Poll list_versions for its status.',
       input: {
         name: z.string().describe('At most 30 characters: letters, digits, dashes and dots'),
@@ -393,7 +405,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'set_production_version',
     {
-      title: 'Set the production version',
+      title: 'Set the production version', area: 'versions',
       description: 'New stores are created on the production version unless they name another.',
       input: { versionId: z.string() },
       annotations: { ...WRITE, idempotentHint: true },
@@ -403,14 +415,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'delete_version',
-    { title: 'Delete a version', description: 'Deletes a version. Stores must be moved off it first.', input: { versionId: z.string() }, annotations: DESTRUCTIVE },
+    { title: 'Delete a version', area: 'versions', description: 'Deletes a version. Stores must be moved off it first.', input: { versionId: z.string() }, annotations: DESTRUCTIVE },
     ({ versionId }) => client.versions.delete(versionId),
   );
 
   tool(
     'list_snapshots',
     {
-      title: 'List snapshots',
+      title: 'List snapshots', area: 'versions',
       description: 'Snapshots new stores can start from, optionally for one version.',
       input: { versionId: z.string().optional() },
       annotations: READ,
@@ -420,7 +432,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'list_templates',
-    { title: 'List templates', description: 'Base snapshots (templates) new versions can start from.', input: {}, annotations: READ },
+    { title: 'List templates', area: 'versions', description: 'Base snapshots (templates) new versions can start from.', input: {}, annotations: READ },
     () => client.templates.list(),
   );
 
@@ -443,20 +455,20 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'get_site',
-    { title: 'Get a site', description: 'The site’s name, tagline, address, theme and what its home page shows. Start here before editing a site.', input: ref, annotations: READ },
+    { title: 'Get a site', area: 'site', description: 'The site’s name, tagline, address, theme and what its home page shows. Start here before editing a site.', input: ref, annotations: READ },
     (args) => site(args, { method: 'GET', path: '' }),
   );
 
   tool(
     'list_pages',
-    { title: 'List pages', description: 'The site’s pages: id, title, slug, status (draft or publish) and link (a preview link for drafts).', input: ref, annotations: READ },
+    { title: 'List pages', area: 'site', description: 'The site’s pages: id, title, slug, status (draft or publish) and link (a preview link for drafts).', input: ref, annotations: READ },
     (args) => site(args, { method: 'GET', path: '/pages' }),
   );
 
   tool(
     'read_page',
     {
-      title: 'Read a page',
+      title: 'Read a page', area: 'site',
       description: 'One page: its outline (numbered sections, each a top-level block with its first words) and its full block markup. Read a page before changing it; sections are addressed by their number.',
       input: { ...ref, ...pageId },
       annotations: READ,
@@ -467,7 +479,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'create_page',
     {
-      title: 'Create a page',
+      title: 'Create a page', area: 'site',
       description: 'Adds a page. It is a draft (with a preview link) unless status is publish; publish only when the user says so. Content is optional: add sections afterwards with add_section.',
       input: { ...ref, title: z.string().min(1), content: blocks.optional(), status: z.enum(['draft', 'publish']).optional() },
       annotations: WRITE,
@@ -478,7 +490,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'update_page',
     {
-      title: 'Update a page',
+      title: 'Update a page', area: 'site',
       description: 'Changes a page’s title, slug or status (draft or publish), or replaces all of its content. To change one part of a page, use replace_section. WordPress keeps a revision.',
       input: { ...ref, ...pageId, title: z.string().optional(), slug: z.string().optional(), status: z.enum(['draft', 'publish']).optional(), content: blocks.optional() },
       annotations: WRITE,
@@ -489,7 +501,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'add_section',
     {
-      title: 'Add a section',
+      title: 'Add a section', area: 'site',
       description: 'Adds a section to a page: a pattern (preferred, it matches the site’s design) or your own blocks. It goes before section `position`, or at the end. Then replace the pattern’s sample text and images with the user’s own.',
       input: { ...ref, ...pageId, pattern: pattern.optional(), content: blocks.optional(), position: section.optional() },
       annotations: WRITE,
@@ -500,7 +512,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'replace_section',
     {
-      title: 'Replace a section',
+      title: 'Replace a section', area: 'site',
       description: 'Replaces one section of a page with new blocks or a pattern, e.g. to change its text. Copy the section’s markup from read_page and change only what the user asked for. WordPress keeps a revision.',
       input: { ...ref, ...pageId, section, pattern: pattern.optional(), content: blocks.optional() },
       annotations: WRITE,
@@ -510,26 +522,26 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'remove_section',
-    { title: 'Remove a section', description: 'Removes one section of a page. WordPress keeps a revision, so restore_page_revision can bring it back.', input: { ...ref, ...pageId, section }, annotations: DESTRUCTIVE },
+    { title: 'Remove a section', area: 'site', description: 'Removes one section of a page. WordPress keeps a revision, so restore_page_revision can bring it back.', input: { ...ref, ...pageId, section }, annotations: DESTRUCTIVE },
     ({ pageId: id, section: n, ...args }) => site(args, { method: 'DELETE', path: `/pages/${id}/sections/${n}` }),
   );
 
   tool(
     'list_page_revisions',
-    { title: 'List page revisions', description: 'A page’s last 20 saved versions, newest first, each with its outline.', input: { ...ref, ...pageId }, annotations: READ },
+    { title: 'List page revisions', area: 'site', description: 'A page’s last 20 saved versions, newest first, each with its outline.', input: { ...ref, ...pageId }, annotations: READ },
     ({ pageId: id, ...args }) => site(args, { method: 'GET', path: `/pages/${id}/revisions` }),
   );
 
   tool(
     'restore_page_revision',
-    { title: 'Restore a page revision', description: 'Puts a page back the way it was in one of its revisions (undo).', input: { ...ref, ...pageId, revisionId: z.number().int().positive() }, annotations: WRITE },
+    { title: 'Restore a page revision', area: 'site', description: 'Puts a page back the way it was in one of its revisions (undo).', input: { ...ref, ...pageId, revisionId: z.number().int().positive() }, annotations: WRITE },
     ({ pageId: id, revisionId, ...args }) => site(args, { method: 'POST', path: `/pages/${id}/revisions/${revisionId}/restore` }),
   );
 
   tool(
     'find_patterns',
     {
-      title: 'Find patterns',
+      title: 'Find patterns', area: 'site',
       description: 'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the site’s theme offers, and whole starter pages (category anypress/pages). Filter by a search word or a category.',
       input: { ...ref, search: z.string().optional(), category: z.string().optional() },
       annotations: READ,
@@ -539,14 +551,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'get_pattern',
-    { title: 'Get a pattern', description: 'One pattern’s block markup, to adapt before adding it.', input: { ...ref, name: pattern }, annotations: READ },
+    { title: 'Get a pattern', area: 'site', description: 'One pattern’s block markup, to adapt before adding it.', input: { ...ref, name: pattern }, annotations: READ },
     ({ name, ...args }) => site(args, { method: 'GET', path: `/patterns/${name}` }),
   );
 
   tool(
     'get_site_styles',
     {
-      title: 'Get site styles',
+      title: 'Get site styles', area: 'site',
       description: 'The site’s colours, fonts, font sizes and spacing (with the slugs to use in blocks), the styles in effect, and what the site has changed from the theme.',
       input: ref,
       annotations: READ,
@@ -557,7 +569,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'update_site_styles',
     {
-      title: 'Update site styles',
+      title: 'Update site styles', area: 'site',
       description:
         'Changes the whole site’s look, as Styles in the Site Editor does: theme.json settings and styles merged into the site’s changes. ' +
         'E.g. styles.elements.button.color.background, styles.color.background, styles.typography.fontFamily, or settings.color.palette.custom.',
@@ -571,14 +583,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'get_header_footer',
-    { title: 'Get the header or footer', description: 'The site’s header or footer as blocks, with its outline.', input: { ...ref, area }, annotations: READ },
+    { title: 'Get the header or footer', area: 'site', description: 'The site’s header or footer as blocks, with its outline.', input: { ...ref, area }, annotations: READ },
     ({ area: part, ...args }) => site(args, { method: 'GET', path: `/parts/${part}` }),
   );
 
   tool(
     'update_header_footer',
     {
-      title: 'Update the header or footer',
+      title: 'Update the header or footer', area: 'site',
       description: 'Replaces the whole header or footer (every page shows it). Start from get_header_footer’s markup and change only what the user asked for.',
       input: { ...ref, area, content: blocks },
       annotations: WRITE,
@@ -588,14 +600,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   tool(
     'list_menus',
-    { title: 'List menus', description: 'The site’s navigation menus with their links (navigation-link blocks).', input: ref, annotations: READ },
+    { title: 'List menus', area: 'site', description: 'The site’s navigation menus with their links (navigation-link blocks).', input: ref, annotations: READ },
     (args) => site(args, { method: 'GET', path: '/menus' }),
   );
 
   tool(
     'update_menu',
     {
-      title: 'Update a menu',
+      title: 'Update a menu', area: 'site',
       description:
         'Replaces a menu’s links. Link pages with <!-- wp:navigation-link {"label":"About","type":"page","id":12,"kind":"post-type"} /-->, ' +
         'other addresses with {"label":"…","url":"https://…","kind":"custom"}.',
@@ -608,7 +620,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'add_image',
     {
-      title: 'Add an image',
+      title: 'Add an image', area: 'site',
       description: 'Copies an image from a public https link into the site’s media library and returns its id and address, to use in an image or cover block.',
       input: { ...ref, url: z.string().url(), alt: z.string().optional().describe('What the image shows, for people who can’t see it.') },
       annotations: WRITE,

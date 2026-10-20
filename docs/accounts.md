@@ -66,7 +66,11 @@ These calls need the session cookie and `X-Session-Auth: 1`:
 
 ## Connecting an AI app as yourself
 
-The MCP server's approve page (`/oauth/authorize`, see [mcp/README.md](../mcp/README.md)) has a **Sign in** button when sign-in is on. It sends the person to the dashboard at `<AUTH_URL>/connect/<id>`, where they sign in, pick one of their storefronts and approve. The dashboard's server reads that request with `GET /account/oauth/requests/{id}` and answers it with `POST /account/oauth/requests/{id}` (`{"action": "approve", "productId": "…", "allowWrite": true}` or `{"action": "deny"}`), which returns the address to send the browser back to. A request lasts 10 minutes and works once.
+The MCP server's approve page (`/oauth/authorize`, see [mcp/README.md](../mcp/README.md)) has a **Sign in** button when sign-in is on. It sends the person to the dashboard at `<AUTH_URL>/connect/<id>`, where they sign in, pick one of their storefronts, tick what the app may see and change, and approve. The dashboard's server reads that request with `GET /account/oauth/requests/{id}` and answers it with `POST /account/oauth/requests/{id}` (`{"action": "approve", "productId": "…", "scopes": ["stores:read", "backups:read", "backups:write"]}` or `{"action": "deny"}`), which returns the address to send the browser back to. A request lasts 10 minutes and works once.
+
+The `GET` answer lists the storefronts to pick from, and one entry per area (`stores`, `backups`, `domains`, `email`, `versions`, `site`) with its read and write scope and whether its box starts ticked: every read box, and the write boxes of the areas the app asked to change. Ticking a write box also grants that area's read scope. Someone whose role may only look can only grant read scopes. (An older dashboard's `"allowWrite": true` still works: every read scope, plus the write scopes the app asked for.)
+
+A platform admin can approve for any storefront, without being on its team: the dashboard's server sends the admin token (`Authorization: Bearer <ADMIN_TOKEN>`) with the person's session, so the `GET` lists every storefront (`"asAdmin": true`) and the person may grant what an owner may. Such a grant isn't tied to a team role; it works until it is revoked or the storefront is removed, and can't be refreshed past its first 30 days.
 
 The app's token then acts as that person on that storefront. Its calls are in the request log under their user id, it keeps write access only while their role allows changes, and it stops working once they leave the team.
 

@@ -117,6 +117,7 @@ describe('Sign in with your website', () => {
     expect(link.searchParams.get('s')).toBe(connectLinkSignature(keyOf(tenantId), fields));
 
     const client = await finish(p, await storeAnswers(link, 'allow'));
+    expect(p.saved.tokens).toMatchObject({ scope: 'site:read site:write' });
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain('add_section');
     expect(names).toContain('get_site');
@@ -135,6 +136,7 @@ describe('Sign in with your website', () => {
   it('gives only the read tools when the owner allows looking only', async () => {
     const { p, response } = await typeAddress(mainDomain);
     const client = await finish(p, await storeAnswers(new URL(response.headers.get('Location')!), 'allow-read'));
+    expect(p.saved.tokens).toMatchObject({ scope: 'site:read' });
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain('read_page');
     expect(names).not.toContain('add_section');
