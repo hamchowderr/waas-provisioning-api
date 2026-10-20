@@ -489,6 +489,22 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json({ tenantId: created.id, externalId: created.externalId, importCode: created.importCode, pluginUrl: `${publicBase(c, config.publicUrl)}/imports/plugin.zip` });
   });
 
+  // A new store of the product from its production version and latest template, as POST /v1/tenants
+  // makes it: the dashboard's "New site", so a store can be made without the storefront or a key.
+  app.post('/products/:productId/tenants', async (c) => {
+    const productId = await product(c);
+    const body = ((await readJson(c)) ?? {}) as Record<string, unknown>;
+    if (typeof body.name !== 'string') throw badRequest('name is required');
+    if (body.size !== undefined && !['small', 'medium', 'large'].includes(body.size as string)) throw badRequest('size must be small, medium or large');
+    const params = {
+      name: body.name.trim().slice(0, 100),
+      ...(typeof body.size === 'string' && { size: body.size }),
+      ...(typeof body.customDomainName === 'string' && body.customDomainName.trim() && { customDomainName: body.customDomainName.trim() }),
+    } as Parameters<typeof createTenant>[2];
+    const created = (await createTenant(deps, productId, params, publicBase(c, config.publicUrl))) as { id: string; externalId: string };
+    return c.json({ tenantId: created.id, externalId: created.externalId }, 201);
+  });
+
   app.post('/tenants/:id/import-code', async (c) => {
     const id = c.req.param('id');
     if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
