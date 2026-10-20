@@ -7,7 +7,7 @@ It comes with:
 - a **store panel** ([MCP App](https://modelcontextprotocol.io/extensions/apps)): `show_stores` renders your stores inline in clients that support MCP Apps (Claude, ChatGPT, VS Code and others), with back up, suspend and resume buttons. Other clients get the same list as text.
 - an **Agent Skill**, [`skills/anypress-stores`](skills/anypress-stores/SKILL.md), that teaches an agent the common jobs: launching a store, putting it on a custom domain, setting up its sending domain, backups and restores, and editing a store's pages and design.
 
-> The API secret has full control of your stores. Every tool says whether it only reads or can destroy something, so clients like Claude ask before deleting or restoring a store. The read-only endpoint (or `WAAS_MCP_READ_ONLY=1`) offers only the tools that read.
+> The API secret has full control of your stores. Every tool says whether it only reads or can destroy something, so clients like Claude ask before deleting or restoring a store. The read-only endpoint (or `WAAS_MCP_READ_ONLY=1`) offers only the tools that read, and an OAuth connection offers only the areas you allowed (below).
 
 ## Connect over HTTP
 
@@ -20,13 +20,27 @@ The API serves the MCP server itself, so there is nothing to run:
 
 ### Sign in with OAuth (Claude, ChatGPT and other connectors)
 
-Add `https://<your API>/mcp` as a custom connector. The client finds the sign-in on its own and opens the API's approve page. There you either:
+Add `https://<your API>/mcp` as a custom connector. There is no client id or secret to copy: the client registers itself, finds the sign-in on its own and opens the API's approve page. There you either:
 
-- **Sign in** (when sign-in is on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront and approve. The app then acts as you, with your role: someone who may only look gets the read tools only.
-- Or sign in with your product **API key and secret**. The secret stays on that page.
+- **Sign in** (sign-in must be on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront, tick what the app may see and change, and approve. The app then acts as you, with your role: someone who may only look can only allow looking. A platform admin can pick any storefront.
 - Or **Sign in with your website**, for someone who owns one store: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)).
 
-Either way the client only gets a token. You can untick "Allow it to make changes" to give it the read tools only.
+Either way the client only gets a token.
+
+#### Scopes
+
+Each area has a scope to see and a scope to change. The approve page has a box for each; the read boxes start ticked, and the write boxes of the areas the app asked to change. Ticking a write box includes that area's read scope. A tool whose scope wasn't granted isn't offered.
+
+| Area | `:read` tools | `:write` tools |
+|---|---|---|
+| `stores` | `show_stores`, `list_stores`, `get_store`, `wait_for_store` | `create_store`, `update_store_options`, `suspend_store`, `resume_store`, `delete_store`, `move_store_to_version` |
+| `backups` | `list_store_backups` | `create_store_backup`, `restore_store` |
+| `domains` | `list_store_domains`, `check_domain_availability`, `get_domain_connect_link` | `add_store_domain`, `set_store_main_domain`, `remove_store_domain` |
+| `email` | `get_store_mail_domain` | `set_store_mail_domain`, `remove_store_mail_domain` |
+| `versions` | `list_versions`, `list_snapshots`, `list_templates` | `create_version`, `set_production_version`, `delete_version` |
+| `site` (pages and design) | `get_site`, `list_pages`, `read_page`, `list_page_revisions`, `find_patterns`, `get_pattern`, `get_site_styles`, `get_header_footer`, `list_menus` | `create_page`, `update_page`, `add_section`, `replace_section`, `remove_section`, `restore_page_revision`, `update_site_styles`, `update_header_footer`, `update_menu`, `add_image` |
+
+So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
 
 What the API implements, per the MCP authorization spec:
 
@@ -34,9 +48,9 @@ What the API implements, per the MCP authorization spec:
 - Authorization Server Metadata (RFC 8414) at `/.well-known/oauth-authorization-server`
 - Client ID Metadata Documents, and dynamic client registration (RFC 7591) at `/oauth/register`
 - Authorization code with PKCE (S256 only) at `/oauth/authorize` and `/oauth/token`, refresh tokens that rotate, and revocation (RFC 7009) at `/oauth/revoke`
-- Tokens bound to their endpoint (RFC 8707 `resource`), with scopes `stores:read` and `stores:write`
+- Tokens bound to their endpoint (RFC 8707 `resource`), with the scopes above, listed in both metadata documents and the `WWW-Authenticate` header
 
-Access tokens last an hour and refresh tokens 30 days. Both are stored hashed and belong to the API key that approved them (revoking the key cuts the client off) or to the person who signed in and their storefront (leaving its team cuts the client off, and becoming a member who only looks takes away the write tools). Set `PUBLIC_URL` to the API's public address in production; it is the issuer and the resource clients see.
+Access tokens last an hour and refresh tokens 30 days. Both are stored hashed and belong to the person who signed in and their storefront (leaving its team cuts the client off, and becoming a member who only looks takes away the write tools), or to one store. Tokens approved with an API key and secret, before that option was removed, keep working until the key is revoked. Set `PUBLIC_URL` to the API's public address in production; it is the issuer and the resource clients see.
 
 ### Sign in with the API key (Basic auth)
 

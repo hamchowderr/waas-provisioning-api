@@ -57,7 +57,8 @@
   const { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } = globalThis.McpApps;
   const app = new App({ name: 'WaaS stores', version: '0.1.0' }, {});
   let stores = [];
-  let readOnly = true;
+  let canBackup = false;
+  let canChange = false;
   const armed = new Set();
 
   const $ = (id) => document.getElementById(id);
@@ -87,7 +88,9 @@
       return;
     }
     stores = data.stores ?? [];
-    readOnly = !!data.readOnly;
+    // Older servers sent readOnly only.
+    canBackup = data.canBackup ?? !data.readOnly;
+    canChange = data.canChange ?? !data.readOnly;
     render();
   }
 
@@ -109,9 +112,9 @@
       el('div', { className: 'meta' }, ...(store.domainName ? [link] : []), el('span', { textContent: `id ${store.externalId}` }), el('span', { textContent: store.versionName ?? '' })),
     );
     const actions = el('div', { className: 'actions' });
-    if (!readOnly && store.statusCode === 1) {
-      actions.append(action(store, 'Back up', 'create_store_backup', false));
-      actions.append(store.isSuspended ? action(store, 'Resume', 'resume_store', false) : action(store, 'Suspend', 'suspend_store', true));
+    if (store.statusCode === 1) {
+      if (canBackup) actions.append(action(store, 'Back up', 'create_store_backup', false));
+      if (canChange) actions.append(store.isSuspended ? action(store, 'Resume', 'resume_store', false) : action(store, 'Suspend', 'suspend_store', true));
     }
     return el('li', {}, info, actions);
   }

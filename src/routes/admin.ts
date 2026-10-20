@@ -39,7 +39,7 @@ function sha256(value: string): Buffer {
 }
 
 /** Compares digests, so the comparison takes the same time whatever the token's length. */
-function tokenMatches(given: string, expected: string): boolean {
+export function tokenMatches(given: string, expected: string): boolean {
   return timingSafeEqual(sha256(given), sha256(expected));
 }
 

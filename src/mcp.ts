@@ -1,6 +1,7 @@
 // The MCP server (mcp/) over Streamable HTTP at /mcp, so an AI agent can manage stores without
 // running anything locally. Callers sign in with an OAuth access token (src/oauth.ts; what Claude
-// and ChatGPT connectors use) or with the same Basic auth as /v1. Tool calls go through the /v1
+// and ChatGPT connectors use), which offers only the tools of the scopes it was granted
+// (mcp/src/scopes.ts), or with the same Basic auth as /v1, which offers every tool. Tool calls go through the /v1
 // routes in-process, so they get the same checks and land in the request log. A store owner's token
 // ("Sign in with your website") gets only the site tools, and only for that store.
 import { createMcpHandler, requireBearerAuth } from '@modelcontextprotocol/server';
@@ -10,14 +11,14 @@ import { WaasClient } from 'waas-provisioning-sdk';
 import { createWaasMcpServer } from '../mcp/src/server.ts';
 import type { AppEnv, Deps } from './app.ts';
 import { authenticate } from './keys.ts';
-import { MCP_PATHS, protectedResourceMetadataUrl, publicBase, SCOPE_READ, SCOPE_WRITE, verifyAccessToken, type TokenOwner } from './oauth.ts';
+import { MCP_PATHS, protectedResourceMetadataUrl, publicBase, scopesFor, verifyAccessToken, type TokenOwner } from './oauth.ts';
 
-type Caller = TokenOwner & { readOnly: boolean; [key: string]: unknown };
+type Caller = TokenOwner & { readOnly: boolean; scopes: string[]; [key: string]: unknown };
 
 export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
   const handler = createMcpHandler(
     (ctx) => {
-      const { productId, apiKeyId, userId, tenantId, readOnly } = ctx.authInfo!.extra as unknown as Caller;
+      const { productId, apiKeyId, userId, tenantId, readOnly, scopes } = ctx.authInfo!.extra as unknown as Caller;
       const internalAuth = { productId, apiKeyId, userId };
       // The /v1 routes sign this caller in from internalAuth; the key and secret here are never checked.
       const client = new WaasClient({
@@ -34,7 +35,7 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
           return app.request(`${url.pathname}${url.search}`, init, { internalAuth });
         }) as typeof fetch,
       });
-      return createWaasMcpServer(client, { readOnly, store: tenantId ? { tenantId } : undefined });
+      return createWaasMcpServer(client, { readOnly, scopes, store: tenantId ? { tenantId } : undefined });
     },
     { onerror: (error) => console.error('mcp:', error.message) },
   );
@@ -48,10 +49,16 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
     const readOnlyPath = path === '/mcp/read-only';
 
     if (/^Bearer\s/i.test(header)) {
-      const auth = await requireBearerAuth({ verifier, requiredScopes: [SCOPE_READ], expectedResource: new URL(`${base}${path}`), resourceMetadataUrl })(c.req.raw);
+      const auth = await requireBearerAuth({ verifier, requiredScopes: [], expectedResource: new URL(`${base}${path}`), resourceMetadataUrl })(c.req.raw);
       if (auth instanceof Response) return auth;
+      // A person who may now only look keeps the read scopes; a token with none left can do nothing here.
+      if (!auth.scopes.length) {
+        return c.json({ error: 'insufficient_scope', error_description: 'This connection may not see anything. Connect the app again.' }, 403, {
+          'WWW-Authenticate': `Bearer error="insufficient_scope", scope="${scopesFor(path).join(' ')}", resource_metadata="${resourceMetadataUrl}"`,
+        });
+      }
       const owner = auth.extra as unknown as TokenOwner;
-      const caller: Caller = { ...owner, readOnly: readOnlyPath || !auth.scopes.includes(SCOPE_WRITE) };
+      const caller: Caller = { ...owner, readOnly: readOnlyPath, scopes: auth.scopes };
       return handler.fetch(c.req.raw, { authInfo: { ...auth, extra: caller } });
     }
 
@@ -62,13 +69,14 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
       const key = colon > 0 ? decoded.slice(0, colon) : '';
       const productId = key ? await authenticate(deps.pool, key, decoded.slice(colon + 1)) : null;
       if (productId) {
-        const caller: Caller = { productId, apiKeyId: key, readOnly: readOnlyPath };
-        return handler.fetch(c.req.raw, { authInfo: { token: key, clientId: productId, scopes: readOnlyPath ? [SCOPE_READ] : [SCOPE_READ, SCOPE_WRITE], extra: caller } });
+        const scopes = [...scopesFor(path)];
+        const caller: Caller = { productId, apiKeyId: key, readOnly: readOnlyPath, scopes };
+        return handler.fetch(c.req.raw, { authInfo: { token: key, clientId: productId, scopes, extra: caller } });
       }
     }
 
     // No (valid) credentials: point OAuth clients at the sign-in (RFC 9728), and offer Basic too.
-    const scope = readOnlyPath ? SCOPE_READ : `${SCOPE_READ} ${SCOPE_WRITE}`;
+    const scope = scopesFor(path).join(' ');
     return c.json({ error: 'invalid_token', error_description: 'Sign in with OAuth, or with your API key and secret (Basic auth)' }, 401, {
       'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scope}", Basic realm="waas-mcp"`,
     });
