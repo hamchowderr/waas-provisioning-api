@@ -50,6 +50,23 @@ On `/v1`, the partner key signs in with Basic auth like any key, and:
 
 Making and deleting storefronts with a partner key (`POST`, `DELETE /v1/products`) comes later.
 
+## Reseller team
+
+People at the reseller sign in to the dashboard like any customer. A reseller has one team (an organization), and everyone on it reaches every storefront the reseller has, with their role on the team (`owner`, `admin` or `member`, as in [accounts.md](accounts.md#roles)). A storefront moved into the reseller is in reach at once; one moved out is out of reach at once.
+
+| Call | What it does |
+|---|---|
+| `GET /admin/resellers/{id}/organization` | The team, its members and pending invitations |
+| `PUT /admin/resellers/{id}/organization` `{"name": "…"}` | Makes the team, or renames it. The name defaults to the reseller's |
+| `POST /admin/resellers/{id}/invitations` `{"email": "…", "role": "owner"}` | Invites someone, as for a storefront's team (made if there is none). The invitation is emailed |
+| `DELETE /admin/resellers/{id}/invitations/{invitationId}` | Cancels a pending invitation |
+| `PATCH /admin/resellers/{id}/members/{memberId}` `{"role": "admin"}` | Changes someone's role. The last owner stays (409) |
+| `DELETE /admin/resellers/{id}/members/{memberId}` | Removes someone. Their account stays; it no longer reaches the storefronts |
+
+Only the platform admin manages the reseller's team. A storefront's own team is separate and works as before; someone on both gets the higher of the two roles on that storefront.
+
+A signed-in person with several storefronts picks one in the dashboard's switcher, which sends its id in the `X-Product-Id` header. `GET /account` lists one membership per storefront (`resellerId` is set on those that come from a reseller's team), and `/v1` and `/account/*` act on the picked one. Without the header, or when it names none of theirs, the first storefront of the organization picked in the session is used, or the only one. An AI app connected by a reseller's team member works on the storefront they picked, and stops once they leave the team.
+
 ## Usage
 
 `GET /admin/resellers/{id}/usage?from=…&to=…` answers store-days per size (`small`, `medium`, `large`), in total and per storefront. `from` and `to` default to the current calendar month (UTC). A store live for all of a 30-day month is 30 store-days.

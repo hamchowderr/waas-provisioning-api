@@ -277,3 +277,34 @@ describe('connecting an AI app by signing in', () => {
     }
   });
 });
+
+describe("a reseller's team member (docs/resellers.md)", () => {
+  it('connects for one of the reseller\'s storefronts, and is cut off once they leave the team', async () => {
+    const reseller = await (await admin('POST', '/resellers', { name: 'Signin Partners', productIds: [t.productId] })).json();
+    const partner = await signedIn('partner@reseller.example');
+    const invitation = await (await admin('POST', `/resellers/${reseller.id}/invitations`, { email: 'partner@reseller.example', role: 'admin' })).json();
+    const accepted = await app.request('/api/auth/organization/accept-invitation', {
+      method: 'POST',
+      headers: { Cookie: partner.cookie, 'Content-Type': 'application/json', Origin: AUTH.url },
+      body: JSON.stringify({ invitationId: invitation.id }),
+    });
+    expect(accepted.status).toBe(200);
+
+    const { client, p } = await connectAs(partner);
+    expect(await tools(client)).toContain('create_store');
+    await client.close();
+    const tokens = p.saved.tokens as { access_token: string };
+    const mcp = () =>
+      app.request('/mcp', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokens.access_token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      });
+    expect((await mcp()).status).toBe(200);
+
+    const view = await (await admin('GET', `/resellers/${reseller.id}/organization`)).json();
+    const memberId = view.members.find((m: { userId: string }) => m.userId === partner.userId).id;
+    expect((await admin('DELETE', `/resellers/${reseller.id}/members/${memberId}`)).status).toBe(200);
+    expect((await mcp()).status).toBe(401);
+  });
+});

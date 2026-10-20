@@ -86,7 +86,14 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
         // Invitations are made and emailed by our own routes (src/accounts.ts), not Better Auth's.
         async sendInvitationEmail() {},
         schema: {
-          organization: { modelName: 'organization', additionalFields: { productId: { type: 'string', required: true, input: false } } },
+          // A product's organization, or a reseller's, whose members reach all its storefronts (docs/resellers.md).
+          organization: {
+            modelName: 'organization',
+            additionalFields: {
+              productId: { type: 'string', required: false, input: false },
+              resellerId: { type: 'string', required: false, input: false },
+            },
+          },
         },
       }),
       ...(config.mail

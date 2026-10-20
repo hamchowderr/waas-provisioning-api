@@ -1518,6 +1518,126 @@ paths:
               schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/organization:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetResellerOrganization
+      summary: A reseller's team, its members and pending invitations (docs/resellers.md)
+      description: >-
+        Everyone on a reseller's team signs in to the dashboard and reaches every storefront the
+        reseller has, with their role here. organization is null until one is made (PUT) or someone is invited.
+      responses:
+        '200':
+          description: The organization
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminPutResellerOrganization
+      summary: Make the reseller's team, or rename it
+      description: Each reseller has at most one. name defaults to the reseller's name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string, minLength: 1, maxLength: 100 } }
+      responses:
+        '200':
+          description: Renamed (or already there)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '201':
+          description: Made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/invitations:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminInviteToReseller
+      summary: Invite someone to the reseller's team by email (same rules as adminInvite)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+      responses:
+        '201':
+          description: The invitation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invitation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}/invitations/{invitationId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: invitationId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminCancelResellerInvitation
+      summary: Cancel a pending invitation to the reseller's team
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/members/{memberId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: memberId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminRemoveResellerMember
+      summary: Remove someone from the reseller's team
+      description: Their account stays; it can no longer reach the reseller's storefronts.
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: adminSetResellerMemberRole
+      summary: Change someone's role on the reseller's team (same rules as adminSetMemberRole)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+      responses:
+        '200':
+          description: The organization after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/resellers/{id}/usage:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -1640,11 +1760,13 @@ components:
         organization:
           type: object
           nullable: true
-          required: [id, name, productId, dateCreated]
+          required: [id, name, dateCreated]
+          description: A storefront's own team has productId; a reseller's team has resellerId.
           properties:
             id: { type: string, format: uuid }
             name: { type: string }
             productId: { type: string, format: uuid }
+            resellerId: { type: string, format: uuid }
             dateCreated: { type: string, format: date-time }
         members:
           type: array

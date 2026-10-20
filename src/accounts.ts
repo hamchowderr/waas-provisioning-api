@@ -15,24 +15,37 @@ import { adminRoutes } from './routes/admin.ts';
  * may make changes; members may only look.
  */
 
+/**
+ * One storefront someone can act for. A member of a reseller's organization has one for each of the
+ * reseller's storefronts, all with that organization's id and role, and resellerId set.
+ */
 export interface Membership {
   organizationId: string;
   organizationName: string;
   productId: string;
   productName: string;
   role: OrgRole;
+  resellerId: string | null;
 }
 
 export interface SessionCaller {
   /** githubLogin: set when they signed up with GitHub. */
   user: { id: string; name: string; email: string; emailVerified: boolean; image: string | null; githubLogin: string | null };
   memberships: Membership[];
-  /** The organization the session acts for: the one picked in the session, or the only one. */
+  /**
+   * The storefront the session acts for: the one named by the X-Product-Id header (the dashboard's
+   * storefront switcher), else the first storefront of the organization picked in the session, else
+   * the only one.
+   */
   active: Membership | null;
 }
 
 /** Marks a request whose session cookie the dashboard's server passes on (not a browser's). */
 export const SESSION_HEADER = 'X-Session-Auth';
+/** The storefront the dashboard's switcher picked, among the session's memberships. */
+export const PRODUCT_HEADER = 'X-Product-Id';
+
+const ROLE_RANK: Record<OrgRole, number> = { member: 0, admin: 1, owner: 2 };
 
 const READ_METHODS = new Set(['GET', 'HEAD']);
 
@@ -44,21 +57,36 @@ export async function sessionCaller(deps: Deps, headers: Headers): Promise<Sessi
   if (!deps.auth) return null;
   const session = await deps.auth.api.getSession({ headers });
   if (!session) return null;
+  // A storefront's own team, and a reseller's team for each of the reseller's storefronts.
   const { rows } = await deps.pool.query(
-    `SELECT o.id, o.name, o."productId" AS product_id, p.name AS product_name, m.role
-       FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId" JOIN products p ON p.id = o."productId"
-      WHERE m."userId" = $1 ORDER BY o.name, o.id`,
+    `SELECT o.id, o.name, p.id AS product_id, p.name AS product_name, m.role, o."resellerId" AS reseller_id
+       FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId"
+       JOIN products p ON p.id = o."productId" OR p.reseller_id = o."resellerId"
+      WHERE m."userId" = $1 ORDER BY p.name, p.id`,
     [session.user.id],
   );
-  const memberships: Membership[] = rows.map((r) => ({
-    organizationId: r.id,
-    organizationName: r.name,
-    productId: r.product_id,
-    productName: r.product_name,
-    role: r.role,
-  }));
+  // On both teams of a storefront, the higher role counts.
+  const byProduct = new Map<string, Membership>();
+  for (const r of rows) {
+    const m: Membership = {
+      organizationId: r.id,
+      organizationName: r.name,
+      productId: r.product_id,
+      productName: r.product_name,
+      role: r.role,
+      resellerId: r.reseller_id ?? null,
+    };
+    const seen = byProduct.get(m.productId);
+    if (!seen || ROLE_RANK[topRole(m.role)] > ROLE_RANK[topRole(seen.role)]) byProduct.set(m.productId, m);
+  }
+  const memberships = [...byProduct.values()];
+  const picked = headers.get(PRODUCT_HEADER);
   const activeId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
-  const active = memberships.find((m) => m.organizationId === activeId) ?? (memberships.length === 1 ? memberships[0]! : null);
+  const inActive = memberships.filter((m) => m.organizationId === activeId);
+  const active =
+    memberships.find((m) => m.productId === picked) ??
+    inActive[0] ??
+    (memberships.length === 1 ? memberships[0]! : null);
   const { id, name, email, emailVerified, image } = session.user;
   const githubLogin = (session.user as { githubLogin?: string | null }).githubLogin ?? null;
   return { user: { id, name, email, emailVerified: emailVerified === true, image: image ?? null, githubLogin }, memberships, active };
@@ -77,7 +105,7 @@ export function sessionAuth(deps: Deps): MiddlewareHandler<AppEnv> {
     if (!deps.auth) return forbidden(c, 'Sign-in is off on this server');
     const caller = await sessionCaller(deps, c.req.raw.headers);
     if (!caller) return forbidden(c, 'Sign in first');
-    if (!caller.active) return forbidden(c, caller.memberships.length ? 'Choose an organization first' : 'Your account is not part of an organization yet');
+    if (!caller.active) return forbidden(c, caller.memberships.length ? 'Choose a storefront first' : 'Your account is not part of an organization yet');
     if (!canChange(caller.active.role) && !READ_METHODS.has(c.req.method)) return forbidden(c, 'Members can only look. Ask an owner or admin to make this change.');
     c.set('productId', caller.active.productId);
     c.set('userId', caller.user.id);
@@ -161,20 +189,30 @@ function teamRules(c: Context) {
   };
 }
 
-async function findProductOrganization(pool: Deps['pool'], productId: string) {
-  const { rows } = await pool.query('SELECT id, name, "createdAt" FROM auth.organization WHERE "productId" = $1', [productId]);
+/**
+ * Whose organization: a product's (the storefront's own team) or a reseller's (a team for all the
+ * reseller's storefronts, docs/resellers.md). `name` is the default name for a new organization.
+ */
+type OrgOwner = { productId: string; name: string } | { resellerId: string; name: string };
+
+const ownerOf = (o: OrgOwner) => ('resellerId' in o ? { column: '"resellerId"', id: o.resellerId } : { column: '"productId"', id: o.productId });
+
+async function findOrganization(pool: Deps['pool'], owner: OrgOwner) {
+  const { column, id } = ownerOf(owner);
+  const { rows } = await pool.query(`SELECT id, name, "createdAt" FROM auth.organization WHERE ${column} = $1`, [id]);
   return rows[0] as { id: string; name: string; createdAt: Date } | undefined;
 }
 
-/** The product's organization, made on first use with the product's name. */
-async function ensureProductOrganization(pool: Deps['pool'], p: { id: string; name: string }, name?: string) {
-  // The slug only needs to be unique; the product id is.
+/** The owner's organization, made on first use with the owner's name. */
+async function ensureOrganization(pool: Deps['pool'], owner: OrgOwner, name?: string) {
+  const { column, id } = ownerOf(owner);
+  // The slug only needs to be unique; the product or reseller id is.
   const { rows } = await pool.query(
-    `INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2::text, now(), $2::uuid)
-     ON CONFLICT ("productId") DO NOTHING RETURNING id, name, "createdAt"`,
-    [name ?? p.name, p.id],
+    `INSERT INTO auth.organization (name, slug, "createdAt", ${column}) VALUES ($1, $2::text, now(), $2::uuid)
+     ON CONFLICT (${column}) DO NOTHING RETURNING id, name, "createdAt"`,
+    [name ?? owner.name, id],
   );
-  return { organization: rows[0] ?? (await findProductOrganization(pool, p.id))!, created: rows.length > 0 };
+  return { organization: rows[0] ?? (await findOrganization(pool, owner))!, created: rows.length > 0 };
 }
 
 /** Where an invitation is accepted: the dashboard's /invite/<id>, or null when sign-in is off. */
@@ -185,9 +223,12 @@ export const invitationUrl = (deps: Pick<Deps, 'config'>, invitationId: string) 
  * Invites `email` to the product's organization (made if it has none) as `role`, replacing a pending
  * invitation for the same address. Sends no email. inviterId is null when the platform admin invites.
  */
-export async function createInvitation(deps: Pick<Deps, 'pool'>, p: { id: string; name: string }, email: string, role: OrgRole, inviterId: string | null) {
-  const { pool } = deps;
-  const { organization } = await ensureProductOrganization(pool, p);
+export function createInvitation(deps: Pick<Deps, 'pool'>, p: { id: string; name: string }, email: string, role: OrgRole, inviterId: string | null) {
+  return inviteTo(deps.pool, { productId: p.id, name: p.name }, email, role, inviterId);
+}
+
+async function inviteTo(pool: Deps['pool'], owner: OrgOwner, email: string, role: OrgRole, inviterId: string | null) {
+  const { organization } = await ensureOrganization(pool, owner);
   const invitation = await withTransaction(pool, async (client) => {
     await client.query('SELECT 1 FROM auth.organization WHERE id = $1 FOR UPDATE', [organization.id]);
     const member = await client.query(
@@ -210,43 +251,50 @@ export async function createInvitation(deps: Pick<Deps, 'pool'>, p: { id: string
 }
 
 /**
- * Organizations for products: each product gets one, its first people are invited by the platform
- * admin, and then its owners and admins invite the rest. Invitations are emailed through toSend when
- * sign-in email is set up. Mounted inside /admin (admin token, every product) and /account (a
- * signed-in customer, their own product only, with teamRules).
+ * Organizations for products and resellers: each gets one, its first people are invited by the
+ * platform admin, and then a product's owners and admins invite the rest. Invitations are emailed
+ * through toSend when sign-in email is set up. Mounted inside /admin (admin token, every product and
+ * reseller) and /account (a signed-in customer, their own product only, with teamRules; resellers'
+ * teams are the platform admin's alone).
  */
 export function adminAccountRoutes(deps: Deps) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
 
-  async function product(c: Context): Promise<{ id: string; name: string }> {
+  async function product(c: Context): Promise<OrgOwner> {
     const id = c.req.param('productId')!;
     const scope = scopedProduct(c);
     const { rows } = isUuid(id) && (!scope || scope === id) ? await pool.query('SELECT id, name FROM products WHERE id = $1', [id]) : { rows: [] };
     if (!rows[0]) throw new HttpError(404, `Product ${id} not found`);
-    return rows[0];
+    return { productId: rows[0].id, name: rows[0].name };
   }
 
-  /** A member of the product's organization, with how many owners it has. */
-  async function findMember(productId: string, id: string) {
+  async function reseller(c: Context): Promise<OrgOwner> {
+    const id = c.req.param('id')!;
+    const { rows } = isUuid(id) && !scopedProduct(c) ? await pool.query('SELECT id, name FROM resellers WHERE id = $1', [id]) : { rows: [] };
+    if (!rows[0]) throw new HttpError(404, `Reseller ${id} not found`);
+    return { resellerId: rows[0].id, name: rows[0].name };
+  }
+
+  /** A member of the owner's organization, with how many owners it has. */
+  async function findMember(owner: OrgOwner, id: string) {
+    const { column, id: ownerId } = ownerOf(owner);
     const { rows } = isUuid(id)
       ? await pool.query(
           `SELECT m.id, m."userId" AS user_id, m.role,
                   (SELECT count(*)::int FROM auth.member o2 WHERE o2."organizationId" = m."organizationId" AND o2.role ~ '(^|,)\\s*owner\\s*(,|$)') AS owners
-             FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId" WHERE m.id = $1 AND o."productId" = $2`,
-          [id, productId],
+             FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId" WHERE m.id = $1 AND o.${column} = $2`,
+          [id, ownerId],
         )
       : { rows: [] };
     if (!rows[0]) throw new HttpError(404, `Member ${id} not found`);
     return { id: rows[0].id as string, userId: rows[0].user_id as string, role: rows[0].role as string, owners: rows[0].owners as number };
   }
 
-  const findOrganization = (productId: string) => findProductOrganization(pool, productId);
-  const ensureOrganization = (p: { id: string; name: string }, name?: string) => ensureProductOrganization(pool, p, name);
   const acceptUrl = (invitationId: string) => invitationUrl(deps, invitationId);
 
-  async function view(productId: string) {
-    const organization = await findOrganization(productId);
+  async function view(owner: OrgOwner) {
+    const organization = await findOrganization(pool, owner);
     if (!organization) return { organization: null, members: [], invitations: [] };
     const [members, invitations] = await Promise.all([
       pool.query(
@@ -261,7 +309,12 @@ export function adminAccountRoutes(deps: Deps) {
       ),
     ]);
     return {
-      organization: { id: organization.id, name: organization.name, productId, dateCreated: iso(organization.createdAt) },
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        ...('resellerId' in owner ? { resellerId: owner.resellerId } : { productId: owner.productId }),
+        dateCreated: iso(organization.createdAt),
+      },
       members: members.rows.map((m) => ({ id: m.id, userId: m.user_id, name: m.name, email: m.email, role: m.role, dateCreated: iso(m.createdAt) })),
       invitations: invitations.rows.map((i) => ({
         id: i.id,
@@ -274,95 +327,102 @@ export function adminAccountRoutes(deps: Deps) {
     };
   }
 
-  app.get('/products/:productId/organization', async (c) => c.json(await view((await product(c)).id)));
+  /** The team routes under `prefix`, for the organization `find` names. */
+  function teamRoutes(prefix: string, find: (c: Context) => Promise<OrgOwner>) {
+    app.get(`${prefix}/organization`, async (c) => c.json(await view(await find(c))));
 
-  // Makes the product's organization, or renames it. name defaults to the product's name.
-  app.put('/products/:productId/organization', async (c) => {
-    const p = await product(c);
-    const body = ((await readJson(c)) ?? {}) as { name?: unknown };
-    if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 100)) {
-      throw badRequest('name must be 1 to 100 characters');
-    }
-    const name = typeof body.name === 'string' ? body.name.trim() : undefined;
-    const { organization, created } = await ensureOrganization(p, name);
-    if (!created && name) await pool.query('UPDATE auth.organization SET name = $2 WHERE id = $1', [organization.id, name]);
-    return c.json(await view(p.id), created ? 201 : 200);
-  });
-
-  // Invites someone by email (role owner unless given). They accept at acceptUrl after signing in
-  // with that email address. A new invitation for the same address replaces a pending one.
-  app.post('/products/:productId/invitations', async (c) => {
-    if (!deps.auth) throw new HttpError(503, 'Sign-in is off: set AUTH_URL and AUTH_SECRET');
-    const p = await product(c);
-    const rules = teamRules(c);
-    const body = ((await readJson(c)) ?? {}) as { email?: unknown; role?: unknown };
-    const email = parseEmail(body.email);
-    // The platform admin usually invites a storefront's first person, its owner; a team adds members.
-    const role = parseRole(body.role, rules.caller ? 'member' : 'owner');
-    rules.mayGrant(role);
-    const { organization, invitation } = await createInvitation(deps, p, email, role, rules.caller?.user.id ?? null);
-    const url = acceptUrl(invitation.id)!;
-    // The invitation stands even if the email fails; the dashboard shows the link to send by hand.
-    let emailed = false;
-    const mail = deps.config.auth?.mail;
-    if (mail) {
-      const inviter = rules.caller ? rules.caller.user.name || rules.caller.user.email : null;
-      try {
-        await sendInvitation(mail, email, { url, organization: organization.name, inviter, days: INVITATION_DAYS });
-        emailed = true;
-      } catch (err) {
-        console.error(`Invitation ${invitation.id}: ${(err as Error).message}`);
+    // Makes the organization, or renames it. name defaults to the product's or reseller's name.
+    app.put(`${prefix}/organization`, async (c) => {
+      const owner = await find(c);
+      const body = ((await readJson(c)) ?? {}) as { name?: unknown };
+      if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 100)) {
+        throw badRequest('name must be 1 to 100 characters');
       }
-    }
-    return c.json(
-      { id: invitation.id, email: invitation.email, role: invitation.role, expiresAt: iso(invitation.expiresAt), dateCreated: iso(invitation.createdAt), acceptUrl: url, emailed },
-      201,
-    );
-  });
+      const name = typeof body.name === 'string' ? body.name.trim() : undefined;
+      const { organization, created } = await ensureOrganization(pool, owner, name);
+      if (!created && name) await pool.query('UPDATE auth.organization SET name = $2 WHERE id = $1', [organization.id, name]);
+      return c.json(await view(owner), created ? 201 : 200);
+    });
 
-  app.delete('/products/:productId/invitations/:id', async (c) => {
-    const p = await product(c);
-    const id = c.req.param('id');
-    const rules = teamRules(c);
-    if (rules.caller && isUuid(id)) {
-      const { rows } = await pool.query('SELECT role FROM auth.invitation WHERE id = $1', [id]);
-      if (rows[0]) rules.mayGrant(rows[0].role ?? 'member');
-    }
-    const { rowCount } = isUuid(id)
-      ? await pool.query(
-          `UPDATE auth.invitation i SET status = 'canceled' FROM auth.organization o
-            WHERE i.id = $1 AND o.id = i."organizationId" AND o."productId" = $2 AND i.status = 'pending'`,
-          [id, p.id],
-        )
-      : { rowCount: 0 };
-    if (!rowCount) throw new HttpError(404, `Pending invitation ${id} not found`);
-    return c.json(await view(p.id));
-  });
+    // Invites someone by email (role owner unless given). They accept at acceptUrl after signing in
+    // with that email address. A new invitation for the same address replaces a pending one.
+    app.post(`${prefix}/invitations`, async (c) => {
+      if (!deps.auth) throw new HttpError(503, 'Sign-in is off: set AUTH_URL and AUTH_SECRET');
+      const owner = await find(c);
+      const rules = teamRules(c);
+      const body = ((await readJson(c)) ?? {}) as { email?: unknown; role?: unknown };
+      const email = parseEmail(body.email);
+      // The platform admin usually invites a storefront's first person, its owner; a team adds members.
+      const role = parseRole(body.role, rules.caller ? 'member' : 'owner');
+      rules.mayGrant(role);
+      const { organization, invitation } = await inviteTo(pool, owner, email, role, rules.caller?.user.id ?? null);
+      const url = acceptUrl(invitation.id)!;
+      // The invitation stands even if the email fails; the dashboard shows the link to send by hand.
+      let emailed = false;
+      const mail = deps.config.auth?.mail;
+      if (mail) {
+        const inviter = rules.caller ? rules.caller.user.name || rules.caller.user.email : null;
+        try {
+          await sendInvitation(mail, email, { url, organization: organization.name, inviter, days: INVITATION_DAYS });
+          emailed = true;
+        } catch (err) {
+          console.error(`Invitation ${invitation.id}: ${(err as Error).message}`);
+        }
+      }
+      return c.json(
+        { id: invitation.id, email: invitation.email, role: invitation.role, expiresAt: iso(invitation.expiresAt), dateCreated: iso(invitation.createdAt), acceptUrl: url, emailed },
+        201,
+      );
+    });
 
-  // Removes someone from the product's organization. Their account stays; it just can't reach this product.
-  app.delete('/products/:productId/members/:id', async (c) => {
-    const p = await product(c);
-    const member = await findMember(p.id, c.req.param('id'));
-    teamRules(c).mayChange(member, member.owners);
-    await pool.query('DELETE FROM auth.member WHERE id = $1', [member.id]);
-    return c.json(await view(p.id));
-  });
+    app.delete(`${prefix}/invitations/:invitationId`, async (c) => {
+      const owner = await find(c);
+      const { column, id: ownerId } = ownerOf(owner);
+      const id = c.req.param('invitationId')!;
+      const rules = teamRules(c);
+      if (rules.caller && isUuid(id)) {
+        const { rows } = await pool.query('SELECT role FROM auth.invitation WHERE id = $1', [id]);
+        if (rows[0]) rules.mayGrant(rows[0].role ?? 'member');
+      }
+      const { rowCount } = isUuid(id)
+        ? await pool.query(
+            `UPDATE auth.invitation i SET status = 'canceled' FROM auth.organization o
+              WHERE i.id = $1 AND o.id = i."organizationId" AND o.${column} = $2 AND i.status = 'pending'`,
+            [id, ownerId],
+          )
+        : { rowCount: 0 };
+      if (!rowCount) throw new HttpError(404, `Pending invitation ${id} not found`);
+      return c.json(await view(owner));
+    });
 
-  // Changes someone's role: owner, admin (may make changes) or member (may only look).
-  app.patch('/products/:productId/members/:id', async (c) => {
-    const p = await product(c);
-    const body = ((await readJson(c)) ?? {}) as { role?: unknown };
-    if (body.role === undefined) throw badRequest('role is required');
-    const role = parseRole(body.role);
-    const member = await findMember(p.id, c.req.param('id'));
-    const rules = teamRules(c);
-    rules.mayGrant(role);
-    // Demoting the last owner would leave the team without one, even for the platform admin.
-    if (topRole(member.role) === 'owner' && role !== 'owner' && member.owners <= 1) throw new HttpError(409, 'A team needs at least one owner.');
-    rules.mayChange(member, member.owners + (role === 'owner' ? 1 : 0));
-    await pool.query('UPDATE auth.member SET role = $2 WHERE id = $1', [member.id, role]);
-    return c.json(await view(p.id));
-  });
+    // Removes someone from the organization. Their account stays; it just can't reach these storefronts.
+    app.delete(`${prefix}/members/:memberId`, async (c) => {
+      const owner = await find(c);
+      const member = await findMember(owner, c.req.param('memberId')!);
+      teamRules(c).mayChange(member, member.owners);
+      await pool.query('DELETE FROM auth.member WHERE id = $1', [member.id]);
+      return c.json(await view(owner));
+    });
+
+    // Changes someone's role: owner, admin (may make changes) or member (may only look).
+    app.patch(`${prefix}/members/:memberId`, async (c) => {
+      const owner = await find(c);
+      const body = ((await readJson(c)) ?? {}) as { role?: unknown };
+      if (body.role === undefined) throw badRequest('role is required');
+      const role = parseRole(body.role);
+      const member = await findMember(owner, c.req.param('memberId')!);
+      const rules = teamRules(c);
+      rules.mayGrant(role);
+      // Demoting the last owner would leave the team without one, even for the platform admin.
+      if (topRole(member.role) === 'owner' && role !== 'owner' && member.owners <= 1) throw new HttpError(409, 'A team needs at least one owner.');
+      rules.mayChange(member, member.owners + (role === 'owner' ? 1 : 0));
+      await pool.query('UPDATE auth.member SET role = $2 WHERE id = $1', [member.id, role]);
+      return c.json(await view(owner));
+    });
+  }
+
+  teamRoutes('/products/:productId', product);
+  teamRoutes('/resellers/:id', reseller);
 
   return app;
 }
