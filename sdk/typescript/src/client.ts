@@ -124,6 +124,11 @@ export class WaasClient {
      * (the code given before stops working). The owner pastes it into the AnyPress Export plugin on the old site.
      */
     newImportCode: (ref: TenantRef) => this.#call('newImportCode', 'POST', '/v1/tenants/import-code', ref),
+    /**
+     * Adds emails on top of the store's monthly plan; they never expire. `reference` (your order id, say) makes a
+     * repeat add nothing. Answers with the total bought for the store.
+     */
+    addEmailPack: (ref: TenantRef, params: BodyOf<'addTenantEmailPack'>) => this.#call('addTenantEmailPack', 'POST', '/v1/tenants/email-packs', ref, params),
     listBackups: (ref: TenantRef) => this.#call('listTenantBackups', 'GET', '/v1/tenants/backups', ref),
     createBackup: (ref: TenantRef) => this.#call('createTenantBackup', 'POST', '/v1/tenants/backups', ref),
     /**

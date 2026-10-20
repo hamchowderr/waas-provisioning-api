@@ -5,7 +5,7 @@ import { purgeExpiredImports } from './imports.ts';
 import { pruneRequestLog } from './requestlog.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
-import { decodePhpConstants, TENANT_SELECT } from './tenants.ts';
+import { decodePhpConstants, emailPacksBought, TENANT_SELECT } from './tenants.ts';
 
 export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets: Secrets, backupRetentionDays: number, requestLogDays = 30): JobHandlers {
   const setTenantStatus = (tenantId: string, status: number, onlyFrom?: number) =>
@@ -113,6 +113,9 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
             mainDomain: rows[0].main_domain,
             ownCode: rows[0].own_code,
           });
+          // The backup's database holds the pack total of its day; tell the store the one on record again.
+          const purchased = await emailPacksBought(pool, data.tenantId);
+          if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
@@ -128,6 +131,13 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.backup':
           await backUp(pool, provisioner, data.tenantId, data.backupId);
           return;
+        case 'tenant.email-packs': {
+          const { rowCount } = await pool.query('SELECT 1 FROM tenants WHERE id = $1', [data.tenantId]);
+          if (!rowCount) return;
+          // The total on record when the job runs, not when it was queued: packs bought meanwhile are included.
+          await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
+          return;
+        }
       }
     },
 
@@ -167,6 +177,9 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.move':
         case 'tenant.domains':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
+        case 'tenant.email-packs':
+          // The store still works; it just doesn't have its new pack emails yet. The shop's retry sends them again.
           return;
         case 'tenant.delete':
           await setTenantStatus(data.tenantId, Status.Failed);

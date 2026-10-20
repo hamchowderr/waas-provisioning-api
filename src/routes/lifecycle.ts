@@ -8,9 +8,9 @@ import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE } from '../plans.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { checkTenantCap, domainInUse, findTenant } from '../tenants.ts';
+import { checkTenantCap, domainInUse, emailPacksBought, findTenant } from '../tenants.ts';
 
-/** Suspend, resume and backups (contract draft.3, tag TenantLifecycle). Mounted at /v1/tenants. */
+/** Suspend, resume, backups (contract draft.3, tag TenantLifecycle) and email packs. Mounted at /v1/tenants. */
 export function lifecycleRoutes({ pool, boss }: Deps) {
   const app = new Hono<AppEnv>();
 
@@ -59,6 +59,25 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
       });
     }
     return c.json(result(tenant, null));
+  });
+
+  // Emails bought on top of the plan's monthly ones. `reference` (the shop's order) makes a repeat add nothing.
+  app.post('/email-packs', async (c) => {
+    const tenant = await liveTenant(c);
+    const body = validateBody<{ emails: number; reference: string }>('EmailPackParams', await readJson(c));
+    const emailPacks = await withTransaction(pool, async (client) => {
+      // A repeat racing the first waits here for it to commit, then adds nothing.
+      await client.query(
+        `INSERT INTO tenant_email_packs (tenant_id, product_id, emails, reference) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (tenant_id, reference) DO NOTHING`,
+        [tenant.id, tenant.product_id, body.emails, body.reference],
+      );
+      // The store keeps working while its total is sent, so its status doesn't change. A repeat adds nothing but
+      // sends the total again, so the shop retrying a pack also repairs a send that failed.
+      await enqueue(boss, client, { type: 'tenant.email-packs', tenantId: tenant.id });
+      return emailPacksBought(client, tenant.id);
+    });
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, emailPacks });
   });
 
   // Also lists the backups of a deleted tenant, so it doesn't go through findTenant.

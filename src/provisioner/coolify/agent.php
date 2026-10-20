@@ -405,12 +405,37 @@ add_filter('wp_handle_upload', function ($upload) {
     return $upload;
 });
 
-/** This calendar month's (UTC) count of emails sent; a new month starts at 0. */
+/**
+ * The store's email packs: emails bought on top of the plan (the agent's mail-packs operation writes `purchased`),
+ * and how many of them were used. Pack emails never expire; `left` carries over from month to month.
+ */
+function waas_plan_packs(): array
+{
+    $packs = get_option('waas_plan_mail_packs');
+    $purchased = is_array($packs) ? max(0, (int) ($packs['purchased'] ?? 0)) : 0;
+    $used = is_array($packs) ? max(0, (int) ($packs['used'] ?? 0)) : 0;
+    return ['purchased' => $purchased, 'used' => $used, 'left' => max(0, $purchased - $used)];
+}
+
+/**
+ * This calendar month's (UTC) count of emails sent; a new month starts at 0. When the month the count was for is
+ * over, what it sent beyond the plan came out of the email packs: that is added to their `used` (no more than were
+ * left), and the new month is saved with it, so the next call sees the new month and it happens once.
+ */
 function waas_plan_mail(): array
 {
     $month = gmdate('Y-m');
     $mail = get_option('waas_plan_mail');
-    return ['month' => $month, 'sent' => is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0];
+    if (is_array($mail) && ($mail['month'] ?? '') === $month) return ['month' => $month, 'sent' => (int) ($mail['sent'] ?? 0)];
+    $fresh = ['month' => $month, 'sent' => 0];
+    $emails = waas_plan_limits()['emails'];
+    $over = is_array($mail) && $emails > 0 ? (int) ($mail['sent'] ?? 0) - $emails : 0;
+    $packs = waas_plan_packs();
+    if ($over > 0 && $packs['left'] > 0) {
+        update_option('waas_plan_mail', $fresh, false);
+        update_option('waas_plan_mail_packs', ['purchased' => $packs['purchased'], 'used' => $packs['used'] + min($over, $packs['left'])], false);
+    }
+    return $fresh;
 }
 add_action('wp_mail_succeeded', function () {
     $mail = waas_plan_mail();
@@ -418,17 +443,26 @@ add_action('wp_mail_succeeded', function () {
     update_option('waas_plan_mail', $mail, false);
 });
 
-/** Whether this month's emails are used up. */
+/** What this month may send before bulk email waits: the plan's emails plus the pack emails left; 0 is no limit. */
+function waas_plan_mail_allowance(): int
+{
+    $emails = waas_plan_limits()['emails'];
+    return $emails > 0 ? $emails + waas_plan_packs()['left'] : 0;
+}
+
+/** Whether this month's emails, the packs' included, are used up. */
 function waas_plan_mail_used_up(): bool
 {
-    $limits = waas_plan_limits();
-    return $limits['emails'] > 0 && waas_plan_mail()['sent'] >= $limits['emails'];
+    // The count first: a new month moves last month's pack emails to used.
+    $sent = waas_plan_mail()['sent'];
+    $allowance = waas_plan_mail_allowance();
+    return $allowance > 0 && $sent >= $allowance;
 }
 /*
  * Past the allowance, bulk email waits: FluentCRM's campaigns, sequences and automation emails stay in its queue and
  * go out when the next month starts. Everything else (order receipts, account emails, bookings, support replies)
  * still sends, so the store keeps working. A FluentCRM run already sending finishes its batch, so a campaign can go
- * a little past.
+ * a little past. Pack emails are used once the plan's are gone, so a store with packs left keeps sending bulk email.
  */
 add_filter('fluent_crm/disable_email_processing', function ($disabled) {
     return $disabled || waas_plan_mail_used_up();
@@ -448,11 +482,21 @@ add_action('admin_notices', function () {
         }
     }
     if ($limits['emails']) {
+        $plan = $limits['emails'];
         $sent = waas_plan_mail()['sent'];
-        if ($sent >= $limits['emails']) {
-            $notices[] = ['error', sprintf('This website has sent all %s of the emails its plan includes this month. Campaigns and sequences are paused until %s; order, account and booking emails still go out. Move to a bigger plan to send more.', number_format($limits['emails']), gmdate('F j', strtotime('first day of next month')))];
-        } elseif ($sent >= 0.8 * $limits['emails']) {
-            $notices[] = ['warning', sprintf('This website has sent %s of the %s emails its plan includes this month. Campaigns and sequences pause when it reaches %2$s; order, account and booking emails always go out.', number_format($sent), number_format($limits['emails']))];
+        $packs = waas_plan_packs();
+        // Pack emails left now: those left at the start of the month, less what this month sent beyond the plan.
+        $packsLeft = max(0, $packs['left'] - max(0, $sent - $plan));
+        if ($sent >= $plan + $packs['left']) {
+            $notices[] = ['error', $packs['left']
+                ? sprintf('This website has sent all %s of the emails its plan includes this month, and all of its pack emails. Campaigns and sequences are paused until %s; order, account and booking emails still go out. Buy more emails, or move to a bigger plan, to send more.', number_format($plan), gmdate('F j', strtotime('first day of next month')))
+                : sprintf('This website has sent all %s of the emails its plan includes this month. Campaigns and sequences are paused until %s; order, account and booking emails still go out. Move to a bigger plan to send more.', number_format($plan), gmdate('F j', strtotime('first day of next month')))];
+        } elseif ($sent >= $plan) {
+            $notices[] = ['warning', sprintf('This website has sent all %s of the emails its plan includes this month and is now sending pack emails: %s left. Campaigns and sequences pause if they run out; order, account and booking emails always go out.', number_format($plan), number_format($packsLeft))];
+        } elseif ($sent >= 0.8 * $plan) {
+            $notices[] = ['warning', $packs['left']
+                ? sprintf('This website has sent %s of the %s emails its plan includes this month, plus %s pack emails left. Campaigns and sequences pause when both are used up; order, account and booking emails always go out.', number_format($sent), number_format($plan), number_format($packsLeft))
+                : sprintf('This website has sent %s of the %s emails its plan includes this month. Campaigns and sequences pause when it reaches %2$s; order, account and booking emails always go out.', number_format($sent), number_format($plan))];
         }
     }
     foreach ($notices as [$type, $text]) printf('<div class="notice notice-%s"><p>%s</p></div>', $type, esc_html($text));
@@ -604,6 +648,16 @@ PHP) !== false || fail('cannot write the page cache mu-plugin');
     run('rm -rf ' . escapeshellarg(CONTENT . '/cache/waas-pages'), true);
 }
 
+/** The store's email packs as the waas-plan mu-plugin keeps them: {purchased, used}. */
+function mail_packs(): array
+{
+    $packs = json_decode((string) wpMayFail('option', 'get', 'waas_plan_mail_packs', '--format=json'), true);
+    return [
+        'purchased' => is_array($packs) ? max(0, (int) ($packs['purchased'] ?? 0)) : 0,
+        'used' => is_array($packs) ? max(0, (int) ($packs['used'] ?? 0)) : 0,
+    ];
+}
+
 // Commands run as root in the container; drop to www-data so WordPress can manage its files.
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
     posix_setgid(WWW_UID) && posix_setuid(WWW_UID) || fail('could not drop privileges');
@@ -747,7 +801,29 @@ switch ($op) {
         $month = gmdate('Y-m');
         $mail = json_decode((string) wpMayFail('option', 'get', 'waas_plan_mail', '--format=json'), true);
         $sent = is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0;
-        done(['storageBytes' => $bytes, 'measuredAt' => gmdate('c', $at), 'mailMonth' => $month, 'mailSent' => $sent]);
+        // Email packs, with the pack emails used counted as the mu-plugin does: a past month it has not closed yet
+        // (nothing sent since), then this month so far.
+        $packs = mail_packs();
+        $plan = (int) getenv('WAAS_EMAILS_PER_MONTH');
+        $used = $packs['used'];
+        if ($plan > 0) {
+            if (is_array($mail) && ($mail['month'] ?? '') !== $month) $used += min(max(0, (int) ($mail['sent'] ?? 0) - $plan), max(0, $packs['purchased'] - $used));
+            $used += min(max(0, $sent - $plan), max(0, $packs['purchased'] - $used));
+        }
+        done([
+            'storageBytes' => $bytes, 'measuredAt' => gmdate('c', $at), 'mailMonth' => $month, 'mailSent' => $sent,
+            'packPurchased' => $packs['purchased'], 'packUsed' => $used,
+        ]);
+    }
+
+    case 'mail-packs': {
+        // The total of the email packs bought for the store (the API's record), keeping the store's own count of
+        // the pack emails it used (the waas-plan mu-plugin).
+        $purchased = $args['purchased'] ?? null;
+        if (!is_int($purchased) || $purchased < 0) fail('purchased must be a whole number');
+        $used = mail_packs()['used'];
+        wp('option', 'update', 'waas_plan_mail_packs', json_encode(['purchased' => $purchased, 'used' => $used]), '--format=json', '--autoload=no');
+        done(['purchased' => $purchased, 'used' => $used]);
     }
 
     case 'update-db':

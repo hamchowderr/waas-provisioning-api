@@ -69,6 +69,12 @@ export interface Provisioner {
   updateStore(input: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant>; size?: Size }): Promise<void>;
 
   /**
+   * Tells a store the total of the email packs bought for it (`purchased`, in emails), on top of its plan's monthly
+   * emails. The store keeps its own count of the pack emails it has used; packs never expire.
+   */
+  setEmailPacks(input: { storeId: string; purchased: number }): Promise<void>;
+
+  /**
    * Moves a store to another version: its WordPress and PHP, and its code unless the store keeps its
    * own (`ownCode`, a site moved in from another host).
    */

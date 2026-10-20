@@ -4,7 +4,7 @@ For contributors: how the API's OpenAPI files are organised, and what the WordPr
 
 | File | What it describes |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | Stores, domains, versions, snapshots and templates. Version 1.0.0. The main file: edit this one for those calls |
+| `openapi/waas-provisioning-api.yaml` | Stores, domains, versions, snapshots and templates. Version 1.1.0. The main file: edit this one for those calls |
 | `openapi/store-mail.yaml` | A store's sending domain and Domain Connect links |
 | `openapi/api-keys.yaml` | `/v1/keys` |
 | `openapi/webhooks.yaml` | `/v1/webhooks` and the webhook events |

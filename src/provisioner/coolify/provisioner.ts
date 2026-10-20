@@ -147,8 +147,9 @@ export interface StoreMeta {
  * 2: at most 8 Apache workers, and the page cache.
  * 3: sizes and the plan mu-plugin.
  * 4: WAAS_SITE_KEY, for site editing through the API.
+ * 5: email packs: the plan mu-plugin adds pack emails to the month's allowance, and the agent's mail-packs operation.
  */
-export const STORE_SETUP = 4;
+export const STORE_SETUP = 5;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -631,6 +632,18 @@ export class CoolifyProvisioner implements Provisioner {
     if (resized || phpConstants) await this.restart(store.uuid);
     if (resized || (wpOptions && Object.keys(wpOptions).length)) await this.exec(store.uuid, 'configure', wpOptions ? { options: wpOptions } : {});
     if (resized) await this.coolify.updateService(store.uuid, { description: formatMeta(resized) });
+  }
+
+  /**
+   * The agent script comes with the store's compose file, so a store set up before email packs has neither the
+   * mail-packs operation nor a plan mu-plugin that counts packs: it is brought to the current setup first (one
+   * restart), as the next API start would.
+   */
+  async setEmailPacks({ storeId, purchased }: { storeId: string; purchased: number }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const meta = this.storeMeta(store);
+    if ((meta.setup ?? 1) < STORE_SETUP) await this.ensureStoreSetup({ storeId, size: meta.size });
+    await this.exec(store.uuid, 'mail-packs', { purchased });
   }
 
   async moveStore({ storeId, targetVersionId, ownCode }: Parameters<Provisioner['moveStore']>[0]) {

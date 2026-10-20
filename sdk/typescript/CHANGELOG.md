@@ -2,6 +2,10 @@
 
 All notable changes to `waas-provisioning-sdk` are listed here. Versions follow [Semantic Versioning](https://semver.org). Until 1.0.0, a minor version (0.x.0) may change the API.
 
+## Unreleased
+
+- `tenants.addEmailPack()`: emails on top of a store's monthly plan (`POST /v1/tenants/email-packs`).
+
 ## 0.1.0
 
 First published release.

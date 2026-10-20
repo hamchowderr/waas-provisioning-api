@@ -101,6 +101,7 @@ Each method returns the API's JSON answer, typed. Writes return as soon as the w
 | | `moveToVersion(ref, versionId)` | Moves the store to another version |
 | | `suspend(ref, { takeBackup })` | Takes the store offline (a 503 page). Backs it up first unless `takeBackup` is `false` |
 | | `resume(ref)` | Brings a suspended store back |
+| | `addEmailPack(ref, { emails, reference })` | Adds emails on top of the store's monthly plan (they never expire). A repeat with the same `reference` adds nothing. Answers with the total bought |
 | | `restore(ref, { backupId })` | Brings back a deleted store, or rolls a live one back, from a backup (the newest finished one when `backupId` is left out) |
 | | `listBackups(ref)`, `createBackup(ref)` | The store's backups; take one now |
 | `domains` | `list(ref)` | The store's domains |

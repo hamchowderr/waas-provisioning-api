@@ -3,6 +3,8 @@ import type { CreateStoreInput, PhpConstant, Provisioner, StoreSender } from './
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
+  /** The pack emails the store was told it has bought (setEmailPacks). */
+  emailPacks?: number;
 }
 
 /**
@@ -112,6 +114,11 @@ export class FakeProvisioner implements Provisioner {
     Object.assign(store.wpOptions, wpOptions);
     Object.assign(store.phpConstants, phpConstants);
     if (size) store.size = size;
+  }
+
+  async setEmailPacks({ storeId, purchased }: { storeId: string; purchased: number }) {
+    this.check('setEmailPacks');
+    this.store(storeId).emailPacks = purchased;
   }
 
   async moveStore({ storeId, targetVersionId, ownCode }: Parameters<Provisioner['moveStore']>[0]) {
