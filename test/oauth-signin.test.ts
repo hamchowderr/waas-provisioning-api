@@ -150,7 +150,7 @@ describe('connecting an AI app by signing in', () => {
     const { client, p } = await connectAs(owner);
     expect(p.saved.tokens).toMatchObject({ scope: ALL_SCOPES.join(' ') });
     expect(await tools(client)).toContain('create_store');
-    expect((await client.callTool({ name: 'list_versions', arguments: {} })).isError).toBeFalsy();
+    expect((await client.callTool({ name: 'manage_versions', arguments: { action: 'list' } })).isError).toBeFalsy();
     // Tool calls go through /v1 as this person, so the request log says who.
     const { rows } = await t.pool.query("SELECT api_key_id, user_id, product_id FROM api_requests WHERE path = '/v1/versions' ORDER BY id DESC LIMIT 1");
     expect(rows[0]).toEqual({ api_key_id: null, user_id: owner.userId, product_id: t.productId });
@@ -242,7 +242,7 @@ describe('connecting an AI app by signing in', () => {
     const { client, p } = await connectAs(admin, { adminToken: TEST_ADMIN_TOKEN });
     expect(p.saved.tokens).toMatchObject({ scope: ALL_SCOPES.join(' ') });
     expect(await tools(client)).toContain('create_store');
-    expect((await client.callTool({ name: 'list_versions', arguments: {} })).isError).toBeFalsy();
+    expect((await client.callTool({ name: 'manage_versions', arguments: { action: 'list' } })).isError).toBeFalsy();
     await client.close();
     const { rows } = await t.pool.query("SELECT platform_admin, user_id FROM oauth_tokens WHERE kind = 'refresh' ORDER BY created_at DESC LIMIT 1");
     expect(rows[0]).toEqual({ platform_admin: true, user_id: admin.userId });

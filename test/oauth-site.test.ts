@@ -119,11 +119,13 @@ describe('Sign in with your website', () => {
     const client = await finish(p, await storeAnswers(link, 'allow'));
     expect(p.saved.tokens).toMatchObject({ scope: 'site:read site:write' });
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toContain('add_section');
+    expect(names).toContain('page_section');
     expect(names).toContain('get_site');
-    expect(names).not.toContain('list_stores');
+    expect(names).not.toContain('get_stores');
     expect(names).not.toContain('show_stores');
-    expect(names).not.toContain('delete_store');
+    expect(names).not.toContain('show_store');
+    expect(names).not.toContain('store_status');
+    expect(names).not.toContain('manage_domain');
 
     // Whatever store the agent names, the call goes to this one.
     seen = [];
@@ -137,9 +139,12 @@ describe('Sign in with your website', () => {
     const { p, response } = await typeAddress(mainDomain);
     const client = await finish(p, await storeAnswers(new URL(response.headers.get('Location')!), 'allow-read'));
     expect(p.saved.tokens).toMatchObject({ scope: 'site:read' });
-    const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toContain('read_page');
-    expect(names).not.toContain('add_section');
+    const { tools } = await client.listTools();
+    const names = tools.map((tool) => tool.name);
+    expect(names).toContain('site_pages');
+    expect(names).not.toContain('page_section');
+    expect(names).not.toContain('add_image');
+    expect((tools.find((tool) => tool.name === 'site_pages')!.inputSchema.properties?.action as { enum: string[] }).enum).toEqual(['list', 'read', 'revisions']);
     await client.close();
   });
 

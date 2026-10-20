@@ -26,7 +26,7 @@
     "skills"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && mkdir -p dist/view && cp src/view/*.html dist/view/",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/view && cp src/view/*.html src/view/*.css src/view/*.js dist/view/",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -34,6 +34,7 @@
     "@modelcontextprotocol/ext-apps": "^2.0.3",
     "@modelcontextprotocol/server": "^2.3.1",
     "waas-provisioning-sdk": "^0.1.0",
+    "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
