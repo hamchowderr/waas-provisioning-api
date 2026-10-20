@@ -22,10 +22,12 @@ die() { printf '\n\033[31mStopped: %s\033[0m\n' "$*" >&2; exit 1; }
 
 # Saves KEY=value in a state file, replacing an earlier value.
 remember() {
-  local file=$1 key=$2 value=$3
+  local file=$1 key=$2 value=$3 line
   touch "$file" && chmod 600 "$file"
+  line=$(printf '%s=%q' "$key" "$value")
+  grep -qxF "$line" "$file" && return
   grep -v "^$key=" "$file" > "$file.tmp" || true
-  printf '%s=%q\n' "$key" "$value" >> "$file.tmp"
+  printf '%s\n' "$line" >> "$file.tmp"
   mv "$file.tmp" "$file"
 }
 
