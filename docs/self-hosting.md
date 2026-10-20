@@ -54,11 +54,20 @@ This is how [AnyPress](https://anypress.io) runs: one server with [Coolify](http
 | A second bucket (optional) | Signed plugin releases for the update channel | R2, bucket `waas-releases` |
 | An SMTP relay (optional) | Store email (receipts, password resets) | [toSend](https://tosend.com) |
 
-Measured sizes (Docker stats, real images and plugins): a store uses about **273 MB** warm and peaks near 414 MB under load; its limits are 512 MB / 1 CPU (WordPress), 384 MB (MariaDB), 256 MB (agent). Keeping room for Coolify and the platform itself, a 32 GB server holds roughly **55 to 68** normal stores. Disk is not the bound: about 150 MB per store plus its uploads and database.
+Stores come in three sizes, set per store (`size` on `POST`/`PUT /v1/tenants`, or per plan on the storefront): **small** (1 CPU, 512 MB, 5 GB storage, 5,000 emails a month), **medium** (2 CPU, 512 MB, 10 GB, 20,000) and **large** (4 CPU, 768 MB, 25 GB, 50,000). Every size also has a 384 MB MariaDB and a 256 MB agent container. Details in [coolify.md](coolify.md).
+
+Measured sizes (Docker stats, real images and plugins): a small store uses about **273 MB** warm and peaks near 414 MB under load. Limits cap a busy store; they are not reservations. Keeping room for Coolify and the platform itself, a 32 GB server holds roughly **55 to 68** normal stores. Disk is not the bound: about 150 MB per store plus its uploads and database.
 
 ### 1. Install Coolify
 
-Follow Coolify's installer on the VPS, open its dashboard over HTTPS, and keep its proxy on **Traefik** with the default Let's Encrypt (HTTP-01) resolver. Create three projects:
+Install Coolify v4 (AnyPress runs v4.4.6) with its installer on the VPS, or start from a server image that already has it: Hostinger's **Ubuntu 24.04 with Coolify** VPS template, Hetzner Cloud's **Coolify** app, or the DigitalOcean Marketplace's Coolify 1-Click. To skip Coolify's public sign-up page, create its first user during the install:
+
+```sh
+env ROOT_USERNAME=admin ROOT_USER_EMAIL=you@example.com ROOT_USER_PASSWORD='<a strong password>' \
+  bash -c 'curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash'
+```
+
+Open its dashboard over HTTPS and keep its proxy on **Traefik** with the default Let's Encrypt (HTTP-01) resolver. Turn on **Settings → Advanced → API Access**: a self-hosted Coolify refuses every API call until it is on, and the API drives Coolify only through its API. Create three projects:
 
 - **WaaS API**: the API and its database.
 - **WaaS Stores**: the stores. The API creates environments `stores` and `versions` in it and never touches anything outside this project.
@@ -118,7 +127,7 @@ In the **WaaS API** project:
 | `PLATFORM_DOMAIN` | the domain stores are named under, e.g. `anypress.site`. Reserves the apex and names like `www`, `api`, `app` |
 | `BRAND_DOMAIN` | your own domain when stores live on a separate one, e.g. `anypress.io`. No store can take it or any name under it. Keep your sign-in sites (storefront, dashboard) here, not under `PLATFORM_DOMAIN`: stores under the same domain could set their cookies. Turning it on only stops new addresses: give each store already under it an address under `PLATFORM_DOMAIN` and make that its main address first |
 | `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth |
-| `AUTH_URL`, `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM` | optional: lets customers sign in to the dashboard, with GitHub or an emailed link ([accounts.md](accounts.md)) |
+| `AUTH_URL`, `AUTH_SECRET` | the dashboard's address (e.g. `https://app.<domain>`) and `openssl rand -base64 32`. Turns on dashboard sign-in. With store email set up (section 8), people sign in with an emailed link and nothing else is needed; GitHub and Google sign-in are optional ([accounts.md](accounts.md)) |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
 
@@ -136,7 +145,15 @@ Run the `docker exec …` part once by hand first: it prints `DELETE <n>`. It on
 
 ### 5. A template version
 
-Stores are copies of a template version. `templates/starter-fluentcart/build.sh` builds the starter (WordPress, WaaS Client, FluentCart, Twenty Twenty-Five) and `publish.sh` uploads it through the API and creates a version from it. `publish.sh` needs `WAAS_API_URL` (your API's address) and a product key and secret (`WAAS_KEY`, `WAAS_SECRET`). You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
+Stores are copies of a template version. Three templates ship in `templates/`, each with a `build.sh` that builds the archive and a `publish.sh` that uploads it through the API and creates a version from it:
+
+| Template | What it is |
+|---|---|
+| [`starter-fluentcart`](../templates/starter-fluentcart/README.md) | The smallest store: WordPress, WaaS Client, FluentCart, Twenty Twenty-Five |
+| [`anypress-store`](../templates/anypress-store/README.md) | The full store AnyPress sells: the Fluent plugins, SEO and automation on the Ollie theme, with one role per site type (website, bookings, store, community and courses, everything) in `roles.json` |
+| [`agency-storefront`](../templates/agency-storefront/README.md) | Not a store: the ready-made storefront (section 6) |
+
+`publish.sh` needs `WAAS_API_URL` (your API's address) and a product key and secret (`WAAS_KEY`, `WAAS_SECRET`). You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
 
 ### 6. The storefront
 
@@ -144,13 +161,22 @@ Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** wit
 
 1. In `wp-config.php`, set `WAAS_HOST_KEY_ENCRYPTION_KEY` (`openssl rand -base64 48`) and keep it stable.
 2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`. Use the same domain as the API's `PLATFORM_DOMAIN`.
-3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role and snapshot group.
+3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role (site type), size and snapshot group.
+
+**Or let the API build the storefront.** Publish `templates/agency-storefront` as the production version of a product of its own, set `STOREFRONT_PRODUCT_ID` to that product's id (and `PUBLIC_URL`), and `POST /admin/products/{productId}/storefront` builds a store that is already a connected storefront for that product: WaaS Host installed, the API key and encryption key in wp-config, the website domain set, and the owner made an administrator. Its owner then connects a payment method in FluentCart and makes the subscription products. Details in [the template's README](../templates/agency-storefront/README.md).
 
 The storefront needs a real cron: FluentCart creates stores in the background through Action Scheduler, which otherwise waits for the next page visit. Define `DISABLE_WP_CRON` and run `wp action-scheduler run` and `wp cron event run --due-now` every minute (a Coolify scheduled task works).
 
 ### 7. The dashboard
 
-Deploy waas-dashboard to Vercel, or to any host with Node 22 or newer (`npm run build && npm start`, plus `AUTH_TRUST_HOST=true` off Vercel). Create a GitHub App (or OAuth app) for sign-in with callback `https://<dashboard>/api/auth/callback/github`, and set `WAAS_API_URL`, `WAAS_ADMIN_TOKEN` (the API's `ADMIN_TOKEN`), `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` and `ALLOWED_GITHUB_LOGINS`. Details in its README.
+Deploy waas-dashboard to Vercel, or to any host with Node 22 or newer, such as a Coolify application in the **WaaS API** project (`npm ci && npm run build && npm start`, port 3000). Sign-in runs on the API, so the API needs `AUTH_URL` (this dashboard's address) and `AUTH_SECRET` from section 4. On the dashboard set:
+
+- `WAAS_API_URL`: the API's address.
+- `WAAS_ADMIN_TOKEN`: the API's `ADMIN_TOKEN`.
+- `ALLOWED_ADMIN_EMAILS`: your own email address (comma separated for more). These people see every storefront.
+- `AUTH_PROVIDERS` (optional): `email` by default, an emailed sign-in link. Add `github` or `google` once the API has their keys.
+
+Sign in with your email address. Add a CORS rule on the bucket allowing `PUT` from the dashboard's address for archive uploads. Details in its [README](https://github.com/hamchowderr/waas-dashboard#set-it-up).
 
 ### 8. Email
 
@@ -189,7 +215,7 @@ Not supported for stores yet. Here is what works today and what a Kubernetes dri
 **The API and dashboard run on Kubernetes today.** Both are plain containers:
 
 - API: the repository's `Dockerfile`, port 4111, readiness and liveness on `GET /health`, environment from a Secret, Postgres 16 from a managed service or an operator (CloudNativePG, for example). Run **one replica**: jobs are safe to share through pg-boss, but the startup checks (store cron, store email, catch-up backups) have only been run from one instance.
-- Dashboard: `npm run build && npm start` in a Node 22 image, behind your Ingress, with `AUTH_TRUST_HOST=true`.
+- Dashboard: `npm run build && npm start` in a Node 22 image, behind your Ingress, with the environment from section 7.
 
 **Stores need a new provisioner.** All store-side work goes through the `Provisioner` interface (`src/provisioner/provisioner.ts`), and the only real implementation drives Coolify. A `PROVISIONER=kubernetes` would implement the same methods with Kubernetes objects. A sketch of the mapping, not built:
 
@@ -221,8 +247,9 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
 | `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
+| `AUTH_URL`, `AUTH_SECRET` | off | Dashboard sign-in. With `AUTH_GITHUB_ID`/`_SECRET`, `AUTH_GOOGLE_ID`/`_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM`, `AUTH_BRAND` ([accounts.md](accounts.md)) |
 | `BRAND_DOMAIN` | off | Reserves this domain and every name under it |
-| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID` | on with `PLATFORM_DOMAIN` or `BRAND_DOMAIN`, none, `_dck1`, `BRAND_DOMAIN` else `PLATFORM_DOMAIN` | [domain-connect.md](domain-connect.md) |
+| `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID`, `DOMAIN_CONNECT_IPV6` | on with `PLATFORM_DOMAIN` or `BRAND_DOMAIN`, none, `_dck1`, `BRAND_DOMAIN` else `PLATFORM_DOMAIN`, none | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
