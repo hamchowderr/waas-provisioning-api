@@ -1446,6 +1446,78 @@ paths:
               schema: { $ref: '#/components/schemas/Reseller' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/keys:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminListPartnerKeys
+      summary: A reseller's partner keys
+      description: >-
+        A partner key works on every storefront the reseller has; each /v1 call names one with the
+        productId query. Working keys and keys revoked in the last 30 days, newest first. Never secrets.
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminCreatePartnerKey
+      summary: Create a partner key (same rules as createApiKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/CreateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}/keys/{keyId}/rotate:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminRotatePartnerKey
+      summary: Replace an active partner key (same rules as rotateApiKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/RotateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once, and the key it replaces
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/RotatedApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}/keys/{keyId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: adminRevokePartnerKey
+      summary: Revoke a partner key now
+      responses:
+        '200':
+          description: The revoked key
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/resellers/{id}/usage:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }

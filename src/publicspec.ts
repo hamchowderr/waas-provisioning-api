@@ -21,7 +21,7 @@ const DESCRIPTION = `Create and manage WordPress stores: tenants, their domains 
 
 **Writes are asynchronous.** A create, update or delete returns once it is scheduled. Poll the matching GET and read \`statusCode\`: 0 Pending, 1 Done, 2 Failed, 3 Removing.
 
-**Partner keys.** A partner (reseller) key works across products: add \`productId\` to the query string of tenant, version and snapshot calls to say which product you mean.
+**Partner keys.** A partner (reseller) key works on every storefront (product) in its account: add \`productId\` to the query string of each call to say which product you mean. Listing the account and its products (\`GET /v1/subscriptions\`, \`GET /v1/products\`) needs none. A storefront's own key ignores \`productId\`.
 
 **Versioning.** The version is in the path: every call is under \`/v1\`. Within v1, changes only add things (new calls, new optional fields, new response fields, new webhook events), so code written against v1 keeps working: ignore response fields you don't know. Nothing in v1 is removed or renamed, and its meaning doesn't change. A call or field that is replaced is marked deprecated here and keeps working. A change that can't be made this way would come as \`/v2\`, with \`/v1\` kept running alongside it.
 
@@ -37,6 +37,8 @@ const TAGS: Record<string, [string, string]> = {
   TenantMail: ['Sending domain', "A store's own sending domain, and the Domain Connect link that adds DNS records at the customer's DNS host."],
   Version: ['Versions', 'Versions of your storefront product: the WordPress install each new store is copied from.'],
   Snapshot: ['Snapshots', 'Snapshots of versions.'],
+  Subscription: ['Partner account', 'Your partner (reseller) account. Partner keys only.'],
+  Product: ['Products', 'The storefronts (products) in your partner account. Partner keys only.'],
   BaseSnapshot: ['Templates', 'Templates (base snapshots) that new versions start from. Partner keys only.'],
   ApiKeys: ['API keys', 'List, create, rotate and revoke your own API keys. A secret is shown once, in the response that creates the key.'],
   Webhooks: ['Webhooks', 'Endpoints that get a signed POST when a store or version finishes a change, and their deliveries. How to verify them: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/webhooks.md).'],

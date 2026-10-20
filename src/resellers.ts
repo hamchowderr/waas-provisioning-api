@@ -3,6 +3,7 @@ import type { AppEnv, Deps } from './app.ts';
 import { withTransaction, type Client } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
+import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from './keys.ts';
 import { SIZES, type Size } from './plans.ts';
 
 /**
@@ -261,6 +262,25 @@ export function adminResellerRoutes(deps: Deps) {
     if (!moved) throw notFound(`Product ${productId} is not one of this reseller's storefronts`);
     return c.json((await resellers(id))[0]);
   });
+
+  // Partner keys: the reseller's own API keys, which work on all its storefronts (each /v1 call names
+  // one with the productId query). Same operations as a product's keys; deleting the reseller deletes them.
+  app.get('/:id/keys', async (c) => c.json(await listApiKeys(pool, { resellerId: (await find(c)).id })));
+  app.post('/:id/keys', async (c) => {
+    const { id } = await find(c);
+    const body = (await readJson(c)) as { label?: unknown };
+    const key = await addApiKey(pool, { resellerId: id }, parseLabel(body?.label));
+    c.header('Cache-Control', 'no-store');
+    return c.json(key, 201);
+  });
+  app.post('/:id/keys/:keyId/rotate', async (c) => {
+    const { id } = await find(c);
+    const body = (await readJson(c)) as { graceHours?: unknown };
+    const result = await rotateApiKey(pool, { resellerId: id }, c.req.param('keyId')!, parseGraceHours(body?.graceHours));
+    c.header('Cache-Control', 'no-store');
+    return c.json(result, 201);
+  });
+  app.delete('/:id/keys/:keyId', async (c) => c.json(await revokeApiKey(pool, { resellerId: (await find(c)).id }, c.req.param('keyId')!)));
 
   // Store-days per size between `from` and `to` (default: this calendar month, UTC), per storefront
   // and in total: what the wholesale bill is counted from. A store live all of a 30-day month is 30.

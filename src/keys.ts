@@ -31,26 +31,53 @@ export async function verifySecret(secret: string, stored: string): Promise<bool
 // Hashed once so an unknown key costs the same time as a wrong secret.
 const dummyHash = hashSecret(randomUUID());
 
-/** Creates an API key for a product. The secret is returned once and only its hash is kept. */
-export async function createApiKey(db: Pool | Client, productId: string, label?: string | null): Promise<{ key: string; secret: string }> {
+/**
+ * Who a key belongs to: a product (storefront), given as its id, or a reseller, whose partner key
+ * works on all its storefronts (docs/resellers.md).
+ */
+export type KeyOwner = string | { resellerId: string };
+
+function owner(o: KeyOwner) {
+  return typeof o === 'string'
+    ? { column: 'product_id', table: 'products', id: o, noun: 'Product', what: 'A storefront' }
+    : { column: 'reseller_id', table: 'resellers', id: o.resellerId, noun: 'Reseller', what: 'A reseller' };
+}
+
+/** Creates an API key for a product or reseller. The secret is returned once and only its hash is kept. */
+export async function createApiKey(db: Pool | Client, keyOwner: KeyOwner, label?: string | null): Promise<{ key: string; secret: string }> {
   const secret = randomBytes(32).toString('base64url');
+  const o = owner(keyOwner);
   const { rows } = await db.query<{ id: string }>(
-    'INSERT INTO api_keys (product_id, secret_hash, label) VALUES ($1, $2, $3) RETURNING id',
-    [productId, await hashSecret(secret), label ?? null],
+    `INSERT INTO api_keys (${o.column}, secret_hash, label) VALUES ($1, $2, $3) RETURNING id`,
+    [o.id, await hashSecret(secret), label ?? null],
   );
   return { key: rows[0]!.id, secret };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Who a working key belongs to: exactly one of the two is set. */
+export interface KeyCaller {
+  productId: string | null;
+  resellerId: string | null;
+}
+
 /**
  * Returns the product the key belongs to, or null when the key or secret is wrong, or the key is
- * revoked. A rotated key whose revoked_at is still in the future keeps working until then.
+ * revoked. A partner key (a reseller's) is null here too: only /v1 accepts those (authenticateKey).
  */
 export async function authenticate(pool: Pool, key: string, secret: string): Promise<string | null> {
+  return (await authenticateKey(pool, key, secret))?.productId ?? null;
+}
+
+/**
+ * Returns who the key belongs to, or null when the key or secret is wrong, or the key is revoked.
+ * A rotated key whose revoked_at is still in the future keeps working until then.
+ */
+export async function authenticateKey(pool: Pool, key: string, secret: string): Promise<KeyCaller | null> {
   const { rows } = UUID.test(key)
-    ? await pool.query<{ product_id: string; secret_hash: string }>(
-        'SELECT product_id, secret_hash FROM api_keys WHERE id = $1 AND (revoked_at IS NULL OR revoked_at > now())',
+    ? await pool.query<{ product_id: string | null; reseller_id: string | null; secret_hash: string }>(
+        'SELECT product_id, reseller_id, secret_hash FROM api_keys WHERE id = $1 AND (revoked_at IS NULL OR revoked_at > now())',
         [key],
       )
     : { rows: [] };
@@ -61,13 +88,13 @@ export async function authenticate(pool: Pool, key: string, secret: string): Pro
   await pool
     .query("UPDATE api_keys SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')", [key])
     .catch((err) => console.error('Could not record API key use', err));
-  return row.product_id;
+  return { productId: row.product_id, resellerId: row.reseller_id };
 }
 
 // Self-service key management: the admin API (any product) and /v1/keys (the caller's own product)
 // share these. A secret appears only in the response that creates it; nothing logs it.
 
-/** The most keys a product may have that still work (active or rotated but not yet expired). */
+/** The most keys a product (or reseller) may have that still work (active or rotated but not yet expired). */
 export const MAX_LIVE_KEYS = 20;
 /** The longest a rotated key may keep working: 30 days. */
 export const MAX_GRACE_HOURS = 720;
@@ -122,47 +149,51 @@ export function parseGraceHours(value: unknown): number {
  * A product's keys, newest first: every working key, and those revoked in the last 30 days so a
  * recent revocation can still be seen. Never secrets or hashes.
  */
-export async function listApiKeys(pool: Pool, productId: string): Promise<ApiKeyInfo[]> {
+export async function listApiKeys(pool: Pool, keyOwner: KeyOwner): Promise<ApiKeyInfo[]> {
+  const o = owner(keyOwner);
   const { rows } = await pool.query(
     `SELECT ${KEY_COLUMNS} FROM api_keys
-      WHERE product_id = $1 AND (revoked_at IS NULL OR revoked_at > now() - interval '30 days')
+      WHERE ${o.column} = $1 AND (revoked_at IS NULL OR revoked_at > now() - interval '30 days')
       ORDER BY created_at DESC, id`,
-    [productId],
+    [o.id],
   );
   return rows.map(toInfo);
 }
 
-/** Locks the product so concurrent key changes for it run one at a time. */
-async function lockProduct(client: Client, productId: string): Promise<void> {
-  const { rowCount } = await client.query('SELECT 1 FROM products WHERE id = $1 FOR UPDATE', [productId]);
-  if (!rowCount) throw new HttpError(404, `Product ${productId} not found`);
+/** Locks the key's owner so concurrent key changes for it run one at a time. */
+async function lockOwner(client: Client, keyOwner: KeyOwner): Promise<void> {
+  const o = owner(keyOwner);
+  const { rowCount } = await client.query(`SELECT 1 FROM ${o.table} WHERE id = $1 FOR UPDATE`, [o.id]);
+  if (!rowCount) throw new HttpError(404, `${o.noun} ${o.id} not found`);
 }
 
-async function keyRow(client: Client, productId: string, keyId: string) {
+async function keyRow(client: Client, keyOwner: KeyOwner, keyId: string) {
+  const o = owner(keyOwner);
   const { rows } = UUID.test(keyId)
-    ? await client.query(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = $1 AND product_id = $2`, [keyId, productId])
+    ? await client.query(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = $1 AND ${o.column} = $2`, [keyId, o.id])
     : { rows: [] };
   if (!rows[0]) throw new HttpError(404, `API key ${keyId} not found`);
   return rows[0];
 }
 
-async function insertKey(client: Client, productId: string, label: string | null): Promise<NewApiKey> {
+async function insertKey(client: Client, keyOwner: KeyOwner, label: string | null): Promise<NewApiKey> {
+  const o = owner(keyOwner);
   const { rows } = await client.query(
-    "SELECT count(*)::int AS n FROM api_keys WHERE product_id = $1 AND (revoked_at IS NULL OR revoked_at > now())",
-    [productId],
+    `SELECT count(*)::int AS n FROM api_keys WHERE ${o.column} = $1 AND (revoked_at IS NULL OR revoked_at > now())`,
+    [o.id],
   );
   if (rows[0].n >= MAX_LIVE_KEYS) {
-    throw conflict(`A storefront can have at most ${MAX_LIVE_KEYS} working keys. Revoke one first.`);
+    throw conflict(`${o.what} can have at most ${MAX_LIVE_KEYS} working keys. Revoke one first.`);
   }
-  const { key, secret } = await createApiKey(client, productId, label);
+  const { key, secret } = await createApiKey(client, keyOwner, label);
   return { ...toInfo((await client.query(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = $1`, [key])).rows[0]), secret };
 }
 
 /** Creates a key. The secret is in the result only. */
-export function addApiKey(pool: Pool, productId: string, label: string | null): Promise<NewApiKey> {
+export function addApiKey(pool: Pool, keyOwner: KeyOwner, label: string | null): Promise<NewApiKey> {
   return withTransaction(pool, async (client) => {
-    await lockProduct(client, productId);
-    return insertKey(client, productId, label);
+    await lockOwner(client, keyOwner);
+    return insertKey(client, keyOwner, label);
   });
 }
 
@@ -170,17 +201,17 @@ export function addApiKey(pool: Pool, productId: string, label: string | null): 
  * Replaces an active key with a new one under the same label. The old key keeps working for
  * graceHours (0: it stops now), so whatever uses it can switch over first.
  */
-export function rotateApiKey(pool: Pool, productId: string, keyId: string, graceHours: number): Promise<{ key: NewApiKey; replaced: ApiKeyInfo }> {
+export function rotateApiKey(pool: Pool, keyOwner: KeyOwner, keyId: string, graceHours: number): Promise<{ key: NewApiKey; replaced: ApiKeyInfo }> {
   return withTransaction(pool, async (client) => {
-    await lockProduct(client, productId);
-    const old = await keyRow(client, productId, keyId);
+    await lockOwner(client, keyOwner);
+    const old = await keyRow(client, keyOwner, keyId);
     if (old.state !== 'active') throw conflict('Only an active key can be rotated');
     const { rows } = await client.query(
       `UPDATE api_keys SET revoked_at = now() + make_interval(hours => $2::int) WHERE id = $1 RETURNING ${KEY_COLUMNS}`,
       [keyId, graceHours],
     );
     // Counted after the old key's update, so rotating with no grace works at the limit.
-    const key = await insertKey(client, productId, old.label);
+    const key = await insertKey(client, keyOwner, old.label);
     return { key, replaced: toInfo(rows[0]) };
   });
 }
@@ -189,15 +220,15 @@ export function rotateApiKey(pool: Pool, productId: string, keyId: string, grace
  * Revokes a key now; an expiring key stops early. With keepOne (the product's own requests), the
  * last active key can't be revoked, so a storefront can't lock itself out.
  */
-export function revokeApiKey(pool: Pool, productId: string, keyId: string, { keepOne = false } = {}): Promise<ApiKeyInfo> {
+export function revokeApiKey(pool: Pool, keyOwner: KeyOwner, keyId: string, { keepOne = false } = {}): Promise<ApiKeyInfo> {
   return withTransaction(pool, async (client) => {
-    await lockProduct(client, productId);
-    const key = await keyRow(client, productId, keyId);
+    await lockOwner(client, keyOwner);
+    const key = await keyRow(client, keyOwner, keyId);
     if (key.state === 'revoked') return toInfo(key);
     if (keepOne && key.state === 'active') {
       const { rows } = await client.query(
-        'SELECT count(*)::int AS n FROM api_keys WHERE product_id = $1 AND revoked_at IS NULL AND id <> $2',
-        [productId, keyId],
+        `SELECT count(*)::int AS n FROM api_keys WHERE ${owner(keyOwner).column} = $1 AND revoked_at IS NULL AND id <> $2`,
+        [owner(keyOwner).id, keyId],
       );
       if (rows[0].n === 0) throw conflict('This is the last active key. Create or rotate to a new key before revoking it.');
     }

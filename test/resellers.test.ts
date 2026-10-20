@@ -13,6 +13,7 @@ import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './hel
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
+ajv.addSchema({ components: parse(readFileSync(new URL('../openapi/api-keys.yaml', import.meta.url), 'utf8')).components }, 'keys');
 
 let t: TestContext;
 const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
@@ -28,7 +29,7 @@ async function admin(method: string, path: string, expected = 200, body?: unknow
     JSON.stringify(adminSpec.paths[opPath][method.toLowerCase()].responses[String(expected)].content['application/json'].schema).replaceAll(
       '"#/components',
       '"admin#/components',
-    ),
+    ).replaceAll('"../api-keys.yaml#/components', '"keys#/components'),
   );
   const validate = ajv.compile(schema);
   expect(validate(parsed), `${method} ${path}: ${ajv.errorsText(validate.errors)}`).toBe(true);
@@ -303,5 +304,60 @@ describe('usage record', () => {
     await admin('GET', `/admin/resellers/${billed.id}/bill?month=2026-13`, 400);
     await admin('GET', `/admin/resellers/${billed.id}/bill?month=september`, 400);
     await admin('GET', `/admin/resellers/${billed.id}/bill?month=${now.getUTCFullYear() + 1}-01`, 400);
+  });
+});
+
+describe('partner keys', () => {
+  it('work on every storefront in the account, named by the productId query', async () => {
+    const account = await admin('POST', '/admin/resellers', 201, { name: 'Keyed Partner' });
+    const first = await newProduct('Keyed first');
+    const other = await newProduct('Keyed other');
+    const outside = await newProduct('Not in the account');
+    await admin('PUT', `/admin/resellers/${account.id}/products/${first.id}`);
+    await admin('PUT', `/admin/resellers/${account.id}/products/${other.id}`);
+
+    const created = await admin('POST', `/admin/resellers/${account.id}/keys`, 201, { label: 'Partner app' });
+    expect(created).toMatchObject({ label: 'Partner app', state: 'active', secret: expect.any(String) });
+    expect((await admin('GET', `/admin/resellers/${account.id}/keys`)).map((k: { id: string }) => k.id)).toEqual([created.id]);
+    const auth = basic(created.id, created.secret);
+
+    // The account and its storefronts need no productId.
+    const subs = await t.call('GET', '/v1/subscriptions', { auth });
+    expect(subs.status).toBe(200);
+    expect(await subs.json()).toEqual([{ id: account.id, name: 'Keyed Partner' }]);
+    const products = (await (await t.call('GET', '/v1/products', { auth })).json()) as any[];
+    expect(products).toEqual([
+      { id: first.id, name: 'Keyed first', subscriptionId: account.id, subscriptionName: 'Keyed Partner', statusCode: 1, statusName: 'Done' },
+      { id: other.id, name: 'Keyed other', subscriptionId: account.id, subscriptionName: 'Keyed Partner', statusCode: 1, statusName: 'Done' },
+    ]);
+    expect(((await (await t.call('GET', `/v1/products?productName=Keyed%20other`, { auth })).json()) as any[]).map((p) => p.id)).toEqual([other.id]);
+
+    // Every other call acts on the storefront the query names, as if with that storefront's own key.
+    const ownVersions = (await (await t.call('GET', '/v1/versions', { auth: other.auth })).json()) as any[];
+    const res = await t.call('GET', `/v1/versions?productId=${other.id}`, { auth });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any[]).map((v) => v.id)).toEqual(ownVersions.map((v) => v.id));
+    expect((await t.call('GET', '/v1/versions', { auth })).status).toBe(400);
+    expect((await t.call('GET', `/v1/versions?productId=${outside.id}`, { auth })).status).toBe(403);
+    expect((await t.call('GET', '/v1/versions?productId=nope', { auth })).status).toBe(403);
+
+    // A storefront's own key can't list the account, and ignores a productId that isn't its own.
+    expect((await t.call('GET', '/v1/subscriptions', { auth: first.auth })).status).toBe(403);
+    expect((await t.call('GET', '/v1/products', { auth: first.auth })).status).toBe(403);
+    const ignored = await t.call('GET', `/v1/versions?productId=${other.id}`, { auth: first.auth });
+    expect(((await ignored.json()) as any[]).every((v) => !ownVersions.some((o) => o.id === v.id))).toBe(true);
+
+    // A storefront moved out of the account is out of the key's reach at once.
+    await admin('DELETE', `/admin/resellers/${account.id}/products/${other.id}`);
+    expect((await t.call('GET', `/v1/versions?productId=${other.id}`, { auth })).status).toBe(403);
+
+    // Rotating and revoking work as for a storefront's keys.
+    const rotated = await admin('POST', `/admin/resellers/${account.id}/keys/${created.id}/rotate`, 201, { graceHours: 0 });
+    expect((await t.call('GET', '/v1/subscriptions', { auth })).status).toBe(403);
+    const fresh = basic(rotated.key.id, rotated.key.secret);
+    expect((await t.call('GET', '/v1/subscriptions', { auth: fresh })).status).toBe(200);
+    await admin('DELETE', `/admin/resellers/${account.id}/keys/${rotated.key.id}`);
+    expect((await t.call('GET', '/v1/subscriptions', { auth: fresh })).status).toBe(403);
+    expect((await admin('GET', `/admin/resellers/${account.id}/keys`)).map((k: { state: string }) => k.state)).toEqual(['revoked', 'revoked']);
   });
 });
