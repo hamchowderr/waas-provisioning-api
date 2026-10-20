@@ -21,7 +21,7 @@ const DESCRIPTION = `Create and manage WordPress stores: tenants, their domains 
 
 **Writes are asynchronous.** A create, update or delete returns once it is scheduled. Poll the matching GET and read \`statusCode\`: 0 Pending, 1 Done, 2 Failed, 3 Removing.
 
-**Partner keys.** A partner (reseller) key works on every storefront (product) in its account: add \`productId\` to the query string of each call to say which product you mean. Listing the account and its products (\`GET /v1/subscriptions\`, \`GET /v1/products\`) needs none. A storefront's own key ignores \`productId\`.
+**Partner keys.** A partner (reseller) key works on every storefront (product) in its account: add \`productId\` to the query string of each call to say which product you mean. Calls on the account itself (\`/v1/subscriptions\`, \`/v1/products\` and their usage) need none, and templates made with a partner key are shared by all its products. A storefront's own key ignores \`productId\`.
 
 **Versioning.** The version is in the path: every call is under \`/v1\`. Within v1, changes only add things (new calls, new optional fields, new response fields, new webhook events), so code written against v1 keeps working: ignore response fields you don't know. Nothing in v1 is removed or renamed, and its meaning doesn't change. A call or field that is replaced is marked deprecated here and keeps working. A change that can't be made this way would come as \`/v2\`, with \`/v1\` kept running alongside it.
 

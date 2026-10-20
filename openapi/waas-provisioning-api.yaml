@@ -10,7 +10,7 @@ info:
     **Phase 1 (22 operations):** tenants, tenant domains, versions, snapshots. Everything the storefront plugin calls. Five of them are added for AnyPress: suspend, resume, restore a deleted tenant, list backups and back up a tenant (tag TenantLifecycle), so a cancelled subscription keeps its store for a grace period before it is deleted, and a deleted store can come back from its backup.
 
 
-    **Phase 2 (11 operations): reseller feature.** Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Product-scoped calls then take `productId`. Built so far: listSubscriptions, listProducts and the three template operations; a partner key on any other call needs `productId`.
+    **Phase 2 (11 operations): reseller feature.** Subscriptions, products, base snapshots (templates) and usage, used with reseller (partner) keys. Product-scoped calls then take `productId`. Built: everything except createSubscription and deleteSubscription (reseller accounts are made by the platform). A partner key on a product-scoped call needs `productId`; on the template calls it may leave it out to work on templates shared by all its products.
 
 
     **Writes are asynchronous.** Every create, update or delete returns once scheduled; poll the matching GET for `statusCode` (0 Pending, 1 Done, 2 Failed, 3 Removing).

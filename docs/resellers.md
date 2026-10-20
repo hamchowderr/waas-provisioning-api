@@ -48,7 +48,25 @@ On `/v1`, the partner key signs in with Basic auth like any key, and:
 - Every other call takes `?productId=` to say which storefront it is for, and then works exactly as it would with that storefront's own key. Without it the answer is 400; a storefront outside the account is 403. A storefront moved out of the account is out of reach at once.
 - A storefront's own key ignores `productId`, as the contract says, so nothing changes for existing callers.
 
-Making and deleting storefronts with a partner key (`POST`, `DELETE /v1/products`) comes later.
+The partner key also runs the account itself:
+
+| Call | What it does |
+|---|---|
+| `POST /v1/products?subscriptionId={id}` `{"name": "…", "version": {…}}` | A new storefront in the account, within `maxProducts` (400 at the limit). The partner key works on it at once with `productId`; it gets no key of its own. With `version`, its first version (as for `POST /v1/versions`) is made and becomes the production version; a bad version makes nothing |
+| `DELETE /v1/products?productId={id}` | Removes a storefront with no stores left (400 otherwise, so a mistake can't take live sites down, and 400 while a version is still building). Its versions and own templates are removed in the background; its usage history stays |
+| `GET /v1/subscriptions/usage?subscriptionId={id}&startDate=…&endDate=…` | Hours between the two dates: `productHours` (storefronts), `versionHours` and `tenantHours` (stores) |
+| `GET /v1/products/usage?productId={id}&startDate=…&endDate=…` | The same for one storefront |
+
+Store hours come from the usage ledger, so removed stores count. Storefront and version hours count those that exist now, from when they were made. `subscriptionId` must be the partner's own account (403 otherwise).
+
+## Shared templates
+
+A template (base snapshot) made with a partner key belongs to the account and is offered on every one of its storefronts:
+
+- `POST /v1/basesnapshots` with the partner key makes a shared template, with or without `productId`.
+- `GET /v1/basesnapshots` with the partner key and no `productId` lists the shared ones. With a `productId`, or with a storefront's own key, it lists the storefront's own and the shared ones; `onlyPartnerSpecific=true` with the partner key lists only the shared ones.
+- `createVersion` and `POST /v1/products` can start a version from a shared template by its id.
+- Only the partner key removes a shared template (`DELETE /v1/basesnapshots?id=`). With a `productId` it also removes that storefront's own templates. Deleting the reseller removes its shared templates.
 
 ## Reseller team
 

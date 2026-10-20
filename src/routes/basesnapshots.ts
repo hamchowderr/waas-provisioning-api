@@ -19,16 +19,40 @@ const NAME = /^[A-Za-z0-9 -]{5,50}$/;
 
 /**
  * Base snapshots (templates). Phase 2 operations that product keys may use (contract draft.5):
- * a product's templates belong to it alone, and createVersion copies them into versions.
+ * a product's templates belong to it alone, and createVersion copies them into versions. A template
+ * made with a partner key belongs to the reseller and is offered on all its storefronts
+ * (docs/resellers.md); only a partner key removes it.
  */
-/** The base-snapshot operations for one product; shared by these routes and the admin routes. */
+
+/** Whose templates: a product's (its id) or a reseller's shared ones. */
+export type TemplateOwner = string | { resellerId: string };
+
+/** SQL matching the templates a product may use: its own and its reseller's shared ones. */
+export const PRODUCT_TEMPLATES = (param: string) =>
+  `(product_id = ${param} OR reseller_id = (SELECT reseller_id FROM products WHERE id = ${param}))`;
+
+/** The base-snapshot operations; shared by these routes and the admin routes. */
 export function baseSnapshotService({ pool, boss, provisioner }: Deps) {
-  async function list(productId: string, filter: { baseSnapshotId?: string; name?: string; groupName?: string } = {}) {
+  /**
+   * A product's own and shared templates, or with `onlyShared` the shared ones alone; a reseller's
+   * shared templates.
+   */
+  async function list(
+    owner: TemplateOwner,
+    filter: { baseSnapshotId?: string; name?: string; groupName?: string } = {},
+    onlyShared = false,
+  ) {
+    const where =
+      typeof owner !== 'string'
+        ? 'reseller_id = $1'
+        : onlyShared
+          ? 'reseller_id = (SELECT reseller_id FROM products WHERE id = $1)'
+          : PRODUCT_TEMPLATES('$1');
     const { rows } = await pool.query(
       `SELECT * FROM base_snapshots
-        WHERE product_id = $1 AND ($2::uuid IS NULL OR id = $2) AND ($3::text IS NULL OR name = $3) AND ($4::text IS NULL OR group_name = $4)
+        WHERE ${where} AND ($2::uuid IS NULL OR id = $2) AND ($3::text IS NULL OR name = $3) AND ($4::text IS NULL OR group_name = $4)
         ORDER BY date_created`,
-      [productId, filter.baseSnapshotId ?? null, filter.name ?? null, filter.groupName ?? null],
+      [typeof owner === 'string' ? owner : owner.resellerId, filter.baseSnapshotId ?? null, filter.name ?? null, filter.groupName ?? null],
     );
     return rows.map((b) =>
         compact({
@@ -45,7 +69,7 @@ export function baseSnapshotService({ pool, boss, provisioner }: Deps) {
   }
 
   /** CreateBaseSnapshotParams in, CreateBaseSnapshotCommandResult out. */
-  async function create(productId: string, input: unknown) {
+  async function create(owner: TemplateOwner, input: unknown) {
     const body = validateBody<CreateBaseSnapshotParams>('CreateBaseSnapshotParams', input);
     if (!NAME.test(body.name)) throw badRequest('name must be 5 to 50 characters: letters, digits, spaces and dashes');
     if (!body.comment.trim()) throw badRequest('comment is required');
@@ -55,17 +79,31 @@ export function baseSnapshotService({ pool, boss, provisioner }: Deps) {
     const id = randomUUID();
     const { uploadUrl, uri } = await provisioner.createBaseSnapshotUpload({ baseSnapshotId: id });
     await pool.query(
-      `INSERT INTO base_snapshots (id, product_id, name, comment, is_tenant_snapshot, group_name, show_in_console, uri)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [id, productId, body.name, body.comment, body.isTenantSnapshot === true, groupName, body.showInConsole === true, uri],
+      `INSERT INTO base_snapshots (id, product_id, reseller_id, name, comment, is_tenant_snapshot, group_name, show_in_console, uri)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        id,
+        typeof owner === 'string' ? owner : null,
+        typeof owner === 'string' ? null : owner.resellerId,
+        body.name,
+        body.comment,
+        body.isTenantSnapshot === true,
+        groupName,
+        body.showInConsole === true,
+        uri,
+      ],
     );
     return { id, name: body.name, comment: body.comment, showInConsole: body.showInConsole === true, uploadUrl };
   }
 
   // Versions keep their own copies, so deleting a template leaves them alone.
-  async function remove(productId: string, id: string) {
+  async function remove(owner: TemplateOwner, id: string) {
     await withTransaction(pool, async (client) => {
-      const { rowCount } = await client.query('DELETE FROM base_snapshots WHERE id = $1 AND product_id = $2', [id, productId]);
+      const column = typeof owner === 'string' ? 'product_id' : 'reseller_id';
+      const { rowCount } = await client.query(`DELETE FROM base_snapshots WHERE id = $1 AND ${column} = $2`, [
+        id,
+        typeof owner === 'string' ? owner : owner.resellerId,
+      ]);
       if (!rowCount) throw badRequest(`Base snapshot ${id} not found`);
       await enqueue(boss, client, { type: 'basesnapshot.delete', baseSnapshotId: id });
     });
@@ -80,20 +118,30 @@ export function baseSnapshotRoutes(deps: Deps) {
   const app = new Hono<AppEnv>();
 
   app.get('/', async (c) => {
-    // onlyPartnerSpecific has no effect for product keys; it is still validated.
-    booleanQuery(c, 'onlyPartnerSpecific');
-    return c.json(
-      await templates.list(c.get('productId'), {
-        baseSnapshotId: uuidQuery(c, 'baseSnapshotId'),
-        name: c.req.query('name') || undefined,
-        groupName: c.req.query('groupName') || undefined,
-      }),
-    );
+    // onlyPartnerSpecific: the shared templates alone. No effect for product keys; it is still validated.
+    const onlyShared = booleanQuery(c, 'onlyPartnerSpecific') === true;
+    const filter = { baseSnapshotId: uuidQuery(c, 'baseSnapshotId'), name: c.req.query('name') || undefined, groupName: c.req.query('groupName') || undefined };
+    const resellerId = c.get('resellerId');
+    const productId = c.get('productId') as string | undefined;
+    if (resellerId && !productId) return c.json(await templates.list({ resellerId }, filter));
+    return c.json(await templates.list(productId!, filter, onlyShared && !!resellerId));
   });
 
-  app.post('/', async (c) => c.json(await templates.create(c.get('productId'), await readJson(c))));
+  // A partner key's templates are shared across its storefronts, with or without a productId.
+  app.post('/', async (c) => {
+    const resellerId = c.get('resellerId');
+    return c.json(await templates.create(resellerId ? { resellerId } : c.get('productId'), await readJson(c)));
+  });
 
-  app.delete('/', async (c) => c.json(await templates.remove(c.get('productId'), requiredUuidQuery(c, 'id'))));
+  // A partner key removes a shared template, or with a productId that storefront's own.
+  app.delete('/', async (c) => {
+    const id = requiredUuidQuery(c, 'id');
+    const resellerId = c.get('resellerId');
+    const productId = c.get('productId') as string | undefined;
+    if (!resellerId) return c.json(await templates.remove(productId!, id));
+    const shared = await deps.pool.query('SELECT 1 FROM base_snapshots WHERE id = $1 AND reseller_id = $2', [id, resellerId]);
+    return c.json(await templates.remove(shared.rowCount || !productId ? { resellerId } : productId, id));
+  });
 
   return app;
 }

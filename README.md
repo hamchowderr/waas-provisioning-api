@@ -127,7 +127,7 @@ Clients for the `/v1` API, tested against this API on every change:
 | [docs/coolify.md](docs/coolify.md) | How stores run on Coolify |
 | [docs/accounts.md](docs/accounts.md) | Letting agencies sign in to the dashboard: organizations, roles, invitations |
 | [docs/clients.md](docs/clients.md) | Clients: give someone a site in one step (their own storefront, site and invitation) |
-| [docs/resellers.md](docs/resellers.md) | Reseller accounts: storefronts grouped under one partner, store limits, usage, the monthly wholesale bill, partner keys and the reseller's team |
+| [docs/resellers.md](docs/resellers.md) | Reseller accounts: storefronts grouped under one partner, store limits, usage, the monthly wholesale bill, partner keys, the storefronts and shared templates a partner key makes, and the reseller's team |
 | [docs/webhooks.md](docs/webhooks.md) | Signed webhooks when a store or version changes, and how to check them |
 | [docs/store-backups.md](docs/store-backups.md) | Nightly store backups, how long they are kept, restoring |
 | [docs/db-backups.md](docs/db-backups.md) | Backups of the API's own database, and restoring them |

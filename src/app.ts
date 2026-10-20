@@ -14,7 +14,7 @@ import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
-import { partnerRoutes, PARTNER_ONLY } from './routes/partner.ts';
+import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
 import { importRoutes } from './imports.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -139,6 +139,8 @@ export function createApp(deps: Deps) {
     c.set('resellerId', caller.resellerId!);
     if (PARTNER_ONLY.test(c.req.path)) return next();
     const productId = c.req.query('productId');
+    // Templates made with a partner key are the reseller's, shared by all its storefronts: no productId needed.
+    if (!productId && SHARED_TEMPLATES.test(c.req.path)) return next();
     if (!productId) return c.json({ statusCode: 400, message: 'productId is required with a partner key' }, 400);
     const own =
       isUuid(productId) &&
