@@ -63,7 +63,7 @@ final class Client
      * Schedules a new store; poll with waitForTenant. Repeating a create with the same externalId
      * answers with the store it already made.
      *
-     * @param array<string, mixed> $params CreateTenantParams: name, externalId, customDomainName, groupName, wpOptions, phpConstants, ...
+     * @param array<string, mixed> $params CreateTenantParams: name, externalId, customDomainName, groupName, wpOptions, phpConstants, size, ...
      * @return array<string, mixed>
      */
     public function createTenant(array $params): array
@@ -72,7 +72,7 @@ final class Client
     }
 
     /**
-     * Sets wpOptions and phpConstants.
+     * Sets wpOptions and phpConstants, or moves the store to another size.
      *
      * @param array{externalId?: string, tenantId?: string} $tenant
      * @param array<string, mixed> $params

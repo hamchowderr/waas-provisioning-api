@@ -21,6 +21,9 @@ const phpConstants = z.record(
   z.string(),
   z.object({ value: z.string().optional(), isPrivate: z.boolean().optional().describe('Hide the value in the console') }),
 );
+const size = z
+  .enum(['small', 'medium', 'large'])
+  .describe('Store size: small (1 CPU, 5 GB, 5,000 emails a month), medium (2 CPUs, 10 GB, 20,000) or large (4 CPUs, 25 GB, 50,000)');
 
 const READ: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
 const WRITE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
@@ -179,6 +182,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         wordPressUserPassword: z.string().optional(),
         wpOptions: stringMap.optional().describe('WordPress options to set, by option name'),
         phpConstants: phpConstants.optional().describe('PHP constants to define, by name'),
+        size: size.optional().describe('small when omitted'),
       },
       annotations: WRITE,
     },
@@ -188,12 +192,12 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   tool(
     'update_store_options',
     {
-      title: 'Set WordPress options and PHP constants',
-      description: 'Sets WordPress options and PHP constants on a store.' + ASYNC_NOTE,
-      input: { ...ref, wpOptions: stringMap.optional(), phpConstants: phpConstants.optional() },
+      title: 'Set WordPress options, PHP constants and size',
+      description: 'Sets WordPress options and PHP constants on a store, or moves it to another size (restarting it once).' + ASYNC_NOTE,
+      input: { ...ref, wpOptions: stringMap.optional(), phpConstants: phpConstants.optional(), size: size.optional() },
       annotations: { ...WRITE, idempotentHint: true },
     },
-    ({ wpOptions, phpConstants, ...args }) => client.tenants.update(toRef(args), { wpOptions, phpConstants }),
+    ({ wpOptions, phpConstants, size, ...args }) => client.tenants.update(toRef(args), { wpOptions, phpConstants, size }),
   );
 
   tool(

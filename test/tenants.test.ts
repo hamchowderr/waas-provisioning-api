@@ -128,6 +128,40 @@ describe('tenants', () => {
     expect((await t.call('DELETE', `/v1/versions?versionId=${v2}`)).status).toBe(200);
   });
 
+  it('creates a store small unless a size is given, and refuses sizes it does not know', async () => {
+    const small = await createTenant({ name: 'Default Size' });
+    const large = await createTenant({ name: 'Big One', size: 'large' });
+    expect((await createTenant({ name: 'Huge', size: 'huge' })).status).toBe(400);
+    for (const [body, size] of [[small.body, 'small'], [large.body, 'large']] as const) {
+      await waitFor(async () => (await tenantStatus(body.externalId)) === Status.Done);
+      const [tenant] = (await (await t.call('GET', `/v1/tenants?externalId=${body.externalId}`)).json()) as { size: string }[];
+      expect(tenant!.size).toBe(size);
+      expect(t.provisioner.stores.get(body.id)!.size).toBe(size);
+    }
+    // A repeat of the create with another size asks for another store.
+    expect((await createTenant({ name: 'Big One', externalId: large.body.externalId, size: 'medium' })).status).toBe(409);
+  });
+
+  it('moves a store to another size on PUT, and leaves it alone for the size it has', async () => {
+    const { body } = await createTenant({ name: 'Growing' });
+    await waitFor(async () => (await tenantStatus(body.externalId)) === Status.Done);
+    const put = (size: unknown) => t.call('PUT', `/v1/tenants?externalId=${body.externalId}`, { body: { size } });
+    expect((await put('huge')).status).toBe(400);
+
+    const jobs = async () =>
+      (await t.pool.query("SELECT data FROM pgboss.job WHERE data->>'type' = 'tenant.update' AND data->>'tenantId' = $1", [body.id])).rows.map((r) => r.data);
+    expect((await put('small')).status).toBe(200);
+    expect(await jobs()).toEqual([]);
+    expect(await tenantStatus(body.externalId)).toBe(Status.Done);
+
+    expect((await put('medium')).status).toBe(200);
+    expect(await jobs()).toEqual([{ type: 'tenant.update', tenantId: body.id, wpOptions: {}, phpConstantNames: [], size: 'medium' }]);
+    await waitFor(async () => (await tenantStatus(body.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(body.id)!.size).toBe('medium');
+    const [tenant] = (await (await t.call('GET', `/v1/tenants?externalId=${body.externalId}`)).json()) as { size: string }[];
+    expect(tenant!.size).toBe('medium');
+  });
+
   it('answers 400 for an unknown tenant', async () => {
     expect((await t.call('PUT', '/v1/tenants?externalId=nobody', { body: {} })).status).toBe(400);
     expect((await t.call('DELETE', `/v1/tenants?tenantId=${crypto.randomUUID()}`)).status).toBe(400);

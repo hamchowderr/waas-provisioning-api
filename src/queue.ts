@@ -1,5 +1,6 @@
 import { PgBoss, type JobWithMetadata } from 'pg-boss';
 import type { Client } from './db.ts';
+import type { Size } from './plans.ts';
 
 /**
  * Slow store-side work runs as pg-boss jobs in the API's own Postgres database.
@@ -21,7 +22,8 @@ export type JobData =
       /** The store's first WordPress user. The password is encrypted (src/secrets.ts). */
       user?: { name: string; email: string; role: string; encryptedPassword?: string };
     }
-  | { type: 'tenant.update'; tenantId: string; wpOptions?: Record<string, string>; phpConstantNames?: string[] }
+  /** `size`: the store's size changed; the job applies the size on record. */
+  | { type: 'tenant.update'; tenantId: string; wpOptions?: Record<string, string>; phpConstantNames?: string[]; size?: Size }
   | { type: 'tenant.move'; tenantId: string; targetVersionId: string }
   /** Applies the tenant's current domains from the database (main + redirects). */
   | { type: 'tenant.domains'; tenantId: string }

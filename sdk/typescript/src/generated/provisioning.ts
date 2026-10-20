@@ -24,7 +24,9 @@ export interface paths {
          * Update tenant options and constants
          * @description Phase 1 (storefront plugin).
          *
-         *     Schedule an update of a Tenant specifically for WP Options or PHP Constants
+         *     Schedule an update of a Tenant specifically for WP Options or PHP Constants, or its `size`
+         *
+         *     **`size`:** a size other than the tenant's current one moves it to that size (its CPU, memory, storage and monthly email quota), restarting the store once; the tenant is Pending until it is done. Its current size changes nothing.
          *
          *     **Storefront plugin:** `?externalId=` with `phpConstants` (updated roles) and/or `wpOptions`. `WPCSService.php:126-141`.
          */
@@ -960,6 +962,7 @@ export interface components {
              * @example oneV3rryStr0ngP@ss
              */
             wordPressUserPassword?: string;
+            size?: components["schemas"]["TenantSize"];
             /** @description Whether to use a custom Snapshot when creating this Tenant. If true an UploadURL will be specified in the response to wich a Gzipped Tar can be uploaded, containing files and a database export. */
             uploadCustomSnapshot?: boolean;
             /** @description Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UploadCustomSnapshot is true. */
@@ -1367,6 +1370,7 @@ export interface components {
              * @example null
              */
             readonly dateSuspended?: string | null;
+            size?: components["schemas"]["TenantSize"];
         };
         GetVersionQueryResult: {
             /**
@@ -1565,6 +1569,16 @@ export interface components {
              */
             backupId?: string | null;
         };
+        /**
+         * @description The tenant's size: what its WordPress may use and its plan's quotas. Storage counts wp-content and the database; uploads past it are refused. Email counts what the store sends in a calendar month (UTC); past it the store sends none until the next month.
+         *     small: 1 CPU, 512 MB, 5 GB storage, 5,000 emails a month
+         *     medium: 2 CPUs, 512 MB, 10 GB storage, 20,000 emails a month
+         *     large: 4 CPUs, 768 MB, 25 GB storage, 50,000 emails a month
+         *     Optional when creating a tenant: small when omitted.
+         * @example small
+         * @enum {string}
+         */
+        TenantSize: "small" | "medium" | "large";
         /** @description Tenant succesfully scheduled to be updated */
         UpdateTenantCommandResult: {
             /** Format: uuid */
@@ -1589,6 +1603,7 @@ export interface components {
             phpConstants?: {
                 [key: string]: components["schemas"]["PhpConstantParams"];
             } | null;
+            size?: components["schemas"]["TenantSize"];
         };
     };
     responses: never;

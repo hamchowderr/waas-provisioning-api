@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
-import { CRON_TASK, CoolifyProvisioner, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
+import { CRON_TASK, CoolifyProvisioner, formatMeta, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
 const COOLIFY = 'https://coolify.test';
@@ -250,6 +250,7 @@ const storeInput = {
   redirectDomains: ['t-0b8f6a0e.stores.example.com'],
   phpConstants: { WPCS_TENANT_ROLES: { value: 'shop_manager' }, API_SECRET: { value: 'private-constant-value', isPrivate: true } },
   wpOptions: { blogname: 'Example Store' },
+  size: 'small' as const,
   user: { name: 'owner', email: 'owner@example.com', role: 'administrator', password: 'example-password-123' },
 };
 
@@ -271,7 +272,7 @@ describe('CoolifyProvisioner', () => {
     expect(stores).toHaveLength(1);
     const store = stores[0]!;
     expect(store.environment_id).toBe(11);
-    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}`);
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
     expect(store.urls).toEqual([{ name: 'wordpress', url: 'https://shop.example.com,https://t-0b8f6a0e.stores.example.com' }]);
     const compose = parse(store.compose);
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
@@ -367,17 +368,17 @@ describe('CoolifyProvisioner', () => {
     store.compose = 'old compose';
     const starts = store.started;
 
-    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('updated');
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
     const wordpress = parse(store.compose).services.wordpress;
     expect(wordpress.environment.WORDPRESS_CONFIG_EXTRA).toContain("define('WP_CACHE', true)");
     expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 8');
     expect(store.started).toBe(starts + 1);
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: {} });
-    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}`);
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
 
     // Again: nothing to do, no restart.
     cloud.calls = [];
-    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('unchanged');
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
     expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
   });
@@ -390,14 +391,74 @@ describe('CoolifyProvisioner', () => {
     expect(parse(store.compose).services.wordpress.environment.WAAS_SITE_KEY).toBe('${WAAS_SITE_KEY:-}');
 
     store.envs.delete('WAAS_SITE_KEY');
-    store.description = `WaaS store, version ${VERSION_ID}, setup 2`;
-    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('updated');
+    store.description = `WaaS store, version ${VERSION_ID}, setup 3, size small`;
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
     expect(store.envs.get('WAAS_SITE_KEY')?.value).toBe(`site-key-for-${STORE_ID}`);
   });
 
   it('leaves a new store alone: it already has the current setup', async () => {
     await p.createStore(storeInput);
-    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('unchanged');
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
+  });
+
+  it('creates a store at its size: resources and quotas in the compose, the size in the description', async () => {
+    await p.createStore({ ...storeInput, size: 'medium' });
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size medium`);
+    const wordpress = parse(store.compose).services.wordpress;
+    expect(wordpress).toMatchObject({ cpus: 2, mem_limit: '512m' });
+    expect(wordpress.environment).toMatchObject({ WAAS_STORAGE_GB: '10', WAAS_EMAILS_PER_MONTH: '20000' });
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'medium' })).toBe('unchanged');
+  });
+
+  it('moves a store to the size on record when it runs at another: new compose, one restart, agent files, then the description', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'large' })).toBe('updated');
+    const wordpress = parse(store.compose).services.wordpress;
+    expect(wordpress).toMatchObject({ cpus: 4, mem_limit: '768m' });
+    expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 32');
+    expect(wordpress.environment).toMatchObject({ WAAS_STORAGE_GB: '25', WAAS_EMAILS_PER_MONTH: '50000' });
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: {} });
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size large`);
+
+    cloud.calls = [];
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'large' })).toBe('unchanged');
+    expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('resizes a store on update: new compose, one restart with the new constants, then the description', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+    await p.updateStore({ storeId: STORE_ID, size: 'medium', phpConstants: storeInput.phpConstants, wpOptions: { blogdescription: 'New' } });
+    expect(parse(store.compose).services.wordpress).toMatchObject({ cpus: 2, environment: { WAAS_EMAILS_PER_MONTH: '20000' } });
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: { options: { blogdescription: 'New' } } });
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size medium`);
+  });
+
+  it('keeps the size when a store moves, or gets its cron or mail backfilled', async () => {
+    p = provisioner(cloud, { mail: MAIL });
+    await p.createStore({ ...storeInput, size: 'large' });
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    cloud.addVersion('v9');
+    await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
+    expect(store.description).toBe(`WaaS store, version v9, setup ${STORE_SETUP}, size large`);
+    expect(parse(store.compose).services.wordpress.cpus).toBe(4);
+
+    for (const [uuid, t] of cloud.tasks) if (t.name === CRON_TASK.name) cloud.tasks.delete(uuid);
+    store.compose = 'old compose';
+    await p.ensureStoreCron({ storeId: STORE_ID });
+    expect(parse(store.compose).services.wordpress.cpus).toBe(4);
+
+    store.envs.delete('WAAS_MAIL_B64');
+    store.compose = 'old compose';
+    await p.ensureStoreMail({ storeId: STORE_ID });
+    expect(parse(store.compose).services.wordpress.cpus).toBe(4);
   });
 
   it('gives a new store the mail relay settings as a variable, never in a command', async () => {
@@ -696,7 +757,7 @@ describe('CoolifyProvisioner', () => {
     await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(parse(store.compose).services.wordpress.image).toBe('wordpress:6.9-php8.4-apache');
-    expect(store.description).toBe(`WaaS store, version v9, setup ${STORE_SETUP}`);
+    expect(store.description).toBe(`WaaS store, version v9, setup ${STORE_SETUP}, size small`);
     expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['code-import', 'update-db']);
   });
 
@@ -719,9 +780,54 @@ describe('CoolifyProvisioner', () => {
   });
 });
 
+describe('Service metadata', () => {
+  it('round-trips store and version descriptions', () => {
+    for (const meta of [
+      { kind: 'version' as const, wordPressVersion: '6.8', phpVersion: '8.3' },
+      { kind: 'store' as const, versionId: VERSION_ID, setup: STORE_SETUP, size: 'small' as const },
+      { kind: 'store' as const, versionId: VERSION_ID, setup: 2, size: 'large' as const },
+    ]) {
+      expect(parseMeta(formatMeta(meta))).toEqual(meta);
+    }
+  });
+
+  it('reads descriptions from before setups and sizes as setup 1 and small', () => {
+    expect(parseMeta(`WaaS store, version ${VERSION_ID}`)).toEqual({ kind: 'store', versionId: VERSION_ID, setup: 1, size: 'small' });
+    expect(parseMeta(`WaaS store, version ${VERSION_ID}, setup 2`)).toEqual({ kind: 'store', versionId: VERSION_ID, setup: 2, size: 'small' });
+    expect(parseMeta(`WaaS store, version ${VERSION_ID}, setup 3, size huge`)).toBeNull();
+  });
+});
+
 describe('Store compose file', () => {
+  it('gives each size its CPUs, memory, Apache workers and quotas, and the database and agent the same', () => {
+    const want = {
+      small: { cpus: 1, mem: '512m', workers: 8, storage: '5', emails: '5000' },
+      medium: { cpus: 2, mem: '512m', workers: 16, storage: '10', emails: '20000' },
+      large: { cpus: 4, mem: '768m', workers: 32, storage: '25', emails: '50000' },
+    };
+    for (const [size, w] of Object.entries(want)) {
+      const compose = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3', size: size as keyof typeof want }));
+      const wordpress = compose.services.wordpress;
+      expect(wordpress).toMatchObject({ cpus: w.cpus, mem_limit: w.mem });
+      expect(wordpress.entrypoint[2]).toContain(`MaxRequestWorkers ${w.workers}\\n`);
+      // The agent runs WordPress's cron, so it sees the quotas too.
+      for (const service of [wordpress, compose.services.agent]) {
+        expect(service.environment).toMatchObject({ WAAS_STORAGE_GB: w.storage, WAAS_EMAILS_PER_MONTH: w.emails });
+      }
+      expect(compose.services.db.mem_limit).toBe('384m');
+      expect(compose.services.agent.mem_limit).toBe('256m');
+    }
+  });
+
+  it('runs a version site as small, without quotas', () => {
+    const compose = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' }));
+    expect(compose.services.wordpress).toMatchObject({ cpus: 1, mem_limit: '512m' });
+    expect(compose.services.wordpress.environment).not.toHaveProperty('WAAS_STORAGE_GB');
+    expect(compose.services.agent.environment).not.toHaveProperty('WAAS_EMAILS_PER_MONTH');
+  });
+
   it('uses `$` only for the variables Coolify fills in', () => {
-    const compose = renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' });
+    const compose = renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3', size: 'large' });
     const vars = compose.match(/\$\{?[A-Za-z0-9_]*/g) ?? [];
     expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_MAIL_B64', '${WAAS_INIT_PASSWORD', '${WAAS_SITE_KEY']));
     const parsed = parse(compose);

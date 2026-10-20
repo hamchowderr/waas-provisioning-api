@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import type { Brand, CreateStoreInput, PhpConstant, Provisioner, StoreSender } from '../provisioner.ts';
+import { DEFAULT_SIZE, isSize, type Size } from '../../plans.ts';
+import type { Brand, CreateStoreInput, Provisioner, StoreSender } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
@@ -122,7 +123,8 @@ const isCronTask = (t: CoolifyTask) =>
 /**
  * What the driver keeps in a Service's description, so it needs no table of its own. Coolify
  * allows only letters, digits, spaces and some punctuation there (no JSON), hence a plain format:
- * "WaaS version, WordPress 6.8, PHP 8.3" or "WaaS store, version <id>, setup <n>" (no setup: 1).
+ * "WaaS version, WordPress 6.8, PHP 8.3" or "WaaS store, version <id>, setup <n>, size <size>" (no setup: 1;
+ * no size: small, which every store ran as before sizes).
  */
 export interface VersionMeta {
   kind: 'version';
@@ -134,6 +136,8 @@ export interface StoreMeta {
   versionId: string;
   /** The STORE_SETUP the store's compose and agent files were last brought to; new stores get the current one. */
   setup?: number;
+  /** The size (plans.ts) the store's compose file was last rendered with. */
+  size: Size;
 }
 
 /**
@@ -141,9 +145,10 @@ export interface StoreMeta {
  * agent installs (install_guard in agent.php) should reach existing stores: on the API's next start,
  * ensureStoreSetup gives each older store the new compose, restarts it once and reinstalls the agent's files.
  * 2: at most 8 Apache workers, and the page cache.
- * 3: WAAS_SITE_KEY, for site editing through the API.
+ * 3: sizes and the plan mu-plugin.
+ * 4: WAAS_SITE_KEY, for site editing through the API.
  */
-export const STORE_SETUP = 3;
+export const STORE_SETUP = 4;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -223,6 +228,17 @@ export class CoolifyProvisioner implements Provisioner {
     return meta;
   }
 
+  /** A store's compose file, from its version's WordPress and PHP and its size, as the Service's docker_compose_raw. */
+  private async storeCompose(meta: StoreMeta): Promise<string> {
+    return b64(renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size }));
+  }
+
+  private storeMeta(store: CoolifyService): StoreMeta {
+    const meta = parseMeta(store.description);
+    if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
+    return meta;
+  }
+
   /** Creates the Service unless it exists, sets its variables and starts it. Returns its uuid. */
   private async ensureService(input: {
     envName: string;
@@ -230,6 +246,8 @@ export class CoolifyProvisioner implements Provisioner {
     meta: VersionMeta | StoreMeta;
     wordPressVersion: string;
     phpVersion: string;
+    /** A store's; version sites have none. */
+    size?: Size;
     domains: string[];
     envs: Record<string, string>;
   }): Promise<string> {
@@ -440,9 +458,10 @@ export class CoolifyProvisioner implements Provisioner {
     const uuid = await this.ensureService({
       envName: STORES_ENV,
       name: storeName(input.storeId),
-      meta: { kind: 'store', versionId: input.versionId },
+      meta: { kind: 'store', versionId: input.versionId, size: input.size },
       wordPressVersion: version.wordPressVersion,
       phpVersion: version.phpVersion,
+      size: input.size,
       domains: [input.mainDomain, ...input.redirectDomains],
       envs,
     });
@@ -476,21 +495,21 @@ export class CoolifyProvisioner implements Provisioner {
   }
 
   /**
-   * Brings a store set up before STORE_SETUP to it: the current compose file, one restart, then the
-   * agent's files (configure). The description is updated last, so a store that fails part-way is
-   * tried again on the next start.
+   * Brings a store set up before STORE_SETUP, or running at another size than its record says, to the
+   * current setup at that size: the compose file, one restart, then the agent's files (configure). The
+   * description is updated last, so a store that fails part-way is tried again on the next start.
    */
-  async ensureStoreSetup({ storeId }: { storeId: string }): Promise<'updated' | 'unchanged'> {
+  async ensureStoreSetup({ storeId, size }: { storeId: string; size: Size }): Promise<'updated' | 'unchanged'> {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    const meta = parseMeta(store.description);
-    if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
-    if ((meta.setup ?? 1) >= STORE_SETUP) return 'unchanged';
-    await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
+    const meta = this.storeMeta(store);
+    if ((meta.setup ?? 1) >= STORE_SETUP && meta.size === size) return 'unchanged';
+    const want: StoreMeta = { ...meta, setup: STORE_SETUP, size };
+    await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(want) });
     const siteKey = this.siteKeyEnvs(storeId);
     if (Object.keys(siteKey).length) await this.coolify.setEnvs(store.uuid, siteKey);
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
-    await this.coolify.updateService(store.uuid, { description: formatMeta({ ...meta, setup: STORE_SETUP }) });
+    await this.coolify.updateService(store.uuid, { description: formatMeta(want) });
     return 'updated';
   }
 
@@ -502,9 +521,7 @@ export class CoolifyProvisioner implements Provisioner {
   async ensureStoreCron({ storeId }: { storeId: string }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     if (!(await this.coolify.listTasks(store.uuid)).some((t) => t.name === CRON_TASK.name)) {
-      const meta = parseMeta(store.description);
-      if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
-      await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
+      await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(this.storeMeta(store)) });
       await this.restart(store.uuid);
     }
     return this.ensureCron(store.uuid);
@@ -574,11 +591,7 @@ export class CoolifyProvisioner implements Provisioner {
     if (had && envValue(current, MAIL_ENV) === undefined) return 'unchanged';
     const want = await this.storeMailEnvs(storeId, current, sender);
     if (Object.entries(want).every(([key, value]) => envValue(current, key) === value)) return 'unchanged';
-    if (!had) {
-      const meta = parseMeta(store.description);
-      if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
-      await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
-    }
+    if (!had) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(this.storeMeta(store)) });
     await this.coolify.setEnvs(store.uuid, want);
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
@@ -600,24 +613,31 @@ export class CoolifyProvisioner implements Provisioner {
     await this.exec(store.uuid, 'configure', { home: https(mainDomain) });
   }
 
-  async updateStore({ storeId, wpOptions, phpConstants }: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant> }) {
+  async updateStore({ storeId, wpOptions, phpConstants, size }: Parameters<Provisioner['updateStore']>[0]) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
+    // A new size is a new compose file (resources and quotas). With the restart and configure below the store also
+    // has the current setup; the description says both once the store runs them.
+    const resized: StoreMeta | undefined = size && { ...this.storeMeta(store), setup: STORE_SETUP, size };
+    if (resized) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(resized) });
     if (phpConstants) {
       // The complete set (see Provisioner.updateStore); Coolify's API does not hand values back to merge with.
       await this.coolify.setEnvs(store.uuid, { WAAS_CONSTANTS_B64: encodeConstants(phpConstants) });
-      await this.restart(store.uuid);
     }
-    if (wpOptions && Object.keys(wpOptions).length) await this.exec(store.uuid, 'configure', { options: wpOptions });
+    if (resized || phpConstants) await this.restart(store.uuid);
+    if (resized || (wpOptions && Object.keys(wpOptions).length)) await this.exec(store.uuid, 'configure', wpOptions ? { options: wpOptions } : {});
+    if (resized) await this.coolify.updateService(store.uuid, { description: formatMeta(resized) });
   }
 
   async moveStore({ storeId, targetVersionId }: { storeId: string; targetVersionId: string }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const version = await this.versionMeta(targetVersionId);
     // The agent's files are not reinstalled here, so the store keeps its setup for ensureStoreSetup to finish.
+    // It keeps its size too.
     const current = parseMeta(store.description);
+    const size = current?.kind === 'store' ? current.size : DEFAULT_SIZE;
     await this.coolify.updateService(store.uuid, {
-      description: formatMeta({ kind: 'store', versionId: targetVersionId, setup: current?.kind === 'store' ? current.setup : 1 }),
-      docker_compose_raw: b64(renderCompose(version)),
+      description: formatMeta({ kind: 'store', versionId: targetVersionId, setup: current?.kind === 'store' ? current.setup : 1, size }),
+      docker_compose_raw: b64(renderCompose({ ...version, size })),
     });
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(targetVersionId)) });
@@ -699,12 +719,15 @@ function allHealthy(statuses: string[]): boolean {
 export function formatMeta(meta: VersionMeta | StoreMeta): string {
   return meta.kind === 'version'
     ? `WaaS version, WordPress ${meta.wordPressVersion}, PHP ${meta.phpVersion}`
-    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}`;
+    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}, size ${meta.size}`;
 }
 
 export function parseMeta(description: string | null | undefined): VersionMeta | StoreMeta | null {
   const version = /^WaaS version, WordPress ([\d.]+), PHP ([\d.]+)$/.exec(description ?? '');
   if (version) return { kind: 'version', wordPressVersion: version[1]!, phpVersion: version[2]! };
-  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?$/.exec(description ?? '');
-  return store ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1) } : null;
+  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?(?:, size (\w+))?$/.exec(description ?? '');
+  if (!store) return null;
+  const size = store[3] ?? DEFAULT_SIZE;
+  // A size this API does not know (a newer one's) is no metadata it can act on.
+  return isSize(size) ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1), size } : null;
 }

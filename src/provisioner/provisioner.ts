@@ -1,3 +1,5 @@
+import type { Size } from '../plans.ts';
+
 /**
  * Everything that touches the machines stores run on. The API records state in Postgres and
  * calls this from queue jobs; it never talks to a host directly. Two implementations: the in-memory
@@ -61,9 +63,10 @@ export interface Provisioner {
 
   /**
    * Writes wpOptions and phpConstants into a running store. wpOptions holds only the options to
-   * change; phpConstants, when given, is the store's complete set of constants.
+   * change; phpConstants, when given, is the store's complete set of constants. `size`, when given,
+   * moves the store to that size (its resources and quotas), restarting it.
    */
-  updateStore(input: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant> }): Promise<void>;
+  updateStore(input: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant>; size?: Size }): Promise<void>;
 
   /** Moves a store to another version's code. */
   moveStore(input: { storeId: string; targetVersionId: string }): Promise<void>;
@@ -106,10 +109,11 @@ export interface Provisioner {
 
   /**
    * Brings a store created under an older store setup (its compose file and the files the agent
-   * installs, such as the page cache) to the current one, restarting it once. createStore already
-   * gives new stores the current setup; the API calls it for every live store on startup.
+   * installs, such as the page cache), or running at another size than `size`, to the current setup
+   * at `size`, restarting it once. createStore already gives new stores the current setup; the API
+   * calls it for every live store on startup, with the size it has on record.
    */
-  ensureStoreSetup(input: { storeId: string }): Promise<'updated' | 'unchanged'>;
+  ensureStoreSetup(input: { storeId: string; size: Size }): Promise<'updated' | 'unchanged'>;
 
   /**
    * Makes sure a store's scheduled jobs (WP-cron, Action Scheduler) run on their own, without page
@@ -148,5 +152,7 @@ export interface CreateStoreInput {
   /** Written as define() in wp-config, next to WPCS_IS_TENANT=true in the environment. */
   phpConstants: Record<string, PhpConstant>;
   wpOptions: Record<string, string>;
+  /** Its resources and quotas (src/plans.ts). */
+  size: Size;
   user?: { name: string; email: string; role: string; password?: string };
 }

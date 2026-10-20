@@ -185,7 +185,7 @@ HTML;
 }
 
 /**
- * The mu-plugins and .htaccess block behind suspension, redirect domains and outgoing mail, and the page cache. $brand re-renders the
+ * The mu-plugins and .htaccess block behind suspension, redirect domains, outgoing mail and the plan's quotas, and the page cache. $brand re-renders the
  * unavailable page; without it the page already there is kept (or the default one written).
  */
 function install_guard(?array $brand = null): void
@@ -253,6 +253,134 @@ add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
 }, PHP_INT_MAX);
 add_action('wp_mail_failed', function ($error) {
     error_log('WaaS store mail: ' . $error->get_error_message());
+});
+PHP);
+    file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: WaaS store plan
+ * Description: Keeps the store within its plan's storage and monthly email. Managed by the WaaS provisioner; edits are overwritten.
+ */
+// The quotas come with the store's size (compose.ts). Version sites have none, and nothing here applies to them.
+if ((string) getenv('WAAS_STORAGE_GB') === '' && (string) getenv('WAAS_EMAILS_PER_MONTH') === '') return;
+
+/** The plan's storage (GB, and bytes) and emails a calendar month; 0 is no limit. */
+function waas_plan_limits(): array
+{
+    $gb = (int) getenv('WAAS_STORAGE_GB');
+    return ['storageGb' => $gb, 'storage' => $gb * 1024 ** 3, 'emails' => (int) getenv('WAAS_EMAILS_PER_MONTH')];
+}
+
+/** The storage used when last measured, in bytes, plus what was uploaded since. */
+function waas_plan_used(): int
+{
+    $usage = get_option('waas_plan_usage');
+    return is_array($usage) ? (int) ($usage['bytes'] ?? 0) : 0;
+}
+
+/**
+ * Measures the storage used: wp-content, without wp-content/cache (saved pages and other caches, which come back on
+ * their own), and the database. Walking every file is too slow for each upload, so a daily WP-cron event measures
+ * and uploads are checked against the saved number. Cron runs from the agent through WP-CLI, not on page loads.
+ */
+function waas_plan_measure(): array
+{
+    global $wpdb;
+    $bytes = 0;
+    $dirs = new RecursiveCallbackFilterIterator(
+        new RecursiveDirectoryIterator(WP_CONTENT_DIR, FilesystemIterator::SKIP_DOTS),
+        fn ($file, $path) => $path !== WP_CONTENT_DIR . '/cache'
+    );
+    foreach (new RecursiveIteratorIterator($dirs, RecursiveIteratorIterator::LEAVES_ONLY, RecursiveIteratorIterator::CATCH_GET_CHILD) as $file) {
+        if ($file->isFile() && !$file->isLink()) $bytes += $file->getSize();
+    }
+    $bytes += (int) $wpdb->get_var($wpdb->prepare(
+        'SELECT COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema = %s',
+        DB_NAME
+    ));
+    $usage = ['bytes' => $bytes, 'at' => time()];
+    update_option('waas_plan_usage', $usage, false);
+    return $usage;
+}
+add_action('waas_plan_measure', 'waas_plan_measure');
+add_action('init', function () {
+    if (!wp_next_scheduled('waas_plan_measure')) wp_schedule_event(time(), 'daily', 'waas_plan_measure');
+});
+
+/** Refuses an upload that would take the store past its storage. */
+function waas_plan_check_upload($file)
+{
+    $limits = waas_plan_limits();
+    if (!$limits['storage'] || !is_array($file) || !empty($file['error'])) return $file;
+    $size = (int) ($file['size'] ?? @filesize((string) ($file['tmp_name'] ?? '')));
+    if (waas_plan_used() + $size > $limits['storage']) {
+        $file['error'] = sprintf('This website has used its %d GB of storage. Delete files you no longer need, or move to a bigger plan, to upload more.', $limits['storageGb']);
+    }
+    return $file;
+}
+add_filter('wp_handle_upload_prefilter', 'waas_plan_check_upload');
+add_filter('wp_handle_sideload_prefilter', 'waas_plan_check_upload');
+// Uploads count at once, so a day of uploads can't go far past the storage before the next measurement.
+add_filter('wp_handle_upload', function ($upload) {
+    $usage = get_option('waas_plan_usage');
+    if (is_array($usage) && is_array($upload) && !empty($upload['file']) && empty($upload['error'])) {
+        $usage['bytes'] = (int) ($usage['bytes'] ?? 0) + (int) @filesize($upload['file']);
+        update_option('waas_plan_usage', $usage, false);
+    }
+    return $upload;
+});
+
+/** This calendar month's (UTC) count of emails sent; a new month starts at 0. */
+function waas_plan_mail(): array
+{
+    $month = gmdate('Y-m');
+    $mail = get_option('waas_plan_mail');
+    return ['month' => $month, 'sent' => is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0];
+}
+add_action('wp_mail_succeeded', function () {
+    $mail = waas_plan_mail();
+    $mail['sent']++;
+    update_option('waas_plan_mail', $mail, false);
+});
+
+/** Whether this month's emails are used up. */
+function waas_plan_mail_used_up(): bool
+{
+    $limits = waas_plan_limits();
+    return $limits['emails'] > 0 && waas_plan_mail()['sent'] >= $limits['emails'];
+}
+/*
+ * Past the allowance, bulk email waits: FluentCRM's campaigns, sequences and automation emails stay in its queue and
+ * go out when the next month starts. Everything else (order receipts, account emails, bookings, support replies)
+ * still sends, so the store keeps working. A FluentCRM run already sending finishes its batch, so a campaign can go
+ * a little past.
+ */
+add_filter('fluent_crm/disable_email_processing', function ($disabled) {
+    return $disabled || waas_plan_mail_used_up();
+});
+
+// The store's administrators see it coming: from 80% of either quota, and once it is used up.
+add_action('admin_notices', function () {
+    if (!current_user_can('manage_options')) return;
+    $limits = waas_plan_limits();
+    $notices = [];
+    if ($limits['storage']) {
+        $used = waas_plan_used();
+        if ($used >= $limits['storage']) {
+            $notices[] = ['error', sprintf('This website has used all of its %d GB of storage, so uploads are refused. Delete files you no longer need, or move to a bigger plan.', $limits['storageGb'])];
+        } elseif ($used >= 0.8 * $limits['storage']) {
+            $notices[] = ['warning', sprintf('This website has used %d%% of its %d GB of storage. Delete files you no longer need, or move to a bigger plan, before uploads stop.', floor(100 * $used / $limits['storage']), $limits['storageGb'])];
+        }
+    }
+    if ($limits['emails']) {
+        $sent = waas_plan_mail()['sent'];
+        if ($sent >= $limits['emails']) {
+            $notices[] = ['error', sprintf('This website has sent all %s of the emails its plan includes this month. Campaigns and sequences are paused until %s; order, account and booking emails still go out. Move to a bigger plan to send more.', number_format($limits['emails']), gmdate('F j', strtotime('first day of next month')))];
+        } elseif ($sent >= 0.8 * $limits['emails']) {
+            $notices[] = ['warning', sprintf('This website has sent %s of the %s emails its plan includes this month. Campaigns and sequences pause when it reaches %2$s; order, account and booking emails always go out.', number_format($sent), number_format($limits['emails']))];
+        }
+    }
+    foreach ($notices as [$type, $text]) printf('<div class="notice notice-%s"><p>%s</p></div>', $type, esc_html($text));
 });
 PHP);
     // Apache answers 503 before PHP runs, with the page as the error document (which itself is let through).
@@ -512,6 +640,28 @@ switch ($op) {
             run('rm -rf ' . CONTENT . "/$dir && cp -a " . escapeshellarg("$tmp/x/wp-content/$dir") . ' ' . CONTENT . "/$dir");
         }
         done();
+    }
+
+    case 'usage': {
+        // What the store uses against its plan (the waas-plan mu-plugin), with storage measured now, as the
+        // mu-plugin's daily measurement does, and saved for it.
+        $bytes = 0;
+        $dirs = new RecursiveCallbackFilterIterator(
+            new RecursiveDirectoryIterator(CONTENT, FilesystemIterator::SKIP_DOTS),
+            fn ($file, $path) => $path !== CONTENT . '/cache'
+        );
+        foreach (new RecursiveIteratorIterator($dirs, RecursiveIteratorIterator::LEAVES_ONLY, RecursiveIteratorIterator::CATCH_GET_CHILD) as $file) {
+            if ($file->isFile() && !$file->isLink()) $bytes += $file->getSize();
+        }
+        $db = wp('db', 'query', 'SELECT COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema = DATABASE()', '--skip-column-names');
+        preg_match('/(\d+)\s*$/', $db, $m) || fail('could not read the database size');
+        $bytes += (int) $m[1];
+        $at = time();
+        wp('option', 'update', 'waas_plan_usage', json_encode(['bytes' => $bytes, 'at' => $at]), '--format=json', '--autoload=no');
+        $month = gmdate('Y-m');
+        $mail = json_decode((string) wpMayFail('option', 'get', 'waas_plan_mail', '--format=json'), true);
+        $sent = is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0;
+        done(['storageBytes' => $bytes, 'measuredAt' => gmdate('c', $at), 'mailMonth' => $month, 'mailSent' => $sent]);
     }
 
     case 'update-db':

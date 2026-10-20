@@ -28,13 +28,15 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.create':
           return createTenant(pool, provisioner, secrets, data);
         case 'tenant.update': {
-          const { rows } = await pool.query('SELECT php_constants FROM tenants WHERE id = $1', [data.tenantId]);
+          const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
           if (!rows[0]) return;
           await provisioner.updateStore({
             storeId: data.tenantId,
             wpOptions: data.wpOptions,
             // The full set whenever any constant changed: a host may have to rewrite them all at once.
             phpConstants: data.phpConstantNames?.length ? decodePhpConstants(secrets, rows[0].php_constants) : undefined,
+            // The size on record, not the job's: a later PUT may have changed it again before this ran.
+            size: data.size ? rows[0].size : undefined,
           });
           // A move or delete queued meanwhile has set its own status; only finish a Pending one.
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
@@ -66,6 +68,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
             snapshotId: rows[0].snapshot_id,
             snapshotName: rows[0].snapshot_name,
             snapshotGroupName: rows[0].snapshot_group_name,
+            size: rows[0].size,
             domains: domains.map((d) => ({ domainName: d.domain_name, isMain: d.is_main, isBase: d.is_base })),
           };
           await pool.query(
@@ -87,6 +90,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
             redirectDomains: tenant.redirect_domains,
             phpConstants: decodePhpConstants(secrets, tenant.php_constants),
             wpOptions: tenant.wp_options,
+            size: tenant.size,
           });
           await setTenantStatus(tenant.id, Status.Done, Status.Pending);
           return;
@@ -226,6 +230,7 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
     redirectDomains: tenant.redirect_domains,
     phpConstants: decodePhpConstants(secrets, tenant.php_constants),
     wpOptions: tenant.wp_options,
+    size: tenant.size,
     user,
   });
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
