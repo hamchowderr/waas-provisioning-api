@@ -298,19 +298,21 @@ add_action('rest_api_init', 'anypress_register_patterns');
 
 /**
  * The pages a new store starts with, by its site type (the plugins its plan switched on): page slug => starter page.
- * A store with FluentCart keeps the shop as its home page; the others get a home page of their own.
+ * Community and courses also has FluentCart (to sell courses), so it is told apart from Everything by bookings being off.
+ * A store with FluentCart gets the store home page in front of the shop: a new shop has no products yet, and the bare
+ * shop page would open on "No results found".
  */
 function anypress_site_type_pages(array $active): array
 {
     $on = fn (string $plugin) => in_array($plugin, $active, true);
+    if ($on('fluent-community/fluent-community.php') && !$on('fluent-booking/fluent-booking.php')) {
+        return ['home' => 'anypress/home-community', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
+    }
     if ($on('fluent-cart/fluent-cart.php')) {
-        return ['about' => 'anypress/about', 'contact' => 'anypress/contact'];
+        return ['home' => 'anypress/home-store', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
     }
     if ($on('fluent-booking/fluent-booking.php')) {
         return ['home' => 'anypress/home-bookings', 'services' => 'anypress/services', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
-    }
-    if ($on('fluent-community/fluent-community.php')) {
-        return ['home' => 'anypress/home-community', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
     }
 
     return ['home' => 'anypress/home-website', 'services' => 'anypress/services', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];

@@ -42,8 +42,13 @@ list and, once the owner has made one, the FluentBooking calendar. Ollie's patte
 A new store also gets real pages made from them, once, on its first web request after the platform has set the owner's
 email and the site type has switched its plugins: published, in the main menu, with Ollie's no-title page template.
 Website: Home, Services, About and Contact, with Home as the home page. Bookings: the same with the bookings home page.
-Community and courses: Home, About and Contact. A store with FluentCart (online store, everything) keeps the shop as its
-home page and gets About and Contact after Shop in the menu. A store that already has pages of its own gets none.
+Community and courses: Home, About and Contact (it has FluentCart too, to sell courses, but gets the community home
+page). Online store and everything: the store home page as Home, with Shop moving to `/shop/`, and About and Contact
+after Shop in the menu. A store that already has pages of its own gets none.
+
+Until a store publishes its first product, FluentCart's product lists (the Shop page and the store home page) show
+"New products are on their way. Check back soon." instead of an empty filter bar and "No results found"
+(`mu-plugins/anypress-store.php`).
 
 Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
