@@ -81,6 +81,8 @@ Per-store values come from the purchase: WaaS Host sends the site title (`blogna
 mu-plugin copies them into the plugins once: FluentCart store name and country; FluentCRM business name and
 email; FluentAffiliate admin email; FluentBooking default country; Fluent Support's first mailbox; Rank Math's organisation and website name. The template also has a Support Portal
 page. Stores created without these options keep `admin@example.invalid` until the owner changes it.
+The owner's address, phone, time zone, currency and name are filled in by the provisioner's `waas-owner` mu-plugin
+([details](../../docs/coolify.md#the-owners-details)).
 
 Store email is not a plugin: the provisioner's `waas-mail` mu-plugin sends it, and fills in each plugin's own sender
 to match ([store email](../../docs/store-email.md#the-plugins-own-senders)). Don't add an SMTP plugin.

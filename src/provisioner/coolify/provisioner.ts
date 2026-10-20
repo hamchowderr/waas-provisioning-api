@@ -152,8 +152,9 @@ export interface StoreMeta {
  * 6: the platform's count of the store's email: the plan mu-plugin goes by the higher of it and its own, the agent's
  *    mail-count operation, and replies to the store's own mailbox reach its administrator.
  * 7: the mail mu-plugin fills in each Fluent plugin's own sender (From and Reply-To) with how the store sends.
+ * 8: the owner mu-plugin fills in the owner's address, phone, time zone, currency and name from the purchase.
  */
-export const STORE_SETUP = 7;
+export const STORE_SETUP = 8;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
