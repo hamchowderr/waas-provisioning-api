@@ -1,7 +1,8 @@
 // The MCP server (mcp/) over Streamable HTTP at /mcp, so an AI agent can manage stores without
 // running anything locally. Callers sign in with an OAuth access token (src/oauth.ts; what Claude
 // and ChatGPT connectors use) or with the same Basic auth as /v1. Tool calls go through the /v1
-// routes in-process, so they get the same checks and land in the request log.
+// routes in-process, so they get the same checks and land in the request log. A store owner's token
+// ("Sign in with your website") gets only the site tools, and only for that store.
 import { createMcpHandler, requireBearerAuth } from '@modelcontextprotocol/server';
 import type { Context, Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -16,7 +17,7 @@ type Caller = TokenOwner & { readOnly: boolean; [key: string]: unknown };
 export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
   const handler = createMcpHandler(
     (ctx) => {
-      const { productId, apiKeyId, userId, readOnly } = ctx.authInfo!.extra as unknown as Caller;
+      const { productId, apiKeyId, userId, tenantId, readOnly } = ctx.authInfo!.extra as unknown as Caller;
       const internalAuth = { productId, apiKeyId, userId };
       // The /v1 routes sign this caller in from internalAuth; the key and secret here are never checked.
       const client = new WaasClient({
@@ -25,10 +26,15 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
         apiSecret: 'mcp',
         fetch: (async (input: string | URL | Request, init?: RequestInit) => {
           const url = new URL(String(input));
+          if (tenantId) {
+            // One store's owner: its site routes, whatever store the call names.
+            if (url.pathname !== '/v1/tenants/site') return Response.json({ statusCode: 403, message: 'This connection can only edit its own website' }, { status: 403 });
+            url.search = `?tenantId=${tenantId}`;
+          }
           return app.request(`${url.pathname}${url.search}`, init, { internalAuth });
         }) as typeof fetch,
       });
-      return createWaasMcpServer(client, { readOnly });
+      return createWaasMcpServer(client, { readOnly, store: tenantId ? { tenantId } : undefined });
     },
     { onerror: (error) => console.error('mcp:', error.message) },
   );

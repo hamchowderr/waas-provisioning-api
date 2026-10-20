@@ -24,6 +24,7 @@ Add `https://<your API>/mcp` as a custom connector. The client finds the sign-in
 
 - **Sign in** (when sign-in is on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront and approve. The app then acts as you, with your role: someone who may only look gets the read tools only.
 - Or sign in with your product **API key and secret**. The secret stays on that page.
+- Or **Sign in with your website**, for someone who owns one store: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)).
 
 Either way the client only gets a token. You can untick "Allow it to make changes" to give it the read tools only.
 

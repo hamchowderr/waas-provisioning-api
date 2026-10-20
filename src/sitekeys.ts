@@ -19,6 +19,44 @@ export function siteKey(master: Buffer, storeId: string): string {
   return createHmac('sha256', master).update(storeId).digest('base64url');
 }
 
+/** Site keys by store id, deriving the master key on first use (so a missing SECRETS_KEY fails there). */
+export function siteKeys(secretsKeyBase64: string): (storeId: string) => string {
+  let master: Buffer | undefined;
+  return (storeId) => siteKey((master ??= siteKeyMaster(secretsKeyBase64)), storeId);
+}
+
+/**
+ * "Sign in with your website" (src/oauth.ts): the API sends the store owner to their wp-admin with a
+ * link it signs with the store's key, so WaaS Client knows the app's name and where to answer are
+ * ours; the store answers with a signature of its own, so the API knows the store's admin pressed it.
+ */
+export interface ConnectLink {
+  request: string;
+  /** The app's name, shown on the Allow page. */
+  app: string;
+  /** Where the app sends the owner back to after (a host, or an app's scheme). */
+  to: string;
+  /** Whether the app asks to make changes, not only look ('1' or '0'). */
+  write: '1' | '0';
+  /** The API's answer URL (oauth/site/answer). */
+  back: string;
+  /** Unix time the link stops working. */
+  t: string;
+}
+
+export type ConnectAnswer = 'allow' | 'allow-read' | 'deny';
+
+const CONNECT_FIELDS = ['request', 'app', 'to', 'write', 'back', 't'] as const;
+
+export function connectLinkSignature(key: string, link: ConnectLink): string {
+  return createHmac('sha256', key).update(['waas-connect', ...CONNECT_FIELDS.map((f) => link[f])].join('\n')).digest('hex');
+}
+
+/** What WaaS Client signs when the owner presses Allow or Cancel. */
+export function connectAnswerSignature(key: string, request: string, answer: ConnectAnswer): string {
+  return createHmac('sha256', key).update(['waas-connect-answer', request, answer].join('\n')).digest('hex');
+}
+
 /** PHP's rawurlencode: encodeURIComponent plus the five characters it leaves alone. */
 const rawurlencode = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 

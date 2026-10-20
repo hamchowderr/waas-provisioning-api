@@ -7,6 +7,11 @@ import { storesViewHtml, STORES_VIEW_URI } from './view.js';
 export interface WaasMcpOptions {
   /** Registers only the tools that read; nothing the agent calls can change a store. */
   readOnly?: boolean;
+  /**
+   * Connected to one store only (its owner's "Sign in with your website"): registers only the site
+   * tools, and they act on this store whatever store the agent names.
+   */
+  store?: TenantRef;
   /** How often wait_for_store polls (tests shorten it). */
   pollIntervalMs?: number;
 }
@@ -69,9 +74,12 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         'Call wait_for_store after creating, restoring, moving or changing domains, and before the next write to the same store. ' +
         'The site tools (get_site, list_pages, read_page, add_section, update_site_styles…) edit a store’s pages and design directly and take effect at once: ' +
         'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so.' +
-        (options.readOnly ? ' This server is read-only: it cannot change anything.' : ''),
+        (options.readOnly ? ' This server is read-only: it cannot change anything.' : '') +
+        (options.store ? ' This connection is for one website only: the site tools act on it, and the store ids can be left out.' : ''),
     },
   );
+  // Until the site tools below, every tool is for running stores, which a store's own connection can't do.
+  let siteTools = false;
 
   const tool = <Shape extends z.ZodRawShape>(
     name: string,
@@ -79,6 +87,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     run: (args: z.infer<z.ZodObject<Shape>>) => Promise<unknown>,
   ) => {
     if (options.readOnly && !config.annotations.readOnlyHint) return;
+    if (options.store && !siteTools) return;
     server.registerTool(
       name,
       { title: config.title, description: config.description, inputSchema: z.object(config.input), annotations: config.annotations },
@@ -93,37 +102,39 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   };
 
   // MCP App: a store panel that renders in clients supporting MCP Apps (Claude, ChatGPT, VS Code...).
-  // Clients without it get the same list as text.
+  // Clients without it get the same list as text. A store's own connection has no stores to list.
 
-  registerAppTool(
-    server,
-    'show_stores',
-    {
-      title: 'Show stores',
-      description:
-        'Shows your stores in an interactive panel (status, main domain, version) with buttons to back up, suspend and resume. ' +
-        'Use when the user wants to see or browse their stores; use list_stores when you only need the data.',
-      inputSchema: z.object({}),
-      annotations: READ,
-      _meta: { ui: { resourceUri: STORES_VIEW_URI } },
-    },
-    async () => {
-      try {
-        const stores = await client.tenants.list();
-        const summary = stores.length === 1 ? '1 store' : `${stores.length} stores`;
-        return {
-          content: [{ type: 'text', text: `${summary}:\n${JSON.stringify(stores, null, 2)}` }],
-          structuredContent: { stores, readOnly: !!options.readOnly },
-        };
-      } catch (error) {
-        return failure(error);
-      }
-    },
-  );
+  if (!options.store) {
+    registerAppTool(
+      server,
+      'show_stores',
+      {
+        title: 'Show stores',
+        description:
+          'Shows your stores in an interactive panel (status, main domain, version) with buttons to back up, suspend and resume. ' +
+          'Use when the user wants to see or browse their stores; use list_stores when you only need the data.',
+        inputSchema: z.object({}),
+        annotations: READ,
+        _meta: { ui: { resourceUri: STORES_VIEW_URI } },
+      },
+      async () => {
+        try {
+          const stores = await client.tenants.list();
+          const summary = stores.length === 1 ? '1 store' : `${stores.length} stores`;
+          return {
+            content: [{ type: 'text', text: `${summary}:\n${JSON.stringify(stores, null, 2)}` }],
+            structuredContent: { stores, readOnly: !!options.readOnly },
+          };
+        } catch (error) {
+          return failure(error);
+        }
+      },
+    );
 
-  registerAppResource(server, 'Store panel', STORES_VIEW_URI, { description: 'The show_stores panel' }, async () => ({
-    contents: [{ uri: STORES_VIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: storesViewHtml() }],
-  }));
+    registerAppResource(server, 'Store panel', STORES_VIEW_URI, { description: 'The show_stores panel' }, async () => ({
+      contents: [{ uri: STORES_VIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: storesViewHtml() }],
+    }));
+  }
 
   // Stores
 
@@ -414,9 +425,10 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   // Site editing: the store's pages and design, through its WaaS Client (docs/site-editing.md).
 
+  siteTools = true;
   type SiteCall = Parameters<WaasClient['tenants']['editSite']>[1];
   const site = async (args: { externalId?: string | undefined; tenantId?: string | undefined }, call: SiteCall) => {
-    const answer = await client.tenants.editSite(toRef(args), call);
+    const answer = await client.tenants.editSite(options.store ?? toRef(args), call);
     if (answer.status && answer.status >= 400) {
       const body = answer.body as { message?: string } | undefined;
       throw new Error(`The store answered ${answer.status}: ${body?.message ?? JSON.stringify(answer.body)}`);

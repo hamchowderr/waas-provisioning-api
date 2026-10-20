@@ -3,7 +3,7 @@ import type { AppEnv, Deps } from '../app.ts';
 import { badRequest, HttpError } from '../errors.ts';
 import { readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
-import { callSite, siteKey, siteKeyMaster, type SiteRequest } from '../sitekeys.ts';
+import { callSite, siteKeys, type SiteRequest } from '../sitekeys.ts';
 import { Status, statusName } from '../status.ts';
 import { findTenant } from '../tenants.ts';
 
@@ -15,7 +15,7 @@ import { findTenant } from '../tenants.ts';
 export function siteRoutes(deps: Deps) {
   const { pool, config } = deps;
   const app = new Hono<AppEnv>();
-  let master: Buffer | undefined;
+  const keyFor = siteKeys(config.secretsKey);
 
   app.post('/site', async (c) => {
     const tenant = await findTenant(pool, c);
@@ -25,7 +25,7 @@ export function siteRoutes(deps: Deps) {
     if (!tenant.main_domain) throw badRequest(`Tenant ${tenant.external_id} has no main domain`);
     let answer;
     try {
-      answer = await callSite(siteKey((master ??= siteKeyMaster(config.secretsKey)), tenant.id), tenant.main_domain, request, deps.siteFetch);
+      answer = await callSite(keyFor(tenant.id), tenant.main_domain, request, deps.siteFetch);
     } catch (error) {
       throw new HttpError(502, `The store did not answer: ${(error as Error).message}`);
     }

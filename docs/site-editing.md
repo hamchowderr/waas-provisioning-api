@@ -17,6 +17,12 @@ Each store's key is derived from `SECRETS_KEY` and the store's id (HKDF, then HM
 
 Changing `SECRETS_KEY` changes every store's site key; stores then refuse site requests until they get the new key (bump `STORE_SETUP` to hand it out).
 
+## Sign in with your website
+
+A store owner who isn't on a product's team can still connect an AI app to their own site. On the connector's approve page (`/oauth/authorize`) they type the website's address. The API finds the store by any of its domains and sends them to `https://<main domain>/wp-admin/admin.php?page=waas-connect` with a link signed with the store's site key, naming the app, where it returns to and the API's answer URL.
+
+WaaS Client's page (2.3.0) shows that to the website's administrators, and Allow or Cancel goes back to `/oauth/site/answer` signed with the same key. The API checks the signature, uses the request once, and gives the app a code for that store only (`oauth_tokens.tenant_id`). That connection gets only the site tools, and every call goes to its own store whatever store the agent names. The token stops working when the store is deleted.
+
 ## MCP tools
 
 | Tool | Does |
