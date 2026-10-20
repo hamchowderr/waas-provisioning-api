@@ -73,7 +73,8 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         'Every write is asynchronous: it returns once scheduled, and the store shows statusCode 0 (Pending) until the work finishes, then 1 (Done) or 2 (Failed). ' +
         'Call wait_for_store after creating, restoring, moving or changing domains, and before the next write to the same store. ' +
         'The site tools (get_site, list_pages, read_page, add_section, update_site_styles…) edit a store’s pages and design directly and take effect at once: ' +
-        'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so.' +
+        'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so. ' +
+        'For a whole new page, start from a starter page (find_patterns with category anypress/pages: home pages per site type, about, services, contact) and then rewrite its text for the business.' +
         (options.readOnly ? ' This server is read-only: it cannot change anything.' : '') +
         (options.store ? ' This connection is for one website only: the site tools act on it, and the store ids can be left out.' : ''),
     },
@@ -529,7 +530,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     'find_patterns',
     {
       title: 'Find patterns',
-      description: 'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the site’s theme offers. Filter by a search word or a category.',
+      description: 'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the site’s theme offers, and whole starter pages (category anypress/pages). Filter by a search word or a category.',
       input: { ...ref, search: z.string().optional(), category: z.string().optional() },
       annotations: READ,
     },

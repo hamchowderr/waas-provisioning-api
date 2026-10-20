@@ -32,6 +32,13 @@ Ollie's header lists every page when the site has no menu, and its footer is the
 icons, a download pitch), so [`presets.php`](presets.php) adds a Main menu (Shop, Cart, Account, Support; links to pages a
 site type hides show nothing) and a plain footer (site title and the same menu). Owners change both in Appearance → Editor.
 
+Starter pages (`mu-plugins/anypress-patterns.php`): whole-page patterns under "Starter pages" when a page is created, and
+for the AnyPress connector's agents (`find_patterns`, category `anypress/pages`). Home pages for a website, an online store,
+bookings, and community and courses (each only when its plugin is on), plus About, Services and Contact. They use Ollie's
+own section layouts with the store's name and plain placeholder text, the Fluent Forms contact form, FluentCart's product
+list and, once the owner has made one, the FluentBooking calendar. Ollie's patterns that advertise the theme itself
+(Download page, Theme Details) are hidden.
+
 Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
 a random password nobody keeps.
@@ -54,6 +61,7 @@ a random password nobody keeps.
 - FluentAffiliate: FluentCart integration on, so store orders count as referrals.
 - Fluent Support: FluentBooking links in tickets. AutomatorWP: logs cleared after 30 days, no Pro suggestions.
 - Theme: the Main menu and the plain footer above.
+- Starter pages (`mu-plugins/anypress-patterns.php`); the build checks they register.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
   login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
 

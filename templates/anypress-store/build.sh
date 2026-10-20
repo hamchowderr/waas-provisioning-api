@@ -113,7 +113,7 @@ mkdir -p "$SITE/wp-content/plugins/waas-client-data"
 cp "$HERE/roles.json" "$SITE/wp-content/plugins/waas-client-data/roles.json"
 # Template settings kept in code (see mu-plugins/anypress-store.php).
 mkdir -p "$SITE/wp-content/mu-plugins"
-cp "$HERE/mu-plugins/anypress-store.php" "$SITE/wp-content/mu-plugins/"
+cp "$HERE/mu-plugins/anypress-store.php" "$HERE/mu-plugins/anypress-patterns.php" "$SITE/wp-content/mu-plugins/"
 
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE"
 
@@ -172,6 +172,8 @@ wp transient delete --all
 wp cache flush 2>/dev/null || true
 
 echo "== Check"
+# Starter pages (mu-plugins/anypress-patterns.php) register, and the theme's own promotion patterns are hidden.
+[ "$(wp eval 'anypress_register_patterns(); $r = WP_Block_Patterns_Registry::get_instance(); echo count(array_filter($r->get_all_registered(), fn($p) => str_starts_with($p["name"], "anypress/"))) >= 4 && !$r->is_registered("ollie/page-download") ? "ok" : "missing";')" = ok ] || { echo "starter pages missing"; exit 1; }
 wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
 EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
