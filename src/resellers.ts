@@ -21,7 +21,16 @@ interface Settings {
   maxTenants?: number | null;
   wholesalePercent?: number;
   billingEmail?: string | null;
+  priceSmall?: number;
+  priceMedium?: number;
+  priceLarge?: number;
 }
+
+/** listPriceCents in requests and answers, and its columns. */
+const PRICE_KEYS = { small: 'priceSmall', medium: 'priceMedium', large: 'priceLarge' } as const satisfies Record<Size, keyof Settings>;
+
+/** The most a store's monthly list price may be: $10,000. */
+const MAX_PRICE_CENTS = 1_000_000;
 
 function limit(value: unknown, name: string): number | null {
   if (value === null) return null;
@@ -51,10 +60,43 @@ function parseSettings(body: unknown, creating: boolean): Settings {
     else if (typeof email === 'string' && email.length <= 254 && EMAIL.test(email)) out.billingEmail = email;
     else throw badRequest('billingEmail must be an email address, or null');
   }
+  if (b.listPriceCents !== undefined) {
+    const prices = b.listPriceCents as Record<string, unknown> | null;
+    if (!prices || typeof prices !== 'object' || Array.isArray(prices) || Object.keys(prices).some((k) => !Object.hasOwn(PRICE_KEYS, k))) {
+      throw badRequest('listPriceCents must be an object with small, medium and/or large');
+    }
+    for (const [size, key] of Object.entries(PRICE_KEYS)) {
+      const cents = prices[size];
+      if (cents === undefined) continue;
+      if (!(typeof cents === 'number' && Number.isInteger(cents) && cents >= 0 && cents <= MAX_PRICE_CENTS)) {
+        throw badRequest(`listPriceCents.${size} must be a whole number of cents from 0 to ${MAX_PRICE_CENTS}`);
+      }
+      out[key] = cents;
+    }
+  }
   return out;
 }
 
-const COLUMNS = { name: 'name', maxProducts: 'max_products', maxTenants: 'max_tenants', wholesalePercent: 'wholesale_percent', billingEmail: 'billing_email' } as const;
+const COLUMNS = {
+  name: 'name',
+  maxProducts: 'max_products',
+  maxTenants: 'max_tenants',
+  wholesalePercent: 'wholesale_percent',
+  billingEmail: 'billing_email',
+  priceSmall: 'price_small_cents',
+  priceMedium: 'price_medium_cents',
+  priceLarge: 'price_large_cents',
+} as const;
+
+/** A calendar month (UTC) from ?month=YYYY-MM; the default is last month, the one a bill is sent for. */
+function monthQuery(c: Context, now = new Date()): { month: string; from: Date; to: Date } {
+  const value = c.req.query('month');
+  const match = value === undefined ? null : /^(\d{4})-(\d{2})$/.exec(value);
+  if (value !== undefined && (!match || Number(match[2]) < 1 || Number(match[2]) > 12)) throw badRequest('month must be YYYY-MM');
+  const from = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)) : monthStart(now, -1);
+  const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1));
+  return { month: from.toISOString().slice(0, 7), from, to };
+}
 
 /** A month's start (UTC) for usage: `from` and `to` default to the current calendar month. */
 function monthStart(date: Date, offset = 0): Date {
@@ -94,6 +136,7 @@ export function adminResellerRoutes(deps: Deps) {
       maxTenants: r.max_tenants as number | null,
       wholesalePercent: r.wholesale_percent as number,
       billingEmail: (r.billing_email as string | null) ?? null,
+      listPriceCents: { small: r.price_small_cents as number, medium: r.price_medium_cents as number, large: r.price_large_cents as number } as Record<Size, number>,
       products: r.products as { id: string; name: string; tenantCount: number }[],
       tenantCount: r.tenant_count as number,
       liveTenantCount: r.live_tenant_count as number,
@@ -124,6 +167,20 @@ export function adminResellerRoutes(deps: Deps) {
       if (count[0]!.n >= max) throw badRequest(`This reseller has reached its limit of ${max} storefront${max === 1 ? '' : 's'}`);
     }
     await client.query('UPDATE products SET reseller_id = $2 WHERE id = $1', [productId, resellerId]);
+  }
+
+  /** Seconds each storefront's stores were live, by size, between `from` and `to`. */
+  async function liveSeconds(resellerId: string, from: Date, to: Date) {
+    const { rows } = await pool.query<{ product_id: string; name: string | null; size: Size; seconds: number }>(
+      `SELECT tp.product_id, p.name, tp.size,
+         sum(extract(epoch FROM least(coalesce(tp.ended_at, now()), $3) - greatest(tp.started_at, $2)))::float AS seconds
+       FROM tenant_periods tp LEFT JOIN products p ON p.id = tp.product_id
+       WHERE tp.reseller_id = $1 AND tp.started_at < $3 AND coalesce(tp.ended_at, now()) > $2
+       GROUP BY tp.product_id, p.name, tp.size
+       ORDER BY p.name, tp.product_id, array_position(ARRAY['small', 'medium', 'large'], tp.size)`,
+      [resellerId, from, to],
+    );
+    return rows.filter((r) => r.seconds > 0);
   }
 
   app.get('/', async (c) => c.json(await resellers(null)));
@@ -195,18 +252,10 @@ export function adminResellerRoutes(deps: Deps) {
     const from = dateQuery(c, 'from', monthStart(now));
     const to = dateQuery(c, 'to', monthStart(now, 1));
     if (to <= from) throw badRequest('to must be after from');
-    const { rows } = await pool.query<{ product_id: string; name: string | null; size: Size; seconds: number }>(
-      `SELECT tp.product_id, p.name, tp.size,
-         sum(extract(epoch FROM least(coalesce(tp.ended_at, now()), $3) - greatest(tp.started_at, $2)))::float AS seconds
-       FROM tenant_periods tp LEFT JOIN products p ON p.id = tp.product_id
-       WHERE tp.reseller_id = $1 AND tp.started_at < $3 AND coalesce(tp.ended_at, now()) > $2
-       GROUP BY tp.product_id, p.name, tp.size ORDER BY p.name, tp.product_id`,
-      [reseller.id, from, to],
-    );
+    const rows = await liveSeconds(reseller.id, from, to);
     const totalSeconds = emptySizes();
     const products = new Map<string, { productId: string; name: string | null; storeDays: Record<Size, number> }>();
     for (const r of rows) {
-      if (r.seconds <= 0) continue;
       const entry = products.get(r.product_id) ?? { productId: r.product_id, name: r.name, storeDays: emptySizes() };
       entry.storeDays[r.size] = days(r.seconds);
       totalSeconds[r.size] += r.seconds;
@@ -219,6 +268,45 @@ export function adminResellerRoutes(deps: Deps) {
       wholesalePercent: reseller.wholesalePercent,
       storeDays: Object.fromEntries(Object.entries(totalSeconds).map(([size, seconds]) => [size, days(seconds)])),
       products: [...products.values()],
+    });
+  });
+
+  // The bill for one calendar month (?month=YYYY-MM, default last month): each store is charged its
+  // size's monthly list price less the wholesale discount, for the share of the month it was live.
+  // A store live all month pays the full monthly price; one live 10 days of a 30-day month, a third.
+  // Amounts are US cents, rounded per line. A month not yet over is marked complete: false.
+  app.get('/:id/bill', async (c) => {
+    const reseller = await find(c);
+    const now = new Date();
+    const { month, from, to } = monthQuery(c, now);
+    if (from > now) throw badRequest('That month has not started yet');
+    const monthSeconds = (to.getTime() - from.getTime()) / 1000;
+    const lines = (await liveSeconds(reseller.id, from, to)).map((r) => {
+      const listPriceCents = reseller.listPriceCents[r.size];
+      const wholesalePriceCents = Math.round((listPriceCents * (100 - reseller.wholesalePercent)) / 100);
+      return {
+        productId: r.product_id,
+        name: r.name,
+        size: r.size,
+        storeDays: days(r.seconds),
+        stores: Math.round((r.seconds / monthSeconds) * 100) / 100,
+        listPriceCents,
+        wholesalePriceCents,
+        amountCents: Math.round((r.seconds / monthSeconds) * wholesalePriceCents),
+      };
+    });
+    return c.json({
+      resellerId: reseller.id,
+      resellerName: reseller.name,
+      billingEmail: reseller.billingEmail,
+      month,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      complete: to <= now,
+      currency: 'usd',
+      wholesalePercent: reseller.wholesalePercent,
+      lines,
+      totalCents: lines.reduce((sum, line) => sum + line.amountCents, 0),
     });
   });
 

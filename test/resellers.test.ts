@@ -103,6 +103,11 @@ describe('reseller accounts', () => {
     await admin('POST', '/admin/resellers', 400, { name: '' });
     await admin('PUT', `/admin/resellers/${resellerId}`, 400, { wholesalePercent: 101 });
     await admin('PUT', `/admin/resellers/${resellerId}`, 400, { billingEmail: 'nope' });
+    await admin('PUT', `/admin/resellers/${resellerId}`, 400, { listPriceCents: { small: 12.5 } });
+    await admin('PUT', `/admin/resellers/${resellerId}`, 400, { listPriceCents: { tiny: 100 } });
+    expect((await admin('GET', `/admin/resellers/${resellerId}`)).listPriceCents).toEqual({ small: 1200, medium: 2400, large: 4800 });
+    const priced = await admin('PUT', `/admin/resellers/${resellerId}`, 200, { listPriceCents: { large: 5000 } });
+    expect(priced.listPriceCents).toEqual({ small: 1200, medium: 2400, large: 5000 });
     const updated = await admin('PUT', `/admin/resellers/${resellerId}`, 200, { wholesalePercent: 35, maxProducts: 1 });
     expect(updated).toMatchObject({ name: 'Partner', wholesalePercent: 35, maxProducts: 1, billingEmail: 'billing@example.com' });
     await admin('GET', '/admin/resellers/not-a-uuid', 404);
@@ -232,5 +237,51 @@ describe('usage record', () => {
     await admin('DELETE', `/admin/resellers/${other.id}/products/${storefront.id}`);
     expect((await admin('DELETE', `/admin/resellers/${other.id}`)).name).toBe('Counted');
     await admin('GET', `/admin/resellers/${other.id}`, 404);
+  });
+
+  it("works out a month's wholesale bill from the store-days", async () => {
+    const billed = await admin('POST', '/admin/resellers', 201, {
+      name: 'Billed',
+      billingEmail: 'accounts@example.com',
+      wholesalePercent: 40,
+      listPriceCents: { small: 1200, medium: 2400, large: 5000 },
+    });
+    const storefront = await newProduct('Billed storefront');
+    await admin('PUT', `/admin/resellers/${billed.id}/products/${storefront.id}`);
+    // September: two small stores live all month, one large store for its last 10 days (a third).
+    await t.pool.query(
+      `INSERT INTO tenant_periods (tenant_id, product_id, reseller_id, size, started_at, ended_at) VALUES
+         (gen_random_uuid(), $1, $2, 'small', '2026-08-20T00:00:00Z', '2026-10-05T00:00:00Z'),
+         (gen_random_uuid(), $1, $2, 'small', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+         (gen_random_uuid(), $1, $2, 'large', '2026-09-21T00:00:00Z', NULL)`,
+      [storefront.id, billed.id],
+    );
+    const bill = await admin('GET', `/admin/resellers/${billed.id}/bill?month=2026-09`);
+    expect(bill).toMatchObject({
+      resellerName: 'Billed',
+      billingEmail: 'accounts@example.com',
+      month: '2026-09',
+      from: '2026-09-01T00:00:00.000Z',
+      to: '2026-10-01T00:00:00.000Z',
+      complete: true,
+      currency: 'usd',
+      wholesalePercent: 40,
+    });
+    // Small: $12 less 40% = $7.20 a store, two stores = $14.40. Large: $50 less 40% = $30, a third = $10.
+    expect(bill.lines).toEqual([
+      expect.objectContaining({ size: 'small', storeDays: 60, stores: 2, listPriceCents: 1200, wholesalePriceCents: 720, amountCents: 1440 }),
+      expect.objectContaining({ size: 'large', storeDays: 10, stores: 0.33, listPriceCents: 5000, wholesalePriceCents: 3000, amountCents: 1000 }),
+    ]);
+    expect(bill.totalCents).toBe(2440);
+
+    // The default is last month; a bad or future month is refused.
+    const now = new Date();
+    const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+    expect((await admin('GET', `/admin/resellers/${billed.id}/bill`)).month).toBe(last);
+    const current = await admin('GET', `/admin/resellers/${billed.id}/bill?month=${now.toISOString().slice(0, 7)}`);
+    expect(current.complete).toBe(false);
+    await admin('GET', `/admin/resellers/${billed.id}/bill?month=2026-13`, 400);
+    await admin('GET', `/admin/resellers/${billed.id}/bill?month=september`, 400);
+    await admin('GET', `/admin/resellers/${billed.id}/bill?month=${now.getUTCFullYear() + 1}-01`, 400);
   });
 });
