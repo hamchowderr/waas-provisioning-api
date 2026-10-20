@@ -1,6 +1,6 @@
 // The MCP server (mcp/) over Streamable HTTP at /mcp, so an AI agent can manage stores without
 // running anything locally. Callers sign in with an OAuth access token (src/oauth.ts; what Claude
-// and ChatGPT connectors use), which offers only the tools of the scopes it was granted
+// and ChatGPT connectors use), which offers only the tools and actions of the scopes it was granted
 // (mcp/src/scopes.ts), or with the same Basic auth as /v1, which offers every tool. Tool calls go through the /v1
 // routes in-process, so they get the same checks and land in the request log. A store owner's token
 // ("Sign in with your website") gets only the site tools, and only for that store.

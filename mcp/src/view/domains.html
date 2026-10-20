@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domains</title>
+<style>
+/*VIEW_STYLE*/
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Domains <span class="count" id="count"></span></h1>
+    <button id="refresh">Refresh</button>
+  </header>
+  <div id="status" class="msg">Loading…</div>
+  <ul id="list"></ul>
+  <form id="add" hidden>
+    <input type="text" id="domain" placeholder="shop.example.com" aria-label="Domain to add" required>
+    <button type="submit" id="add-button">Add domain</button>
+  </form>
+</main>
+<script type="module">/*MCP_APPS_BUNDLE*/</script>
+<script type="module">/*VIEW_COMMON*/</script>
+<script type="module">
+  const { $, el, message, errorText, start } = globalThis.WaasView;
+  let data;
+  let view;
+
+  function show(result) {
+    if (result?.isError || !result?.structuredContent) return message(errorText(result, 'Could not load domains.'), true);
+    data = result.structuredContent;
+    render();
+  }
+
+  view = await start({ name: 'WaaS domains', show, refresh: (app) => app.callServerTool({ name: 'show_store_domains', arguments: data?.ref ?? {} }) });
+
+  const what = () => `store ${data.store?.externalId ?? data.ref.externalId ?? data.ref.tenantId}`;
+
+  function render() {
+    if (!view || !data) return;
+    const { ref, store, domains = [], canChange } = data;
+    $('count').textContent = `of ${store?.name ?? store?.externalId ?? ref.externalId ?? 'the store'} (${domains.length})`;
+    message(domains.length ? '' : 'No domains.');
+    $('add').hidden = !canChange;
+    $('list').replaceChildren(...domains.map((d) => {
+      const info = el('div', {},
+        el('div', {}, view.link(d.domainName), ' ', ...(d.isMainDomain ? [el('span', { className: 'pill done', textContent: 'Main' })] : [])),
+        el('div', { className: 'meta' }, el('span', { textContent: d.isBaseDomain ? 'Platform address' : 'Custom domain' })),
+      );
+      const actions = el('div', { className: 'actions' });
+      if (canChange) {
+        const args = (action) => ({ action, domainName: d.domainName, ...ref });
+        if (!d.isMainDomain) actions.append(view.button({ key: `main:${d.domainName}`, tool: 'manage_domain', label: 'Make main', what: `${what()} (${d.domainName})`, args: args('set_main') }));
+        if (!d.isMainDomain && !d.isBaseDomain) actions.append(view.button({ key: `remove:${d.domainName}`, tool: 'manage_domain', label: 'Remove', what: `${what()} (${d.domainName})`, args: args('remove'), destructive: true }));
+      }
+      return el('li', {}, info, actions);
+    }));
+  }
+  view.setRender(render);
+
+  $('add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const domainName = $('domain').value.trim().toLowerCase();
+    if (!domainName || !data) return;
+    $('add-button').disabled = true;
+    const result = await view.app.callServerTool({ name: 'manage_domain', arguments: { action: 'add', domainName, ...data.ref } }).catch((err) => ({ isError: true, content: [{ text: String(err) }] }));
+    $('add-button').disabled = false;
+    if (!result.isError) {
+      $('domain').value = '';
+      view.app.updateModelContext?.({ content: [{ type: 'text', text: `User added the domain ${domainName} to ${what()} in the domains screen. It needs DNS pointing at the platform.` }] }).catch(() => {});
+    }
+    await view.reload();
+    if (result.isError) message(errorText(result, 'Could not add the domain.'), true);
+  });
+</script>
+</body>
+</html>

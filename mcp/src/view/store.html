@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store</title>
+<style>
+/*VIEW_STYLE*/
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">Store</h1>
+    <span id="actions" class="actions"></span>
+    <button id="refresh">Refresh</button>
+  </header>
+  <div id="status" class="msg">Loading…</div>
+  <div id="details"></div>
+</main>
+<script type="module">/*MCP_APPS_BUNDLE*/</script>
+<script type="module">/*VIEW_COMMON*/</script>
+<script type="module">
+  const { $, el, pill, message, errorText, start } = globalThis.WaasView;
+  let data;
+  let view;
+
+  function show(result) {
+    if (result?.isError || !result?.structuredContent) return message(errorText(result, 'Could not load the store.'), true);
+    data = result.structuredContent;
+    render();
+  }
+
+  view = await start({ name: 'WaaS store', show, refresh: (app) => app.callServerTool({ name: 'show_store', arguments: data?.ref ?? {} }) });
+
+  const SIZES = { small: 'Small: 1 CPU, 5 GB, 5,000 emails a month', medium: 'Medium: 2 CPUs, 10 GB, 20,000 emails a month', large: 'Large: 4 CPUs, 25 GB, 50,000 emails a month' };
+  const date = (value) => (value ? new Date(value).toLocaleString() : '');
+
+  function render() {
+    if (!view || !data) return;
+    const { store, domains, versions, canBackup, canChange } = data;
+    message('');
+    $('title').replaceChildren(el('span', { className: 'name', textContent: store.name ?? store.externalId }), ' ', pill(store));
+
+    const what = `store ${store.externalId}`;
+    const act = (tool, action, label, { args = {}, destructive = false } = {}) =>
+      view.button({ key: `${tool}:${action}:${args.targetVersionId ?? ''}`, tool, label, what, args: { action, tenantId: store.id, ...args }, destructive });
+    const actions = [];
+    if (store.statusCode === 1) {
+      if (canBackup) actions.push(act('manage_backups', 'create', 'Back up'));
+      if (canChange) actions.push(store.isSuspended ? act('store_status', 'resume', 'Resume') : act('store_status', 'suspend', 'Suspend', { destructive: true }));
+    }
+    $('actions').replaceChildren(...actions);
+
+    const production = versions?.find((v) => v.isProduction);
+    const rows = [
+      ['Main domain', store.domainName ? view.link(store.domainName) : ''],
+      ['Your id', store.externalId],
+      ['Store id', store.id],
+      ['Size', SIZES[store.size ?? 'small'] ?? store.size],
+      ['Version', `${store.versionName ?? store.versionId ?? ''}${production && production.id === store.versionId ? ' (production)' : ''}`],
+      ['Snapshot', store.snapshotName ?? ''],
+      ['Created', date(store.dateCreated)],
+      ['Changed', date(store.dateChanged)],
+      ...(store.isSuspended ? [['Suspended since', date(store.dateSuspended)]] : []),
+    ];
+    const sections = [el('dl', {}, ...rows.flatMap(([term, value]) => [el('dt', { textContent: term }), el('dd', {}, value ?? '')]))];
+
+    if (domains) {
+      sections.push(el('h2', { textContent: `Domains (${domains.length})` }));
+      sections.push(el('ul', {}, ...domains.map((d) =>
+        el('li', {}, el('div', {}, view.link(d.domainName), ' ', ...(d.isMainDomain ? [el('span', { className: 'pill done', textContent: 'Main' })] : [])), el('div', { className: 'meta' }, el('span', { textContent: d.isBaseDomain ? 'Platform address' : 'Custom domain' }))),
+      )));
+    }
+
+    if (versions) {
+      sections.push(el('h2', { textContent: 'Versions' }));
+      sections.push(el('ul', {}, ...versions.map((v) => {
+        const tags = [v.id === store.versionId ? 'This store' : '', v.isProduction ? 'Production' : ''].filter(Boolean);
+        const buttons = el('div', { className: 'actions' });
+        if (canChange && store.statusCode === 1 && v.id !== store.versionId && v.statusCode === 1) {
+          buttons.append(act('update_store', 'move', 'Move here', { args: { targetVersionId: v.id }, destructive: true }));
+        }
+        return el('li', {}, el('div', {}, el('span', { className: 'name', textContent: v.name ?? v.id }), ' ', pill(v), el('div', { className: 'meta' }, el('span', { textContent: tags.join(', ') }))), buttons);
+      })));
+    }
+    $('details').replaceChildren(...sections);
+  }
+  view.setRender(render);
+</script>
+</body>
+</html>

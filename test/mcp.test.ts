@@ -1,8 +1,12 @@
 // Drives the MCP server (mcp/) through real MCP clients over the API's /mcp endpoint (src/mcp.ts):
 // a 2026-07-28 client and a 2025-era one, against the app with the fake provisioner.
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { z } from 'zod';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { storesViewHtml } from '../mcp/src/view.ts';
+import { loadSkills } from '../mcp/src/skills.ts';
+import { storesViewHtml, viewHtml } from '../mcp/src/view.ts';
 import { StatusCode, WaasClient } from '../sdk/typescript/src/index.ts';
 import { createApiKey } from '../src/keys.ts';
 import { basic, setup, type TestContext } from './helpers.ts';
@@ -67,58 +71,73 @@ describe('MCP server', () => {
     expect(wrong.status).toBe(401);
   });
 
-  it('lists its tools with read-only and destructive hints', async () => {
+  it('offers about 20 tools, with actions and read-only and destructive hints', async () => {
     const { tools } = await mcp.listTools();
+    expect(tools.length).toBe(20);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect(byName.get('list_stores')?.annotations?.readOnlyHint).toBe(true);
-    expect(byName.get('delete_store')?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get('get_stores')?.annotations?.readOnlyHint).toBe(true);
+    expect(byName.get('store_status')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     expect(byName.get('create_store')?.inputSchema.required).toEqual(['name']);
+    expect(byName.get('manage_domain')?.inputSchema.required).toEqual(['action']);
+    expect((byName.get('manage_domain')?.inputSchema.properties?.action as { enum: string[] }).enum).toEqual(['list', 'check', 'connect_link', 'add', 'set_main', 'remove']);
+    expect(byName.get('manage_domain')?.description).toContain('set_main (makes domainName the main domain');
   });
 
   it('creates a store and waits until it is Done', async () => {
     const created = await call(mcp, 'create_store', { name: 'MCP store', externalId: 'mcp-1' });
     expect(created.data).toMatchObject({ externalId: 'mcp-1' });
 
-    const waited = await call(mcp, 'wait_for_store', { externalId: 'mcp-1', timeoutSeconds: 15 });
+    const waited = await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
     expect(waited.data).toMatchObject({ done: true, store: { externalId: 'mcp-1', statusCode: StatusCode.Done } });
-    expect((await call(mcp, 'list_stores')).data.map((s: { externalId: string }) => s.externalId)).toContain('mcp-1');
-    expect((await call(mcp, 'get_store', { externalId: 'nope' })).data).toBeNull();
+    expect((await call(mcp, 'get_stores', { action: 'list' })).data.map((s: { externalId: string }) => s.externalId)).toContain('mcp-1');
+    expect((await call(mcp, 'get_stores', { action: 'get', externalId: 'nope' })).data).toBeNull();
   });
 
   it('manages domains', async () => {
-    expect((await call(mcp, 'check_domain_availability', { domain: 'shop.mcp-example.com' })).data).toMatchObject({ available: true });
-    await call(mcp, 'add_store_domain', { externalId: 'mcp-1', domainName: 'shop.mcp-example.com' });
-    const domains = (await call(mcp, 'list_store_domains', { externalId: 'mcp-1' })).data;
+    expect((await call(mcp, 'manage_domain', { action: 'check', domainName: 'shop.mcp-example.com' })).data).toMatchObject({ available: true });
+    expect(await call(mcp, 'manage_domain', { action: 'add', externalId: 'mcp-1' })).toMatchObject({ isError: true, text: 'Action add needs domainName.' });
+    await call(mcp, 'manage_domain', { action: 'add', externalId: 'mcp-1', domainName: 'shop.mcp-example.com' });
+    const domains = (await call(mcp, 'manage_domain', { action: 'list', externalId: 'mcp-1' })).data;
     expect(domains.map((d: { domainName: string }) => d.domainName)).toContain('shop.mcp-example.com');
-    await call(mcp, 'wait_for_store', { externalId: 'mcp-1', timeoutSeconds: 15 });
-    expect((await call(mcp, 'remove_store_domain', { externalId: 'mcp-1', domainName: 'shop.mcp-example.com' })).isError).toBe(false);
+    await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
+    expect((await call(mcp, 'manage_domain', { action: 'remove', externalId: 'mcp-1', domainName: 'shop.mcp-example.com' })).isError).toBe(false);
   });
 
   it('suspends, backs up and resumes a store', async () => {
-    await call(mcp, 'wait_for_store', { externalId: 'mcp-1', timeoutSeconds: 15 });
-    expect((await call(mcp, 'suspend_store', { externalId: 'mcp-1', takeBackup: false })).data).toMatchObject({ externalId: 'mcp-1' });
-    const { backupId } = (await call(mcp, 'create_store_backup', { externalId: 'mcp-1' })).data;
-    const backups = (await call(mcp, 'list_store_backups', { externalId: 'mcp-1' })).data;
+    await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
+    expect((await call(mcp, 'store_status', { action: 'suspend', externalId: 'mcp-1', takeBackup: false })).data).toMatchObject({ externalId: 'mcp-1' });
+    const { backupId } = (await call(mcp, 'manage_backups', { action: 'create', externalId: 'mcp-1' })).data;
+    const backups = (await call(mcp, 'manage_backups', { action: 'list', externalId: 'mcp-1' })).data;
     expect(backups.map((b: { id: string }) => b.id)).toContain(backupId);
-    expect((await call(mcp, 'resume_store', { externalId: 'mcp-1' })).data).toMatchObject({ externalId: 'mcp-1' });
+    expect((await call(mcp, 'store_status', { action: 'resume', externalId: 'mcp-1' })).data).toMatchObject({ externalId: 'mcp-1' });
   });
 
-  it('turns API errors and bad refs into tool errors', async () => {
+  it('turns API errors, bad refs and unknown actions into tool errors', async () => {
     const bad = await call(mcp, 'create_store', { name: 'dupe', externalId: 'has space' });
     expect(bad.isError).toBe(true);
     expect(bad.text).toMatch(/^The API refused createTenant \(HTTP 400\): /);
 
-    expect(await call(mcp, 'get_store')).toMatchObject({ isError: true, text: 'Give the store’s externalId or tenantId.' });
-    expect(await call(mcp, 'get_store', { externalId: 'a', tenantId: 'b' })).toMatchObject({ isError: true });
+    expect(await call(mcp, 'get_stores', { action: 'get' })).toMatchObject({ isError: true, text: 'Give the store’s externalId or tenantId.' });
+    expect(await call(mcp, 'get_stores', { action: 'get', externalId: 'a', tenantId: 'b' })).toMatchObject({ isError: true });
+    expect((await call(mcp, 'get_stores', { action: 'explode' })).isError).toBe(true);
+    expect((await call(mcp, 'get_stores', {})).isError).toBe(true);
   });
 
-  it('offers only read tools at /mcp/read-only', async () => {
+  it('offers only read actions at /mcp/read-only', async () => {
     const readOnly = await connect('/mcp/read-only');
-    const names = (await readOnly.listTools()).tools.map((tool) => tool.name);
-    expect(names).toContain('list_stores');
-    expect(names).toContain('wait_for_store');
+    const { tools } = await readOnly.listTools();
+    const names = tools.map((tool) => tool.name);
+    expect(names).toContain('get_stores');
+    expect(names).toContain('manage_domain');
     expect(names).not.toContain('create_store');
-    expect(names).not.toContain('delete_store');
+    expect(names).not.toContain('store_status');
+    const domains = tools.find((tool) => tool.name === 'manage_domain')!;
+    expect((domains.inputSchema.properties?.action as { enum: string[] }).enum).toEqual(['list', 'check', 'connect_link']);
+    expect(domains.annotations?.readOnlyHint).toBe(true);
+    expect(domains.description).not.toContain('remove');
+    // A write action isn't offered, so a call naming one is refused.
+    expect((await call(readOnly, 'manage_domain', { action: 'remove', externalId: 'mcp-1', domainName: 'x.example.com' })).isError).toBe(true);
+    expect((await call(readOnly, 'manage_backups', { action: 'create', externalId: 'mcp-1' })).isError).toBe(true);
     await readOnly.close();
   });
 
@@ -134,13 +153,73 @@ describe('MCP server', () => {
     expect(contents[0]).toMatchObject({ mimeType: 'text/html;profile=mcp-app' });
     const html = (contents[0] as { text: string }).text;
     expect(html).toBe(storesViewHtml());
-    expect(html).not.toContain('/*MCP_APPS_BUNDLE*/');
+    for (const marker of ['/*MCP_APPS_BUNDLE*/', '/*VIEW_STYLE*/', '/*VIEW_COMMON*/']) expect(html).not.toContain(marker);
     expect(html).toContain('globalThis.McpApps={');
     expect(html).toMatch(/globalThis\.McpApps=\{[^}]*\bApp:/);
+    expect(html).toContain('globalThis.WaasView');
+    // Its buttons call tools that exist.
+    expect(html).toContain("'manage_backups', 'create'");
+    expect(html).toContain("'store_status', 'suspend'");
+  });
+
+  it('shows one store, its backups and its domains (MCP Apps)', async () => {
+    const { tools } = await mcp.listTools();
+    for (const [tool, view] of [['show_store', 'store'], ['show_store_backups', 'backups'], ['show_store_domains', 'domains']] as const) {
+      expect(tools.find((t) => t.name === tool)?._meta).toMatchObject({ ui: { resourceUri: `ui://waas/${view}.html` } });
+      const { contents } = await mcp.readResource({ uri: `ui://waas/${view}.html` });
+      expect(contents[0]).toMatchObject({ mimeType: 'text/html;profile=mcp-app', text: viewHtml(view) });
+      for (const marker of ['/*MCP_APPS_BUNDLE*/', '/*VIEW_STYLE*/', '/*VIEW_COMMON*/']) expect(viewHtml(view)).not.toContain(marker);
+    }
+    await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
+
+    const store = await mcp.callTool({ name: 'show_store', arguments: { externalId: 'mcp-1' } });
+    expect(store.structuredContent).toMatchObject({
+      ref: { tenantId: expect.any(String) },
+      store: { externalId: 'mcp-1', size: 'small' },
+      domains: [expect.objectContaining({ isMainDomain: true })],
+      versions: [expect.objectContaining({ isProduction: true })],
+      canBackup: true,
+      canChange: true,
+    });
+    expect((await mcp.callTool({ name: 'show_store', arguments: { externalId: 'nope' } })).isError).toBe(true);
+
+    const backups = await mcp.callTool({ name: 'show_store_backups', arguments: { externalId: 'mcp-1' } });
+    expect(backups.structuredContent).toMatchObject({ ref: { externalId: 'mcp-1' }, store: { externalId: 'mcp-1' }, backups: [expect.objectContaining({ externalId: 'mcp-1' })], canBackup: true });
+
+    const domains = await mcp.callTool({ name: 'show_store_domains', arguments: { externalId: 'mcp-1' } });
+    expect(domains.structuredContent).toMatchObject({ ref: { externalId: 'mcp-1' }, domains: [expect.objectContaining({ isBaseDomain: true })], canChange: true });
+  });
+
+  it('serves the anypress-stores skill (Skills extension)', async () => {
+    expect(mcp.getServerCapabilities()?.extensions).toMatchObject({ 'io.modelcontextprotocol/skills': {} });
+    expect(mcp.getServerCapabilities()?.resources).toBeDefined();
+    expect(mcp.getInstructions()).toContain('skill://anypress-stores/SKILL.md');
+
+    const markdown = readFileSync(new URL('../mcp/skills/anypress-stores/SKILL.md', import.meta.url));
+    const resources = [{ uri: 'skill://anypress-stores/SKILL.md', digest: `sha256:${createHash('sha256').update(markdown).digest('hex')}`, size: markdown.length }];
+    const entry = { uri: 'skill://anypress-stores/SKILL.md', frontmatter: { name: 'anypress-stores', description: expect.stringContaining('AnyPress'), license: 'GPL-3.0-or-later' }, resources };
+
+    const list = await mcp.request({ method: 'skills/list', params: {} }, z.object({ skills: z.array(z.any()) }).loose());
+    expect(list.skills).toEqual([entry]);
+    const got = await mcp.request({ method: 'skills/get', params: { uri: 'skill://anypress-stores/SKILL.md' } }, z.object({ skill: z.any() }).loose());
+    expect(got.skill).toEqual(entry);
+    await expect(mcp.request({ method: 'skills/get', params: { uri: 'skill://nope/SKILL.md' } }, z.object({}).loose())).rejects.toMatchObject({ code: -32602 });
+
+    const { contents } = await mcp.readResource({ uri: 'skill://anypress-stores/SKILL.md' });
+    expect(contents[0]).toMatchObject({ mimeType: 'text/markdown', text: markdown.toString('utf8') });
+    const listed = (await mcp.listResources()).resources.find((r) => r.uri === 'skill://anypress-stores/SKILL.md');
+    expect(listed).toMatchObject({ name: 'anypress-stores', mimeType: 'text/markdown', description: loadSkills()[0]!.frontmatter.description });
+
+    // The skill names only tools the server has.
+    const names = new Set((await mcp.listTools()).tools.map((tool) => tool.name));
+    const named = [...markdown.toString('utf8').matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]!);
+    const tools = named.filter((name) => /^(show|get|create|update|store|manage|mail|site|page|header|add)_/.test(name));
+    expect(tools.length).toBeGreaterThan(10);
+    for (const name of tools) expect(names, name).toContain(name);
   });
 
   it('deletes a store', async () => {
-    await call(mcp, 'wait_for_store', { externalId: 'mcp-1', timeoutSeconds: 15 });
-    expect(await call(mcp, 'delete_store', { externalId: 'mcp-1' })).toMatchObject({ isError: false, text: 'Done.' });
+    await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
+    expect(await call(mcp, 'store_status', { action: 'delete', externalId: 'mcp-1' })).toMatchObject({ isError: false, text: 'Done.' });
   });
 });

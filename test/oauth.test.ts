@@ -16,61 +16,49 @@ const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
 const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
 
-/** Every tool and the scope it needs (mcp/src/server.ts). */
-const TOOL_SCOPES: Record<string, string> = {
-  show_stores: 'stores:read',
-  list_stores: 'stores:read',
-  get_store: 'stores:read',
-  wait_for_store: 'stores:read',
-  create_store: 'stores:write',
-  update_store_options: 'stores:write',
-  suspend_store: 'stores:write',
-  resume_store: 'stores:write',
-  delete_store: 'stores:write',
-  move_store_to_version: 'stores:write',
-  list_store_backups: 'backups:read',
-  create_store_backup: 'backups:write',
-  restore_store: 'backups:write',
-  list_store_domains: 'domains:read',
-  check_domain_availability: 'domains:read',
-  get_domain_connect_link: 'domains:read',
-  add_store_domain: 'domains:write',
-  set_store_main_domain: 'domains:write',
-  remove_store_domain: 'domains:write',
-  get_store_mail_domain: 'email:read',
-  set_store_mail_domain: 'email:write',
-  remove_store_mail_domain: 'email:write',
-  list_versions: 'versions:read',
-  list_snapshots: 'versions:read',
-  list_templates: 'versions:read',
-  create_version: 'versions:write',
-  set_production_version: 'versions:write',
-  delete_version: 'versions:write',
-  get_site: 'site:read',
-  list_pages: 'site:read',
-  read_page: 'site:read',
-  list_page_revisions: 'site:read',
-  find_patterns: 'site:read',
-  get_pattern: 'site:read',
-  get_site_styles: 'site:read',
-  get_header_footer: 'site:read',
-  list_menus: 'site:read',
-  create_page: 'site:write',
-  update_page: 'site:write',
-  add_section: 'site:write',
-  replace_section: 'site:write',
-  remove_section: 'site:write',
-  restore_page_revision: 'site:write',
-  update_site_styles: 'site:write',
-  update_header_footer: 'site:write',
-  update_menu: 'site:write',
-  add_image: 'site:write',
+type Access = 'read' | 'write';
+/**
+ * Every tool, its area, and the access each of its actions needs (mcp/src/server.ts). A tool
+ * without actions needs one access. Listings are compared as `tool` or `tool.action`, so each
+ * action's scope is checked, not just the tool's.
+ */
+const TOOLS: Record<string, { area: string; access?: Access; actions?: Record<string, Access> }> = {
+  show_stores: { area: 'stores', access: 'read' },
+  show_store: { area: 'stores', access: 'read' },
+  get_stores: { area: 'stores', actions: { list: 'read', get: 'read', wait: 'read' } },
+  create_store: { area: 'stores', access: 'write' },
+  update_store: { area: 'stores', actions: { options: 'write', move: 'write' } },
+  store_status: { area: 'stores', actions: { suspend: 'write', resume: 'write', delete: 'write' } },
+  show_store_backups: { area: 'backups', access: 'read' },
+  manage_backups: { area: 'backups', actions: { list: 'read', create: 'write', restore: 'write' } },
+  show_store_domains: { area: 'domains', access: 'read' },
+  manage_domain: { area: 'domains', actions: { list: 'read', check: 'read', connect_link: 'read', add: 'write', set_main: 'write', remove: 'write' } },
+  mail_domain: { area: 'email', actions: { get: 'read', set: 'write', remove: 'write' } },
+  manage_versions: { area: 'versions', actions: { list: 'read', snapshots: 'read', templates: 'read', create: 'write', set_production: 'write', delete: 'write' } },
+  get_site: { area: 'site', access: 'read' },
+  site_pages: { area: 'site', actions: { list: 'read', read: 'read', revisions: 'read', create: 'write', update: 'write', restore_revision: 'write' } },
+  page_section: { area: 'site', actions: { add: 'write', replace: 'write', remove: 'write' } },
+  site_patterns: { area: 'site', actions: { find: 'read', get: 'read' } },
+  site_styles: { area: 'site', actions: { get: 'read', update: 'write' } },
+  header_footer: { area: 'site', actions: { get: 'read', update: 'write' } },
+  site_menus: { area: 'site', actions: { list: 'read', update: 'write' } },
+  add_image: { area: 'site', access: 'write' },
 };
+/** What the scopes should offer: `tool` or `tool.action`, sorted. */
 const toolsFor = (scopes: readonly string[]) =>
-  Object.entries(TOOL_SCOPES)
-    .filter(([, scope]) => scopes.includes(scope))
-    .map(([name]) => name)
+  Object.entries(TOOLS)
+    .flatMap(([name, { area, access, actions }]) =>
+      actions
+        ? Object.entries(actions).filter(([, need]) => scopes.includes(`${area}:${need}`)).map(([action]) => `${name}.${action}`)
+        : scopes.includes(`${area}:${access}`) ? [name] : [],
+    )
     .sort();
+/** What a tools/list offers, in the same form: each tool's action enum spelled out. */
+const listing = (tools: { name: string; inputSchema: { properties?: Record<string, unknown> } }[]) =>
+  tools.flatMap((tool) => {
+    const actions = (tool.inputSchema.properties?.action as { enum?: string[] } | undefined)?.enum;
+    return actions ? actions.map((action) => `${tool.name}.${action}`) : [tool.name];
+  }).sort();
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
@@ -158,7 +146,7 @@ async function connectWithOAuth(path = '/mcp', options: { clientMetadataUrl?: st
   return { client, provider: p };
 }
 
-const toolNames = async (client: Client) => (await client.listTools()).tools.map((tool) => tool.name).sort();
+const toolNames = async (client: Client) => listing((await client.listTools()).tools);
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('base64url');
 
@@ -188,7 +176,7 @@ async function listedWith(bearer: string) {
   expect(res.status).toBe(200);
   const text = await res.text();
   const json = JSON.parse(text.includes('data:') ? text.split('data:').pop()! : text);
-  return (json.result.tools as { name: string }[]).map((tool) => tool.name).sort();
+  return listing(json.result.tools);
 }
 
 const token = (body: Record<string, string>) =>
@@ -260,7 +248,7 @@ describe('OAuth for /mcp', () => {
     expect(p.saved.tokens).toMatchObject({ token_type: 'Bearer', scope: ALL_SCOPES.join(' ') });
 
     expect(await toolNames(client)).toEqual(toolsFor(ALL_SCOPES));
-    const result = await client.callTool({ name: 'list_versions', arguments: {} });
+    const result = await client.callTool({ name: 'manage_versions', arguments: { action: 'list' } });
     expect(result.isError).toBeFalsy();
 
     // The tool call went through /v1 as this person, so it is in the request log under them.
@@ -277,7 +265,7 @@ describe('OAuth for /mcp', () => {
     }) as typeof fetch;
     const { client, provider: p } = await connectWithOAuth('/mcp', { clientMetadataUrl: documentUrl });
     expect(p.saved.authorizationUrl!.searchParams.get('client_id')).toBe(documentUrl);
-    expect((await client.listTools()).tools.length).toBeGreaterThan(20);
+    expect(await toolNames(client)).toEqual(toolsFor(ALL_SCOPES));
     await client.close();
   });
 
@@ -286,24 +274,54 @@ describe('OAuth for /mcp', () => {
     expect(p.saved.tokens).toMatchObject({ scope: 'stores:read backups:read backups:write' });
     const names = await toolNames(client);
     expect(names).toEqual(toolsFor(['stores:read', 'backups:read', 'backups:write']));
-    expect(names).toContain('restore_store');
+    expect(names).toContain('manage_backups.restore');
+    expect(names).toContain('get_stores.list');
     expect(names).not.toContain('create_store');
-    expect(names).not.toContain('list_store_domains');
+    expect(names).not.toContain('manage_domain.list');
     expect(names).not.toContain('get_site');
     // A tool outside the grant isn't there to call.
-    const refused = await client.callTool({ name: 'delete_store', arguments: { externalId: 'x' } }).catch((error: Error) => ({ isError: true, content: [{ type: 'text', text: error.message }] }));
+    const refused = await client.callTool({ name: 'store_status', arguments: { action: 'delete', externalId: 'x' } }).catch((error: Error) => ({ isError: true, content: [{ type: 'text', text: error.message }] }));
     expect(refused.isError).toBe(true);
-    expect(JSON.stringify(refused.content)).toMatch(/delete_store/);
+    expect(JSON.stringify(refused.content)).toMatch(/store_status/);
     // The instructions say what the connection may not do.
     expect(client.getInstructions()).toContain('not allowed to change stores, see or change domains');
     await client.close();
   });
 
-  it('gives each tool to exactly one area', async () => {
+  it('gives each tool and action to exactly one scope', async () => {
+    const seen: string[] = [];
     for (const scope of ALL_SCOPES) {
       const { access } = await oldToken('placeholder');
       await t.pool.query('UPDATE oauth_tokens SET scope = $1, legacy_scope = false WHERE token_hash = $2', [scope, sha256(access)]);
-      expect(await listedWith(access)).toEqual(toolsFor([scope]));
+      const listed = await listedWith(access);
+      expect(listed).toEqual(toolsFor([scope]));
+      seen.push(...listed);
+    }
+    expect(seen.sort()).toEqual(toolsFor(ALL_SCOPES));
+  });
+
+  it('refuses an action whose scope was not granted, even on a tool it offers', async () => {
+    const { access } = await oldToken('placeholder');
+    await t.pool.query('UPDATE oauth_tokens SET scope = $1, legacy_scope = false WHERE token_hash = $2', ['backups:read domains:read', sha256(access)]);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const res = await app.request('/mcp', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+      });
+      const text = await res.text();
+      return JSON.parse(text.includes('data:') ? text.split('data:').pop()! : text) as { result?: { isError?: boolean; content: { text: string }[] }; error?: unknown };
+    };
+    // The read action works...
+    expect((await call('manage_domain', { action: 'check', domainName: 'free.oauth-example.com' })).result?.isError).toBeFalsy();
+    // ...and the write actions of the same tools are refused.
+    for (const [name, args] of [
+      ['manage_backups', { action: 'create', externalId: 'x' }],
+      ['manage_backups', { action: 'restore', externalId: 'x' }],
+      ['manage_domain', { action: 'remove', externalId: 'x', domainName: 'a.example.com' }],
+    ] as const) {
+      const answer = await call(name, args);
+      expect(answer.error ?? answer.result?.isError, `${name} ${args.action}`).toBeTruthy();
     }
   });
 
@@ -472,6 +490,6 @@ describe('OAuth for /mcp', () => {
     });
     const text = await listed.text();
     const json = JSON.parse(text.includes('data:') ? text.split('data:').pop()! : text);
-    expect(json.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(toolsFor(ALL_SCOPES));
+    expect(listing(json.result.tools)).toEqual(toolsFor(ALL_SCOPES));
   });
 });
