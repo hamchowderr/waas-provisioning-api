@@ -1,3 +1,4 @@
+import type { Size } from '../plans.ts';
 import type { CreateStoreInput, PhpConstant, Provisioner, StoreSender } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
@@ -99,11 +100,12 @@ export class FakeProvisioner implements Provisioner {
     Object.assign(this.store(storeId), { mainDomain, redirectDomains });
   }
 
-  async updateStore({ storeId, wpOptions, phpConstants }: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant> }) {
+  async updateStore({ storeId, wpOptions, phpConstants, size }: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant>; size?: Size }) {
     this.check('updateStore');
     const store = this.store(storeId);
     Object.assign(store.wpOptions, wpOptions);
     Object.assign(store.phpConstants, phpConstants);
+    if (size) store.size = size;
   }
 
   async moveStore({ storeId, targetVersionId }: { storeId: string; targetVersionId: string }) {
@@ -166,9 +168,12 @@ export class FakeProvisioner implements Provisioner {
     this.stores.delete(storeId);
   }
 
-  async ensureStoreSetup(_input: { storeId: string }): Promise<'updated' | 'unchanged'> {
+  async ensureStoreSetup({ storeId, size }: { storeId: string; size: Size }): Promise<'updated' | 'unchanged'> {
     this.check('ensureStoreSetup');
-    return 'unchanged';
+    const store = this.stores.get(storeId);
+    if (!store || store.size === size) return 'unchanged';
+    store.size = size;
+    return 'updated';
   }
 
   async ensureStoreCron(_input: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {

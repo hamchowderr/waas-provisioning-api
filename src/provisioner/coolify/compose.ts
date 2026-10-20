@@ -1,31 +1,38 @@
 import { readFileSync } from 'node:fs';
 import { stringify } from 'yaml';
+import { DEFAULT_SIZE, SIZES, type Size } from '../../plans.ts';
 
 /** The agent script, shipped to each store through an environment variable (no image registry). */
 export const AGENT_SCRIPT = readFileSync(new URL('./agent.php', import.meta.url), 'utf8');
 
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
-/** Per-store limits (docs/coolify.md). */
-export const LIMITS = { wordpress: { mem: '512m', cpus: 1, workers: 8 }, db: { mem: '384m' }, agent: { mem: '256m' } };
+/** Per-store limits (docs/coolify.md). WordPress's CPU, memory and Apache workers come from the store's size (plans.ts). */
+export const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m' } };
 
 /**
  * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
  * visitors at once push a store with every template plugin past its 512 MB, and the kernel then kills
- * workers mid-request. With 8 (about 30 MB each) a store stays near 270 MB and later visitors wait in
- * Apache's queue; one CPU is busy from about 5 at once, so more workers would not serve pages any faster.
- * conf-enabled loads after mods-enabled, so these values win. No `$`: Coolify would interpolate it.
+ * workers mid-request. With 8 (about 30 MB each) a small store stays near 270 MB and later visitors wait in
+ * Apache's queue; one CPU is busy from about 5 at once, so more workers than the size's CPUs can keep busy
+ * would not serve pages any faster. conf-enabled loads after mods-enabled, so these values win. No `$`:
+ * Coolify would interpolate it.
  */
-const WORKERS_CONF = [
-  '<IfModule mpm_prefork_module>',
-  'StartServers 2',
-  'MinSpareServers 2',
-  'MaxSpareServers 4',
-  `MaxRequestWorkers ${LIMITS.wordpress.workers}`,
-  'MaxConnectionsPerChild 500',
-  '</IfModule>',
-].join('\\n');
-const WORDPRESS_ENTRYPOINT = ['sh', '-c', `printf '${WORKERS_CONF}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && exec docker-entrypoint.sh apache2-foreground`];
+const workersConf = (workers: number) =>
+  [
+    '<IfModule mpm_prefork_module>',
+    'StartServers 2',
+    'MinSpareServers 2',
+    'MaxSpareServers 4',
+    `MaxRequestWorkers ${workers}`,
+    'MaxConnectionsPerChild 500',
+    '</IfModule>',
+  ].join('\\n');
+const wordpressEntrypoint = (workers: number) => [
+  'sh',
+  '-c',
+  `printf '${workersConf(workers)}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && exec docker-entrypoint.sh apache2-foreground`,
+];
 
 /**
  * Defines every phpConstant from WAAS_CONSTANTS_B64 (base64 JSON) in wp-config, through the
@@ -52,9 +59,16 @@ export function wordpressImage(wordPressVersion: string, phpVersion: string): st
   return `wordpress:${wordPressVersion}-php${phpVersion}-apache`;
 }
 
-/** The Docker Compose file of one store (or version site): WordPress, MariaDB and the WP-CLI agent. */
-export function renderCompose(input: { wordPressVersion: string; phpVersion: string }): string {
+/**
+ * The Docker Compose file of one store (or version site): WordPress, MariaDB and the WP-CLI agent. A store has a
+ * size (plans.ts); a version site has none and runs as small, without quotas.
+ */
+export function renderCompose(input: { wordPressVersion: string; phpVersion: string; size?: Size }): string {
   const image = wordpressImage(input.wordPressVersion, input.phpVersion);
+  const size = SIZES[input.size ?? DEFAULT_SIZE];
+  // The plan's quotas, read by the waas-plan mu-plugin (agent.php). Literal values, not Coolify variables: a new
+  // size re-renders the compose file anyway. Version sites get none, so the mu-plugin does nothing there.
+  const quotas = input.size ? { WAAS_STORAGE_GB: String(size.storageGb), WAAS_EMAILS_PER_MONTH: String(size.emailsPerMonth) } : {};
   const wpEnv = {
     WORDPRESS_DB_HOST: 'db',
     WORDPRESS_DB_NAME: 'wordpress',
@@ -66,18 +80,19 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
     // The mail relay's settings, read by the waas-mail mu-plugin (agent.php); empty on version sites.
     WAAS_MAIL_B64: '${WAAS_MAIL_B64:-}',
     WPCS_IS_TENANT: 'true',
+    ...quotas,
   };
   const compose = {
     services: {
       wordpress: {
         image,
         restart: 'unless-stopped',
-        entrypoint: WORDPRESS_ENTRYPOINT,
+        entrypoint: wordpressEntrypoint(size.workers),
         environment: wpEnv,
         volumes: ['wp:/var/www/html'],
         depends_on: { db: { condition: 'service_healthy' } },
-        mem_limit: LIMITS.wordpress.mem,
-        cpus: LIMITS.wordpress.cpus,
+        mem_limit: size.mem,
+        cpus: size.cpus,
         healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], interval: '10s', timeout: '5s', retries: 10 },
       },
       db: {

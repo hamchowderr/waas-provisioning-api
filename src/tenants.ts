@@ -124,6 +124,7 @@ export function toTenant(row: any) {
     redirectDomains: row.redirect_domains,
     statusCode: row.status,
     statusName: statusName(row.status),
+    size: row.size,
   });
   return { ...tenant, isSuspended: row.is_suspended, dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null };
 }
