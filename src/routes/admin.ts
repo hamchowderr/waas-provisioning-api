@@ -735,7 +735,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   // A new product (an agency's storefront) with its first API key. The secret is in this response
   // only; the dashboard shows it once.
   app.post('/products', async (c) => {
-    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; keyLabel?: unknown };
+    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; keyLabel?: unknown; startFrom?: unknown };
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
     if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
     const max = body?.maxTenants ?? null;
@@ -743,9 +743,14 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       throw badRequest('maxTenants must be a whole number, 0 or more, or null for no limit');
     }
     const label = parseLabel(body?.keyLabel);
+    // startFrom: another storefront whose production version and template the new one starts with.
+    const startFrom = body?.startFrom ?? null;
+    if (startFrom !== null && !(typeof startFrom === 'string' && isUuid(startFrom))) throw badRequest('startFrom must be a storefront id, or null');
+    const source = startFrom ? await versions.productionSource(startFrom) : null;
     const { rows } = await pool.query<{ id: string }>('INSERT INTO products (name, max_tenants) VALUES ($1, $2) RETURNING id', [name, max]);
     const productId = rows[0]!.id;
     const key = await addApiKey(pool, productId, label);
+    if (source) await versions.copyProduction(productId, source);
     c.header('Cache-Control', 'no-store');
     return c.json({ product: (await products(productId))[0], key }, 201);
   });

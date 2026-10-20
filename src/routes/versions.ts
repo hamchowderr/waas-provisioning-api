@@ -161,7 +161,46 @@ export function versionService({ config, pool, boss, provisioner }: Deps) {
     return { id: version.id };
   }
 
-  return { list, create, remove, setProduction };
+  /**
+   * The production version of `sourceProductId` and its newest template, as they would build a store
+   * now; 400 when it has none ready. What a new product can start from.
+   */
+  async function productionSource(sourceProductId: string) {
+    const { rows } = await pool.query(
+      `SELECT v.name, v.wordpress_version, v.php_version, s.id AS snapshot_id, s.name AS snapshot_name, s.group_name
+         FROM versions v JOIN snapshots s ON s.version_id = v.id AND s.status = $2
+        WHERE v.product_id = $1 AND v.is_production AND v.status = $2
+        ORDER BY s.date_created DESC LIMIT 1`,
+      [sourceProductId, Status.Done],
+    );
+    if (!rows[0]) throw badRequest('That storefront has no ready production version with a template to start from');
+    return rows[0] as { name: string; wordpress_version: string; php_version: string; snapshot_id: string; snapshot_name: string; group_name: string | null };
+  }
+
+  /**
+   * Gives a new product a copy of that version and template, as its production version, so stores can
+   * be made at once (the dashboard's New agency). It builds like any version; until it is Done, a new
+   * store is refused as for any version still building.
+   */
+  async function copyProduction(productId: string, source: Awaited<ReturnType<typeof productionSource>>) {
+    const id = randomUUID();
+    const domain = `${dnsSafeLabel(`${slug(source.name)}-${id.slice(0, 8)}`, 'v')}.${config.versionsDomain}`;
+    await withTransaction(pool, async (client) => {
+      await client.query(
+        `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, is_production, status)
+         VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
+        [id, productId, source.name, domain, source.wordpress_version, source.php_version, Status.Pending],
+      );
+      await client.query(
+        `INSERT INTO snapshots (product_id, version_id, name, group_name, source_snapshot_id, status) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [productId, id, source.snapshot_name, source.group_name, source.snapshot_id, Status.Pending],
+      );
+      await enqueue(boss, client, { type: 'version.create', versionId: id, source: { snapshotId: source.snapshot_id } });
+    });
+    return id;
+  }
+
+  return { list, create, remove, setProduction, productionSource, copyProduction };
 }
 
 export function versionRoutes(deps: Deps) {

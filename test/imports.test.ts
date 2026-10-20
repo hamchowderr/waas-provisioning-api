@@ -228,6 +228,28 @@ describe('stores that keep their own code', () => {
     expect(await tenant(made.tenantId)).not.toHaveProperty('keepsOwnCode');
   });
 
+  it('a new storefront starts ready from another one, and can make a store at once', async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const bare = (await (await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Bare' } })).json()) as any;
+    expect((await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'X', startFrom: bare.product.id } })).status).toBe(400);
+    expect((await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'X', startFrom: 'nope' } })).status).toBe(400);
+
+    const res = await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Retainer client', startFrom: t.productId } });
+    expect(res.status).toBe(201);
+    const productId = ((await res.json()) as any).product.id as string;
+    const versionRow = async () => (await t.pool.query('SELECT * FROM versions WHERE product_id = $1', [productId])).rows;
+    expect(await versionRow()).toHaveLength(1);
+    expect((await versionRow())[0]).toMatchObject({ is_production: true, name: 'v1' });
+    await waitFor(async () => (await versionRow())[0].status === Status.Done);
+    const { rows: snaps } = await t.pool.query('SELECT status, source_snapshot_id FROM snapshots WHERE product_id = $1', [productId]);
+    expect(snaps).toEqual([expect.objectContaining({ status: Status.Done, source_snapshot_id: expect.any(String) })]);
+
+    const made = await t.call('POST', `/admin/products/${productId}/tenants`, { auth: ADMIN, body: { name: 'Client site' } });
+    expect(made.status).toBe(201);
+    const { tenantId } = (await made.json()) as { tenantId: string };
+    await waitFor(async () => (await t.pool.query('SELECT status FROM tenants WHERE id = $1', [tenantId])).rows[0]?.status === Status.Done);
+  });
+
   it('the dashboard makes a store that waits for its site, shows the move and renews the code', async () => {
     const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
     const res = await t.call('POST', `/admin/products/${t.productId}/imports`, { auth: ADMIN, body: { name: 'From the dashboard', size: 'medium' } });

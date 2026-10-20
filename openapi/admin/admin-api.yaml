@@ -68,6 +68,14 @@ paths:
                 name: { type: string, maxLength: 100 }
                 maxTenants: { type: integer, minimum: 0, nullable: true }
                 keyLabel: { type: string, maxLength: 100, nullable: true }
+                startFrom:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: >-
+                    Another storefront whose production version and newest template the new one
+                    starts with, as its production version, so stores can be made as soon as it has
+                    built. 400 when that storefront has none ready.
       responses:
         '201':
           description: The product and its first key with the secret
