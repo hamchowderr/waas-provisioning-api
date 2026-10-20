@@ -37,6 +37,11 @@ export interface CoolifyProvisionerConfig {
   mailKeys?: StoreMailKeys;
   /** Who suspended stores' "website unavailable" page credits, unless a suspend names its own. */
   brand?: Brand;
+  /**
+   * The store's site key (src/sitekeys.ts), given to it as WAAS_SITE_KEY so WaaS Client accepts the
+   * API's signed site-editing requests. Unset: stores get none and can't be edited through the API.
+   */
+  siteKey?: (storeId: string) => string;
 }
 
 /** An SMTP relay, e.g. toSend's. `from` must be on a domain verified with it. */
@@ -136,8 +141,9 @@ export interface StoreMeta {
  * agent installs (install_guard in agent.php) should reach existing stores: on the API's next start,
  * ensureStoreSetup gives each older store the new compose, restarts it once and reinstalls the agent's files.
  * 2: at most 8 Apache workers, and the page cache.
+ * 3: WAAS_SITE_KEY, for site editing through the API.
  */
-export const STORE_SETUP = 2;
+export const STORE_SETUP = 3;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -427,6 +433,7 @@ export class CoolifyProvisioner implements Provisioner {
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
     if (input.user?.password) envs.WAAS_INIT_PASSWORD = input.user.password;
+    Object.assign(envs, this.siteKeyEnvs(input.storeId));
     // A retried create finds the Service, and the key it minted, from last time.
     const existing = await this.findService(STORES_ENV, storeName(input.storeId));
     Object.assign(envs, await this.storeMailEnvs(input.storeId, existing ? await this.coolify.listEnvs(existing.uuid) : []));
@@ -479,6 +486,8 @@ export class CoolifyProvisioner implements Provisioner {
     if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
     if ((meta.setup ?? 1) >= STORE_SETUP) return 'unchanged';
     await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(renderCompose(await this.versionMeta(meta.versionId))) });
+    const siteKey = this.siteKeyEnvs(storeId);
+    if (Object.keys(siteKey).length) await this.coolify.setEnvs(store.uuid, siteKey);
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
     await this.coolify.updateService(store.uuid, { description: formatMeta({ ...meta, setup: STORE_SETUP }) });
@@ -499,6 +508,10 @@ export class CoolifyProvisioner implements Provisioner {
       await this.restart(store.uuid);
     }
     return this.ensureCron(store.uuid);
+  }
+
+  private siteKeyEnvs(storeId: string): Record<string, string> {
+    return this.config.siteKey ? { WAAS_SITE_KEY: this.config.siteKey(storeId) } : {};
   }
 
   /**

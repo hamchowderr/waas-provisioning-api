@@ -151,6 +151,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/site": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edit the store's site
+         * @description Added for AnyPress.
+         *
+         *     Passes one request on to the store's site-editing API (WaaS Client 2.3.0 or newer: pages and their sections, patterns, colours and fonts, header and footer, menus, revisions and images), signed with the store's own site key, and answers with the store's reply. `path` is under `/site`: `''` for the site itself, `/pages`, `/pages/12/sections/0` and so on. The routes are listed in the [site editing guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md).
+         *
+         *     The tenant must be Done and not suspended. A 4xx from the store comes back in `status` and `body` (with 200 here), so the caller can read the store's explanation.
+         */
+        post: operations["editTenantSite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/restore": {
         parameters: {
             query?: never;
@@ -1493,6 +1517,35 @@ export interface components {
              */
             takeBackup?: boolean;
         };
+        SiteRequestParams: {
+            /**
+             * @example POST
+             * @enum {string}
+             */
+            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            /**
+             * @description The route under /site, e.g. /pages, /pages/12/sections/0, /styles. Empty for the site itself.
+             * @example /pages/12/sections
+             */
+            path: string;
+            /** @description Query parameters, e.g. search and category for /patterns. */
+            query?: {
+                [key: string]: string;
+            };
+            /** @description The JSON body for POST, PUT and PATCH. */
+            body?: {
+                [key: string]: unknown;
+            };
+        };
+        SiteRequestResult: {
+            /**
+             * @description The store's HTTP status.
+             * @example 200
+             */
+            status?: number;
+            /** @description The store's JSON answer. */
+            body?: unknown;
+        };
         TenantLifecycleCommandResult: {
             /**
              * Format: uuid
@@ -1963,6 +2016,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    editTenantSite: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SiteRequestParams"];
+            };
+        };
+        responses: {
+            /** @description The store's answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteRequestResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The store did not answer, or refused the signature */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

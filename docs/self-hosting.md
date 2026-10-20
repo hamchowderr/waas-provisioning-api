@@ -108,7 +108,7 @@ In the **WaaS API** project:
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | the database's internal URL |
-| `SECRETS_KEY` | `openssl rand -base64 32`. Encrypts store passwords, private constants and the database backups. **Keep a copy off the server**: lose it and those values can't be read |
+| `SECRETS_KEY` | `openssl rand -base64 32`. Encrypts store passwords, private constants and the database backups, and each store's site key for agent site editing is derived from it. **Keep a copy off the server**: lose it and those values can't be read |
 | `ADMIN_TOKEN` | `openssl rand -base64 32`. Turns on `/admin/*` for the dashboard |
 | `PROVISIONER` | `coolify` |
 | `COOLIFY_URL`, `COOLIFY_TOKEN` | your Coolify address and the token from step 3 (the token can be left unset only when a proxy in front of Coolify adds credentials) |
@@ -197,7 +197,7 @@ Not supported for stores yet. Here is what works today and what a Kubernetes dri
 |---|---|
 | One Service per store (`store-<id>`) in project WaaS Stores | One Namespace per store, or one per server-sized pool, labelled with the store id |
 | WordPress + MariaDB + agent containers, each with a memory limit | A Deployment (WordPress + agent sidecar sharing the `wp-content` volume) and a MariaDB StatefulSet, each with PVCs and the same limits |
-| Coolify environment variables (`WAAS_CONSTANTS_B64`, `WAAS_MAIL_B64`) | A Secret per store, mounted as environment |
+| Coolify environment variables (`WAAS_CONSTANTS_B64`, `WAAS_MAIL_B64`, `WAAS_SITE_KEY`) | A Secret per store, mounted as environment |
 | Traefik routers on the Service's domains, Let's Encrypt HTTP-01 | An Ingress per store with cert-manager; a wildcard certificate for `*.<domain>` through DNS-01 |
 | Commands as on-demand Coolify scheduled tasks in the agent | `kubectl exec` (the exec API) into the agent sidecar, running the same `agent.php` and WP-CLI commands |
 | The `wp-cron` scheduled task every minute | A CronJob per store, or one loop in the agent sidecar |

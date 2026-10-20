@@ -20,6 +20,7 @@ import type { Secrets } from './secrets.ts';
 import { baseSnapshotRoutes } from './routes/basesnapshots.ts';
 import { domainRoutes } from './routes/domains.ts';
 import { lifecycleRoutes } from './routes/lifecycle.ts';
+import { siteRoutes } from './routes/site.ts';
 import { keyRoutes } from './routes/keys.ts';
 import { domainConnectRoutes } from './routes/domainconnect.ts';
 import { mailDomainRoutes } from './routes/maildomains.ts';
@@ -41,6 +42,8 @@ export interface Deps {
   domainConnectNet?: DomainConnectNet;
   /** Fetches OAuth Client ID Metadata Documents (src/oauth.ts); tests replace it. */
   clientMetadataFetch?: typeof fetch;
+  /** Calls stores' site-editing routes (src/sitekeys.ts); tests replace it. */
+  siteFetch?: typeof fetch;
   /** Sign-in for people (src/auth.ts); absent when AUTH_URL and AUTH_SECRET are not set. */
   auth?: Auth;
 }
@@ -122,6 +125,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/tenants', mailDomainRoutes(deps));
   app.route('/v1/tenants', domainConnectRoutes(deps));
   app.route('/v1/tenants', lifecycleRoutes(deps));
+  app.route('/v1/tenants', siteRoutes(deps));
   app.route('/v1/tenants', tenantRoutes(deps));
   app.route('/v1/versions', versionRoutes(deps));
   app.route('/v1/snapshots', snapshotRoutes(deps));

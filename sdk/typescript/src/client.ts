@@ -121,6 +121,11 @@ export class WaasClient {
     restore: (ref: TenantRef, params: BodyOf<'restoreTenant'> = {}) => this.#call('restoreTenant', 'POST', '/v1/tenants/restore', ref, params),
     listBackups: (ref: TenantRef) => this.#call('listTenantBackups', 'GET', '/v1/tenants/backups', ref),
     createBackup: (ref: TenantRef) => this.#call('createTenantBackup', 'POST', '/v1/tenants/backups', ref),
+    /**
+     * One request to the store's site-editing API (pages, sections, patterns, styles, header and footer, menus),
+     * answered with the store's status and body. A 4xx from the store is in `status`, not thrown.
+     */
+    editSite: (ref: TenantRef, request: BodyOf<'editTenantSite'>) => this.#call('editTenantSite', 'POST', '/v1/tenants/site', ref, request),
   };
 
   readonly domains = {

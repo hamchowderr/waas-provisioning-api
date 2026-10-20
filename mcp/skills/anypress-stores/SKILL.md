@@ -1,6 +1,6 @@
 ---
 name: anypress-stores
-description: Create and manage WordPress stores on AnyPress (the WaaS provisioning API) through its MCP server - launching a store, putting it on a custom domain, setting up its sending domain, backups, suspend/resume and restores. Use whenever the user asks to do something with their AnyPress or WaaS stores and the waas-provisioning MCP tools are connected.
+description: Create and manage WordPress stores on AnyPress (the WaaS provisioning API) through its MCP server - launching a store, putting it on a custom domain, setting up its sending domain, backups, suspend/resume and restores, and editing a store's pages, sections, colours, fonts, header, footer and menus. Use whenever the user asks to do something with their AnyPress or WaaS stores and the waas-provisioning MCP tools are connected.
 license: GPL-3.0-or-later
 ---
 
@@ -51,3 +51,16 @@ Repeating `create_store` with the same `externalId` answers with the store it al
 ## Versions
 
 A version is a staging WordPress (a PHP and WordPress version) that stores are made from. `create_version`, then poll `list_versions` until it is Done, and `set_production_version` makes new stores use it. `move_store_to_version` moves an existing store. `delete_version` only works once no store is on it.
+
+## Edit a site's pages and design
+
+The site tools work on one store's WordPress directly (no `wait_for_store` needed) and need the store to be Done and not suspended.
+
+1. `get_site`, then `list_pages`. Before changing a page, `read_page`: its outline numbers the sections from 0.
+2. **Build from the theme.** `find_patterns` (e.g. `search: "hero"`, `"pricing"`, `"testimonial"`, `"contact"`) and `add_section` with `pattern` give sections that match the site's design. Then `read_page` and `replace_section` to swap the pattern's sample text and images for the user's own.
+3. **Change one part at a time.** To edit text, copy that section's markup from `read_page`, change only what was asked, and `replace_section`. Use `update_page` with `content` only to rewrite a whole page.
+4. **Use the theme's tokens.** `get_site_styles` lists colour, font-size and spacing slugs; use them in blocks (`"backgroundColor":"primary"`, `"fontSize":"large"`) instead of raw values, so the page follows later style changes.
+5. **Site-wide look:** `update_site_styles` (e.g. `styles.elements.button.color.background`, `styles.typography.fontFamily`, or new colours in `settings.color.palette.custom`). Header and footer: `get_header_footer` then `update_header_footer`. Menus: `list_menus` then `update_menu`.
+6. **New pages are drafts.** `create_page` returns a preview link; share it and publish (`update_page` with `status: publish`) only when the user says so. Add the page to the menu if they want it there.
+7. **Undo:** `list_page_revisions` and `restore_page_revision`. `remove_section` needs the user's yes; it can be undone the same way.
+8. Images: `add_image` with a public https link, then use the returned id and address in an image or cover block. Always give `alt` text.

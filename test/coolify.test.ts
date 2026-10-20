@@ -225,7 +225,10 @@ class FakeMailKeys {
   }
 }
 
-function provisioner(cloud: FakeCloud, extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL; mailKeys?: FakeMailKeys } = {}) {
+function provisioner(
+  cloud: FakeCloud,
+  extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL; mailKeys?: FakeMailKeys; siteKey?: (storeId: string) => string } = {},
+) {
   return new CoolifyProvisioner({
     ...extra,
     url: COOLIFY,
@@ -377,6 +380,19 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
     expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('gives a store its site key, when created and when an older store is brought to the current setup', async () => {
+    p = provisioner(cloud, { siteKey: (storeId) => `site-key-for-${storeId}` });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(store.envs.get('WAAS_SITE_KEY')?.value).toBe(`site-key-for-${STORE_ID}`);
+    expect(parse(store.compose).services.wordpress.environment.WAAS_SITE_KEY).toBe('${WAAS_SITE_KEY:-}');
+
+    store.envs.delete('WAAS_SITE_KEY');
+    store.description = `WaaS store, version ${VERSION_ID}, setup 2`;
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID })).toBe('updated');
+    expect(store.envs.get('WAAS_SITE_KEY')?.value).toBe(`site-key-for-${STORE_ID}`);
   });
 
   it('leaves a new store alone: it already has the current setup', async () => {
@@ -707,7 +723,7 @@ describe('Store compose file', () => {
   it('uses `$` only for the variables Coolify fills in', () => {
     const compose = renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' });
     const vars = compose.match(/\$\{?[A-Za-z0-9_]*/g) ?? [];
-    expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_MAIL_B64', '${WAAS_INIT_PASSWORD']));
+    expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_MAIL_B64', '${WAAS_INIT_PASSWORD', '${WAAS_SITE_KEY']));
     const parsed = parse(compose);
     expect(Buffer.from(parsed.services.agent.environment.WAAS_AGENT_B64, 'base64').toString()).toBe(AGENT_SCRIPT);
   });

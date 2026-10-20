@@ -65,6 +65,8 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
     WAAS_CONSTANTS_B64: '${WAAS_CONSTANTS_B64:-}',
     // The mail relay's settings, read by the waas-mail mu-plugin (agent.php); empty on version sites.
     WAAS_MAIL_B64: '${WAAS_MAIL_B64:-}',
+    // The store's site key: WaaS Client accepts site-editing requests signed with it (src/sitekeys.ts).
+    WAAS_SITE_KEY: '${WAAS_SITE_KEY:-}',
     WPCS_IS_TENANT: 'true',
   };
   const compose = {
