@@ -121,9 +121,22 @@ Measured on a local copy with FluentCart, FluentCRM, Fluent Forms and Rank Math 
 
 ## Store setup
 
-`STORE_SETUP` (`provisioner.ts`) numbers what the compose file and the agent's files give a store; a store's Coolify description records the number it has and the size its compose file was rendered with (`WaaS store, version <id>, setup <n>, size <size>`; a description without a size is small). On every API start, `ensureStoreSetup` brings each older live store, and each store whose size differs from its tenant's, to the current setup at that size: the new compose file, one restart, then `configure` to reinstall the agent's files. Bump `STORE_SETUP` with any such change that existing stores should get. Setup 2 is the Apache worker cap and the page cache; setup 3 is sizes and the plan mu-plugin; setup 4 gives each store its site key (`WAAS_SITE_KEY`, see [site-editing.md](site-editing.md)); setup 5 is email packs (the plan mu-plugin counts pack emails, and the agent's `mail-packs` operation); setup 6 is the platform's count of each store's email (the plan mu-plugin goes by the higher of its own count and the platform's, the agent's `mail-count` operation, and the mail mu-plugin sends replies to the administrator when nothing else would get them); setup 7 has the mail mu-plugin fill in each Fluent plugin's own sender ([store-email.md](store-email.md#the-plugins-own-senders)).
+`STORE_SETUP` (`provisioner.ts`) numbers what the compose file and the agent's files give a store; a store's Coolify description records the number it has and the size its compose file was rendered with (`WaaS store, version <id>, setup <n>, size <size>`; a description without a size is small). On every API start, `ensureStoreSetup` brings each older live store, and each store whose size differs from its tenant's, to the current setup at that size: the new compose file, one restart, then `configure` to reinstall the agent's files. Bump `STORE_SETUP` with any such change that existing stores should get. Setup 2 is the Apache worker cap and the page cache; setup 3 is sizes and the plan mu-plugin; setup 4 gives each store its site key (`WAAS_SITE_KEY`, see [site-editing.md](site-editing.md)); setup 5 is email packs (the plan mu-plugin counts pack emails, and the agent's `mail-packs` operation); setup 6 is the platform's count of each store's email (the plan mu-plugin goes by the higher of its own count and the platform's, the agent's `mail-count` operation, and the mail mu-plugin sends replies to the administrator when nothing else would get them); setup 7 has the mail mu-plugin fill in each Fluent plugin's own sender ([store-email.md](store-email.md#the-plugins-own-senders)); setup 8 is the owner mu-plugin (below).
 
 On the deploy that brings setup 6, every live store restarts **once**: its sender moves to its own address, a change of `WAAS_MAIL_B64` that only a restart gives WordPress (variables reach the containers when they start), and the new setup rides on that same restart. `maintainStores` runs the mail step before the setup step for this: `ensureStoreMail` applies the setup itself when a store's mail changes and its setup is older, so `ensureStoreSetup` then finds nothing to do.
+
+## The owner's details
+
+The agent's `waas-owner.php` mu-plugin copies the purchase's billing details, which the shop sets as the option `waas_store_owner` (JSON: `name`, `phone`, `address_1`, `address_2`, `city`, `state`, `postcode`, `country`), into the store on its first page load, and again when they change:
+
+| Where | What |
+|---|---|
+| WordPress | the time zone, from the country (and the state or province in the US, Canada and Australia; left as it is for other countries with several zones); the administrator's first, last and display name |
+| FluentCart | the store address and country; the currency of the country, only before the store's first order and only one FluentCart supports |
+| FluentCRM | the business address, which every campaign's footer shows |
+| Rank Math | the business address and phone in the site's search-engine details |
+
+A value the owner typed is kept: only empty values, the ones it set last time (kept in the option `waas_owner_details`), and the template's UTC and USD are changed. A detail that becomes empty clears the value it set before.
 
 ## Security
 

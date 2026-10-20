@@ -444,6 +444,177 @@ add_action('init', function () use ($waas_mail) {
     update_option('waas_mail_senders', ['key' => $key, 'set' => $want], false);
 }, PHP_INT_MAX);
 PHP);
+    file_put_contents(CONTENT . '/mu-plugins/waas-owner.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: WaaS store owner
+ * Description: Fills in the owner's business details from the purchase. Managed by the WaaS provisioner; edits are overwritten.
+ */
+/*
+ * The platform sets `waas_store_owner` (JSON) from the buyer's billing details: name, phone, address_1, address_2,
+ * city, state, postcode and country. Copy them where the store and its plugins keep their own: the site's time zone,
+ * the administrator's name, FluentCart's store address and currency, FluentCRM's business address (the footer of
+ * every campaign) and Rank Math's address and phone (the site's business details for search engines).
+ * Runs again whenever the details change or a plugin is switched on. A value the owner typed is kept: only empty
+ * ones, the ones last set here, and the template's own defaults (UTC, USD) are changed.
+ */
+
+/** The IANA time zone for a country and its state or province, '' when it can't be told. */
+function waas_owner_timezone(string $country, string $state): string
+{
+    $by_state = [
+        'US' => [
+            'America/New_York' => 'CT DE DC FL GA KY ME MD MA MI NH NJ NY NC OH PA RI SC VT VA WV',
+            'America/Indiana/Indianapolis' => 'IN',
+            'America/Chicago' => 'AL AR IL IA KS LA MN MS MO NE ND OK SD TN TX WI',
+            'America/Denver' => 'CO MT NM UT WY',
+            'America/Boise' => 'ID',
+            'America/Phoenix' => 'AZ',
+            'America/Los_Angeles' => 'CA NV OR WA',
+            'America/Anchorage' => 'AK',
+            'Pacific/Honolulu' => 'HI',
+        ],
+        'CA' => [
+            'America/Vancouver' => 'BC', 'America/Edmonton' => 'AB NT', 'America/Regina' => 'SK', 'America/Winnipeg' => 'MB',
+            'America/Toronto' => 'ON QC', 'America/Moncton' => 'NB', 'America/Halifax' => 'NS PE', 'America/St_Johns' => 'NL',
+            'America/Whitehorse' => 'YT', 'America/Iqaluit' => 'NU',
+        ],
+        'AU' => [
+            'Australia/Sydney' => 'NSW ACT', 'Australia/Melbourne' => 'VIC', 'Australia/Brisbane' => 'QLD',
+            'Australia/Adelaide' => 'SA', 'Australia/Perth' => 'WA', 'Australia/Hobart' => 'TAS', 'Australia/Darwin' => 'NT',
+        ],
+    ];
+    if (isset($by_state[$country])) {
+        foreach ($by_state[$country] as $zone => $states) {
+            if (in_array(strtoupper($state), explode(' ', $states), true)) return $zone;
+        }
+        return '';
+    }
+    $zones = $country !== '' ? DateTimeZone::listIdentifiers(DateTimeZone::PER_COUNTRY, $country) : [];
+    return count($zones) === 1 ? $zones[0] : '';
+}
+
+/** The country's currency (ISO 4217), '' when unknown. */
+function waas_owner_currency(string $country): string
+{
+    if ($country === '' || !class_exists('NumberFormatter')) return '';
+    $code = (new NumberFormatter('und_' . $country, NumberFormatter::CURRENCY))->getTextAttribute(NumberFormatter::CURRENCY_CODE);
+    return is_string($code) && preg_match('/^[A-Z]{3}$/', $code) && $code !== 'XXX' ? $code : '';
+}
+
+$GLOBALS['waas_owner_plugins'] = [];
+// The plugins loaded on this request, before a plan's site type switches any on or off on `init`.
+add_action('plugins_loaded', function () {
+    $GLOBALS['waas_owner_plugins'] = (array) get_option('active_plugins', []);
+});
+add_action('init', function () {
+    if (defined('WP_CLI') && WP_CLI) return;
+    $owner = json_decode((string) get_option('waas_store_owner', ''), true);
+    if (!is_array($owner)) return;
+    $text = fn (string $key) => trim(wp_specialchars_decode((string) ($owner[$key] ?? ''), ENT_QUOTES));
+    $country = strtoupper(substr($text('country'), 0, 2));
+    $street = trim($text('address_1') . ', ' . $text('address_2'), ', ');
+    $region = trim($text('state') . ' ' . $text('postcode'));
+    $country_name = $country !== '' && class_exists('Locale') ? (string) Locale::getDisplayRegion('-' . $country, 'en') : $country;
+    $want = [
+        'name' => $text('name'),
+        'phone' => $text('phone'),
+        'address_1' => $text('address_1'),
+        'address_2' => $text('address_2'),
+        'city' => $text('city'),
+        'state' => $text('state'),
+        'postcode' => $text('postcode'),
+        'country' => $country,
+        'street' => trim($text('address_1') . ' ' . $text('address_2')),
+        // One line, for an email footer.
+        'address' => $street === '' ? '' : implode(', ', array_filter([$street, $text('city'), $region, $country_name], 'strlen')),
+        'timezone' => waas_owner_timezone($country, $text('state')),
+        'currency' => waas_owner_currency($country),
+    ];
+    $plugins = $GLOBALS['waas_owner_plugins'];
+    sort($plugins);
+    $key = md5(json_encode([$want, $plugins, get_option('admin_email')]));
+    $last = get_option('waas_owner_details');
+    $last = is_array($last) ? $last : [];
+    if (($last['key'] ?? '') === $key) return;
+    $was = (array) ($last['set'] ?? []);
+    /**
+     * Whether a setting holding $value should take the detail $role: it is empty, last set here (so a detail that is
+     * now empty clears it), or a template default.
+     */
+    $ours = function ($value, string $role, array $defaults = []) use ($want, $was) {
+        $value = trim((string) $value);
+        if ($value === $want[$role]) return false;
+        if ($value === '') return true;
+        return $value === (string) ($was[$role] ?? '') || in_array($value, $defaults, true);
+    };
+    $steps = [
+        'time zone' => function () use ($ours, $want) {
+            $zone = (string) get_option('timezone_string');
+            // A store on a UTC offset instead of a named zone was set that way by its owner.
+            if ($zone === '' && (float) get_option('gmt_offset') !== 0.0) return;
+            if ($want['timezone'] !== '' && $ours($zone, 'timezone', ['UTC'])) update_option('timezone_string', $want['timezone']);
+        },
+        // The administrator: the owner. FluentBooking shows their name as the host of their calendars.
+        'administrator' => function () use ($want, $was) {
+            $user = get_user_by('email', (string) get_option('admin_email'));
+            if (!$user || $want['name'] === '') return;
+            [$first, $last] = array_pad(preg_split('/\s+/', $want['name'], 2), 2, '');
+            $old = trim($user->first_name . ' ' . $user->last_name);
+            if ($old !== '' && $old !== (string) ($was['name'] ?? '')) return;
+            $update = ['ID' => $user->ID, 'first_name' => $first, 'last_name' => $last];
+            if (in_array($user->display_name, [$user->user_login, $old, (string) ($was['name'] ?? '')], true)) $update['display_name'] = $want['name'];
+            wp_update_user($update);
+        },
+        'FluentCart' => function () use ($ours, $want) {
+            if (!class_exists('\FluentCart\Api\StoreSettings')) return;
+            $store = new \FluentCart\Api\StoreSettings();
+            $set = [];
+            foreach (['store_address1' => 'address_1', 'store_address2' => 'address_2', 'store_city' => 'city', 'store_state' => 'state', 'store_postcode' => 'postcode', 'store_country' => 'country'] as $field => $role) {
+                if ($ours($store->get($field, ''), $role)) $set[$field] = $want[$role];
+            }
+            // Prices are in the store's currency, so only before its first order, and only one FluentCart supports.
+            $known = class_exists('\FluentCart\App\Helpers\CurrenciesHelper') ? \FluentCart\App\Helpers\CurrenciesHelper::getCurrencies() : [];
+            if (isset($known[$want['currency']]) && $ours($store->get('currency', 'USD'), 'currency', ['USD'])
+                && class_exists('\FluentCart\App\Models\Order') && !\FluentCart\App\Models\Order::query()->exists()) {
+                $set['currency'] = $want['currency'];
+            }
+            if ($set) $store->save($set);
+        },
+        'FluentCRM' => function () use ($ours, $want) {
+            if (!defined('FLUENTCRM')) return;
+            $crm = get_option('fluentcrm-global-settings', []);
+            $crm = is_array($crm) ? $crm : [];
+            $business = (array) ($crm['business_settings'] ?? []);
+            if (!$ours($business['business_address'] ?? '', 'address')) return;
+            $crm['business_settings'] = array_merge(['business_name' => '', 'business_address' => '', 'logo' => ''], $business, ['business_address' => $want['address']]);
+            update_option('fluentcrm-global-settings', $crm);
+        },
+        'Rank Math' => function () use ($ours, $want) {
+            if (!defined('RANK_MATH_VERSION')) return;
+            $titles = get_option('rank-math-options-titles', []);
+            $titles = is_array($titles) ? $titles : [];
+            $address = is_array($titles['local_address'] ?? null) ? $titles['local_address'] : [];
+            $fields = ['streetAddress' => 'street', 'addressLocality' => 'city', 'addressRegion' => 'state', 'postalCode' => 'postcode', 'addressCountry' => 'country'];
+            $before = $titles;
+            foreach ($fields as $field => $role) {
+                if ($ours($address[$field] ?? '', $role)) $address[$field] = $want[$role];
+            }
+            $titles['local_address'] = $address;
+            if ($ours($titles['phone'] ?? '', 'phone')) $titles['phone'] = $want['phone'];
+            if ($titles !== $before) update_option('rank-math-options-titles', $titles);
+        },
+    ];
+    foreach ($steps as $what => $step) {
+        try {
+            $step();
+        } catch (\Throwable $e) {
+            error_log("WaaS store owner: $what: " . $e->getMessage());
+        }
+    }
+    update_option('waas_owner_details', ['key' => $key, 'set' => $want], false);
+}, PHP_INT_MAX);
+PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
 <?php
 /*

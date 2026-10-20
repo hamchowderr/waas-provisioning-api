@@ -622,3 +622,42 @@ esac
     }
   });
 });
+
+describe.skipIf(!hasPhp)('store agent: owner mu-plugin', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    mkdirSync(join(root, 'wp-content'));
+    chmodSync(root, 0o777);
+    chmodSync(join(root, 'wp-content'), 0o777);
+    execFileSync('php', [AGENT, 'configure', Buffer.from('{}').toString('base64')], { env: { ...process.env, WAAS_ROOT: root } });
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  /** Calls one of the mu-plugin's helpers with a stand-in WordPress. */
+  const call = (fn: string, ...args: string[]) =>
+    execFileSync(
+      'php',
+      ['-r', `function add_action() {} include ${JSON.stringify(join(root, 'wp-content/mu-plugins/waas-owner.php'))}; echo ${fn}(...json_decode(${JSON.stringify(JSON.stringify(args))}, true));`],
+      { encoding: 'utf8' },
+    );
+
+  it("picks the store's time zone from its country, and its state where the country has several", () => {
+    expect(call('waas_owner_timezone', 'US', 'CA')).toBe('America/Los_Angeles');
+    expect(call('waas_owner_timezone', 'US', 'tx')).toBe('America/Chicago');
+    expect(call('waas_owner_timezone', 'CA', 'ON')).toBe('America/Toronto');
+    expect(call('waas_owner_timezone', 'AU', 'WA')).toBe('Australia/Perth');
+    expect(call('waas_owner_timezone', 'GB', '')).toBe('Europe/London');
+    expect(call('waas_owner_timezone', 'US', '')).toBe('');
+    // Several zones and no map: left alone.
+    expect(call('waas_owner_timezone', 'BR', 'SP')).toBe('');
+  });
+
+  const hasIntl = hasPhp && execFileSync('php', ['-r', "echo extension_loaded('intl') ? 1 : 0;"], { encoding: 'utf8' }) === '1';
+  // The store image has intl; a test machine's PHP may not.
+  it.skipIf(!hasIntl)("picks the country's currency", () => {
+    expect(call('waas_owner_currency', 'GB')).toBe('GBP');
+    expect(call('waas_owner_currency', 'DE')).toBe('EUR');
+    expect(call('waas_owner_currency', '')).toBe('');
+  });
+});
