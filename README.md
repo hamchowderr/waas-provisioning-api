@@ -126,6 +126,7 @@ Clients for the `/v1` API, tested against this API on every change:
 | [docs/self-hosting.md](docs/self-hosting.md) | Running the whole platform, from one server up |
 | [docs/coolify.md](docs/coolify.md) | How stores run on Coolify |
 | [docs/accounts.md](docs/accounts.md) | Letting agencies sign in to the dashboard: organizations, roles, invitations |
+| [docs/clients.md](docs/clients.md) | Clients: give someone a site in one step (their own storefront, site and invitation) |
 | [docs/resellers.md](docs/resellers.md) | Reseller accounts: storefronts grouped under one partner, store limits, usage and the monthly wholesale bill |
 | [docs/webhooks.md](docs/webhooks.md) | Signed webhooks when a store or version changes, and how to check them |
 | [docs/store-backups.md](docs/store-backups.md) | Nightly store backups, how long they are kept, restoring |
@@ -190,6 +191,7 @@ The first key comes from `npm run create-key` or from the dashboard. After that,
 | `GET`, `POST /admin/products/{productId}/keys`; `POST …/keys/{id}/rotate`; `DELETE …/keys/{id}` | A product's API keys. Same as `/v1/keys`, except the last active key can be revoked |
 | `GET`, `POST /admin/products/{productId}/storefront` `{"name": "Acme Agency", "email": "owner@acme.example", "subdomain": "acme"}` | The product's ready-made storefront: a WordPress site with WaaS Host, built from [`templates/agency-storefront`](templates/agency-storefront) and already connected with a new key of the product. One per product; needs `STOREFRONT_PRODUCT_ID`. `GET` answers `null` when there is none |
 | `GET /admin/applications?status=pending\|approved\|declined`; `GET …/{id}`; `POST …/{id}/approve` `{"maxTenants": 3, "storefront": true}`; `POST …/{id}/decline` | Applications to sell, sent by the public `POST /applications` form. Approving makes the product, invites the applicant as its owner and builds their storefront if they asked ([docs/accounts.md](docs/accounts.md#applications-to-sell)) |
+| `GET`, `POST /admin/clients` `{"name": "Example Bakery", "email": "owner@bakery.example", "size": "small"}` | Clients set up in one step: their own storefront started from the shop's template, their site once it has built, and an emailed invitation ([docs/clients.md](docs/clients.md)) |
 | `GET`, `POST /admin/resellers` `{"name": "Acme Partners", "productIds": ["…"]}`; `GET`, `PUT`, `DELETE …/{id}`; `PUT`, `DELETE …/{id}/products/{productId}`; `GET …/{id}/usage?from=…&to=…`; `GET …/{id}/bill?month=YYYY-MM` | Reseller accounts: storefronts grouped under one partner, with limits across them, store-days per size and the monthly wholesale bill ([docs/resellers.md](docs/resellers.md)) |
 | `PUT /admin/products/{productId}` `{"maxTenants": 5}` | The most stores the product may have (`null`: no limit). At the limit, creating or restoring a store answers 400. Lowering it deletes nothing |
 | `GET`, `POST /admin/products/{productId}/versions`; `DELETE …/versions/{id}`; `PUT …/versions/{id}/production` | A product's versions. Same requests, rules and answers as the `/v1/versions` calls |

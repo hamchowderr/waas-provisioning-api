@@ -1282,6 +1282,50 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/clients:
+    get:
+      operationId: adminListClients
+      summary: Clients set up in one step
+      description: >-
+        People the platform admin gave a site to with Add client (docs/clients.md), newest first. Listing
+        also makes the site of any client whose storefront has finished building. Platform admin only.
+      responses:
+        '200':
+          description: All clients, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Client' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminCreateClient
+      summary: Adds a client
+      description: >-
+        Makes the client's own storefront (one site), started from startFrom's production version and
+        template (default: the storefront with the most stores). Once it has built, the client's site is
+        made and the client is emailed an invitation as the storefront's owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, email]
+              properties:
+                name: { type: string, maxLength: 100, description: The client's name, also their storefront's and site's }
+                email: { type: string, format: email }
+                size: { type: string, enum: [small, medium, large], default: small }
+                startFrom: { type: string, format: uuid, description: The storefront whose version and template the client starts with }
+      responses:
+        '201':
+          description: The client, setting up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Client' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /admin/resellers:
     get:
       operationId: adminListResellers
@@ -1616,6 +1660,26 @@ components:
             small: { type: integer, minimum: 0, maximum: 1000000 }
             medium: { type: integer, minimum: 0, maximum: 1000000 }
             large: { type: integer, minimum: 0, maximum: 1000000 }
+    Client:
+      type: object
+      additionalProperties: false
+      required: [productId, name, email, size, status, tenantId, siteDomain, problem, invitationEmailed, dateCreated]
+      properties:
+        productId: { type: string, format: uuid, description: The client's own storefront }
+        name: { type: string }
+        email: { type: string }
+        size: { type: string, enum: [small, medium, large] }
+        status:
+          type: string
+          enum: [setting_up, invited, active, needs_attention]
+          description: >-
+            setting_up until the site is built; invited until the client accepts; active once they have;
+            needs_attention when the storefront or site could not be built (see problem).
+        tenantId: { type: string, format: uuid, nullable: true }
+        siteDomain: { type: string, nullable: true }
+        problem: { type: string, nullable: true }
+        invitationEmailed: { type: boolean }
+        dateCreated: { type: string, format: date-time }
     Reseller:
       type: object
       additionalProperties: false
