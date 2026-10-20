@@ -7,7 +7,7 @@ import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE, type Size } from '../plans.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
-import { createImport, importCode } from '../imports.ts';
+import { createImport, importCode, renewImport } from '../imports.ts';
 import { publicBase } from '../oauth.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
@@ -101,11 +101,8 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
   // A new import code for a store waiting for its site (src/imports.ts). The one given before stops working.
   app.post('/import-code', async (c) => {
     const tenant = await findTenant(pool, c, { allowWaiting: true });
-    if (!tenant.waiting_for_site) throw badRequest(`Tenant ${tenant.external_id} is not waiting for a site to be moved in`);
-    const token = await withTransaction(pool, async (client) => {
-      await client.query('DELETE FROM tenant_imports WHERE tenant_id = $1', [tenant.id]);
-      return createImport(client, tenant.id);
-    });
+    const token = await renewImport(pool, tenant.id);
+    if (!token) throw badRequest(`Tenant ${tenant.external_id} is not waiting for a site to be moved in`);
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id, importCode: importCode(publicBase(c, config.publicUrl), token) });
   });
 

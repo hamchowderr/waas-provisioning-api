@@ -215,4 +215,28 @@ describe('stores that keep their own code', () => {
     expect(t.provisioner.codeReplaced.filter((s) => s === id)).toHaveLength(2);
     expect(await tenant(id)).not.toHaveProperty('keepsOwnCode');
   });
+
+  it('the dashboard makes a store that waits for its site, shows the move and renews the code', async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const res = await t.call('POST', `/admin/products/${t.productId}/imports`, { auth: ADMIN, body: { name: 'From the dashboard', size: 'medium' } });
+    expect(res.status).toBe(200);
+    const made = (await res.json()) as { tenantId: string; importCode: string; pluginUrl: string };
+    expect(made.importCode).toMatch(/^AP1\./);
+    expect(made.pluginUrl).toMatch(/\/imports\/plugin\.zip$/);
+
+    const detail = (await (await t.call('GET', `/admin/tenants/${made.tenantId}`, { auth: ADMIN })).json()) as Record<string, any>;
+    expect(detail).toMatchObject({ keepsOwnCode: true, size: 'medium', moveIn: { startedAt: null, source: null } });
+
+    const renewed = (await (await t.call('POST', `/admin/tenants/${made.tenantId}/import-code`, { auth: ADMIN })).json()) as { importCode: string };
+    expect(renewed.importCode).not.toBe(made.importCode);
+    expect((await plugin('status', { code: made.importCode })).status).toBe(404);
+    expect((await plugin('status', { code: renewed.importCode })).body).toMatchObject({ status: 'waiting' });
+
+    t.provisioner.imports.set(made.tenantId, 1024);
+    await plugin('start', { code: renewed.importCode, source: { home: 'https://old.example.com' } });
+    expect((await t.call('POST', `/admin/tenants/${made.tenantId}/import-code`, { auth: ADMIN })).status).toBe(400);
+    await waitFor(async () => (await tenant(made.tenantId))?.statusCode === Status.Done);
+    const after = (await (await t.call('GET', `/admin/tenants/${made.tenantId}`, { auth: ADMIN })).json()) as Record<string, any>;
+    expect(after.moveIn.source).toMatchObject({ home: 'https://old.example.com', uploadedBytes: 1024 });
+  });
 });

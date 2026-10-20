@@ -62,6 +62,22 @@ export async function createImport(client: Client, tenantId: string): Promise<st
   return token;
 }
 
+/** A new token for a store still waiting for its site; the one before stops working. Null when it isn't waiting. */
+export async function renewImport(pool: Pool, tenantId: string): Promise<string | null> {
+  return withTransaction(pool, async (client) => {
+    const { rowCount } = await client.query('DELETE FROM tenant_imports WHERE tenant_id = $1 AND started_at IS NULL', [tenantId]);
+    return rowCount ? createImport(client, tenantId) : null;
+  });
+}
+
+/** What the dashboard shows about a store's move: when its code expires, when it started and what the plugin told. */
+export async function importDetail(pool: Pool, tenantId: string) {
+  const { rows } = await pool.query('SELECT expires_at, started_at, source FROM tenant_imports WHERE tenant_id = $1', [tenantId]);
+  const row = rows[0];
+  if (!row) return undefined;
+  return { expiresAt: row.expires_at.toISOString(), startedAt: row.started_at?.toISOString() ?? null, source: row.source ?? null };
+}
+
 interface ImportSource {
   home?: string;
   wordPressVersion?: string;

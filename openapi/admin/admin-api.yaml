@@ -575,6 +575,53 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/imports:
+    post:
+      operationId: adminCreateImport
+      summary: Make a store that waits for a site moved in from another host
+      description: >-
+        Creates a store of the product with no template that waits for its site, and answers the
+        import code to paste into the AnyPress Export plugin on the old site (works 7 days, until the
+        move starts) and the plugin's download link. The store keeps the site's own plugins and
+        themes. See docs/site-imports.md.
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                size: { type: string, enum: [small, medium, large] }
+                customDomainName: { type: string }
+      responses:
+        '200':
+          description: The store waits for its site
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportCode' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/import-code:
+    post:
+      operationId: adminRenewImportCode
+      summary: A new import code for a store waiting for its site
+      description: The code given before stops working. 400 when the store isn't waiting for a site.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The new code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportCode' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/restore:
     post:
       operationId: adminRestoreTenant
@@ -1467,10 +1514,19 @@ components:
         isSuspended: { type: boolean }
         latestBackupAt: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }
+    ImportCode:
+      type: object
+      additionalProperties: false
+      required: [tenantId, externalId, importCode, pluginUrl]
+      properties:
+        tenantId: { type: string, format: uuid }
+        externalId: { type: string }
+        importCode: { type: string, description: Starts with AP1. }
+        pluginUrl: { type: string, description: Downloads the AnyPress Export plugin. }
     TenantDetail:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, isSuspended, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
+      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, keepsOwnCode, isSuspended, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -1484,6 +1540,26 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
+        keepsOwnCode: { type: boolean, description: A site moved in from another host keeps its own plugins and themes; versions don't replace them. }
+        moveIn:
+          type: object
+          description: Only for a store made to move a site in (docs/site-imports.md). It waits for the site while startedAt is null.
+          additionalProperties: false
+          required: [expiresAt, startedAt, source]
+          properties:
+            expiresAt: { type: string, format: date-time, description: When the import code stops working if the move hasn't started. }
+            startedAt: { type: string, format: date-time, nullable: true }
+            source:
+              type: object
+              nullable: true
+              description: What the export plugin told about the old site.
+              properties:
+                home: { type: string }
+                wordPressVersion: { type: string }
+                phpVersion: { type: string }
+                tablePrefix: { type: string }
+                sizeBytes: { type: number }
+                uploadedBytes: { type: number }
         isSuspended: { type: boolean }
         dateSuspended: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }

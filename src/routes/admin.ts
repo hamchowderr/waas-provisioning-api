@@ -9,6 +9,7 @@ import { HttpError, badRequest } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
+import { importCode, importDetail, renewImport } from '../imports.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
@@ -19,6 +20,7 @@ import { createStorefront, getStorefront, type NewStorefront } from '../storefro
 import { baseSnapshotService } from './basesnapshots.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
+import { createTenant } from './tenants.ts';
 import { versionService } from './versions.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 
@@ -413,7 +415,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     );
     const t = rows[0];
     if (!t) throw notFound(`Tenant ${id} not found`);
-    const [domains, backups, jobs, failures] = await Promise.all([
+    const [domains, backups, jobs, failures, moveIn] = await Promise.all([
       pool.query('SELECT * FROM tenant_domains WHERE tenant_id = $1 ORDER BY date_created', [id]),
       pool.query('SELECT * FROM tenant_backups WHERE tenant_id = $1 ORDER BY date_created DESC', [id]),
       pool.query(
@@ -422,6 +424,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         [QUEUE, `tenant:${id}`],
       ),
       pool.query('SELECT * FROM job_failures WHERE tenant_id = $1 ORDER BY failed_at DESC LIMIT 20', [id]),
+      importDetail(pool, id),
     ]);
     return c.json({
       id: t.id,
@@ -436,6 +439,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       statusCode: t.status,
       statusName: statusName(t.status),
       size: t.size,
+      keepsOwnCode: t.own_code,
+      // A site moved in from another host (docs/site-imports.md): waiting while it has no startedAt.
+      ...(moveIn && { moveIn }),
       isSuspended: t.is_suspended,
       dateSuspended: iso(t.date_suspended),
       dateCreated: iso(t.date_created),
@@ -456,6 +462,32 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       })),
       failures: failures.rows.map(toFailure),
     });
+  });
+
+  // Moving a site in (docs/site-imports.md): a store of the product that waits for its site, and its import code.
+  app.post('/products/:productId/imports', async (c) => {
+    const productId = await product(c);
+    const body = ((await readJson(c)) ?? {}) as Record<string, unknown>;
+    if (typeof body.name !== 'string') throw badRequest('name is required');
+    const params = {
+      name: body.name,
+      uploadCustomSnapshot: true,
+      ...(typeof body.size === 'string' && { size: body.size }),
+      ...(typeof body.customDomainName === 'string' && body.customDomainName.trim() && { customDomainName: body.customDomainName.trim() }),
+    } as Parameters<typeof createTenant>[2];
+    const created = (await createTenant(deps, productId, params, publicBase(c, config.publicUrl))) as { id: string; externalId: string; importCode?: string };
+    return c.json({ tenantId: created.id, externalId: created.externalId, importCode: created.importCode, pluginUrl: `${publicBase(c, config.publicUrl)}/imports/plugin.zip` });
+  });
+
+  app.post('/tenants/:id/import-code', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query('SELECT id, external_id FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)', [id, scopedProduct(c)]);
+    if (!rows[0]) throw notFound(`Tenant ${id} not found`);
+    const token = await renewImport(pool, id);
+    if (!token) throw badRequest('This store is not waiting for a site to be moved in');
+    const base = publicBase(c, config.publicUrl);
+    return c.json({ tenantId: id, externalId: rows[0].external_id, importCode: importCode(base, token), pluginUrl: `${base}/imports/plugin.zip` });
   });
 
   // Makes a domain the store's main address (adding it if new), as the storefront's addTenantDomain
