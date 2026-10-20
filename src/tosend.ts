@@ -1,8 +1,8 @@
 /**
  * The parts of toSend's admin API (https://api.tosend.com, admin keys `tsend_admin_…`) the API
  * uses: one sending key per store, restricted to the platform's sending domain or to the store's
- * own one, and the stores' own sending domains (docs/store-email.md). Paths and fields follow
- * toSend's official SDKs.
+ * own one, the stores' own sending domains, and counts of the emails sent (docs/store-email.md).
+ * Paths and fields follow toSend's official SDKs.
  */
 export interface StoreMailKey {
   id: string;
@@ -43,6 +43,23 @@ export interface SendingDomains {
   deleteDomain(id: string): Promise<void>;
 }
 
+export interface EmailCountQuery {
+  /**
+   * Matched anywhere in the subject, the sender's address and the recipients, ignoring case: an
+   * address also matches every longer address that contains it (src/mailcount.ts corrects for that).
+   */
+  search: string;
+  /** Only emails sent since then (ISO 8601). */
+  from: string;
+  /** pending, sent, bounced, complained, suppressed, failed or spam; unset: all of them. */
+  status?: string;
+}
+
+/** Counts the emails sent through toSend (the platform's count of each store's email, src/mailcount.ts). */
+export interface MailCounter {
+  countEmails(query: EmailCountQuery): Promise<number>;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawDomain = { id: string | number; domain_name?: string; name?: string; verification_status?: string; dns_records?: any };
 
@@ -71,7 +88,7 @@ export class ToSendError extends Error {
   }
 }
 
-export class ToSendAdmin implements StoreMailKeys, SendingDomains {
+export class ToSendAdmin implements StoreMailKeys, SendingDomains, MailCounter {
   private domainId?: string;
 
   constructor(
@@ -163,5 +180,17 @@ export class ToSendAdmin implements StoreMailKeys, SendingDomains {
     } catch (err) {
       if (!(err instanceof ToSendError && err.status === 404)) throw err;
     }
+  }
+
+  /**
+   * One page of one email is enough: toSend's `total` is the count of every match. Searches count
+   * against toSend's write limit (300 a minute; 429 past it).
+   */
+  async countEmails({ search, from, status }: EmailCountQuery): Promise<number> {
+    const query = new URLSearchParams({ page: '1', per_page: '1', search, from, ...(status && { status }) });
+    const res = await this.request<{ total?: number | string }>('GET', `/v2/emails?${query}`);
+    const total = Number(res.total);
+    if (res.total === undefined || !Number.isInteger(total) || total < 0) throw new Error('toSend returned no email count');
+    return total;
   }
 }

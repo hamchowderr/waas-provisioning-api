@@ -81,7 +81,7 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
   let root: string;
   const relay = { host: 'smtp.resend.com', port: 465, user: 'resend', pass: 're_test_not_real', from: 'store@mail.example' };
   /** Loads the mu-plugin with a stand-in WordPress and PHPMailer, sends one message, and prints the mailer's state. */
-  const send = (env: Record<string, string>, message: { from: string; fromName: string; replyTo?: string }) =>
+  const send = (env: Record<string, string>, message: { from: string; fromName: string; replyTo?: string }, adminEmail = 'owner@shop.example') =>
     JSON.parse(
       execFileSync(
         'php',
@@ -90,7 +90,7 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
           `
           $hooks = [];
           function add_action($hook, $fn) { global $hooks; $hooks[$hook] = $fn; }
-          function get_option($name) { return ['blogname' => 'Ann &amp; Co', 'home' => 'https://www.shop.example'][$name]; }
+          function get_option($name) { return ['blogname' => 'Ann &amp; Co', 'home' => 'https://www.shop.example', 'admin_email' => ${JSON.stringify(adminEmail)}][$name]; }
           function wp_specialchars_decode($s) { return html_entity_decode($s); }
           class Mailer {
             public $From; public $FromName; public $Sender = ''; public $Host; public $Port; public $SMTPSecure; public $SMTPAuth; public $Username; public $Password;
@@ -130,12 +130,15 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
     expect(m).toMatchObject({ From: 'store@mail.example', Sender: 'store@mail.example', FromName: 'Ann & Co', replyTo: { 'owner@gmail.example': 'Ann & Co' } });
   });
 
-  it("keeps a plugin's sender name and Reply-To, and adds no Reply-To for WordPress's default sender", () => {
+  it("keeps a plugin's sender name and Reply-To, and sends replies to WordPress's default sender to the administrator", () => {
     expect(send(withRelay, { from: 'owner@gmail.example', fromName: 'Ann Shop', replyTo: 'help@shop.example' })).toMatchObject({
       FromName: 'Ann Shop',
       replyTo: { 'help@shop.example': '' },
     });
-    expect(send(withRelay, { from: 'wordpress@shop.example', fromName: 'WordPress' }).replyTo).toEqual([]);
+    // Nobody reads the store's own address on the relay's domain.
+    expect(send(withRelay, { from: 'wordpress@shop.example', fromName: 'WordPress' }).replyTo).toEqual({ 'owner@shop.example': 'Ann & Co' });
+    expect(send(withRelay, { from: relay.from, fromName: 'WordPress' }).replyTo).toEqual({ 'owner@shop.example': 'Ann & Co' });
+    expect(send(withRelay, { from: 'wordpress@shop.example', fromName: 'WordPress' }, 'not an address').replyTo).toEqual([]);
   });
 
   it('uses STARTTLS on other ports', () => {
@@ -461,6 +464,73 @@ esac
     });
   });
 
+  describe("the platform's count", () => {
+    const bulk = `echo json_encode(apply_filters('fluent_crm/disable_email_processing', false));`;
+    const notices = `do_action('admin_notices');`;
+    const mail = (sent: number, m = month()) => ({ month: m, sent });
+
+    it('goes by the platform count when it is higher than the store\'s own, for this month only', () => {
+      // An administrator set the store's own count back; the platform's still pauses bulk email.
+      expect(plan(quotas, { waas_plan_mail: mail(2), waas_plan_mail_platform: mail(10) }, bulk).out).toBe('true');
+      expect(plan(quotas, { waas_plan_mail: mail(2), waas_plan_mail_platform: mail(9) }, bulk).out).toBe('false');
+      expect(plan(quotas, { waas_plan_mail_platform: mail(10) }, bulk).out).toBe('true');
+      // The store's own count is instant; the platform's lags. The higher one counts.
+      expect(plan(quotas, { waas_plan_mail: mail(10), waas_plan_mail_platform: mail(3) }, bulk).out).toBe('true');
+      // Another month's platform count is no count for this one.
+      expect(plan(quotas, { waas_plan_mail: mail(2), waas_plan_mail_platform: mail(50, '2000-01') }, bulk).out).toBe('false');
+      expect(plan(quotas, { waas_plan_mail: mail(2), waas_plan_mail_platform: mail(8) }, notices).out).toContain('has sent 8 of the 10 emails its plan includes');
+      // The store keeps counting its own.
+      const sent = plan(quotas, { waas_plan_mail: mail(2), waas_plan_mail_platform: mail(8) }, `do_action('wp_mail_succeeded');`);
+      expect(sent.options.waas_plan_mail).toEqual(mail(3));
+      expect(sent.options.waas_plan_mail_platform).toEqual(mail(8));
+    });
+
+    it('counts packs used last month by the higher count too, even when the store\'s own count is gone', () => {
+      const packs = { waas_plan_mail_packs: { purchased: 5, used: 0 } };
+      const first = plan(quotas, { waas_plan_mail: mail(4, '2000-01'), waas_plan_mail_platform: mail(13, '2000-01'), ...packs }, bulk);
+      expect(first.options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 3 });
+      expect(first.options.waas_plan_mail).toEqual(mail(0));
+      // The platform's count of an earlier month than the one closing is not that month's.
+      expect(plan(quotas, { waas_plan_mail: mail(4, '2000-02'), waas_plan_mail_platform: mail(13, '2000-01'), ...packs }, bulk).options.waas_plan_mail_packs).toEqual({
+        purchased: 5,
+        used: 0,
+      });
+      const deleted = plan(quotas, { waas_plan_mail_platform: mail(12, '2000-01'), ...packs }, bulk);
+      expect(deleted.options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 2 });
+      expect(plan(quotas, deleted.options, bulk).options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 2 });
+    });
+
+    it('is set through the agent', () => {
+      const bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
+      chmodSync(bin, 0o755);
+      writeFileSync(join(bin, 'wp'), `#!/bin/sh\ncase "$*" in\n  *"option update waas_plan_mail_platform"*) printf '%s %s %s' "$7" "$8" "$9" > "$WAAS_ROOT/count.txt" ;;\nesac\n`, { mode: 0o755 });
+      const run = (args: unknown) =>
+        execFileSync('php', [AGENT, 'mail-count', Buffer.from(JSON.stringify(args)).toString('base64')], {
+          env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}` },
+          encoding: 'utf8',
+        });
+      try {
+        expect(run({ month: '2026-10', sent: 42 })).toContain('WAAS_RESULT {"month":"2026-10","sent":42}');
+        expect(readFileSync(join(root, 'count.txt'), 'utf8')).toBe('{"month":"2026-10","sent":42} --format=json --autoload=no');
+        for (const [bad, error] of [
+          [{ month: 'October', sent: 1 }, 'month must be YYYY-MM'],
+          [{ month: '2026-10', sent: -1 }, 'sent must be a whole number'],
+          [{ month: '2026-10', sent: '1' }, 'sent must be a whole number'],
+        ] as const) {
+          let stdout = '';
+          try {
+            run(bad);
+          } catch (err) {
+            stdout = String((err as { stdout?: string }).stdout);
+          }
+          expect(stdout).toBe(`WAAS_ERROR ${error}\n`);
+        }
+      } finally {
+        rmSync(bin, { recursive: true, force: true });
+      }
+    });
+  });
+
   it('reports usage through the agent, measuring storage now and saving it for the mu-plugin', () => {
     const bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
     chmodSync(bin, 0o755);
@@ -472,6 +542,7 @@ case "$*" in
   *"db query"*) echo 2048 ;;
   *"option update waas_plan_usage"*) printf '%s' "$7" > "$WAAS_ROOT/usage.json" ;;
   *"option get waas_plan_mail_packs"*) echo '{"purchased":10,"used":2}' ;;
+  *"option get waas_plan_mail_platform"*) echo '{"month":"${month()}","sent":5}' ;;
   *"option get waas_plan_mail"*) echo '{"month":"${month()}","sent":7}' ;;
 esac
 `,
@@ -486,7 +557,7 @@ esac
       });
       const result = JSON.parse(/^WAAS_RESULT (.*)$/m.exec(out)![1]!);
       // 2 pack emails used in earlier months, and this month's 2 beyond the plan of 5.
-      expect(result).toMatchObject({ mailMonth: month(), mailSent: 7, packPurchased: 10, packUsed: 4 });
+      expect(result).toMatchObject({ mailMonth: month(), mailSent: 7, platformSent: 5, packPurchased: 10, packUsed: 4 });
       expect(result.storageBytes).toBeGreaterThan(3000 + 2048);
       expect(new Date(result.measuredAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
       expect(JSON.parse(readFileSync(join(root, 'usage.json'), 'utf8')).bytes).toBe(result.storageBytes);

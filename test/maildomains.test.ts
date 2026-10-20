@@ -8,6 +8,7 @@ import { checkMailDomains } from '../src/maildomains.ts';
 import { createAjv } from '../src/openapi.ts';
 import type { StoreSender } from '../src/provisioner/provisioner.ts';
 import { Status } from '../src/status.ts';
+import { dnsSafeLabel } from '../src/tenants.ts';
 import type { SendingDomain, SendingDomains } from '../src/tosend.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
@@ -97,14 +98,14 @@ describe('store sending domains', () => {
     expect((await admin('PUT', path(), 200, { domainName: 'shop.example' })).mailDomain.domainName).toBe('shop.example');
     await admin('PUT', path(), 400, { domainName: 'other.example' });
 
-    await checkMailDomains(t.pool, domains, t.provisioner, quiet);
+    await checkMailDomains(t.pool, domains, t.provisioner, t.deps.config, quiet);
     expect(senders).toEqual([]);
   });
 
   it('moves the store to its domain once toSend has verified it', async () => {
     const domain = [...domains.domains.values()][0]!;
     domain.status = 'verified';
-    await checkMailDomains(t.pool, domains, t.provisioner, quiet);
+    await checkMailDomains(t.pool, domains, t.provisioner, t.deps.config, quiet);
     expect(senders).toEqual([{ storeId: tenantId, sender: { domain: 'shop.example', domainId: domain.id } }]);
     expect((await admin('GET', path())).mailDomain).toMatchObject({ status: 'verified' });
   });
@@ -114,8 +115,9 @@ describe('store sending domains', () => {
     expect(await admin('DELETE', path())).toEqual({ domainName: 'shop.example' });
     expect((await admin('GET', path())).mailDomain.status).toBe('removing');
     await admin('PUT', path(), 400, { domainName: 'shop.example' });
-    await checkMailDomains(t.pool, domains, t.provisioner, quiet);
-    expect(senders).toEqual([{ storeId: tenantId }]);
+    await checkMailDomains(t.pool, domains, t.provisioner, t.deps.config, quiet);
+    // Back to its own mailbox at the platform's domain, named after its base domain (src/mailcount.ts).
+    expect(senders).toEqual([{ storeId: tenantId, mailbox: dnsSafeLabel(`t-${tenantId.slice(0, 8)}`, 's') }]);
     expect(domains.domains.size).toBe(0);
     expect(await admin('GET', path())).toEqual({ mailDomain: null });
   });
@@ -123,7 +125,7 @@ describe('store sending domains', () => {
   it("drops a deleted store's domain from toSend", async () => {
     await admin('PUT', path(), 200, { domainName: 'gone.example' });
     await t.pool.query('DELETE FROM tenants WHERE id = $1', [tenantId]);
-    await checkMailDomains(t.pool, domains, t.provisioner, quiet);
+    await checkMailDomains(t.pool, domains, t.provisioner, t.deps.config, quiet);
     expect(domains.domains.size).toBe(0);
     expect((await t.pool.query('SELECT 1 FROM tenant_mail_domains')).rowCount).toBe(0);
   });
@@ -158,7 +160,7 @@ describe('store sending domains from the storefront', () => {
     await storefront('PUT', q, 403, { domainName: 'x.example' }, 'Basic bm9wZTpub3Bl');
 
     expect(await storefront('DELETE', q)).toEqual({ domainName: 'plugin-shop.example' });
-    await checkMailDomains(t.pool, domains, t.provisioner, quiet);
+    await checkMailDomains(t.pool, domains, t.provisioner, t.deps.config, quiet);
     expect(await storefront('GET', q)).toEqual({ mailDomain: null });
     await storefront('DELETE', q, 400);
   });

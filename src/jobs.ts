@@ -2,12 +2,27 @@ import type { Pool } from './db.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import { purgeExpiredImports } from './imports.ts';
+import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
+import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, emailPacksBought, TENANT_SELECT } from './tenants.ts';
 
-export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets: Secrets, backupRetentionDays: number, requestLogDays = 30): JobHandlers {
+/**
+ * `mailboxDomains` names each store's mailbox at the platform's sending domain (src/mailcount.ts); without
+ * them stores send from the platform's address.
+ */
+export function createJobHandlers(
+  pool: Pool,
+  provisioner: Provisioner,
+  secrets: Secrets,
+  backupRetentionDays: number,
+  requestLogDays = 30,
+  mailboxDomains?: MailboxDomains,
+): JobHandlers {
+  const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
+
   const setTenantStatus = (tenantId: string, status: number, onlyFrom?: number) =>
     pool.query(
       `UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 ${onlyFrom === undefined ? '' : 'AND status = $3'}`,
@@ -27,7 +42,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
           return;
         case 'tenant.create':
-          return createTenant(pool, provisioner, secrets, data);
+          return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId));
         case 'tenant.update': {
           const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
           if (!rows[0]) return;
@@ -53,7 +68,11 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.domains': {
           const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
           if (!rows[0]) return;
-          await provisioner.setDomains({ storeId: data.tenantId, mainDomain: rows[0].main_domain, redirectDomains: rows[0].redirect_domains });
+          // The store's mailbox follows its main domain; a store sending from its own domain keeps it.
+          const sender = (await storeSenders(pool, data.tenantId)).get(data.tenantId);
+          const mail = mailboxDomains && (sender ? { sender } : { mailbox: await mailbox(data.tenantId) });
+          await provisioner.setDomains({ storeId: data.tenantId, mainDomain: rows[0].main_domain, redirectDomains: rows[0].redirect_domains, mail });
+          if (mail) await recordMailSender(pool, provisioner, data.tenantId, mail);
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
@@ -88,6 +107,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
           const tenant = rows[0];
           if (!tenant) return;
+          const restoredMailbox = await mailbox(tenant.id);
           await provisioner.restoreDeletedStore({
             storeId: tenant.id,
             backupId: data.backupId,
@@ -98,7 +118,9 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
             wpOptions: tenant.wp_options,
             size: tenant.size,
             ownCode: tenant.own_code,
+            mailbox: restoredMailbox,
           });
+          await recordMailSender(pool, provisioner, tenant.id, { mailbox: restoredMailbox });
           await setTenantStatus(tenant.id, Status.Done, Status.Pending);
           return;
         }
@@ -116,6 +138,8 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           // The backup's database holds the pack total of its day; tell the store the one on record again.
           const purchased = await emailPacksBought(pool, data.tenantId);
           if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
+          // Its platform email count is an older one too: the next count tells the store again.
+          await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
@@ -238,7 +262,7 @@ async function createVersion(pool: Pool, provisioner: Provisioner, data: Extract
   await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [version.id, Status.Done, Status.Pending]);
 }
 
-async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'tenant.create' }>) {
+async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'tenant.create' }>, mailbox?: string) {
   const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
   const tenant = rows[0];
   if (!tenant) return; // removed before it was built
@@ -259,8 +283,10 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
     wpOptions: tenant.wp_options,
     size: tenant.size,
     ownCode: tenant.own_code,
+    mailbox,
     user,
   });
+  await recordMailSender(pool, provisioner, tenant.id, { mailbox });
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
   // A site moved in is built: its upload is no longer needed.
   if (tenant.snapshot_id === null) await provisioner.deleteImport({ storeId: tenant.id });

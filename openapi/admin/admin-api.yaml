@@ -1560,6 +1560,18 @@ components:
                 tablePrefix: { type: string }
                 sizeBytes: { type: number }
                 uploadedBytes: { type: number }
+        emailUsage:
+          type: object
+          description: >-
+            This calendar month's (UTC) emails as the platform counted them on toSend, from the store's own sender
+            addresses (docs/store-email.md). Counted every hour when TOSEND_ADMIN_KEY is set; absent before the
+            month's first count. The store goes by the higher of this and its own count.
+          additionalProperties: false
+          required: [month, sent, checkedAt]
+          properties:
+            month: { type: string, example: '2026-10' }
+            sent: { type: integer, minimum: 0 }
+            checkedAt: { type: string, format: date-time }
         isSuspended: { type: boolean }
         dateSuspended: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }

@@ -623,6 +623,78 @@ describe('CoolifyProvisioner', () => {
     await expect(p.ensureStoreMail({ storeId: STORE_ID, sender: { domain: 'shop.example', domainId: 'dom1' } })).rejects.toThrow(/per-store keys/);
   });
 
+  it("moves a store to its own mailbox at the platform's domain, keeping its key, with one restart", async () => {
+    const keys = new FakeMailKeys();
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const [id, key] = [...keys.keys][0]!;
+    const starts = store.started;
+
+    expect(await p.ensureStoreMail({ storeId: STORE_ID, mailbox: 'acme' })).toBe('updated');
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value)).toEqual({ ...MAIL, from: 'acme@mail.example', pass: key });
+    // Keys are restricted to a domain, not an address: the same key sends from the new name.
+    expect([...keys.keys.keys()]).toEqual([id]);
+    expect(store.envs.get('WAAS_MAIL_KEY_ID')?.value).toBe(id);
+    expect(store.started).toBe(starts + 1);
+    expect(await p.ensureStoreMail({ storeId: STORE_ID, mailbox: 'acme' })).toBe('unchanged');
+    expect(p.mailFrom({ mailbox: 'acme' })).toBe('acme@mail.example');
+    expect(p.mailFrom({ sender: { domain: 'shop.example', domainId: 'dom1' }, mailbox: 'acme' })).toBe('store@shop.example');
+    expect(p.mailFrom({})).toBe(MAIL.from);
+    expect(provisioner(cloud).mailFrom({ mailbox: 'acme' })).toBeNull();
+
+    // A new store gets its mailbox at create.
+    await p.deleteStore({ storeId: STORE_ID });
+    await p.createStore({ ...storeInput, mailbox: 'acme' });
+    const created = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(decode(created.envs.get('WAAS_MAIL_B64')?.value).from).toBe('acme@mail.example');
+  });
+
+  it('gives a store from an older setup its new sender and the current setup with the same one restart', async () => {
+    p = provisioner(cloud, { mail: MAIL });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup 5, size small`;
+    store.compose = 'old compose';
+    const starts = store.started;
+    expect(await p.ensureStoreMail({ storeId: STORE_ID, mailbox: 'acme' })).toBe('updated');
+    expect(store.started).toBe(starts + 1);
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
+    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_B64).toBe(Buffer.from(AGENT_SCRIPT).toString('base64'));
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
+    expect(store.started).toBe(starts + 1);
+  });
+
+  it("moves the store's sender with its domains on the same restart", async () => {
+    const keys = new FakeMailKeys();
+    p = provisioner(cloud, { mail: MAIL, mailKeys: keys });
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+    await p.setDomains({ storeId: STORE_ID, mainDomain: 'acme.example.com', redirectDomains: [], mail: { mailbox: 'acme' } });
+    expect(decode(store.envs.get('WAAS_MAIL_B64')?.value).from).toBe('acme@mail.example');
+    expect(store.started).toBe(starts + 1);
+    expect(keys.keys.size).toBe(1);
+    expect(await p.ensureStoreMail({ storeId: STORE_ID, mailbox: 'acme' })).toBe('unchanged');
+    // The same sender again: just the domains.
+    await p.setDomains({ storeId: STORE_ID, mainDomain: 'acme.example.com', redirectDomains: ['shop.example.com'], mail: { mailbox: 'acme' } });
+    expect(store.started).toBe(starts + 2);
+  });
+
+  it("tells a store the platform's count of its email through the agent, without a restart", async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+    await p.setMailCount({ storeId: STORE_ID, month: '2026-10', sent: 42 });
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'mail-count', args: { month: '2026-10', sent: 42 } });
+    expect(store.started).toBe(starts);
+    // A store from before the count gets the current setup first, so its agent has the operation.
+    store.description = `WaaS store, version ${VERSION_ID}, setup 5, size small`;
+    await p.setMailCount({ storeId: STORE_ID, month: '2026-10', sent: 43 });
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['configure', 'mail-count']);
+  });
+
   it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {
     await p.createStore({ ...storeInput, wpOptions: { blogname: 'Example Store', blogdescription: 'x'.repeat(2000) } });
     expect(cloud.staged.size).toBeGreaterThan(0);
@@ -967,6 +1039,9 @@ describe('Provisioner selection', () => {
     const mail = { STORE_SMTP_PASSWORD: 'tsend_x', STORE_MAIL_FROM: 'no-reply@mail.example' };
     expect(loadConfig({ ...coolify, ...mail }).coolify?.mailKeys).toBeUndefined();
     expect(loadConfig({ ...coolify, ...mail, TOSEND_ADMIN_KEY: 'tsend_admin_x' }).coolify?.mailKeys).toBeDefined();
+    // The same admin key counts each store's email on toSend.
+    expect(loadConfig({ ...coolify, ...mail }).mailCounter).toBeUndefined();
+    expect(loadConfig({ ...coolify, ...mail, TOSEND_ADMIN_KEY: 'tsend_admin_x' }).mailCounter).toBeDefined();
     expect(() => loadConfig({ ...coolify, ...mail, TOSEND_ADMIN_KEY: 'tsend_x' })).toThrow(/admin key/);
     expect(() => loadConfig({ ...coolify, TOSEND_ADMIN_KEY: 'tsend_admin_x' })).toThrow(/STORE_SMTP_PASSWORD/);
   });

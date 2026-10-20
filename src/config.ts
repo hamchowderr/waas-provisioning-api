@@ -4,7 +4,7 @@ import { loadDomainConnectConfig, type DomainConnectConfig } from './domainconne
 import { isUuid } from './http.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
-import { ToSendAdmin, type SendingDomains, type StoreMailKeys } from './tosend.ts';
+import { ToSendAdmin, type MailCounter, type SendingDomains, type StoreMailKeys } from './tosend.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 import { loadWebhookConfig, type WebhookConfig } from './webhooks.ts';
 
@@ -38,6 +38,8 @@ export interface Config {
   coolify?: CoolifyProvisionerConfig;
   /** Stores' own sending domains on toSend (src/maildomains.ts); set with TOSEND_ADMIN_KEY. */
   sendingDomains?: SendingDomains;
+  /** The platform's hourly count of each store's email on toSend (src/mailcount.ts); set with TOSEND_ADMIN_KEY. */
+  mailCounter?: MailCounter;
   /** Domain Connect links for store owners' DNS (src/domainconnect.ts); on when PLATFORM_DOMAIN or BRAND_DOMAIN is set. */
   domainConnect?: DomainConnectConfig;
   /** The plugin releases bucket (waas-hw4). Unset: update checks get 503. */
@@ -181,6 +183,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     provisioner,
     coolify,
     sendingDomains: coolify?.mailKeys instanceof ToSendAdmin ? coolify.mailKeys : undefined,
+    mailCounter: coolify?.mailKeys instanceof ToSendAdmin ? coolify.mailKeys : undefined,
     domainConnect: loadDomainConnectConfig(env, brandDomain ?? platformDomain),
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),

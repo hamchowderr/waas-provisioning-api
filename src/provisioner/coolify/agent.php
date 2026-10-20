@@ -305,8 +305,9 @@ PHP);
  */
 $waas_mail = json_decode((string) base64_decode((string) getenv('WAAS_MAIL_B64')), true);
 if (!is_array($waas_mail) || empty($waas_mail['host']) || empty($waas_mail['from'])) return;
-// The relay sends only from its verified domain: mail goes out from the platform's address under
-// the store's name, and replies go to the address the store meant to send from.
+// The relay sends only from its verified domain: mail goes out from the store's own address there
+// under the store's name, and replies go to the address the store meant to send from, else to the
+// site's administrator (nobody reads the store's address on the relay's domain).
 add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
     $mailer->isSMTP();
     $mailer->Host = $waas_mail['host'];
@@ -323,6 +324,8 @@ add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
     if ($from !== '' && $from !== strtolower($waas_mail['from']) && $from !== "wordpress@$host" && !$mailer->getReplyToAddresses()) {
         $mailer->addReplyTo($mailer->From, $name);
     }
+    $admin = strtolower((string) get_option('admin_email'));
+    if (!$mailer->getReplyToAddresses() && filter_var($admin, FILTER_VALIDATE_EMAIL) && $admin !== strtolower($waas_mail['from'])) $mailer->addReplyTo($admin, $name);
     $mailer->setFrom($waas_mail['from'], $name, false);
     $mailer->Sender = $waas_mail['from'];
 }, PHP_INT_MAX);
@@ -418,9 +421,20 @@ function waas_plan_packs(): array
 }
 
 /**
- * This calendar month's (UTC) count of emails sent; a new month starts at 0. When the month the count was for is
- * over, what it sent beyond the plan came out of the email packs: that is added to their `used` (no more than were
- * left), and the new month is saved with it, so the next call sees the new month and it happens once.
+ * `$month`'s count of emails as the platform counted them on the relay (the agent's mail-count operation writes it,
+ * hourly), or 0 when it holds another month's. An administrator can edit the store's own count; this one comes back.
+ */
+function waas_plan_mail_platform(string $month): int
+{
+    $platform = get_option('waas_plan_mail_platform');
+    return is_array($platform) && ($platform['month'] ?? '') === $month ? max(0, (int) ($platform['sent'] ?? 0)) : 0;
+}
+
+/**
+ * This calendar month's (UTC) count of emails sent, as the store counts them itself (at once); a new month starts at
+ * 0. When the month the count was for is over, what it sent beyond the plan came out of the email packs: that is
+ * added to their `used` (no more than were left), and the new month is saved with it, so the next call sees the new
+ * month and it happens once. What that month sent is the higher of the store's count and the platform's.
  */
 function waas_plan_mail(): array
 {
@@ -429,7 +443,11 @@ function waas_plan_mail(): array
     if (is_array($mail) && ($mail['month'] ?? '') === $month) return ['month' => $month, 'sent' => (int) ($mail['sent'] ?? 0)];
     $fresh = ['month' => $month, 'sent' => 0];
     $emails = waas_plan_limits()['emails'];
-    $over = is_array($mail) && $emails > 0 ? (int) ($mail['sent'] ?? 0) - $emails : 0;
+    // The month the count was for: the store's, or the platform's when the store's own count is gone.
+    $platform = get_option('waas_plan_mail_platform');
+    $closing = (string) (is_array($mail) ? ($mail['month'] ?? '') : (is_array($platform) ? ($platform['month'] ?? '') : ''));
+    $sent = max(is_array($mail) ? (int) ($mail['sent'] ?? 0) : 0, waas_plan_mail_platform($closing));
+    $over = $emails > 0 && $closing !== '' && $closing !== $month ? $sent - $emails : 0;
     $packs = waas_plan_packs();
     if ($over > 0 && $packs['left'] > 0) {
         update_option('waas_plan_mail', $fresh, false);
@@ -443,6 +461,14 @@ add_action('wp_mail_succeeded', function () {
     update_option('waas_plan_mail', $mail, false);
 });
 
+/** This month's emails sent: the higher of the store's count and the platform's, which can lag by an hour. */
+function waas_plan_mail_sent(): int
+{
+    // The store's count first: a new month moves last month's pack emails to used.
+    $month = waas_plan_mail();
+    return max($month['sent'], waas_plan_mail_platform($month['month']));
+}
+
 /** What this month may send before bulk email waits: the plan's emails plus the pack emails left; 0 is no limit. */
 function waas_plan_mail_allowance(): int
 {
@@ -454,7 +480,7 @@ function waas_plan_mail_allowance(): int
 function waas_plan_mail_used_up(): bool
 {
     // The count first: a new month moves last month's pack emails to used.
-    $sent = waas_plan_mail()['sent'];
+    $sent = waas_plan_mail_sent();
     $allowance = waas_plan_mail_allowance();
     return $allowance > 0 && $sent >= $allowance;
 }
@@ -483,7 +509,7 @@ add_action('admin_notices', function () {
     }
     if ($limits['emails']) {
         $plan = $limits['emails'];
-        $sent = waas_plan_mail()['sent'];
+        $sent = waas_plan_mail_sent();
         $packs = waas_plan_packs();
         // Pack emails left now: those left at the start of the month, less what this month sent beyond the plan.
         $packsLeft = max(0, $packs['left'] - max(0, $sent - $plan));
@@ -658,6 +684,13 @@ function mail_packs(): array
     ];
 }
 
+/** `$month`'s count of emails as the platform told the store it (the mail-count operation), or 0 for another month. */
+function mail_platform(string $month): int
+{
+    $platform = json_decode((string) wpMayFail('option', 'get', 'waas_plan_mail_platform', '--format=json'), true);
+    return is_array($platform) && ($platform['month'] ?? '') === $month ? max(0, (int) ($platform['sent'] ?? 0)) : 0;
+}
+
 // Commands run as root in the container; drop to www-data so WordPress can manage its files.
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
     posix_setgid(WWW_UID) && posix_setuid(WWW_UID) || fail('could not drop privileges');
@@ -800,19 +833,24 @@ switch ($op) {
         wp('option', 'update', 'waas_plan_usage', json_encode(['bytes' => $bytes, 'at' => $at]), '--format=json', '--autoload=no');
         $month = gmdate('Y-m');
         $mail = json_decode((string) wpMayFail('option', 'get', 'waas_plan_mail', '--format=json'), true);
-        $sent = is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0;
+        // The higher of the store's own count and the platform's, as the mu-plugin goes by.
+        $platformSent = mail_platform($month);
+        $sent = max(is_array($mail) && ($mail['month'] ?? '') === $month ? (int) ($mail['sent'] ?? 0) : 0, $platformSent);
         // Email packs, with the pack emails used counted as the mu-plugin does: a past month it has not closed yet
         // (nothing sent since), then this month so far.
         $packs = mail_packs();
         $plan = (int) getenv('WAAS_EMAILS_PER_MONTH');
         $used = $packs['used'];
         if ($plan > 0) {
-            if (is_array($mail) && ($mail['month'] ?? '') !== $month) $used += min(max(0, (int) ($mail['sent'] ?? 0) - $plan), max(0, $packs['purchased'] - $used));
+            if (is_array($mail) && ($mail['month'] ?? '') !== $month) {
+                $closed = max((int) ($mail['sent'] ?? 0), mail_platform((string) ($mail['month'] ?? '')));
+                $used += min(max(0, $closed - $plan), max(0, $packs['purchased'] - $used));
+            }
             $used += min(max(0, $sent - $plan), max(0, $packs['purchased'] - $used));
         }
         done([
             'storageBytes' => $bytes, 'measuredAt' => gmdate('c', $at), 'mailMonth' => $month, 'mailSent' => $sent,
-            'packPurchased' => $packs['purchased'], 'packUsed' => $used,
+            'platformSent' => $platformSent, 'packPurchased' => $packs['purchased'], 'packUsed' => $used,
         ]);
     }
 
@@ -824,6 +862,17 @@ switch ($op) {
         $used = mail_packs()['used'];
         wp('option', 'update', 'waas_plan_mail_packs', json_encode(['purchased' => $purchased, 'used' => $used]), '--format=json', '--autoload=no');
         done(['purchased' => $purchased, 'used' => $used]);
+    }
+
+    case 'mail-count': {
+        // This month's emails as the platform counted them on the relay (the API's hourly mail-count job). The
+        // waas-plan mu-plugin goes by the higher of it and the store's own count.
+        $month = $args['month'] ?? null;
+        $sent = $args['sent'] ?? null;
+        if (!is_string($month) || !preg_match('/^\d{4}-\d{2}$/', $month)) fail('month must be YYYY-MM');
+        if (!is_int($sent) || $sent < 0) fail('sent must be a whole number');
+        wp('option', 'update', 'waas_plan_mail_platform', json_encode(['month' => $month, 'sent' => $sent]), '--format=json', '--autoload=no');
+        done(['month' => $month, 'sent' => $sent]);
     }
 
     case 'update-db':

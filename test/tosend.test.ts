@@ -94,4 +94,24 @@ describe('ToSendAdmin', () => {
     expect(calls[0]).toMatchObject({ body: { name: 'store-abc', domain: 'abc123' } });
     await expect(admin.deleteDomain('abc123')).resolves.toBeUndefined();
   });
+
+  it('counts emails with one search of one email per page, and says when toSend has none or limits it', async () => {
+    let limited = false;
+    const { calls, admin } = api((method, path) => {
+      if (limited) return [429, { message: 'Too Many Requests' }];
+      if (method === 'GET' && path === '/v2/emails') return [200, { data: [{ id: 'e1', status: 'sent', from: 'acme@anypress.io' }], total: 37, page: 1, per_page: 1 }];
+      return [404, {}];
+    });
+    expect(await admin.countEmails({ search: 'acme@anypress.io', from: '2026-10-01T00:00:00.000Z' })).toBe(37);
+    expect(await admin.countEmails({ search: 'acme@anypress.io', from: '2026-10-01T00:00:00.000Z', status: 'failed' })).toBe(37);
+    const query = (i: number) => Object.fromEntries(new URL(`https://x${calls[i]!.path}`).searchParams);
+    expect(query(0)).toEqual({ page: '1', per_page: '1', search: 'acme@anypress.io', from: '2026-10-01T00:00:00.000Z' });
+    expect(query(1)).toMatchObject({ status: 'failed' });
+    expect(calls[0]).toMatchObject({ method: 'GET', auth: 'Bearer tsend_admin_test' });
+
+    limited = true;
+    await expect(admin.countEmails({ search: 'a', from: '2026-10-01T00:00:00.000Z' })).rejects.toMatchObject({ status: 429 });
+    const { admin: empty } = api(() => [200, { data: [] }]);
+    await expect(empty.countEmails({ search: 'a', from: '2026-10-01T00:00:00.000Z' })).rejects.toThrow(/no email count/);
+  });
 });

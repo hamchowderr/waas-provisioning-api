@@ -1,10 +1,14 @@
 import type { Size } from '../plans.ts';
-import type { CreateStoreInput, PhpConstant, Provisioner, StoreSender } from './provisioner.ts';
+import { storeFromAddress, type CreateStoreInput, type PhpConstant, type Provisioner, type StoreMailFrom } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
   /** The pack emails the store was told it has bought (setEmailPacks). */
   emailPacks?: number;
+  /** The address it sends from (ensureStoreMail, setDomains with `mail`), when stores send email. */
+  mailFrom?: string;
+  /** This month's count the platform told it (setMailCount). */
+  mailCount?: { month: string; sent: number };
 }
 
 /**
@@ -21,6 +25,8 @@ export class FakeProvisioner implements Provisioner {
   readonly imports = new Map<string, number>();
   /** Every store whose plugins and themes were replaced with its version's code, in order. */
   readonly codeReplaced: string[] = [];
+  /** The platform's STORE_MAIL_FROM, as if stores sent email. Unset: they send none, as without a relay. */
+  platformMailFrom?: string;
   private failures = new Map<keyof Provisioner, number>();
 
   failNext(method: keyof Provisioner, times = 1): void {
@@ -99,13 +105,15 @@ export class FakeProvisioner implements Provisioner {
   async createStore(input: CreateStoreInput) {
     this.check('createStore');
     if (input.snapshotId === null && !this.imports.has(input.storeId)) throw new Error(`FakeProvisioner: no import uploaded for ${input.storeId}`);
-    this.stores.set(input.storeId, { ...input, suspended: false });
+    this.stores.set(input.storeId, { ...input, suspended: false, mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined });
     if (!input.ownCode) this.codeReplaced.push(input.storeId);
   }
 
-  async setDomains({ storeId, mainDomain, redirectDomains }: Parameters<Provisioner['setDomains']>[0]) {
+  async setDomains({ storeId, mainDomain, redirectDomains, mail }: Parameters<Provisioner['setDomains']>[0]) {
     this.check('setDomains');
-    Object.assign(this.store(storeId), { mainDomain, redirectDomains });
+    const store = this.store(storeId);
+    Object.assign(store, { mainDomain, redirectDomains });
+    if (mail) store.mailFrom = this.mailFrom(mail) ?? undefined;
   }
 
   async updateStore({ storeId, wpOptions, phpConstants, size }: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant>; size?: Size }) {
@@ -119,6 +127,11 @@ export class FakeProvisioner implements Provisioner {
   async setEmailPacks({ storeId, purchased }: { storeId: string; purchased: number }) {
     this.check('setEmailPacks');
     this.store(storeId).emailPacks = purchased;
+  }
+
+  async setMailCount({ storeId, month, sent }: { storeId: string; month: string; sent: number }) {
+    this.check('setMailCount');
+    this.store(storeId).mailCount = { month, sent };
   }
 
   async moveStore({ storeId, targetVersionId, ownCode }: Parameters<Provisioner['moveStore']>[0]) {
@@ -151,7 +164,7 @@ export class FakeProvisioner implements Provisioner {
     const backup = this.backups.get(input.backupId);
     if (!backup || backup.storeId !== input.storeId) throw new Error(`FakeProvisioner: no backup ${input.backupId} of ${input.storeId}`);
     const { backupId, ...store } = input;
-    this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false });
+    this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false, mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined });
     if (!input.ownCode) this.codeReplaced.push(input.storeId);
   }
 
@@ -213,8 +226,16 @@ export class FakeProvisioner implements Provisioner {
     return 'unchanged';
   }
 
-  async ensureStoreMail(_input: { storeId: string; sender?: StoreSender }): Promise<'created' | 'updated' | 'unchanged'> {
+  async ensureStoreMail({ storeId, ...from }: { storeId: string } & StoreMailFrom): Promise<'created' | 'updated' | 'unchanged'> {
     this.check('ensureStoreMail');
-    return 'unchanged';
+    const address = this.mailFrom(from);
+    const store = this.stores.get(storeId);
+    if (!address || !store || store.mailFrom === address) return 'unchanged';
+    store.mailFrom = address;
+    return 'updated';
+  }
+
+  mailFrom(from: StoreMailFrom): string | null {
+    return this.platformMailFrom ? storeFromAddress(this.platformMailFrom, from) : null;
   }
 }

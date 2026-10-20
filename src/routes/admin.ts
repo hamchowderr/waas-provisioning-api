@@ -10,6 +10,7 @@ import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
 import { importCode, importDetail, renewImport } from '../imports.ts';
+import { mailUsage } from '../mailcount.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
@@ -415,7 +416,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     );
     const t = rows[0];
     if (!t) throw notFound(`Tenant ${id} not found`);
-    const [domains, backups, jobs, failures, moveIn] = await Promise.all([
+    const [domains, backups, jobs, failures, moveIn, emailUsage] = await Promise.all([
       pool.query('SELECT * FROM tenant_domains WHERE tenant_id = $1 ORDER BY date_created', [id]),
       pool.query('SELECT * FROM tenant_backups WHERE tenant_id = $1 ORDER BY date_created DESC', [id]),
       pool.query(
@@ -425,6 +426,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       ),
       pool.query('SELECT * FROM job_failures WHERE tenant_id = $1 ORDER BY failed_at DESC LIMIT 20', [id]),
       importDetail(pool, id),
+      mailUsage(pool, id),
     ]);
     return c.json({
       id: t.id,
@@ -442,6 +444,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       keepsOwnCode: t.own_code,
       // A site moved in from another host (docs/site-imports.md): waiting while it has no startedAt.
       ...(moveIn && { moveIn }),
+      // This month's emails as the platform counted them on toSend (docs/store-email.md), once counted.
+      ...(emailUsage && { emailUsage }),
       isSuspended: t.is_suspended,
       dateSuspended: iso(t.date_suspended),
       dateCreated: iso(t.date_created),
