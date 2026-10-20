@@ -470,3 +470,86 @@ describe('who cannot get in', () => {
     expect((await t.call('GET', '/v1/keys')).status).toBe(200);
   });
 });
+
+describe("a reseller's team (docs/resellers.md)", () => {
+  let resellerId: string;
+  let first: string;
+  let second: string;
+  let partner: { userId: string; cookie: string };
+
+  const productNamed = async (name: string) => (await t.pool.query<{ id: string }>('INSERT INTO products (name) VALUES ($1) RETURNING id', [name])).rows[0]!.id;
+  const picking = (productId: string) => ({ 'X-Product-Id': productId });
+
+  beforeAll(async () => {
+    first = await productNamed('Alpha storefront');
+    second = await productNamed('Beta storefront');
+    const res = await admin('POST', '/resellers', { name: 'Team Partners', productIds: [first, second] });
+    expect(res.status).toBe(201);
+    resellerId = ((await res.json()) as { id: string }).id;
+  });
+
+  it('is made, invited to and listed by the platform admin only', async () => {
+    expect((await admin('PUT', `/resellers/${resellerId}/organization`, {})).status).toBe(201);
+    const invitation = await admin('POST', `/resellers/${resellerId}/invitations`, { email: 'Lead@Partner.example' });
+    expect(invitation.status).toBe(201);
+    const sent = (await invitation.json()) as { id: string };
+    expect(sent).toMatchObject({ email: 'lead@partner.example', role: 'owner' });
+    partner = await signedIn('lead@partner.example');
+    expect((await accept(partner.cookie, sent.id)).status).toBe(200);
+    const view = await (await admin('GET', `/resellers/${resellerId}/organization`)).json();
+    expect(view.organization).toMatchObject({ name: 'Team Partners', resellerId });
+    expect(view.organization.productId).toBeUndefined();
+    expect(view.members).toEqual([expect.objectContaining({ userId: partner.userId, role: 'owner' })]);
+    expect((await admin('GET', '/resellers/00000000-0000-4000-8000-000000000000/organization')).status).toBe(404);
+    // Not on /account: a storefront's team doesn't manage its reseller's.
+    expect((await asUser(partner.cookie, 'GET', `/account/resellers/${resellerId}/organization`, undefined, picking(first))).status).toBe(404);
+  });
+
+  it("reaches every one of the reseller's storefronts, one membership each", async () => {
+    const me = await (await asUser(partner.cookie, 'GET', '/account')).json();
+    expect(me.memberships.map((m: { productId: string }) => m.productId).sort()).toEqual([first, second].sort());
+    expect(me.memberships.every((m: { resellerId: string; role: string }) => m.resellerId === resellerId && m.role === 'owner')).toBe(true);
+  });
+
+  it('acts on the storefront X-Product-Id picks, and only on one of theirs', async () => {
+    const onFirst = await asUser(partner.cookie, 'GET', '/account', undefined, picking(first));
+    expect((await onFirst.json()).active).toMatchObject({ productId: first, resellerId });
+    expect((await asUser(partner.cookie, 'POST', '/v1/keys', { label: 'Alpha key' }, picking(first))).status).toBe(201);
+    expect((await asUser(partner.cookie, 'POST', '/v1/keys', { label: 'Beta key' }, picking(second))).status).toBe(201);
+    const labels = async (productId: string) => (await t.pool.query('SELECT label FROM api_keys WHERE product_id = $1', [productId])).rows.map((r) => r.label);
+    expect(await labels(first)).toEqual(['Alpha key']);
+    expect(await labels(second)).toEqual(['Beta key']);
+    expect((await asUser(partner.cookie, 'GET', `/account/products/${second}/organization`, undefined, picking(second))).status).toBe(200);
+    expect((await asUser(partner.cookie, 'GET', `/account/products/${first}/organization`, undefined, picking(second))).status).toBe(404);
+    // A storefront outside the reseller can't be picked: the session's own pick stands, one of theirs.
+    const outside = await (await asUser(partner.cookie, 'GET', '/account', undefined, picking(t.productId))).json();
+    expect([first, second]).toContain(outside.active.productId);
+    expect((await asUser(partner.cookie, 'GET', `/account/products/${t.productId}/organization`, undefined, picking(t.productId))).status).toBe(404);
+  });
+
+  it("keeps the higher role for someone also on a storefront's own team", async () => {
+    const both = await signedIn('both@partner.example');
+    expect((await accept(both.cookie, ((await (await admin('POST', `/resellers/${resellerId}/invitations`, { email: 'both@partner.example', role: 'member' })).json()) as { id: string }).id)).status).toBe(200);
+    expect((await accept(both.cookie, (await invite(first, 'both@partner.example', 'admin')).id)).status).toBe(200);
+    const me = await (await asUser(both.cookie, 'GET', '/account')).json();
+    expect(me.memberships).toHaveLength(2);
+    expect(me.memberships.find((m: { productId: string }) => m.productId === first)).toMatchObject({ role: 'admin', resellerId: null });
+    expect(me.memberships.find((m: { productId: string }) => m.productId === second)).toMatchObject({ role: 'member', resellerId });
+    expect((await asUser(both.cookie, 'POST', '/v1/keys', { label: 'x' }, picking(second))).status).toBe(403);
+  });
+
+  it('follows the storefront when it moves out, and the person when they leave', async () => {
+    expect((await admin('DELETE', `/resellers/${resellerId}/products/${second}`)).status).toBe(200);
+    let me = await (await asUser(partner.cookie, 'GET', '/account')).json();
+    expect(me.memberships.map((m: { productId: string }) => m.productId)).toEqual([first]);
+    expect(me.active).toMatchObject({ productId: first });
+
+    const view = await (await admin('GET', `/resellers/${resellerId}/organization`)).json();
+    const lead = view.members.find((m: { userId: string }) => m.userId === partner.userId);
+    expect((await admin('PATCH', `/resellers/${resellerId}/members/${lead.id}`, { role: 'member' })).status).toBe(409);
+    expect((await admin('DELETE', `/resellers/${resellerId}/members/${lead.id}`)).status).toBe(200);
+    me = await (await asUser(partner.cookie, 'GET', '/account')).json();
+    expect(me.memberships).toEqual([]);
+    expect((await asUser(partner.cookie, 'GET', '/v1/keys', undefined, picking(first))).status).toBe(403);
+  });
+});

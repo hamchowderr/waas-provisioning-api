@@ -82,6 +82,9 @@ function rowOwner(row: { api_key_id: string | null; user_id: string | null; tena
   return { productId: row.product_id, apiKeyId: row.api_key_id! };
 }
 
+/** The organization `o` gives access to the row's product: the storefront's own team, or its reseller's team (docs/resellers.md). */
+const ORG_HAS = (alias: string) =>
+  `(o."productId" = ${alias}.product_id OR o."resellerId" = (SELECT p.reseller_id FROM products p WHERE p.id = ${alias}.product_id))`;
 /**
  * Whether a code or token's owner may still use it: the API key still works, the store still exists,
  * or the person is still on the product's team. `role` is the person's role there (null when not), for trimming write access.
@@ -94,9 +97,10 @@ const OWNER_CHECK = (alias: string) => `
        WHEN ${alias}.platform_admin
        THEN EXISTS (SELECT 1 FROM products p WHERE p.id = ${alias}.product_id)
        ELSE EXISTS (SELECT 1 FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId"
-                     WHERE m."userId" = ${alias}.user_id AND o."productId" = ${alias}.product_id) END`;
+                     WHERE m."userId" = ${alias}.user_id AND ${ORG_HAS(alias)}) END`;
 const OWNER_ROLE = (alias: string) => `(SELECT m.role FROM auth.member m JOIN auth.organization o ON o.id = m."organizationId"
-                     WHERE m."userId" = ${alias}.user_id AND o."productId" = ${alias}.product_id)`;
+                     WHERE m."userId" = ${alias}.user_id AND ${ORG_HAS(alias)}
+                     ORDER BY (o."productId" IS NULL) LIMIT 1)`;
 
 /** Owners and admins may make changes; a member only looks. */
 const mayChange = (role: string | null) => !!role && role.split(',').some((r) => ['owner', 'admin'].includes(r.trim()));
