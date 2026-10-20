@@ -1,8 +1,10 @@
 import type { Size } from '../plans.ts';
-import { storeFromAddress, type CreateStoreInput, type PhpConstant, type Provisioner, type StoreMailFrom } from './provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type StoreMailFrom } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
+  /** The brand its "unavailable" page was given when suspended; none is the platform's. */
+  suspendedBrand?: Brand;
   /** The pack emails the store was told it has bought (setEmailPacks). */
   emailPacks?: number;
   /** The address it sends from (ensureStoreMail, setDomains with `mail`), when stores send email. */
@@ -198,9 +200,11 @@ export class FakeProvisioner implements Provisioner {
     this.backups.delete(backupId);
   }
 
-  async suspendStore({ storeId }: { storeId: string }) {
+  async suspendStore({ storeId, brand }: { storeId: string; brand?: Brand }) {
     this.check('suspendStore');
-    this.store(storeId).suspended = true;
+    const store = this.store(storeId);
+    store.suspended = true;
+    store.suspendedBrand = brand;
   }
 
   async resumeStore({ storeId }: { storeId: string }) {

@@ -21,6 +21,8 @@ interface Settings {
   maxTenants?: number | null;
   wholesalePercent?: number;
   billingEmail?: string | null;
+  brandName?: string | null;
+  brandUrl?: string | null;
   priceSmall?: number;
   priceMedium?: number;
   priceLarge?: number;
@@ -60,6 +62,18 @@ function parseSettings(body: unknown, creating: boolean): Settings {
     else if (typeof email === 'string' && email.length <= 254 && EMAIL.test(email)) out.billingEmail = email;
     else throw badRequest('billingEmail must be an email address, or null');
   }
+  if (b.brandName !== undefined) {
+    const brand = typeof b.brandName === 'string' ? b.brandName.trim() : b.brandName;
+    if (brand === null || brand === '') out.brandName = null;
+    else if (typeof brand === 'string' && brand.length <= 60) out.brandName = brand;
+    else throw badRequest('brandName must be at most 60 characters, or null');
+  }
+  if (b.brandUrl !== undefined) {
+    const url = typeof b.brandUrl === 'string' ? b.brandUrl.trim() : b.brandUrl;
+    if (url === null || url === '') out.brandUrl = null;
+    else if (typeof url === 'string' && url.length <= 500 && /^https?:\/\/[^\s]+$/.test(url)) out.brandUrl = url;
+    else throw badRequest('brandUrl must be an http or https link, or null');
+  }
   if (b.listPriceCents !== undefined) {
     const prices = b.listPriceCents as Record<string, unknown> | null;
     if (!prices || typeof prices !== 'object' || Array.isArray(prices) || Object.keys(prices).some((k) => !Object.hasOwn(PRICE_KEYS, k))) {
@@ -83,6 +97,8 @@ const COLUMNS = {
   maxTenants: 'max_tenants',
   wholesalePercent: 'wholesale_percent',
   billingEmail: 'billing_email',
+  brandName: 'brand_name',
+  brandUrl: 'brand_url',
   priceSmall: 'price_small_cents',
   priceMedium: 'price_medium_cents',
   priceLarge: 'price_large_cents',
@@ -136,6 +152,8 @@ export function adminResellerRoutes(deps: Deps) {
       maxTenants: r.max_tenants as number | null,
       wholesalePercent: r.wholesale_percent as number,
       billingEmail: (r.billing_email as string | null) ?? null,
+      brandName: (r.brand_name as string | null) ?? null,
+      brandUrl: (r.brand_url as string | null) ?? null,
       listPriceCents: { small: r.price_small_cents as number, medium: r.price_medium_cents as number, large: r.price_large_cents as number } as Record<Size, number>,
       products: r.products as { id: string; name: string; tenantCount: number }[],
       tenantCount: r.tenant_count as number,

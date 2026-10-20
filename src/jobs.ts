@@ -1,5 +1,5 @@
 import type { Pool } from './db.ts';
-import type { Provisioner } from './provisioner/provisioner.ts';
+import type { Brand, Provisioner } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import { purgeExpiredImports } from './imports.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
@@ -145,7 +145,7 @@ export function createJobHandlers(
         }
         case 'tenant.suspend':
           if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
-          await provisioner.suspendStore({ storeId: data.tenantId });
+          await provisioner.suspendStore({ storeId: data.tenantId, brand: await resellerBrand(pool, data.tenantId) });
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         case 'tenant.resume':
@@ -228,6 +228,16 @@ export function createJobHandlers(
       }
     },
   };
+}
+
+/** The brand of the reseller a store's storefront belongs to, when it set one: its stores' "unavailable" page shows it. */
+async function resellerBrand(pool: Pool, tenantId: string): Promise<Brand | undefined> {
+  const { rows } = await pool.query(
+    `SELECT r.brand_name, r.brand_url FROM tenants t JOIN products p ON p.id = t.product_id JOIN resellers r ON r.id = p.reseller_id
+      WHERE t.id = $1 AND r.brand_name IS NOT NULL`,
+    [tenantId],
+  );
+  return rows[0] ? { name: rows[0].brand_name, url: rows[0].brand_url ?? undefined } : undefined;
 }
 
 async function createVersion(pool: Pool, provisioner: Provisioner, data: Extract<JobData, { type: 'version.create' }>) {
