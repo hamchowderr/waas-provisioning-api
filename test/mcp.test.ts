@@ -73,7 +73,7 @@ describe('MCP server', () => {
 
   it('offers about 20 tools, with actions and read-only and destructive hints', async () => {
     const { tools } = await mcp.listTools();
-    expect(tools.length).toBe(20);
+    expect(tools.length).toBe(21);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     expect(byName.get('get_stores')?.annotations?.readOnlyHint).toBe(true);
     expect(byName.get('store_status')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
@@ -112,6 +112,26 @@ describe('MCP server', () => {
     expect((await call(mcp, 'store_status', { action: 'resume', externalId: 'mcp-1' })).data).toMatchObject({ externalId: 'mcp-1' });
   });
 
+  it('moves a site in: a store waiting for its site, an import code and the plugin link', async () => {
+    const created = await call(mcp, 'import_site', { action: 'start', name: 'Moved site', externalId: 'mcp-import' });
+    expect(created.data).toMatchObject({ externalId: 'mcp-import' });
+    expect(created.data.importCode).toMatch(/^AP1\./);
+    expect(created.data.pluginDownload).toMatch(/^https?:\/\/.+\/imports\/plugin\.zip$/);
+    expect(created.data).not.toHaveProperty('uploadUrl');
+    expect((await call(mcp, 'get_stores', { action: 'get', externalId: 'mcp-import' })).data).toMatchObject({ waitingForSite: true, keepsOwnCode: true });
+    expect((await call(mcp, 'import_site', { action: 'start' })).text).toBe('Action start needs name.');
+
+    const renewed = await call(mcp, 'import_site', { action: 'new_code', externalId: 'mcp-import' });
+    expect(renewed.data.importCode).toMatch(/^AP1\./);
+    expect(renewed.data.importCode).not.toBe(created.data.importCode);
+
+    expect((await call(mcp, 'store_status', { action: 'delete', externalId: 'mcp-import' })).isError).toBe(false);
+    for (let i = 0; (await call(mcp, 'get_stores', { action: 'get', externalId: 'mcp-import' })).data; i++) {
+      if (i > 150) throw new Error('the waiting store was never removed');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
+
   it('turns API errors, bad refs and unknown actions into tool errors', async () => {
     const bad = await call(mcp, 'create_store', { name: 'dupe', externalId: 'has space' });
     expect(bad.isError).toBe(true);
@@ -131,6 +151,7 @@ describe('MCP server', () => {
     expect(names).toContain('manage_domain');
     expect(names).not.toContain('create_store');
     expect(names).not.toContain('store_status');
+    expect(names).not.toContain('import_site');
     const domains = tools.find((tool) => tool.name === 'manage_domain')!;
     expect((domains.inputSchema.properties?.action as { enum: string[] }).enum).toEqual(['list', 'check', 'connect_link']);
     expect(domains.annotations?.readOnlyHint).toBe(true);

@@ -33,6 +33,7 @@ const TAGS: Record<string, [string, string]> = {
   TenantDomain: ['Domains', "A store's domains: add one, remove one, choose the main domain, check availability."],
   TenantLifecycle: ['Suspend, back up and restore', 'Suspend, resume, back up and restore stores, so a cancelled subscription can keep its store for a grace period and a deleted store can come back from its backup.'],
   TenantSite: ['Site editing', "Edit a store's pages and design (sections, patterns, colours and fonts, header, footer, menus) through its WaaS Client, for AI agents. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md)."],
+  SiteImport: ['Moving a site in', 'Move an existing WordPress site in from another host with the AnyPress Export plugin. These calls take the import code instead of an API key. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-imports.md).'],
   TenantMail: ['Sending domain', "A store's own sending domain, and the Domain Connect link that adds DNS records at the customer's DNS host."],
   Version: ['Versions', 'Versions of your storefront product: the WordPress install each new store is copied from.'],
   Snapshot: ['Snapshots', 'Snapshots of versions.'],

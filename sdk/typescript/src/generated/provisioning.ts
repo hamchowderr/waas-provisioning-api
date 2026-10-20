@@ -177,6 +177,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/import-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * New import code
+         * @description Added for AnyPress.
+         *
+         *     A new import code for a tenant created with `uploadCustomSnapshot` that is still waiting for its site. The code given before stops working.
+         */
+        post: operations["newImportCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -612,6 +634,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/imports/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get an upload link
+         * @description Called by the AnyPress Export plugin with an import code, no API key. Answers a link to `PUT` the site's archive to (a zip or gzipped tar holding `database.sql`, `wp-content/` and `waas.json`), valid for 12 hours, and the most it may hold.
+         */
+        post: operations["getImportUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/imports/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the move
+         * @description Called once the archive is uploaded. The store is built from it on its address and keeps the site's own plugins and themes; follow it with Import status.
+         */
+        post: operations["startImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/imports/plugin.zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the AnyPress Export plugin
+         * @description Redirects to the latest stable release of the AnyPress Export plugin, to install on the site being moved in. The link it redirects to works for ten minutes.
+         */
+        get: operations["downloadExportPlugin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/imports/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import status
+         * @description How the move is going: `waiting` for the upload, `moving`, `done` (with the site's `url`) or `failed`.
+         */
+        post: operations["getImportStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -908,10 +1010,12 @@ export interface components {
              */
             customDomain?: string;
             /**
-             * @description An URL to PUT a GZipped Tar to when `uploadCustomSnapshot` was true
+             * @description An URL to PUT the site's archive to when `uploadCustomSnapshot` was true, valid for 12 hours
              * @example https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx
              */
             uploadUrl?: string;
+            /** @description Added for AnyPress. When `uploadCustomSnapshot` was true, the import code to paste into the AnyPress Export plugin on the old site (see Site import). */
+            importCode?: string;
         };
         CreateTenantParams: {
             /**
@@ -989,9 +1093,9 @@ export interface components {
              */
             wordPressUserPassword?: string;
             size?: components["schemas"]["TenantSize"];
-            /** @description Whether to use a custom Snapshot when creating this Tenant. If true an UploadURL will be specified in the response to wich a Gzipped Tar can be uploaded, containing files and a database export. */
+            /** @description Move in an existing WordPress site instead of starting from a snapshot. The tenant is not built yet: it waits for its site, and the response carries an `importCode` for the AnyPress Export plugin and an `uploadUrl`. Once the archive (a zip or gzipped tar holding `database.sql` and `wp-content/`) is uploaded and the move started (see Site import), the store is built from it and keeps the site's own plugins and themes. Not with `snapshotId` or `groupName`. */
             uploadCustomSnapshot?: boolean;
-            /** @description Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UploadCustomSnapshot is true. */
+            /** @description Accepted for compatibility; zip and gzipped tar are both read. Only with uploadCustomSnapshot. */
             asZip?: boolean;
             /**
              * @description A collection of key value pairs that will be used to initialize WordPress options;
@@ -1397,6 +1501,71 @@ export interface components {
              */
             readonly dateSuspended?: string | null;
             size?: components["schemas"]["TenantSize"];
+            /** @description Added for AnyPress. True for a site moved in from another host (`uploadCustomSnapshot`), which keeps its own plugins and themes when it is restored or moved to another version. Absent otherwise. */
+            readonly keepsOwnCode?: boolean;
+            /** @description Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise. */
+            readonly waitingForSite?: boolean;
+        };
+        ImportCodeParams: {
+            /**
+             * @description The import code, as AnyPress showed it
+             * @example AP1.eyJ1IjoiaHR0cHM6Ly9hcGkuYW55cHJlc3MuaW8iLCJ0IjoiLi4uIn0
+             */
+            code: string;
+        };
+        ImportCodeResult: {
+            /** Format: uuid */
+            tenantId?: string;
+            externalId?: string;
+            /** @description The import code to paste into the AnyPress Export plugin on the old site. Works for 7 days, until the move starts. */
+            importCode?: string;
+        };
+        /** @description What the export tells about the old site. Kept for support; the move does not depend on it. */
+        ImportSource: {
+            /** @example https://www.old-site.com */
+            home?: string;
+            /** @example 6.6.2 */
+            wordPressVersion?: string;
+            /** @example 8.1 */
+            phpVersion?: string;
+            /** @example wp_ */
+            tablePrefix?: string;
+            /** Format: int64 */
+            sizeBytes?: number;
+        };
+        ImportStartParams: {
+            /** @description The import code */
+            code: string;
+            source?: components["schemas"]["ImportSource"];
+        };
+        ImportStore: {
+            name?: string;
+            size?: components["schemas"]["TenantSize"];
+            /**
+             * @description The store's main domain, where the site will be
+             * @example old-site.anypress.site
+             */
+            domain?: string;
+        };
+        ImportUploadResult: {
+            /** @description Where to PUT the archive, in one request */
+            uploadUrl?: string;
+            /**
+             * Format: int64
+             * @description The largest archive the store takes
+             */
+            maxBytes?: number;
+            store?: components["schemas"]["ImportStore"];
+        };
+        ImportStatusResult: {
+            /** @enum {string} */
+            status?: "waiting" | "moving" | "done" | "failed";
+            store?: components["schemas"]["ImportStore"];
+            /**
+             * @description The site's address, once it is done
+             * @example https://old-site.anypress.site
+             */
+            url?: string;
         };
         GetVersionQueryResult: {
             /**
@@ -2143,6 +2312,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
                 };
+            };
+        };
+    };
+    newImportCode: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new import code */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportCodeResult"];
+                };
+            };
+            /** @description The tenant is not waiting for a site */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3384,6 +3604,195 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getImportUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ImportCodeParams"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUploadResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code is not valid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The move has already started */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code expired before the move started */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    startImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ImportStartParams"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportStatusResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code is not valid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The move has already started */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code expired before the move started */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    downloadExportPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirects to the plugin zip */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The plugin is not released yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getImportStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ImportCodeParams"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportStatusResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code is not valid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

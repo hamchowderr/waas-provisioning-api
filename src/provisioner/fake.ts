@@ -17,6 +17,10 @@ export class FakeProvisioner implements Provisioner {
   readonly snapshots = new Map<string, { versionId: string; sourceSnapshotId?: string }>();
   readonly stores = new Map<string, FakeStore>();
   readonly backups = new Map<string, { storeId: string; sizeBytes: number }>();
+  /** Uploaded archives of sites being moved in, by store: their size. Tests "upload" by setting one. */
+  readonly imports = new Map<string, number>();
+  /** Every store whose plugins and themes were replaced with its version's code, in order. */
+  readonly codeReplaced: string[] = [];
   private failures = new Map<keyof Provisioner, number>();
 
   failNext(method: keyof Provisioner, times = 1): void {
@@ -94,7 +98,9 @@ export class FakeProvisioner implements Provisioner {
 
   async createStore(input: CreateStoreInput) {
     this.check('createStore');
+    if (input.snapshotId === null && !this.imports.has(input.storeId)) throw new Error(`FakeProvisioner: no import uploaded for ${input.storeId}`);
     this.stores.set(input.storeId, { ...input, suspended: false });
+    if (!input.ownCode) this.codeReplaced.push(input.storeId);
   }
 
   async setDomains({ storeId, mainDomain, redirectDomains }: Parameters<Provisioner['setDomains']>[0]) {
@@ -115,9 +121,10 @@ export class FakeProvisioner implements Provisioner {
     this.store(storeId).emailPacks = purchased;
   }
 
-  async moveStore({ storeId, targetVersionId }: { storeId: string; targetVersionId: string }) {
+  async moveStore({ storeId, targetVersionId, ownCode }: Parameters<Provisioner['moveStore']>[0]) {
     this.check('moveStore');
     this.store(storeId).versionId = targetVersionId;
+    if (!ownCode) this.codeReplaced.push(storeId);
   }
 
   async snapshotStore({ storeId, snapshotId }: { storeId: string; snapshotId: string }) {
@@ -125,9 +132,10 @@ export class FakeProvisioner implements Provisioner {
     this.snapshots.set(snapshotId, { versionId: this.store(storeId).versionId });
   }
 
-  async restoreStore({ storeId, snapshotId }: { storeId: string; snapshotId: string }) {
+  async restoreStore({ storeId, snapshotId, ownCode }: Parameters<Provisioner['restoreStore']>[0]) {
     this.check('restoreStore');
     this.store(storeId).snapshotId = snapshotId;
+    if (!ownCode) this.codeReplaced.push(storeId);
   }
 
   async backupStore({ storeId, backupId }: { storeId: string; backupId: string }) {
@@ -144,15 +152,32 @@ export class FakeProvisioner implements Provisioner {
     if (!backup || backup.storeId !== input.storeId) throw new Error(`FakeProvisioner: no backup ${input.backupId} of ${input.storeId}`);
     const { backupId, ...store } = input;
     this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false });
+    if (!input.ownCode) this.codeReplaced.push(input.storeId);
   }
 
-  async rollbackStore({ storeId, backupId, wpOptions }: Parameters<Provisioner['rollbackStore']>[0]) {
+  async rollbackStore({ storeId, backupId, wpOptions, ownCode }: Parameters<Provisioner['rollbackStore']>[0]) {
     this.check('rollbackStore');
     const store = this.store(storeId);
     const backup = this.backups.get(backupId);
     if (!backup || backup.storeId !== storeId) throw new Error(`FakeProvisioner: no backup ${backupId} of ${storeId}`);
     store.snapshotId = backupId;
     Object.assign(store.wpOptions, wpOptions);
+    if (!ownCode) this.codeReplaced.push(storeId);
+  }
+
+  async createImportUpload({ storeId }: { storeId: string; expiresInSeconds: number }) {
+    this.check('createImportUpload');
+    return `https://uploads.waas.example/imports/${storeId}`;
+  }
+
+  async importSize({ storeId }: { storeId: string }) {
+    this.check('importSize');
+    return this.imports.get(storeId) ?? null;
+  }
+
+  async deleteImport({ storeId }: { storeId: string }) {
+    this.check('deleteImport');
+    this.imports.delete(storeId);
   }
 
   async deleteBackup({ backupId }: { backupId: string }) {

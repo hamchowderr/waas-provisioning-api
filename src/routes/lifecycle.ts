@@ -164,8 +164,8 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
     await withTransaction(pool, async (client) => {
       await checkTenantCap(client, productId);
       await client.query(
-        `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status, size)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status, size, own_code)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           backup.tenant_id,
           productId,
@@ -180,6 +180,8 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
           Status.Pending,
           // Backups kept from before sizes have none: those stores were small.
           record.size ?? DEFAULT_SIZE,
+          // A site moved in keeps its own plugins and themes after a restore too.
+          record.ownCode === true,
         ],
       );
       for (const d of record.domains) {

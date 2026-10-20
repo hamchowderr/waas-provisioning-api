@@ -53,6 +53,17 @@ function toRef(args: StoreArgs): TenantRef {
 
 class UsageError extends Error {}
 
+/** Where to download the AnyPress Export plugin: the API the import code points at. */
+function pluginDownload(importCode: string | undefined): string | undefined {
+  if (!importCode?.startsWith('AP1.')) return undefined;
+  try {
+    const { u } = JSON.parse(Buffer.from(importCode.slice(4), 'base64url').toString('utf8')) as { u?: unknown };
+    return typeof u === 'string' ? `${u}/imports/plugin.zip` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A parameter an action can't do without. */
 function need<T>(value: T | undefined, field: string, action: string): T {
   if (value === undefined || value === null || value === '') throw new UsageError(`Action ${action} needs ${field}.`);
@@ -323,6 +334,42 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     },
     (args) => client.tenants.create(args),
   );
+
+  actionTool('import_site', {
+    title: 'Move a site in', area: 'stores',
+    description:
+      'Moves an existing WordPress site from another host into a new store, which keeps the site’s own plugins and themes. ' +
+      'The site owner installs the AnyPress Export plugin (pluginDownload) on the old site and pastes the importCode under Tools → Move to AnyPress, ' +
+      'or runs `wp anypress-export send <code>`. The code works for 7 days. The store stays Pending until the move is done; follow it with get_stores action wait. ' +
+      'Multisite networks cannot be moved.',
+    input: {
+      ...ref,
+      name: z.string().optional().describe('For start: display name, at most 30 characters, starting and ending with a letter or digit'),
+      customDomainName: z.string().optional().describe('For start: a custom domain for the store, e.g. shop.example.com'),
+      wordPressUserName: z.string().optional().describe('For start: an administrator to add to the moved site, besides its own users'),
+      wordPressUserEmail: z.string().optional(),
+      size: size.optional().describe('For start: small when omitted. The site’s files and database must fit in its storage.'),
+    },
+    actions: {
+      start: {
+        access: 'write',
+        does: 'creates the store that waits for the site, and answers its importCode and pluginDownload; externalId is your own id for it',
+        run: async ({ tenantId: _tenantId, name, ...args }) => {
+          const created = await client.tenants.create({ ...args, name: need(name, 'name', 'start'), uploadCustomSnapshot: true });
+          const { uploadUrl: _uploadUrl, ...rest } = created as typeof created & { uploadUrl?: string };
+          return { ...rest, pluginDownload: pluginDownload(created.importCode) };
+        },
+      },
+      new_code: {
+        access: 'write',
+        does: 'a fresh import code for a store still waiting for its site; the old code stops working',
+        run: async (args) => {
+          const result = await client.tenants.newImportCode(toRef(args));
+          return { ...result, pluginDownload: pluginDownload(result.importCode) };
+        },
+      },
+    },
+  });
 
   actionTool('update_store', {
     title: 'Change a store', area: 'stores',

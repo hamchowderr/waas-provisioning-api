@@ -120,6 +120,11 @@ export class WaasClient {
     /** Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when backupId is omitted). */
     restore: (ref: TenantRef, params: BodyOf<'restoreTenant'> = {}) => this.#call('restoreTenant', 'POST', '/v1/tenants/restore', ref, params),
     /**
+     * A new import code for a store created with uploadCustomSnapshot that is still waiting for its site
+     * (the code given before stops working). The owner pastes it into the AnyPress Export plugin on the old site.
+     */
+    newImportCode: (ref: TenantRef) => this.#call('newImportCode', 'POST', '/v1/tenants/import-code', ref),
+    /**
      * Adds emails on top of the store's monthly plan; they never expire. `reference` (your order id, say) makes a
      * repeat add nothing. Answers with the total bought for the store.
      */

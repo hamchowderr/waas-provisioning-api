@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { AppEnv } from './app.ts';
 import type { Client, Pool } from './db.ts';
-import { badRequest } from './errors.ts';
+import { badRequest, conflict } from './errors.ts';
 import { compact, isUuid } from './http.ts';
 import type { PhpConstant } from './provisioner/provisioner.ts';
 import type { Secrets } from './secrets.ts';
@@ -103,7 +103,8 @@ export const TENANT_SELECT = `
   SELECT t.*, v.name AS version_name,
     (SELECT d.domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain,
     COALESCE((SELECT array_agg(d.domain_name ORDER BY d.date_created) FROM tenant_domains d
-               WHERE d.tenant_id = t.id AND NOT d.is_main), '{}') AS redirect_domains
+               WHERE d.tenant_id = t.id AND NOT d.is_main), '{}') AS redirect_domains,
+    EXISTS (SELECT 1 FROM tenant_imports i WHERE i.tenant_id = t.id AND i.started_at IS NULL) AS waiting_for_site
   FROM tenants t JOIN versions v ON v.id = t.version_id`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,6 +126,9 @@ export function toTenant(row: any) {
     statusCode: row.status,
     statusName: statusName(row.status),
     size: row.size,
+    // A site moved in from another host (src/imports.ts), and whether it still waits for its upload.
+    keepsOwnCode: row.own_code || undefined,
+    waitingForSite: row.waiting_for_site || undefined,
   });
   return { ...tenant, isSuspended: row.is_suspended, dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null };
 }
@@ -139,7 +143,7 @@ export async function emailPacksBought(db: Pool | Client, tenantId: string): Pro
  * The tenant named by ?tenantId= or ?externalId=. A tenantId that isn't a UUID is looked up as an
  * external ID: release 2.2.7 of the storefront plugin sends the external ID as tenantId.
  */
-export async function findTenant(pool: Pool, c: Context<AppEnv>) {
+export async function findTenant(pool: Pool, c: Context<AppEnv>, { allowWaiting = false } = {}) {
   const tenantId = c.req.query('tenantId') || undefined;
   const externalId = c.req.query('externalId') || undefined;
   let where: string;
@@ -149,5 +153,9 @@ export async function findTenant(pool: Pool, c: Context<AppEnv>) {
   else throw badRequest('tenantId or externalId is required');
   const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.product_id = $1 AND ${where}`, [c.get('productId'), value]);
   if (!rows[0]) throw badRequest(`Tenant ${value} not found`);
+  // A store waiting for its site to be moved in doesn't run yet: nothing can be changed on it but deleting it.
+  if (rows[0].waiting_for_site && c.req.method !== 'GET' && !allowWaiting) {
+    throw conflict(`Tenant ${rows[0].external_id} is waiting for its site to be moved in`);
+  }
   return rows[0];
 }

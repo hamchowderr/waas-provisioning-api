@@ -27,6 +27,7 @@ const TOOLS: Record<string, { area: string; access?: Access; actions?: Record<st
   show_store: { area: 'stores', access: 'read' },
   get_stores: { area: 'stores', actions: { list: 'read', get: 'read', wait: 'read' } },
   create_store: { area: 'stores', access: 'write' },
+  import_site: { area: 'stores', actions: { start: 'write', new_code: 'write' } },
   update_store: { area: 'stores', actions: { options: 'write', move: 'write' } },
   store_status: { area: 'stores', actions: { suspend: 'write', resume: 'write', delete: 'write' } },
   show_store_backups: { area: 'backups', access: 'read' },

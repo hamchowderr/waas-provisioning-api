@@ -13,7 +13,7 @@ import { S3, type S3Config } from './provisioner/s3.ts';
  * site install a package we didn't sign.
  */
 
-export const PLUGIN_SLUGS = ['wpcs-waas-host', 'wpcs-waas-client', 'waas-payments'] as const;
+export const PLUGIN_SLUGS = ['wpcs-waas-host', 'wpcs-waas-client', 'waas-payments', 'anypress-export'] as const;
 export type PluginSlug = (typeof PLUGIN_SLUGS)[number];
 export const isPluginSlug = (value: string): value is PluginSlug => (PLUGIN_SLUGS as readonly string[]).includes(value);
 

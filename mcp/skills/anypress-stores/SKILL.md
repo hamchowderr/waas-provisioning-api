@@ -12,7 +12,7 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 
 | Area | Tools (actions) |
 |---|---|
-| Stores | `show_stores`, `show_store`, `get_stores` (list, get, wait), `create_store`, `update_store` (options, move), `store_status` (suspend, resume, delete) |
+| Stores | `show_stores`, `show_store`, `get_stores` (list, get, wait), `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, delete) |
 | Backups | `show_store_backups`, `manage_backups` (list, create, restore) |
 | Domains | `show_store_domains`, `manage_domain` (list, check, connect_link, add, set_main, remove) |
 | Email | `mail_domain` (get, set, remove) |
@@ -34,6 +34,12 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 3. `get_stores` wait. Report the store's main domain (`domainName`) when it is Done.
 
 Repeating `create_store` with the same `externalId` answers with the store it already made, so it's safe to retry after a timeout.
+
+## Move an existing site in
+
+1. `import_site` with `action: "start"`, a `name`, an `externalId` and a `size` big enough for the site's files and database. It answers an `importCode` and `pluginDownload`.
+2. Tell the site owner: install the AnyPress Export plugin from `pluginDownload` on the old site, open Tools → Move to AnyPress and paste the code (or run `wp anypress-export send <code>`). Their old site is not changed. The code works for 7 days; `import_site` with `action: "new_code"` gives a fresh one.
+3. `get_stores` with `action: "wait"` until it is Done (the store stays Pending until the upload arrives and the move finishes, so call it again when it returns `done: false`). The site keeps its own plugins and themes. Then put it on the customer's domain as below.
 
 ## Put a store on the customer's own domain
 

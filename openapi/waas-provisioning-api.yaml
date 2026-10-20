@@ -580,6 +580,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: editTenantSite
+  /v1/tenants/import-code:
+    post:
+      tags:
+      - SiteImport
+      summary: New import code
+      description: 'Added for AnyPress.
+
+
+        A new import code for a tenant created with `uploadCustomSnapshot` that is still waiting for its site. The code given before stops working.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      responses:
+        '200':
+          description: The new import code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCodeResult'
+        '400':
+          description: The tenant is not waiting for a site
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      operationId: newImportCode
   /v1/tenants/email-packs:
     post:
       tags:
@@ -1793,6 +1833,143 @@ paths:
           description: Forbidden
       x-phase: 2
       operationId: deleteBaseSnapshot
+  /imports/upload:
+    post:
+      tags:
+      - SiteImport
+      summary: Get an upload link
+      description: 'Called by the AnyPress Export plugin with an import code, no API key. Answers a link to `PUT` the site''s archive to (a zip or gzipped tar holding `database.sql`, `wp-content/` and `waas.json`), valid for 12 hours, and the most it may hold.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportCodeParams'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportUploadResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '404':
+          description: The import code is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '409':
+          description: The move has already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '410':
+          description: The import code expired before the move started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getImportUpload
+  /imports/start:
+    post:
+      tags:
+      - SiteImport
+      summary: Start the move
+      description: 'Called once the archive is uploaded. The store is built from it on its address and keeps the site''s own plugins and themes; follow it with Import status.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportStartParams'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportStatusResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '404':
+          description: The import code is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '409':
+          description: The move has already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '410':
+          description: The import code expired before the move started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: startImport
+  /imports/plugin.zip:
+    get:
+      operationId: downloadExportPlugin
+      tags:
+      - SiteImport
+      summary: Download the AnyPress Export plugin
+      description: Redirects to the latest stable release of the AnyPress Export plugin, to install on the site being moved in. The link it redirects to works for ten minutes.
+      security: []
+      responses:
+        '302':
+          description: Redirects to the plugin zip
+        '404':
+          description: The plugin is not released yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+  /imports/status:
+    post:
+      tags:
+      - SiteImport
+      summary: Import status
+      description: 'How the move is going: `waiting` for the upload, `moving`, `done` (with the site''s `url`) or `failed`.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportCodeParams'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportStatusResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '404':
+          description: The import code is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getImportStatus
 components:
   schemas:
     AddTenantDomainCommandResult:
@@ -2150,8 +2327,11 @@ components:
           example: my-domain.com
         uploadUrl:
           type: string
-          description: An URL to PUT a GZipped Tar to when `uploadCustomSnapshot` was true
+          description: An URL to PUT the site's archive to when `uploadCustomSnapshot` was true, valid for 12 hours
           example: https://some-bucket.s3.amazonaws.com/custom-upload.tgz?key=xxxxx
+        importCode:
+          type: string
+          description: Added for AnyPress. When `uploadCustomSnapshot` was true, the import code to paste into the AnyPress Export plugin on the old site (see Site import).
       additionalProperties: false
       description: Tenant succesfully scheduled to be created
     CreateTenantParams:
@@ -2223,10 +2403,10 @@ components:
           $ref: '#/components/schemas/TenantSize'
         uploadCustomSnapshot:
           type: boolean
-          description: Whether to use a custom Snapshot when creating this Tenant. If true an UploadURL will be specified in the response to wich a Gzipped Tar can be uploaded, containing files and a database export.
+          description: 'Move in an existing WordPress site instead of starting from a snapshot. The tenant is not built yet: it waits for its site, and the response carries an `importCode` for the AnyPress Export plugin and an `uploadUrl`. Once the archive (a zip or gzipped tar holding `database.sql` and `wp-content/`) is uploaded and the move started (see Site import), the store is built from it and keeps the site''s own plugins and themes. Not with `snapshotId` or `groupName`.'
         asZip:
           type: boolean
-          description: Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UploadCustomSnapshot is true.
+          description: Accepted for compatibility; zip and gzipped tar are both read. Only with uploadCustomSnapshot.
         wpOptions:
           type: object
           additionalProperties:
@@ -2681,6 +2861,106 @@ components:
           example: null
         size:
           $ref: '#/components/schemas/TenantSize'
+        keepsOwnCode:
+          type: boolean
+          description: Added for AnyPress. True for a site moved in from another host (`uploadCustomSnapshot`), which keeps its own plugins and themes when it is restored or moved to another version. Absent otherwise.
+          readOnly: true
+        waitingForSite:
+          type: boolean
+          description: Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise.
+          readOnly: true
+      additionalProperties: false
+    ImportCodeParams:
+      required:
+      - code
+      type: object
+      properties:
+        code:
+          type: string
+          description: The import code, as AnyPress showed it
+          example: AP1.eyJ1IjoiaHR0cHM6Ly9hcGkuYW55cHJlc3MuaW8iLCJ0IjoiLi4uIn0
+    ImportCodeResult:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        externalId:
+          type: string
+        importCode:
+          type: string
+          description: The import code to paste into the AnyPress Export plugin on the old site. Works for 7 days, until the move starts.
+      additionalProperties: false
+    ImportSource:
+      type: object
+      description: What the export tells about the old site. Kept for support; the move does not depend on it.
+      properties:
+        home:
+          type: string
+          example: https://www.old-site.com
+        wordPressVersion:
+          type: string
+          example: 6.6.2
+        phpVersion:
+          type: string
+          example: '8.1'
+        tablePrefix:
+          type: string
+          example: wp_
+        sizeBytes:
+          type: integer
+          format: int64
+    ImportStartParams:
+      required:
+      - code
+      type: object
+      properties:
+        code:
+          type: string
+          description: The import code
+        source:
+          $ref: '#/components/schemas/ImportSource'
+    ImportStore:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          $ref: '#/components/schemas/TenantSize'
+        domain:
+          type: string
+          description: The store's main domain, where the site will be
+          example: old-site.anypress.site
+      additionalProperties: false
+    ImportUploadResult:
+      type: object
+      properties:
+        uploadUrl:
+          type: string
+          description: Where to PUT the archive, in one request
+        maxBytes:
+          type: integer
+          format: int64
+          description: The largest archive the store takes
+        store:
+          $ref: '#/components/schemas/ImportStore'
+      additionalProperties: false
+    ImportStatusResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - waiting
+          - moving
+          - done
+          - failed
+        store:
+          $ref: '#/components/schemas/ImportStore'
+        url:
+          type: string
+          description: The site's address, once it is done
+          example: https://old-site.anypress.site
       additionalProperties: false
     GetVersionQueryResult:
       type: object
@@ -3067,6 +3347,8 @@ tags:
   x-phase: 1
 - name: TenantSite
   description: 'Added for AnyPress. Edit a store''s pages and design for an AI agent, through the store''s WaaS Client.'
+- name: SiteImport
+  description: 'Added for AnyPress. Move an existing WordPress site in from another host: create a tenant with `uploadCustomSnapshot`, paste its import code into the AnyPress Export plugin on the old site, and the plugin uploads the site and starts the move with these calls. They take the import code instead of an API key.'
 - name: Version
   description: Phase 1. Endpoint to manage Versions
   x-phase: 1
