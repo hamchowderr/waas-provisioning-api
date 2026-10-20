@@ -1,7 +1,7 @@
 <?php
 /*
  * Plugin Name: AnyPress starter pages
- * Description: Whole-page patterns for each site type (home, about, contact, services), built from the theme's own sections with the store's name in them. They show under "Starter pages" when a page is created, and the AnyPress connector's agents find them with find_patterns. Also hides the theme's own promotion patterns. Part of the store template.
+ * Description: Whole-page patterns for each site type (home, about, contact, services), built from the theme's own sections with the store's name in them. They show under "Starter pages" when a page is created, the AnyPress connector's agents find them with find_patterns, and a new store gets real pages made from them for its site type. Also hides the theme's own promotion patterns. Part of the store template.
  */
 
 /** Ollie's patterns that advertise the theme itself rather than the store. */
@@ -295,3 +295,126 @@ function anypress_register_patterns(): void
 }
 add_action('admin_init', 'anypress_register_patterns');
 add_action('rest_api_init', 'anypress_register_patterns');
+
+/**
+ * The pages a new store starts with, by its site type (the plugins its plan switched on): page slug => starter page.
+ * A store with FluentCart keeps the shop as its home page; the others get a home page of their own.
+ */
+function anypress_site_type_pages(array $active): array
+{
+    $on = fn (string $plugin) => in_array($plugin, $active, true);
+    if ($on('fluent-cart/fluent-cart.php')) {
+        return ['about' => 'anypress/about', 'contact' => 'anypress/contact'];
+    }
+    if ($on('fluent-booking/fluent-booking.php')) {
+        return ['home' => 'anypress/home-bookings', 'services' => 'anypress/services', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
+    }
+    if ($on('fluent-community/fluent-community.php')) {
+        return ['home' => 'anypress/home-community', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
+    }
+
+    return ['home' => 'anypress/home-website', 'services' => 'anypress/services', 'about' => 'anypress/about', 'contact' => 'anypress/contact'];
+}
+
+/*
+ * Real pages from the starter pages, once per store, so a new store opens on a finished-looking site: published, in
+ * the main menu, and with Home as the front page. Runs on the first web request that has the owner's email (the
+ * platform sets it, and the site title, when it creates the store), after the site type has switched the plugins
+ * (anypress-store.php, priority 9999). A store whose owner already made pages of their own is left alone.
+ */
+add_action('init', function () {
+    if ((defined('WP_CLI') && WP_CLI) || get_option('anypress_starter_pages_made')) {
+        return;
+    }
+    $email = (string) get_option('admin_email');
+    if (!is_email($email) || substr($email, -8) === '.invalid' || get_option('anypress_site_type_plugins') === false) {
+        return;
+    }
+    // A plugin the site type switched on during this request hasn't loaded yet (the contact form needs Fluent Forms).
+    $active = (array) get_option('active_plugins', []);
+    $boot = anypress_boot_plugins();
+    sort($active);
+    sort($boot);
+    if ($active !== $boot) {
+        return;
+    }
+    // Two requests at once: only one makes the pages. A lock older than a minute was left by a request that died.
+    $lock = get_option('anypress_starter_pages_lock');
+    if ($lock !== false && time() - (int) $lock < 60) {
+        return;
+    }
+    if ($lock !== false) {
+        delete_option('anypress_starter_pages_lock');
+    }
+    if (!add_option('anypress_starter_pages_lock', time(), '', false)) {
+        return;
+    }
+    // The template's own pages (FluentCart's, the support portal) all carry _anypress_needs; any other page is the owner's.
+    $own = get_posts([
+        'post_type' => 'page',
+        'post_status' => 'any',
+        'numberposts' => 1,
+        'fields' => 'ids',
+        'suppress_filters' => true,
+        'meta_query' => [['key' => '_anypress_needs', 'compare' => 'NOT EXISTS']],
+    ]);
+    if (!$own) {
+        anypress_make_starter_pages($email);
+    }
+    update_option('anypress_starter_pages_made', time(), true);
+    delete_option('anypress_starter_pages_lock');
+}, 10000);
+
+function anypress_make_starter_pages(string $email): void
+{
+    $author = (int) (get_user_by('email', $email)?->ID ?: (get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID'])[0] ?? 0));
+    $pages = anypress_site_type_pages((array) get_option('active_plugins', []));
+    $starters = anypress_starter_pages();
+    // The patterns' blocks carry inline styles; on a request with no signed-in admin, kses would strip them.
+    kses_remove_filters();
+    // Every page first, so the links between them (Get in touch, About us) point at real pages.
+    $ids = [];
+    foreach ($pages as $slug => $pattern) {
+        $title = $slug === 'home' ? __('Home', 'anypress') : $starters[$pattern][0];
+        $id = wp_insert_post(['post_type' => 'page', 'post_status' => 'publish', 'post_title' => $title, 'post_name' => $slug, 'post_author' => $author, 'comment_status' => 'closed', 'ping_status' => 'closed',
+            // The starter pages are full-width sections that open with their own heading.
+            'page_template' => 'page-no-title'], true);
+        if (!is_wp_error($id)) {
+            $ids[$slug] = $id;
+        }
+    }
+    foreach ($ids as $slug => $id) {
+        wp_update_post(['ID' => $id, 'post_content' => $starters[$pages[$slug]][3]()]);
+    }
+    if (isset($ids['home'])) {
+        update_option('show_on_front', 'page');
+        update_option('page_on_front', $ids['home']);
+        // The site type saved the hidden shop as the home page to bring back; Home stays the home page now.
+        delete_option('anypress_front_page');
+    }
+    anypress_add_to_menu(array_diff_key($ids, ['home' => true]));
+    kses_init();
+}
+
+/** Adds the pages to the template's main menu: after Shop when the store has one, otherwise first. */
+function anypress_add_to_menu(array $ids): void
+{
+    $menu = get_posts(['post_type' => 'wp_navigation', 'title' => 'Main menu', 'numberposts' => 1, 'suppress_filters' => true]);
+    if (!$menu || !$ids) {
+        return;
+    }
+    $blocks = parse_blocks($menu[0]->post_content);
+    $links = [];
+    foreach ($ids as $id) {
+        $links[] = ['blockName' => 'core/navigation-link', 'attrs' => ['label' => get_the_title($id), 'type' => 'page', 'id' => $id, 'url' => get_permalink($id), 'kind' => 'post-type'], 'innerBlocks' => [], 'innerHTML' => '', 'innerContent' => []];
+    }
+    $shop = (int) get_page_by_path('shop')?->ID;
+    $at = 0;
+    foreach ($blocks as $i => $block) {
+        if ($shop && (int) ($block['attrs']['id'] ?? 0) === $shop && get_post_status($shop) === 'publish') {
+            $at = $i + 1;
+        }
+    }
+    array_splice($blocks, $at, 0, $links);
+    wp_update_post(['ID' => $menu[0]->ID, 'post_content' => serialize_blocks($blocks)]);
+}
