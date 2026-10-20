@@ -16,6 +16,7 @@ import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { publicBase } from '../oauth.ts';
+import { adminResellerRoutes } from '../resellers.ts';
 import { Status, statusName } from '../status.ts';
 import { createStorefront, getStorefront, type NewStorefront } from '../storefronts.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
@@ -296,12 +297,17 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.put('/products/:productId/organization', adminOnly);
   app.use('/applications', adminOnly);
   app.use('/applications/*', adminOnly);
+  app.use('/resellers', adminOnly);
+  app.use('/resellers/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
 
   // Applications to sell on the platform, waiting for the platform admin (src/applications.ts).
   app.route('/applications', adminApplicationRoutes(deps));
+
+  // Reseller accounts: storefronts grouped under one partner, and their usage (src/resellers.ts).
+  app.route('/resellers', adminResellerRoutes(deps));
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));
@@ -674,11 +680,12 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   async function products(id: string | null) {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, p.created_at, p.max_tenants,
+      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, r.name AS reseller_name,
          (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
          (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
          (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
-       FROM products p WHERE ($1::uuid IS NULL OR p.id = $1) ORDER BY p.name, p.id`,
+       FROM products p LEFT JOIN resellers r ON r.id = p.reseller_id
+       WHERE ($1::uuid IS NULL OR p.id = $1) ORDER BY p.name, p.id`,
       [id],
     );
     return rows.map((p) => ({
@@ -688,6 +695,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       maxTenants: p.max_tenants,
       versionCount: p.version_count,
       productionVersionId: p.production_version_id,
+      resellerId: p.reseller_id,
+      resellerName: p.reseller_name,
       dateCreated: iso(p.created_at),
     }));
   }
