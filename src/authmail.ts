@@ -45,6 +45,47 @@ export async function sendInvitation(mail: AuthMail, to: string, invite: Invitat
   await send(mail, to, `Join ${invite.organization} on ${mail.brand}`, html, text, 'invitation email', fetchFn);
 }
 
+/** What a seller application email needs to say. */
+export interface ApplicationMail {
+  name: string;
+  business: string;
+}
+
+/** To the applicant: their application to sell arrived and is waiting for review. */
+export async function sendApplicationReceived(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
+  const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
+  const next = "We review every application by hand. When yours is approved, you'll get another email with a link to sign in.";
+  await send(mail, to, `We got your ${mail.brand} application`, `<p>${escape(lead)}</p><p>${escape(next)}</p>`, `${lead}\n\n${next}`, 'application email', fetchFn);
+}
+
+/** To the platform admin: a new application is waiting on the dashboard at `url`. */
+export async function sendApplicationNotice(mail: AuthMail, to: string, app: ApplicationMail & { email: string; url: string }, fetchFn: typeof fetch = fetch): Promise<void> {
+  const lead = `${app.name} (${app.email}) applied to sell websites as ${app.business}.`;
+  const html = `<p>${escape(lead)}</p><p><a href="${escape(app.url)}">Review the application</a></p>`;
+  await send(mail, to, `New seller application: ${app.business}`, html, `${lead}\n\nReview it: ${app.url}`, 'application notice', fetchFn);
+}
+
+/** To the applicant: approved. They sign in at `url` (their owner invitation) with this address. */
+export async function sendApplicationApproved(mail: AuthMail, to: string, app: ApplicationMail & { url: string; days: number; storefront: string | null }, fetchFn: typeof fetch = fetch): Promise<void> {
+  const lead = `Hi ${app.name}, your application to sell websites with ${mail.brand} is approved.`;
+  const how = `Open the link and sign in with this email address (${to}) to set up ${app.business}. The link lasts ${app.days} days.`;
+  const storefront = app.storefront
+    ? `We're also building your storefront at https://${app.storefront}. It's usually ready within a few minutes; sign in to it with "Lost your password?" on its login page.`
+    : null;
+  const html =
+    `<p>${escape(lead)}</p><p><a href="${escape(app.url)}">Sign in to ${escape(mail.brand)}</a></p><p style="color:#666">${escape(how)}</p>` +
+    (storefront ? `<p>${escape(storefront)}</p>` : '');
+  const text = `${lead}\n\n${app.url}\n\n${how}${storefront ? `\n\n${storefront}` : ''}`;
+  await send(mail, to, `Your ${mail.brand} application is approved`, html, text, 'approval email', fetchFn);
+}
+
+/** To the applicant: not approved. */
+export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
+  const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
+  const body = "We can't offer you a seller account right now. If you have questions, contact us through our website.";
+  await send(mail, to, `Your ${mail.brand} application`, `<p>${escape(lead)}</p><p>${escape(body)}</p>`, `${lead}\n\n${body}`, 'decline email', fetchFn);
+}
+
 async function send(mail: AuthMail, to: string, subject: string, html: string, text: string, what: string, fetchFn: typeof fetch) {
   const res = await fetchFn(`${(mail.apiUrl ?? 'https://api.tosend.com').replace(/\/$/, '')}/v2/emails`, {
     method: 'POST',

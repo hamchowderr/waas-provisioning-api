@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { PgBoss } from 'pg-boss';
 import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
+import { publicApplicationRoutes } from './applications.ts';
 import type { Auth } from './auth.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
@@ -87,6 +88,9 @@ export function createApp(deps: Deps) {
   app.on(['GET', 'POST'], '/api/auth/*', (c) =>
     deps.auth ? deps.auth.handler(c.req.raw) : c.json({ statusCode: 404, message: 'Sign-in is off on this server' }, 404),
   );
+  // Applications to sell on the platform, from the marketing site's form (src/applications.ts). No sign-in.
+  app.route('/applications', publicApplicationRoutes(deps));
+
   app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
   app.route('/account', accountRoutes(deps));
 
