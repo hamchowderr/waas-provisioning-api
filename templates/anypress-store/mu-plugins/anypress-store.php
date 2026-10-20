@@ -23,16 +23,33 @@ add_filter('fluentsupport_allow_share_essential', '__return_false');
 add_filter('wp_fusion_hide_upgrade_nags', '__return_true');
 
 // The template ships without Akismet and Hello Dolly, but the WordPress image puts WordPress's bundled copies back
-// when a store's container first starts. Store owners can't manage plugins, so they'd only see two stray inactive
-// plugins nobody chose; keep them out of the list unless one was switched on.
-add_filter('all_plugins', function ($plugins) {
-    foreach (['hello.php', 'akismet/akismet.php'] as $file) {
-        if (isset($plugins[$file]) && !is_plugin_active($file)) {
-            unset($plugins[$file]);
-        }
+// when a store's container first starts. Nobody chose them and store owners can't manage plugins, so delete them
+// (only while they're switched off). Checked on admin and WP-CLI requests only; two file_exists calls when gone.
+function anypress_remove_bundled_plugins(): void
+{
+    if (!function_exists('is_plugin_active')) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
     }
-    return $plugins;
-});
+    foreach (['hello.php' => 'hello.php', 'akismet/akismet.php' => 'akismet'] as $file => $on_disk) {
+        $target = WP_PLUGIN_DIR . '/' . $on_disk;
+        if (!file_exists($target) || is_plugin_active($file)) {
+            continue;
+        }
+        if (is_file($target)) {
+            @unlink($target);
+            continue;
+        }
+        $items = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($items as $item) {
+            $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+        }
+        @rmdir($target);
+    }
+}
+add_action('admin_init', 'anypress_remove_bundled_plugins');
+if (defined('WP_CLI') && WP_CLI) {
+    add_action('init', 'anypress_remove_bundled_plugins');
+}
 
 // When a store gets its owner's email, WordPress mails the old address about the change. The template's old address
 // is admin@example.invalid, so that notice can't be delivered; don't send it.
