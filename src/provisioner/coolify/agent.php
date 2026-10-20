@@ -33,13 +33,15 @@ function done(array $result = [])
 /** Runs a shell command, returning stdout. Fails with the tail of stderr, not the command. */
 function run(string $command, bool $mayFail = false): string
 {
-    $proc = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    // stderr goes to a file: two pipes read one after the other deadlock once the unread one fills.
+    $errFile = tempnam(sys_get_temp_dir(), 'waas-err');
+    $proc = proc_open($command, [1 => ['pipe', 'w'], 2 => ['file', $errFile, 'w']], $pipes);
     if (!is_resource($proc)) fail('could not start a process');
     $out = stream_get_contents($pipes[1]);
-    $err = stream_get_contents($pipes[2]);
     fclose($pipes[1]);
-    fclose($pipes[2]);
     $code = proc_close($proc);
+    $err = (string) @file_get_contents($errFile);
+    @unlink($errFile);
     if ($code !== 0 && !$mayFail) {
         $words = preg_split('/\s+/', $command);
         fail(($words[0] === 'wp' ? 'wp ' . ($words[4] ?? '') : $words[0]) . " exited $code: " . substr(trim($err ?: $out), -400));
@@ -133,6 +135,79 @@ function set_home(string $home): void
     }
     wp('option', 'update', 'home', $home);
     wp('option', 'update', 'siteurl', $home);
+}
+
+/**
+ * What a site moved in from another host must not bring along: the old host's must-use plugins and
+ * drop-ins (they expect that host's servers and caches), caches, and other backup plugins' archives.
+ * Our own must-use plugins are installed again afterwards (install_guard).
+ */
+const IMPORT_DROP = [
+    'object-cache.php', 'advanced-cache.php', 'db.php', 'wp-cache-config.php', 'cache', 'upgrade', 'upgrade-temp-backup',
+    'ai1wm-backups', 'updraft', 'backups-dup-lite', 'backups-dup-pro', 'wpvividbackups', 'backup-db', 'plugins/anypress-export',
+];
+const IMPORT_DROP_MU = [
+    // WP Engine
+    'mu-plugin.php', 'wpengine-common', 'wpe-wp-sign-on-plugin', 'wpe-wp-sign-on-plugin.php', 'wpengine-security-auditor.php',
+    'slt-force-strong-passwords.php', 'force-strong-passwords', 'stop-long-comments.php', 'wpe-cache-plugin', 'wpe-cache-plugin.php',
+    'wpe-elasticpress-autosuggest-logger', 'wpe-elasticpress-autosuggest-logger.php', 'wpe-update-source-selector', 'wpe-update-source-selector.php',
+    // Kinsta, GoDaddy, Pantheon, WordPress.com and Pressable, Bluehost
+    'kinsta-mu-plugins', 'kinsta-mu-plugins.php', 'gd-system-plugin', 'gd-system-plugin.php', 'pantheon', 'pantheon.php', 'pantheon-mu-plugin',
+    'wpcomsh', 'wpcomsh-loader.php', 'endurance-page-cache.php', 'endurance-browser-cache.php', 'sso.php',
+];
+
+/** Removes from wp-content what a site moved in must not bring along (IMPORT_DROP). Returns what it removed. */
+function clean_import(): array
+{
+    $removed = [];
+    foreach (IMPORT_DROP as $name) {
+        if (file_exists(CONTENT . "/$name")) $removed[] = $name;
+    }
+    foreach (IMPORT_DROP_MU as $name) {
+        if (file_exists(CONTENT . "/mu-plugins/$name")) $removed[] = "mu-plugins/$name";
+    }
+    foreach ($removed as $rel) run('rm -rf ' . escapeshellarg(CONTENT . "/$rel"));
+    return $removed;
+}
+
+/**
+ * Gives a database moved in from another host the store's table prefix. `$from` is the prefix the
+ * export reported; without one it is found from the tables. Fails on a multisite network. Returns the
+ * prefix the site had.
+ */
+function adopt_prefix(?string $from): string
+{
+    $to = wp('config', 'get', 'table_prefix');
+    preg_match('/^[A-Za-z0-9_]+$/', $to) || fail('could not read the store\'s table prefix');
+    // Only lines that are table names: the client may print warnings too.
+    $tables = array_values(preg_grep('/^[A-Za-z0-9_$]+$/', array_map('trim', explode("\n", wp('db', 'query', 'SHOW TABLES', '--skip-column-names')))));
+    if ($from === null || !in_array($from . 'options', $tables, true)) {
+        $from = null;
+        foreach ($tables as $t) {
+            if (substr($t, -7) === 'options' && in_array(substr($t, 0, -7) . 'usermeta', $tables, true)) {
+                $from = substr($t, 0, -7);
+                break;
+            }
+        }
+    }
+    if ($from === null || $from === '') fail('the database export has no WordPress tables');
+    preg_match('/^[A-Za-z0-9_]+$/', $from) || fail('the database export uses a table prefix WordPress cannot use here');
+    if (in_array($from . 'blogs', $tables, true) || in_array($from . 'sitemeta', $tables, true)) fail('multisite networks cannot be moved in yet');
+    if ($from === $to) return $from;
+    $renames = [];
+    foreach ($tables as $t) {
+        if (strpos($t, $from) !== 0) continue;
+        $new = $to . substr($t, strlen($from));
+        if (in_array($new, $tables, true)) fail("the database export has both $t and $new");
+        $renames[] = "`$t` TO `$new`";
+    }
+    wp('db', 'query', 'RENAME TABLE ' . implode(', ', $renames));
+    // WordPress keys roles and each user's capabilities by the prefix.
+    $like = str_replace('_', '\\_', $from) . '%';
+    $from_at = strlen($from) + 1;
+    wp('db', 'query', "UPDATE `{$to}options` SET option_name = CONCAT('$to', SUBSTRING(option_name, $from_at)) WHERE option_name LIKE '$like'");
+    wp('db', 'query', "UPDATE `{$to}usermeta` SET meta_key = CONCAT('$to', SUBSTRING(meta_key, $from_at)) WHERE meta_key LIKE '$like'");
+    return $from;
 }
 
 /**
@@ -562,7 +637,10 @@ switch ($op) {
         done(['home' => wpMayFail('option', 'get', 'home')]);
 
     case 'restore': {
-        // A snapshot, base snapshot, backup or uploaded archive: database.sql and wp-content.
+        // A snapshot, base snapshot, backup or uploaded archive: database.sql and wp-content. `import`:
+        // a site moved in from another host (the AnyPress Export plugin's archive, with a waas.json
+        // describing it), cleaned up on the way in.
+        $import = !empty($args['import']);
         $tmp = tempDir();
         curlTransfer($args['url'], "$tmp/archive", false);
         mkdir("$tmp/x");
@@ -570,14 +648,22 @@ switch ($op) {
         $suspended = file_exists(FLAG);
         $page = is_file(PAGE) ? file_get_contents(PAGE) : null;
         $content = find_content("$tmp/x");
+        $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
+        if ($import && (!$content || !$sql)) fail('the export must hold database.sql and wp-content');
+        $info = $import && is_file("$tmp/x/waas.json") ? json_decode((string) file_get_contents("$tmp/x/waas.json"), true) : null;
+        $result = [];
         if ($content) {
             run('rm -rf ' . CONTENT . '/* ' . CONTENT . '/.[!.]*', true);
             run('cp -a ' . escapeshellarg($content) . '/. ' . CONTENT . '/');
+            if ($import) $result['removed'] = clean_import();
         }
-        $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
         if ($sql) {
             wpMayFail('db', 'clean', '--yes');
             wp('db', 'import', $sql);
+            if ($import) {
+                $result['tablePrefix'] = adopt_prefix(is_array($info) && is_string($info['tablePrefix'] ?? null) ? $info['tablePrefix'] : null);
+                $result['previousHome'] = wpMayFail('option', 'get', 'home');
+            }
         } elseif (wpMayFail('core', 'is-installed') === null) {
             wp('core', 'install', '--url=' . $args['home'], '--title=' . ($args['title'] ?? 'Store'), '--admin_user=waas-admin',
                 '--admin_email=' . ($args['adminEmail'] ?? 'admin@example.invalid'), '--admin_password=' . bin2hex(random_bytes(24)), '--skip-email');
@@ -586,7 +672,7 @@ switch ($op) {
         if ($suspended) touch(FLAG); else @unlink(FLAG);
         if ($page !== null) file_put_contents(PAGE, $page);
         install_guard();
-        done(['database' => $sql !== null, 'content' => $content !== null]);
+        done(['database' => $sql !== null, 'content' => $content !== null] + $result);
     }
 
     case 'configure': {

@@ -272,3 +272,13 @@ describe('parseManifest', () => {
     expect(parseManifest('x', 'waas-payments')).toBeNull();
   });
 });
+
+describe('GET /imports/plugin.zip', () => {
+  it('sends the latest stable AnyPress Export plugin to anyone, once it is released', async () => {
+    expect((await app.request('/imports/plugin.zip')).status).toBe(404);
+    store.objects.set(channelKey('anypress-export', 'stable'), release('anypress-export', '1.0.0'));
+    const res = await app.request('/imports/plugin.zip');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('https://releases.test/releases/anypress-export/1.0.0/anypress-export.zip?X-Amz-Expires=600');
+  });
+});

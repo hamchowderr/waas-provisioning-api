@@ -99,7 +99,7 @@ Store tools take `externalId` (your own id) or `tenantId`. Writes return as soon
 
 | Area | Read | Write | Destructive |
 |---|---|---|---|
-| Stores | `show_stores` (panel), `list_stores`, `get_store`, `wait_for_store` | `create_store`, `update_store_options`, `resume_store`, `move_store_to_version` | `suspend_store`, `delete_store`, `restore_store` |
+| Stores | `show_stores` (panel), `list_stores`, `get_store`, `wait_for_store` | `create_store`, `import_site`, `new_import_code`, `update_store_options`, `resume_store`, `move_store_to_version` | `suspend_store`, `delete_store`, `restore_store` |
 | Backups | `list_store_backups` | `create_store_backup` | |
 | Domains | `list_store_domains`, `check_domain_availability`, `get_domain_connect_link` | `add_store_domain`, `set_store_main_domain` | `remove_store_domain` |
 | Sending domain | `get_store_mail_domain` | `set_store_mail_domain` | `remove_store_mail_domain` |

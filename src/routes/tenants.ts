@@ -7,6 +7,8 @@ import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE, type Size } from '../plans.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
+import { createImport, importCode } from '../imports.ts';
+import { publicBase } from '../oauth.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
 import { checkTenantCap, dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
@@ -27,6 +29,7 @@ export interface CreateTenantParams {
   tenantEmail?: string;
   tenantPassword?: string;
   uploadCustomSnapshot?: boolean;
+  asZip?: boolean;
   wpOptions?: Record<string, string> | null;
   phpConstants?: Record<string, PhpConstant> | null;
   size?: Size;
@@ -40,7 +43,7 @@ interface UpdateTenantParams {
 
 const EXTERNAL_ID = /^[A-Za-z0-9-]+$/;
 
-export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
+export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps) {
   const app = new Hono<AppEnv>();
 
   app.get('/', async (c) => {
@@ -59,7 +62,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
 
   app.post('/', async (c) => {
     const body = validateBody<CreateTenantParams>('CreateTenantParams', await readJson(c));
-    return c.json(await createTenant({ config, pool, boss, secrets }, c.get('productId'), body));
+    return c.json(await createTenant({ config, pool, boss, secrets, provisioner }, c.get('productId'), body, publicBase(c, config.publicUrl)));
   });
 
   app.put('/', async (c) => {
@@ -85,7 +88,7 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
   });
 
   app.delete('/', async (c) => {
-    const tenant = await findTenant(pool, c);
+    const tenant = await findTenant(pool, c, { allowWaiting: true });
     if (tenant.status !== Status.Removing) {
       await withTransaction(pool, async (client) => {
         await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenant.id, Status.Removing]);
@@ -93,6 +96,17 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
       });
     }
     return c.body(null, 200);
+  });
+
+  // A new import code for a store waiting for its site (src/imports.ts). The one given before stops working.
+  app.post('/import-code', async (c) => {
+    const tenant = await findTenant(pool, c, { allowWaiting: true });
+    if (!tenant.waiting_for_site) throw badRequest(`Tenant ${tenant.external_id} is not waiting for a site to be moved in`);
+    const token = await withTransaction(pool, async (client) => {
+      await client.query('DELETE FROM tenant_imports WHERE tenant_id = $1', [tenant.id]);
+      return createImport(client, tenant.id);
+    });
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, importCode: importCode(publicBase(c, config.publicUrl), token) });
   });
 
   app.post('/version', async (c) => {
@@ -118,10 +132,22 @@ export function tenantRoutes({ config, pool, boss, secrets }: Deps) {
 /**
  * Creates a store for a product: what POST /v1/tenants does, also used for the platform's own stores (hosted
  * storefronts, src/routes/admin.ts). Answers { id, externalId, baseDomain, customDomain? }.
+ *
+ * With uploadCustomSnapshot the store is a site moved in from another host (src/imports.ts): it is not built
+ * yet, waits for its site and keeps the site's own plugins and themes. The answer adds the import code for the
+ * AnyPress Export plugin and an upload link; `apiUrl` is this API's address the code points the plugin to.
  */
-export async function createTenant({ config, pool, boss, secrets }: Pick<Deps, 'config' | 'pool' | 'boss' | 'secrets'>, productId: string, body: CreateTenantParams) {
+export async function createTenant(
+  { config, pool, boss, secrets, provisioner }: Pick<Deps, 'config' | 'pool' | 'boss' | 'secrets'> & Partial<Pick<Deps, 'provisioner'>>,
+  productId: string,
+  body: CreateTenantParams,
+  apiUrl?: string,
+) {
   if (!body.name.trim()) throw badRequest('name is required');
-  if (body.uploadCustomSnapshot) throw badRequest('uploadCustomSnapshot is not supported yet');
+  const imported = body.uploadCustomSnapshot === true;
+  if (body.asZip && !imported) throw badRequest('asZip can only be used with uploadCustomSnapshot');
+  if (imported && (body.snapshotId || body.groupName)) throw badRequest('Send either a snapshotId or groupName, or uploadCustomSnapshot: true');
+  if (imported && (!apiUrl || !provisioner)) throw badRequest('uploadCustomSnapshot is not available here');
 
   const id = randomUUID();
   // The storefront plugin never sends externalId; the tenant's id is a valid generated one.
@@ -140,7 +166,10 @@ export async function createTenant({ config, pool, boss, secrets }: Pick<Deps, '
   if (version.status !== Status.Done) throw badRequest(`Version ${version.id} is ${statusName(version.status)}, not Done`);
 
   // Snapshot: the one asked for, else the latest in groupName (on this version first), else the latest on this version.
-  const { rows: snapshots } = body.snapshotId
+  // A site moved in has none.
+  const { rows: snapshots } = imported
+    ? { rows: [{ id: null, name: 'Moved in', group_name: null }] }
+    : body.snapshotId
     ? await pool.query('SELECT * FROM snapshots WHERE product_id = $1 AND id = $2 AND status = $3', [productId, body.snapshotId, Status.Done])
     : body.groupName
       ? await pool.query(
@@ -169,11 +198,12 @@ export async function createTenant({ config, pool, boss, secrets }: Pick<Deps, '
   if ((userName || userEmail) && !(userName && userEmail)) throw badRequest('wordPressUserName and wordPressUserEmail go together');
 
   // The checks above give the usual answer; these constraints settle two requests racing past them.
+  let token: string | undefined;
   const raced = await withTransaction(pool, async (client) => {
     await checkTenantCap(client, productId);
     await client.query(
-      `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status, size)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO tenants (id, product_id, external_id, name, version_id, snapshot_id, snapshot_name, snapshot_group_name, wp_options, php_constants, status, size, own_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         id,
         productId,
@@ -187,11 +217,17 @@ export async function createTenant({ config, pool, boss, secrets }: Pick<Deps, '
         encodePhpConstants(secrets, body.phpConstants ?? {}),
         Status.Pending,
         body.size ?? DEFAULT_SIZE,
+        imported,
       ],
     );
     await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_base, is_main) VALUES ($1, $2, true, $3)', [id, baseDomain, !customDomain]);
     if (customDomain) {
       await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, $2, true)', [id, customDomain]);
+    }
+    // A site moved in is built once its archive is uploaded and the move started (src/imports.ts).
+    if (imported) {
+      token = await createImport(client, id);
+      return;
     }
     await enqueue(boss, client, {
       type: 'tenant.create',
@@ -217,7 +253,9 @@ export async function createTenant({ config, pool, boss, secrets }: Pick<Deps, '
   if (raced) return raced;
 
   // customDomain is left out, not null or "", when there is none.
-  return compact({ id, externalId, baseDomain, customDomain });
+  if (!token) return compact({ id, externalId, baseDomain, customDomain });
+  const uploadUrl = await provisioner!.createImportUpload({ storeId: id, expiresInSeconds: 12 * 3600 });
+  return compact({ id, externalId, baseDomain, customDomain, uploadUrl, importCode: importCode(apiUrl!, token) });
 
   /**
    * The store already created with this externalId, as POST answered for it, when the request asks for that same

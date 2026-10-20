@@ -24,6 +24,12 @@ The `waas-provisioning` MCP server exposes the store API as tools. A store is ca
 
 Repeating `create_store` with the same `externalId` answers with the store it already made, so it's safe to retry after a timeout.
 
+## Move an existing site in
+
+1. `import_site` with `name`, an `externalId` and a `size` big enough for the site's files and database. It answers an `importCode` and `pluginDownload`.
+2. Tell the site owner: install the AnyPress Export plugin from `pluginDownload` on the old site, open Tools → Move to AnyPress and paste the code (or run `wp anypress-export send <code>`). Their old site is not changed. The code works for 7 days; `new_import_code` gives a fresh one.
+3. `wait_for_store` until it is Done (the store stays Pending until the upload arrives and the move finishes, so call it again when it returns `done: false`). The site keeps its own plugins and themes. Then put it on the customer's domain as below.
+
 ## Put a store on the customer's own domain
 
 1. `check_domain_availability` for the domain.

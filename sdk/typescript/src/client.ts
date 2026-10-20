@@ -119,6 +119,11 @@ export class WaasClient {
     resume: (ref: TenantRef) => this.#call('resumeTenant', 'POST', '/v1/tenants/resume', ref),
     /** Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when backupId is omitted). */
     restore: (ref: TenantRef, params: BodyOf<'restoreTenant'> = {}) => this.#call('restoreTenant', 'POST', '/v1/tenants/restore', ref, params),
+    /**
+     * A new import code for a store created with uploadCustomSnapshot that is still waiting for its site
+     * (the code given before stops working). The owner pastes it into the AnyPress Export plugin on the old site.
+     */
+    newImportCode: (ref: TenantRef) => this.#call('newImportCode', 'POST', '/v1/tenants/import-code', ref),
     listBackups: (ref: TenantRef) => this.#call('listTenantBackups', 'GET', '/v1/tenants/backups', ref),
     createBackup: (ref: TenantRef) => this.#call('createTenantBackup', 'POST', '/v1/tenants/backups', ref),
     /**

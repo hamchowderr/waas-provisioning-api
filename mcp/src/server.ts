@@ -45,6 +45,17 @@ function toRef(args: { externalId?: string | undefined; tenantId?: string | unde
 
 class UsageError extends Error {}
 
+/** Where to download the AnyPress Export plugin: the API the import code points at. */
+function pluginDownload(importCode: string | undefined): string | undefined {
+  if (!importCode?.startsWith('AP1.')) return undefined;
+  try {
+    const { u } = JSON.parse(Buffer.from(importCode.slice(4), 'base64url').toString('utf8')) as { u?: unknown };
+    return typeof u === 'string' ? `${u}/imports/plugin.zip` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function json(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: value === undefined ? 'Done.' : JSON.stringify(value, null, 2) }] };
 }
@@ -199,6 +210,45 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       annotations: WRITE,
     },
     (args) => client.tenants.create(args),
+  );
+
+  tool(
+    'import_site',
+    {
+      title: 'Move a site in',
+      description:
+        'Moves an existing WordPress site from another host into a new store. Creates the store (it waits for the site) and returns an importCode ' +
+        'and the link to the AnyPress Export plugin. The site owner installs that plugin on the old site and pastes the code under Tools → Move to AnyPress ' +
+        '(or runs `wp anypress-export send <code>`); the plugin uploads the site and the store is built from it, keeping the site’s own plugins and themes. ' +
+        'The code works for 7 days. Watch progress with wait_for_store (the store stays Pending until the move is done). Multisite networks cannot be moved.',
+      input: {
+        name: z.string().describe('Display name, at most 30 characters, starting and ending with a letter or digit'),
+        externalId: z.string().optional().describe("Your own id (letters, digits and '-'). Generated when omitted."),
+        customDomainName: z.string().optional().describe('A custom domain for the store, e.g. shop.example.com'),
+        wordPressUserName: z.string().optional().describe('An administrator to add to the moved site, besides its own users'),
+        wordPressUserEmail: z.string().optional(),
+        size: size.optional().describe('small when omitted. The site’s files and database must fit in its storage.'),
+      },
+      annotations: WRITE,
+    },
+    async (args) => {
+      const created = await client.tenants.create({ ...args, uploadCustomSnapshot: true });
+      return { ...created, pluginDownload: pluginDownload(created.importCode), uploadUrl: undefined };
+    },
+  );
+
+  tool(
+    'new_import_code',
+    {
+      title: 'New import code',
+      description: 'A fresh import code for a store made with import_site that is still waiting for its site, when the old code expired or was lost. The old code stops working.',
+      input: ref,
+      annotations: WRITE,
+    },
+    async (args) => {
+      const result = await client.tenants.newImportCode(toRef(args));
+      return { ...result, pluginDownload: pluginDownload(result.importCode) };
+    },
   );
 
   tool(

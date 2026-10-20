@@ -1,6 +1,7 @@
 import type { Pool } from './db.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
+import { purgeExpiredImports } from './imports.ts';
 import { pruneRequestLog } from './requestlog.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
@@ -42,11 +43,13 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
-        case 'tenant.move':
-          await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId });
+        case 'tenant.move': {
+          const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [data.tenantId]);
+          await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
           await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
+        }
         case 'tenant.domains': {
           const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
           if (!rows[0]) return;
@@ -56,6 +59,8 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         }
         case 'tenant.delete': {
           await provisioner.deleteStore({ storeId: data.tenantId });
+          // A site that was being moved in leaves no upload behind.
+          await provisioner.deleteImport({ storeId: data.tenantId });
           // Keep what a restore needs on the backups, which outlive the tenant.
           const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
           const { rows: domains } = await pool.query(
@@ -69,6 +74,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
             snapshotName: rows[0].snapshot_name,
             snapshotGroupName: rows[0].snapshot_group_name,
             size: rows[0].size,
+            ownCode: rows[0].own_code,
             domains: domains.map((d) => ({ domainName: d.domain_name, isMain: d.is_main, isBase: d.is_base })),
           };
           await pool.query(
@@ -91,6 +97,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
             phpConstants: decodePhpConstants(secrets, tenant.php_constants),
             wpOptions: tenant.wp_options,
             size: tenant.size,
+            ownCode: tenant.own_code,
           });
           await setTenantStatus(tenant.id, Status.Done, Status.Pending);
           return;
@@ -99,7 +106,13 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           if (data.safetyBackupId) await backUp(pool, provisioner, data.tenantId, data.safetyBackupId);
           const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
           if (!rows[0]) return;
-          await provisioner.rollbackStore({ storeId: data.tenantId, backupId: data.backupId, wpOptions: rows[0].wp_options, mainDomain: rows[0].main_domain });
+          await provisioner.rollbackStore({
+            storeId: data.tenantId,
+            backupId: data.backupId,
+            wpOptions: rows[0].wp_options,
+            mainDomain: rows[0].main_domain,
+            ownCode: rows[0].own_code,
+          });
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
@@ -120,6 +133,7 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
 
     async maintenance() {
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
+      await purgeExpiredImports(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
     },
 
@@ -231,9 +245,12 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
     phpConstants: decodePhpConstants(secrets, tenant.php_constants),
     wpOptions: tenant.wp_options,
     size: tenant.size,
+    ownCode: tenant.own_code,
     user,
   });
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
+  // A site moved in is built: its upload is no longer needed.
+  if (tenant.snapshot_id === null) await provisioner.deleteImport({ storeId: tenant.id });
 }
 
 async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, backupId: string) {

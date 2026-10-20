@@ -14,6 +14,7 @@ import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
+import { importRoutes } from './imports.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { ReleaseStore } from './releases.ts';
@@ -93,6 +94,9 @@ export function createApp(deps: Deps) {
   );
   // Applications to sell on the platform, from the marketing site's form (src/applications.ts). No sign-in.
   app.route('/applications', publicApplicationRoutes(deps));
+  // Sites moved in from another host: the AnyPress Export plugin, holding an import code (src/imports.ts). No API key,
+  // and not in the request log, which would keep the code.
+  app.route('/imports', importRoutes(deps));
 
   app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
   app.route('/account', accountRoutes(deps));

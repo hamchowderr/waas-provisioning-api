@@ -103,6 +103,25 @@ describe('MCP server', () => {
     expect((await call(mcp, 'resume_store', { externalId: 'mcp-1' })).data).toMatchObject({ externalId: 'mcp-1' });
   });
 
+  it('moves a site in: a store waiting for its site, an import code and the plugin link', async () => {
+    const created = await call(mcp, 'import_site', { name: 'Moved site', externalId: 'mcp-import' });
+    expect(created.data).toMatchObject({ externalId: 'mcp-import' });
+    expect(created.data.importCode).toMatch(/^AP1\./);
+    expect(created.data.pluginDownload).toMatch(/^https?:\/\/.+\/imports\/plugin\.zip$/);
+    expect(created.data).not.toHaveProperty('uploadUrl');
+    expect((await call(mcp, 'get_store', { externalId: 'mcp-import' })).data).toMatchObject({ waitingForSite: true, keepsOwnCode: true });
+
+    const renewed = await call(mcp, 'new_import_code', { externalId: 'mcp-import' });
+    expect(renewed.data.importCode).toMatch(/^AP1\./);
+    expect(renewed.data.importCode).not.toBe(created.data.importCode);
+
+    expect((await call(mcp, 'delete_store', { externalId: 'mcp-import' })).isError).toBe(false);
+    for (let i = 0; (await call(mcp, 'get_store', { externalId: 'mcp-import' })).data; i++) {
+      if (i > 150) throw new Error('the waiting store was never removed');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
+
   it('turns API errors and bad refs into tool errors', async () => {
     const bad = await call(mcp, 'create_store', { name: 'dupe', externalId: 'has space' });
     expect(bad.isError).toBe(true);

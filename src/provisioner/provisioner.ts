@@ -68,14 +68,17 @@ export interface Provisioner {
    */
   updateStore(input: { storeId: string; wpOptions?: Record<string, string>; phpConstants?: Record<string, PhpConstant>; size?: Size }): Promise<void>;
 
-  /** Moves a store to another version's code. */
-  moveStore(input: { storeId: string; targetVersionId: string }): Promise<void>;
+  /**
+   * Moves a store to another version: its WordPress and PHP, and its code unless the store keeps its
+   * own (`ownCode`, a site moved in from another host).
+   */
+  moveStore(input: { storeId: string; targetVersionId: string; ownCode?: boolean }): Promise<void>;
 
   /** Takes a snapshot of a store. */
   snapshotStore(input: { storeId: string; snapshotId: string }): Promise<void>;
 
   /** Replaces a store's files and database with a snapshot. */
-  restoreStore(input: { storeId: string; snapshotId: string }): Promise<void>;
+  restoreStore(input: { storeId: string; snapshotId: string; ownCode?: boolean }): Promise<void>;
 
   /** Takes a full backup (files and database) of a store. Returns its size. */
   backupStore(input: { storeId: string; backupId: string }): Promise<{ sizeBytes: number }>;
@@ -91,7 +94,18 @@ export interface Provisioner {
    * its current domains, version code, constants and suspension; `wpOptions` (the tenant's current
    * options) are written again afterwards, so the options the API set stay as the API records them.
    */
-  rollbackStore(input: { storeId: string; backupId: string; wpOptions: Record<string, string>; mainDomain?: string }): Promise<void>;
+  rollbackStore(input: { storeId: string; backupId: string; wpOptions: Record<string, string>; mainDomain?: string; ownCode?: boolean }): Promise<void>;
+
+  // Sites moved in from another host (src/imports.ts).
+
+  /** Where the site's archive (database.sql and wp-content, zip or gzipped tar) is PUT, valid for `expiresInSeconds`. */
+  createImportUpload(input: { storeId: string; expiresInSeconds: number }): Promise<string>;
+
+  /** The size of the uploaded archive in bytes, or null when nothing was uploaded yet. */
+  importSize(input: { storeId: string }): Promise<number | null>;
+
+  /** Deletes the uploaded archive, once the store is built from it or the import is given up. */
+  deleteImport(input: { storeId: string }): Promise<void>;
 
   /** Deletes a backup. Called once a deleted tenant's backups pass their retention. */
   deleteBackup(input: { backupId: string }): Promise<void>;
@@ -146,10 +160,16 @@ export interface PhpConstant {
 export interface CreateStoreInput {
   storeId: string;
   versionId: string;
-  snapshotId: string;
+  /** Null for a site moved in from another host: the store is built from its uploaded archive. */
+  snapshotId: string | null;
+  /**
+   * The store keeps its own plugins and themes (a site moved in from another host): they are never
+   * replaced with the version's code.
+   */
+  ownCode?: boolean;
   mainDomain: string;
   redirectDomains: string[];
-  /** Written as define() in wp-config, next to WPCS_IS_TENANT=true in the environment. */
+  /** Written as define() in wp-config. */
   phpConstants: Record<string, PhpConstant>;
   wpOptions: Record<string, string>;
   /** Its resources and quotas (src/plans.ts). */

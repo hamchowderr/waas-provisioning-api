@@ -163,6 +163,8 @@ const keys = {
   code: (versionId: string) => `versions/${versionId}/code.zip`,
   snapshot: (id: string) => `snapshots/${id}.zip`,
   backup: (id: string) => `backups/${id}.zip`,
+  /** A site being moved in: a zip or a gzipped tar, so no extension. */
+  import: (storeId: string) => `imports/${storeId}`,
 };
 
 /**
@@ -438,7 +440,7 @@ export class CoolifyProvisioner implements Provisioner {
   // Stores
 
   async createStore(input: CreateStoreInput) {
-    await this.buildStore(input, keys.snapshot(input.snapshotId));
+    await this.buildStore(input, input.snapshotId === null ? keys.import(input.storeId) : keys.snapshot(input.snapshotId), input.snapshotId === null);
   }
 
   async restoreDeletedStore(input: Parameters<Provisioner['restoreDeletedStore']>[0]) {
@@ -446,7 +448,8 @@ export class CoolifyProvisioner implements Provisioner {
     await this.buildStore(store, keys.backup(backupId));
   }
 
-  private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string) {
+  /** `imported`: the source is a site moved in from another host, which the agent cleans up on the way in. */
+  private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string, imported = false) {
     const version = await this.versionMeta(input.versionId);
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
@@ -467,8 +470,10 @@ export class CoolifyProvisioner implements Provisioner {
     });
     const home = https(input.mainDomain);
     try {
-      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home });
-      await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)) });
+      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }) });
+      if (!input.ownCode) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)) });
+      // A site from elsewhere may come from an older WordPress than the version runs.
+      if (imported) await this.exec(uuid, 'update-db', {});
       await this.exec(uuid, 'configure', {
         home,
         options: input.wpOptions,
@@ -628,7 +633,7 @@ export class CoolifyProvisioner implements Provisioner {
     if (resized) await this.coolify.updateService(store.uuid, { description: formatMeta(resized) });
   }
 
-  async moveStore({ storeId, targetVersionId }: { storeId: string; targetVersionId: string }) {
+  async moveStore({ storeId, targetVersionId, ownCode }: Parameters<Provisioner['moveStore']>[0]) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const version = await this.versionMeta(targetVersionId);
     // The agent's files are not reinstalled here, so the store keeps its setup for ensureStoreSetup to finish.
@@ -640,7 +645,7 @@ export class CoolifyProvisioner implements Provisioner {
       docker_compose_raw: b64(renderCompose({ ...version, size })),
     });
     await this.restart(store.uuid);
-    await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(targetVersionId)) });
+    if (!ownCode) await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(targetVersionId)) });
     await this.exec(store.uuid, 'update-db', {});
   }
 
@@ -649,16 +654,16 @@ export class CoolifyProvisioner implements Provisioner {
     await this.exec(store.uuid, 'snapshot', { url: this.s3.presign('PUT', keys.snapshot(snapshotId)) });
   }
 
-  async restoreStore({ storeId, snapshotId }: { storeId: string; snapshotId: string }) {
+  async restoreStore({ storeId, snapshotId, ownCode }: Parameters<Provisioner['restoreStore']>[0]) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const meta = parseMeta(store.description);
     // Keep the store's current main domain: read it from WordPress before replacing the database.
     const home = await this.currentHome(store.uuid);
     await this.exec(store.uuid, 'restore', { url: this.s3.presign('GET', keys.snapshot(snapshotId)), home });
-    if (meta?.kind === 'store') await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)) });
+    if (meta?.kind === 'store' && !ownCode) await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)) });
   }
 
-  async rollbackStore({ storeId, backupId, wpOptions, mainDomain }: Parameters<Provisioner['rollbackStore']>[0]) {
+  async rollbackStore({ storeId, backupId, wpOptions, mainDomain, ownCode }: Parameters<Provisioner['rollbackStore']>[0]) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const meta = parseMeta(store.description);
     if (meta?.kind !== 'store') throw new Error(`Coolify: ${store.name} has no store metadata`);
@@ -668,8 +673,8 @@ export class CoolifyProvisioner implements Provisioner {
     // The agent keeps the suspension flag and page across the restore.
     const home = await this.currentHome(store.uuid, mainDomain);
     await this.exec(store.uuid, 'restore', { url: this.s3.presign('GET', keys.backup(backupId)), home });
-    // The code of the version the store runs now, and its database brought up to that WordPress.
-    await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)) });
+    // The code of the version the store runs now (unless it keeps its own), and its database brought up to that WordPress.
+    if (!ownCode) await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)) });
     await this.exec(store.uuid, 'update-db', {});
     await this.exec(store.uuid, 'configure', { options: wpOptions });
   }
@@ -690,6 +695,20 @@ export class CoolifyProvisioner implements Provisioner {
 
   async deleteBackup({ backupId }: { backupId: string }) {
     await this.s3.delete(keys.backup(backupId));
+  }
+
+  // Sites moved in
+
+  async createImportUpload({ storeId, expiresInSeconds }: { storeId: string; expiresInSeconds: number }) {
+    return this.s3.presign('PUT', keys.import(storeId), expiresInSeconds);
+  }
+
+  async importSize({ storeId }: { storeId: string }) {
+    return this.s3.head(keys.import(storeId));
+  }
+
+  async deleteImport({ storeId }: { storeId: string }) {
+    await this.s3.delete(keys.import(storeId));
   }
 
   async suspendStore({ storeId, brand }: { storeId: string; brand?: Brand }) {
