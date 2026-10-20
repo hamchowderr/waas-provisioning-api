@@ -159,7 +159,7 @@ describe('MCP site tools', () => {
   it('adds a section through the store', async () => {
     seen = [];
     storeAnswer = { status: 200, body: { id: 12, outline: [{ section: 0, block: 'core/cover' }] } };
-    const result = await mcp.callTool({ name: 'add_section', arguments: { externalId: 'site-1', pageId: 12, pattern: 'ollie/hero-light', position: 0 } });
+    const result = await mcp.callTool({ name: 'page_section', arguments: { action: 'add', externalId: 'site-1', pageId: 12, pattern: 'ollie/hero-light', section: 0 } });
     expect(result.isError).toBeFalsy();
     expect(JSON.parse(text(result))).toMatchObject({ id: 12 });
     expect(seen[0]).toMatchObject({ method: 'POST', signatureOk: true });
@@ -168,17 +168,26 @@ describe('MCP site tools', () => {
 
   it('reports the store’s refusal as a tool error', async () => {
     storeAnswer = { status: 404, body: { message: 'That page has no such section. Read the page for its outline.' } };
-    const result = await mcp.callTool({ name: 'remove_section', arguments: { externalId: 'site-1', pageId: 12, section: 7 } });
+    const result = await mcp.callTool({ name: 'page_section', arguments: { action: 'remove', externalId: 'site-1', pageId: 12, section: 7 } });
     expect(result.isError).toBe(true);
     expect(text(result)).toBe('The store answered 404: That page has no such section. Read the page for its outline.');
     storeAnswer = { status: 200, body: {} };
   });
 
-  it('marks reads read-only and removing a section destructive', async () => {
+  it('marks read-only tools read-only and page_section destructive', async () => {
     const { tools } = await mcp.listTools();
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect(byName.get('read_page')?.annotations?.readOnlyHint).toBe(true);
-    expect(byName.get('update_site_styles')?.annotations?.readOnlyHint).toBe(false);
-    expect(byName.get('remove_section')?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get('site_patterns')?.annotations?.readOnlyHint).toBe(true);
+    expect(byName.get('site_styles')?.annotations?.readOnlyHint).toBe(false);
+    expect(byName.get('page_section')?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get('site_styles')?.annotations?.destructiveHint).toBe(false);
+  });
+
+  it('sends a page_section add with its position, and asks for what an action needs', async () => {
+    seen = [];
+    await mcp.callTool({ name: 'page_section', arguments: { action: 'add', externalId: 'site-1', pageId: 12, pattern: 'ollie/hero-light', section: 2 } });
+    expect(JSON.parse(seen[0]!.body)).toMatchObject({ pattern: 'ollie/hero-light', position: 2 });
+    const missing = await mcp.callTool({ name: 'page_section', arguments: { action: 'replace', externalId: 'site-1', pageId: 12, content: '<p>x</p>' } });
+    expect(missing).toMatchObject({ isError: true, content: [{ text: 'Action replace needs section.' }] });
   });
 });

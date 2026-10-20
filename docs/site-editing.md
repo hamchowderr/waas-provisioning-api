@@ -4,7 +4,7 @@ An AI agent connected to the API's MCP server (`/mcp`) can change a store's page
 
 ## How a request reaches the store
 
-1. The agent calls an MCP tool, e.g. `add_section` for the store `store-1042`.
+1. The agent calls an MCP tool, e.g. `page_section` with action `add` for the store `store-1042`.
 2. The tool calls `POST /v1/tenants/site?externalId=store-1042` with `{ "method": "POST", "path": "/pages/12/sections", "body": { "pattern": "ollie/hero-light" } }`.
 3. The API checks the caller owns the store and that it is Done and not suspended, signs the request with the store's **site key** and sends it to `https://<main domain>/wp-json/waas-client/v1/site/pages/12/sections`.
 4. WaaS Client checks the signature and makes the change as the store's first administrator. Its answer comes back as `{ status, body }`.
@@ -21,21 +21,21 @@ Changing `SECRETS_KEY` changes every store's site key; stores then refuse site r
 
 A store owner who isn't on a product's team can still connect an AI app to their own site. On the connector's approve page (`/oauth/authorize`) they type the website's address. The API finds the store by any of its domains and sends them to `https://<main domain>/wp-admin/admin.php?page=waas-connect` with a link signed with the store's site key, naming the app, where it returns to and the API's answer URL.
 
-WaaS Client's page (2.3.0) shows that to the website's administrators, and Allow or Cancel goes back to `/oauth/site/answer` signed with the same key. The API checks the signature, uses the request once, and gives the app a code for that store only (`oauth_tokens.tenant_id`). That connection gets only the site tools, and every call goes to its own store whatever store the agent names. The token stops working when the store is deleted.
+WaaS Client's page (2.3.0) shows that to the website's administrators, and Allow or Cancel goes back to `/oauth/site/answer` signed with the same key. The API checks the signature, uses the request once, and gives the app a code for that store only (`oauth_tokens.tenant_id`), with the scope `site:read`, plus `site:write` when the owner allowed changes. That connection gets only the site tools, and every call goes to its own store whatever store the agent names. The token stops working when the store is deleted.
 
 ## MCP tools
 
-| Tool | Does |
+Most site tools take an `action`; read actions need the `site:read` scope and write actions `site:write`.
+
+| Tool | Actions |
 |---|---|
 | `get_site` | Name, tagline, address, theme, home page |
-| `list_pages`, `read_page` | Pages; one page's numbered sections and block markup |
-| `create_page`, `update_page` | New page (a draft unless asked to publish); title, slug, status or whole content |
-| `add_section`, `replace_section`, `remove_section` | One section at a time, from a pattern or blocks |
-| `list_page_revisions`, `restore_page_revision` | Undo |
-| `find_patterns`, `get_pattern` | The theme's ready-made sections |
-| `get_site_styles`, `update_site_styles` | Colours, fonts, sizes; site-wide style changes |
-| `get_header_footer`, `update_header_footer` | The header and footer every page shows |
-| `list_menus`, `update_menu` | Navigation menus |
+| `site_pages` | `list`, `read` (one page's numbered sections and block markup), `revisions`, `create` (a draft unless asked to publish), `update` (title, slug, status or whole content), `restore_revision` (undo) |
+| `page_section` | `add`, `replace`, `remove`: one section at a time, from a pattern or blocks |
+| `site_patterns` | `find`, `get`: the theme's ready-made sections and starter pages |
+| `site_styles` | `get`, `update`: colours, fonts, sizes; site-wide style changes |
+| `header_footer` | `get`, `update`: the header and footer every page shows |
+| `site_menus` | `list`, `update`: navigation menus |
 | `add_image` | Copies an image from a link into the media library |
 
-The read-only server (`/mcp/read-only`) offers only the tools that read.
+The read-only server (`/mcp/read-only`) offers only the actions that read.

@@ -1,0 +1,41 @@
+  :root {
+    color-scheme: light dark;
+    --bg: var(--color-background-primary, Canvas);
+    --fg: var(--color-text-primary, CanvasText);
+    --muted: var(--color-text-secondary, color-mix(in srgb, CanvasText 60%, transparent));
+    --line: var(--color-border-primary, color-mix(in srgb, CanvasText 15%, transparent));
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --bad: #cf222e;
+    --radius: var(--border-radius-md, 8px);
+    font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: 14px;
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); }
+  main { padding: 12px 16px; }
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  h1 { font-size: 15px; margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  h2 { font-size: 13px; margin: 16px 0 4px; color: var(--muted); font-weight: 600; }
+  .count { color: var(--muted); font-weight: normal; }
+  input[type=search], input[type=text] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: inherit; min-width: 0; width: 180px; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { background: color-mix(in srgb, CanvasText 6%, transparent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.confirm { border-color: var(--bad); color: var(--bad); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .meta a { color: inherit; }
+  .actions { display: flex; gap: 6px; align-items: start; flex-wrap: wrap; justify-content: end; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; }
+  .done { color: var(--ok); } .pending { color: var(--warn); } .failed { color: var(--bad); } .suspended { color: var(--muted); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; padding: 10px 0; border-top: 1px solid var(--line); }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  dd a { color: inherit; }
+  form { display: flex; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .msg { color: var(--muted); padding: 12px 0; }
+  .msg:empty { display: none; }
+  .error { color: var(--bad); }
+  @media (max-width: 480px) { li { grid-template-columns: 1fr; } .actions { justify-content: start; } input[type=search], input[type=text] { width: 120px; } }

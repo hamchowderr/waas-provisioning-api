@@ -23,6 +23,8 @@ const DESCRIPTION = `Create and manage WordPress stores: tenants, their domains 
 
 **Partner keys.** A partner (reseller) key works across products: add \`productId\` to the query string of tenant, version and snapshot calls to say which product you mean.
 
+**Versioning.** The version is in the path: every call is under \`/v1\`. Within v1, changes only add things (new calls, new optional fields, new response fields, new webhook events), so code written against v1 keeps working: ignore response fields you don't know. Nothing in v1 is removed or renamed, and its meaning doesn't change. A call or field that is replaced is marked deprecated here and keeps working. A change that can't be made this way would come as \`/v2\`, with \`/v1\` kept running alongside it.
+
 **Domains** are bare hostnames (\`shop.example.com\`, no \`https://\`). A tenant's \`domainName\` is its custom domain when it was created with one, otherwise its base domain.`;
 
 // Tag names stay as in the contract (operations refer to them); x-displayName is what the page shows.

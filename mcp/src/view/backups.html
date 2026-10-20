@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backups</title>
+<style>
+/*VIEW_STYLE*/
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Backups <span class="count" id="count"></span></h1>
+    <span id="actions" class="actions"></span>
+    <button id="refresh">Refresh</button>
+  </header>
+  <div id="status" class="msg">Loading…</div>
+  <ul id="list"></ul>
+</main>
+<script type="module">/*MCP_APPS_BUNDLE*/</script>
+<script type="module">/*VIEW_COMMON*/</script>
+<script type="module">
+  const { $, el, pill, message, errorText, start } = globalThis.WaasView;
+  let data;
+  let view;
+
+  function show(result) {
+    if (result?.isError || !result?.structuredContent) return message(errorText(result, 'Could not load backups.'), true);
+    data = result.structuredContent;
+    render();
+  }
+
+  view = await start({ name: 'WaaS backups', show, refresh: (app) => app.callServerTool({ name: 'show_store_backups', arguments: data?.ref ?? {} }) });
+
+  const REASONS = { manual: 'Taken by hand', suspend: 'Before suspending', scheduled: 'Nightly', 'before-restore': 'Before a restore' };
+  const bytes = (n) => (n == null ? '' : n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
+
+  function render() {
+    if (!view || !data) return;
+    const { ref, store, backups = [], canBackup } = data;
+    const label = store?.name ?? store?.externalId ?? ref.externalId ?? backups[0]?.externalId ?? 'the store';
+    const what = `store ${store?.externalId ?? ref.externalId ?? ref.tenantId}`;
+    $('count').textContent = `of ${label} (${backups.length})`;
+    $('actions').replaceChildren(...(canBackup ? [view.button({ key: 'create', tool: 'manage_backups', label: 'Back up now', what, args: { action: 'create', ...ref } })] : []));
+    message(backups.length ? '' : 'No backups yet.');
+    const newest = [...backups].sort((a, b) => String(b.dateCreated).localeCompare(String(a.dateCreated)));
+    $('list').replaceChildren(...newest.map((backup) => {
+      const info = el('div', {},
+        el('div', {}, el('span', { className: 'name', textContent: backup.dateCreated ? new Date(backup.dateCreated).toLocaleString() : backup.id }), ' ', pill(backup)),
+        el('div', { className: 'meta' }, el('span', { textContent: REASONS[backup.reason] ?? backup.reason ?? '' }), el('span', { textContent: bytes(backup.sizeBytes) }), el('span', { textContent: `id ${backup.id}` })),
+      );
+      const actions = el('div', { className: 'actions' });
+      if (canBackup && backup.statusCode === 1) {
+        actions.append(view.button({ key: `restore:${backup.id}`, tool: 'manage_backups', label: 'Restore', what: `${what} (backup ${backup.id})`, args: { action: 'restore', backupId: backup.id, ...ref }, destructive: true }));
+      }
+      return el('li', {}, info, actions);
+    }));
+  }
+  view.setRender(render);
+</script>
+</body>
+</html>

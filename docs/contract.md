@@ -4,7 +4,7 @@ For contributors: how the API's OpenAPI files are organised, and what the WordPr
 
 | File | What it describes |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | Stores, domains, versions, snapshots and templates. Version 1.0.0-draft.6. The main file: edit this one for those calls |
+| `openapi/waas-provisioning-api.yaml` | Stores, domains, versions, snapshots and templates. Version 1.0.0. The main file: edit this one for those calls |
 | `openapi/store-mail.yaml` | A store's sending domain and Domain Connect links |
 | `openapi/api-keys.yaml` | `/v1/keys` |
 | `openapi/webhooks.yaml` | `/v1/webhooks` and the webhook events |
@@ -12,6 +12,17 @@ For contributors: how the API's OpenAPI files are organised, and what the WordPr
 | `openapi/admin/admin-api.yaml` | `/admin/*`, for the dashboard. Not published at `/docs` |
 
 `src/publicspec.ts` joins the first five into the reference served at `/docs` and `/openapi.json`, and strips notes meant for contributors. `npm run sdk:generate` builds the TypeScript SDK's types from them.
+
+## Versioning
+
+Every public call is under `/v1`, and v1 stays backwards compatible: storefront plugins already installed on live sites call it and can't be changed from here. Within v1:
+
+- **Allowed:** new calls, new optional request fields and query parameters, new response fields, new webhook events, new values where the docs say the list can grow.
+- **Not allowed:** removing or renaming a call, field or parameter; making an optional field required; changing a field's type or meaning; changing a status code a caller relies on.
+- **Replacing something:** add the new call or field, mark the old one `deprecated: true` in the OpenAPI file, and keep it working. It is only removed in a new major version.
+- **A change that can't be made this way** goes in `/v2`, served next to `/v1`.
+
+`test/contract.test.ts` checks every response against these files, so a change that breaks existing callers fails CI. `info.version` in the main file follows semver: bump the minor for an addition, the patch for a docs fix.
 
 ## Phases
 

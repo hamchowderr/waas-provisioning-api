@@ -39,6 +39,12 @@ own section layouts with the store's name and plain placeholder text, the Fluent
 list and, once the owner has made one, the FluentBooking calendar. Ollie's patterns that advertise the theme itself
 (Download page, Theme Details) are hidden.
 
+A new store also gets real pages made from them, once, on its first web request after the platform has set the owner's
+email and the site type has switched its plugins: published, in the main menu, with Ollie's no-title page template.
+Website: Home, Services, About and Contact, with Home as the home page. Bookings: the same with the bookings home page.
+Community and courses: Home, About and Contact. A store with FluentCart (online store, everything) keeps the shop as its
+home page and gets About and Contact after Shop in the menu. A store that already has pages of its own gets none.
+
 Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
 pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
 a random password nobody keeps.
