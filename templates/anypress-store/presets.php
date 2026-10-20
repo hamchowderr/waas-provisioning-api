@@ -198,9 +198,10 @@ $referral = \FluentAffiliate\App\Helper\Utility::getReferralSettings(false);
 $merge('automatorwp_settings', ['auto_logs_cleanup_days' => '30', 'disable_pro_recommendations' => 'on']);
 update_option('automatorwp_hide_review_notice', 'yes');
 // Its tables are only created when wp-admin first loads (admin_init), and a store's cron runs before anyone signs
-// in, so its log clean-up failed on a missing table. Create them now.
+// in, so its log clean-up failed on a missing table. Create them now, with each table's meta table.
 foreach ($GLOBALS['ct_registered_tables'] ?? [] as $table) {
     $table->db->maybe_upgrade();
+    $table->meta?->db->maybe_upgrade();
 }
 
 // FluentAuth. Saving its settings once is what its first-run wizard does. Its defaults stay (5 failed logins locks
