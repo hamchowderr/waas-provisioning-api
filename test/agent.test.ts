@@ -149,6 +149,62 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
   it('changes nothing without relay settings (version sites)', () => {
     expect(send({ WAAS_MAIL_B64: '' }, { from: 'a@b.example', fromName: 'x' })).toMatchObject({ mailer: 'mail', From: 'a@b.example', Host: null });
   });
+
+  /**
+   * Loads the mu-plugin with a stand-in WordPress holding `options` and FluentCart's email settings, runs one page
+   * load, and prints both afterwards.
+   */
+  const pageLoad = (from: string, options: Record<string, unknown>, cart: Record<string, string>) =>
+    JSON.parse(
+      execFileSync(
+        'php',
+        [
+          '-r',
+          `
+          namespace FluentCart\\App\\Services\\Email { class EmailNotifications {
+            static $s = [];
+            static function getSettings() { return self::$s; }
+            static function updateSettings($d) { self::$s = array_merge(self::$s, $d); }
+          } }
+          namespace {
+          $hooks = [];
+          $options = json_decode(${JSON.stringify(JSON.stringify(options))}, true);
+          function add_action($hook, $fn) { global $hooks; $hooks[$hook] = $fn; }
+          function get_option($name, $default = false) { global $options; return $options[$name] ?? $default; }
+          function update_option($name, $value) { global $options; $options[$name] = $value; }
+          function is_email($e) { return filter_var($e, FILTER_VALIDATE_EMAIL) !== false; }
+          function wp_specialchars_decode($s) { return html_entity_decode($s); }
+          \\FluentCart\\App\\Services\\Email\\EmailNotifications::$s = json_decode(${JSON.stringify(JSON.stringify(cart))}, true);
+          include ${JSON.stringify(join(root, 'wp-content/mu-plugins/waas-mail.php'))};
+          $hooks['plugins_loaded']();
+          $hooks['init']();
+          echo json_encode(['options' => $options, 'cart' => \\FluentCart\\App\\Services\\Email\\EmailNotifications::getSettings()]);
+          }
+          `,
+        ],
+        { env: { ...process.env, WAAS_MAIL_B64: Buffer.from(JSON.stringify({ ...relay, from })).toString('base64') }, encoding: 'utf8' },
+      ),
+    );
+
+  it("fills in a plugin's sender with the store's name, sending address and administrator, and keeps what the owner typed", () => {
+    const store = { blogname: 'Ann &amp; Co', admin_email: 'owner@shop.example', active_plugins: ['fluent-cart/fluent-cart.php'] };
+    // What older stores got from the store template: the owner's email as the From.
+    const first = pageLoad('ann@anypress.example', store, { from_name: 'Ann & Co', from_email: 'owner@shop.example', reply_to_name: '', reply_to_email: '' });
+    expect(first.cart).toEqual({ from_name: 'Ann & Co', from_email: 'ann@anypress.example', reply_to_name: 'Ann & Co', reply_to_email: 'owner@shop.example' });
+
+    // The owner changes the From name; then their own domain is verified and the store is renamed.
+    const later = pageLoad('no-reply@ann.example', { ...first.options, blogname: 'Ann and Co' }, { ...first.cart, from_name: 'Ann Orders' });
+    expect(later.cart).toEqual({ from_name: 'Ann Orders', from_email: 'no-reply@ann.example', reply_to_name: 'Ann and Co', reply_to_email: 'owner@shop.example' });
+
+    // Nothing changed since: a value set by hand in the meantime stays, even one the mu-plugin would otherwise set.
+    const again = pageLoad('no-reply@ann.example', later.options, { ...later.cart, reply_to_email: '' });
+    expect(again.cart.reply_to_email).toBe('');
+  });
+
+  it('leaves the Reply-To empty while the store has no administration email', () => {
+    const { cart } = pageLoad('ann@anypress.example', { blogname: 'Ann', admin_email: 'admin@example.invalid', active_plugins: [] }, {});
+    expect(cart).toEqual({ from_name: 'Ann', from_email: 'ann@anypress.example' });
+  });
 });
 
 describe.skipIf(!hasPhp)('store agent: page cache', () => {

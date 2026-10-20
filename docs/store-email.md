@@ -7,6 +7,7 @@ For whoever runs the API. Stores send their email (password resets, FluentCart o
 - The API holds the relay settings (below). When `STORE_SMTP_PASSWORD` is set, every store gets them as the Coolify variable `WAAS_MAIL_B64` (base64 JSON), which the compose file passes to the `wordpress` and `agent` containers. They are never in an agent command or in the store's files, so snapshots and backups carry no credentials.
 - The store agent writes the mu-plugin `wp-content/mu-plugins/waas-mail.php` with the guard (on restore, configure, suspend and resume). It reads `WAAS_MAIL_B64` and sets PHPMailer to SMTP. Without the variable (version sites, or the relay unset) it does nothing.
 - The relay only sends from its verified domain, so every message goes out **from the store's own address on `STORE_MAIL_FROM`'s domain under the store's name** (the sender name a plugin set, else the site title); see [Each store's own address](#each-stores-own-address). The address the store meant to send from becomes the Reply-To, unless the message already has one or it is WordPress's placeholder `wordpress@<site>`. When none of that gives a Reply-To, it is the site's administration email, since nobody reads the store's address on the relay's domain.
+- Each plugin's own sender settings are filled in to match; see [The plugins' own senders](#the-plugins-own-senders).
 - Failures are written to the PHP error log (`WaaS store mail: …`), visible in the store's container logs.
 - Existing stores: on startup the API gives every live store the current settings (`ensureStoreMail`, next to the cron check in `src/maintenance.ts`). A store whose variable already matches is left alone. One that needs it gets the variable, a re-rendered compose if it never had one, **one restart**, and the mu-plugin. Changing any setting (a new key) does the same for every store on the next deploy.
 
@@ -44,6 +45,24 @@ toSend's messages carry no key or account, only the From address, so each store 
 The address follows the store's main domain: a change of address (`addTenantDomain` with `setAsMainDomain`, or the dashboard's Change address) moves its sender in the same job, with the restart the domain change already has. Moving to a new name on the same domain keeps the store's toSend key (keys are restricted to a domain, not an address). Every address a store sent from is kept in `tenant_mail_senders`, with when it stopped being used.
 
 Existing stores move to their own address on the deploy that brings this (`ensureStoreMail` on startup), with one restart each; see [coolify.md](coolify.md#store-setup).
+
+## The plugins' own senders
+
+The Fluent plugins each keep a sender of their own (From name and address, Reply-To), show it in their settings and put it on their emails. The mail mu-plugin fills them in on a store's first page load, and again whenever what they hold changes: the store's name, its sending address (`WAAS_MAIL_B64`'s `from`, which moves to the owner's domain once that is verified), or its administration email, or when a plan switches a plugin on.
+
+| Plugin | Where it keeps them |
+|---|---|
+| FluentCart | its email settings (`EmailNotifications`): `from_name`, `from_email`, `reply_to_name`, `reply_to_email` |
+| FluentCRM | option `fluentcrm-global-settings`, `email_settings` (FluentBooking falls back to these only while its own are empty) |
+| FluentBooking | option `_fluent_booking_settings`, `emailing` |
+| Fluent Support | each web mailbox's `name` and `email` (its notices go to the mailbox's `admin_email_address`, the owner's email) |
+| FluentAffiliate | its `global_email_settings`: `send_from_name`, `send_from_email`, `reply_to_name`, `reply_to_email` |
+| FluentCommunity | its `global_email_settings`, the same four |
+| FluentAuth | option `fa_system_email_settings`, `template_settings` |
+
+The From is the site title and the sending address; the Reply-To is the site title and the administration email (left empty while the store has none).
+
+A value the owner typed is kept: only empty values, the ones the mu-plugin set last time, and a From holding the administration email (what older stores got from the store template) are changed. What was set last is in the option `waas_mail_senders`. The recipients of the plugins' own notices (orders, forms, bookings, logins, support, affiliates) already follow the administration email through each plugin's `{wp.admin_email}` placeholder or the store template, and Fluent Forms' per-form senders are left empty, which sends under the site title from the sending address.
 
 ## The platform's count
 

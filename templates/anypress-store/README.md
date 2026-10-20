@@ -78,12 +78,12 @@ request (and after an address change) fresh install dates, a rewrite-rule flush 
 
 Per-store values come from the purchase: WaaS Host sends the site title (`blogname`), the buyer's email
 (`admin_email`) and `waas_store_owner` (`{"country":"US"}`) as `wpOptions`. On the store's first web request the
-mu-plugin copies them into the plugins once: FluentCart store name, country and email sender; FluentCRM business
-name and sender (FluentBooking uses it too); FluentAffiliate sender and admin email; FluentBooking default country;
-Fluent Support's first mailbox; Rank Math's organisation and website name. The template also has a Support Portal
+mu-plugin copies them into the plugins once: FluentCart store name and country; FluentCRM business name and
+email; FluentAffiliate admin email; FluentBooking default country; Fluent Support's first mailbox; Rank Math's organisation and website name. The template also has a Support Portal
 page. Stores created without these options keep `admin@example.invalid` until the owner changes it.
 
-Store email is not a plugin: the provisioner's `waas-mail` mu-plugin sends it. Don't add an SMTP plugin.
+Store email is not a plugin: the provisioner's `waas-mail` mu-plugin sends it, and fills in each plugin's own sender
+to match ([store email](../../docs/store-email.md#the-plugins-own-senders)). Don't add an SMTP plugin.
 
 Pro versions aren't included. They are licensed per site, so a store owner adds their own licence.
 

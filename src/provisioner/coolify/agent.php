@@ -332,6 +332,117 @@ add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
 add_action('wp_mail_failed', function ($error) {
     error_log('WaaS store mail: ' . $error->get_error_message());
 });
+
+/*
+ * The plugins' own email settings. Each Fluent plugin keeps a sender (From and Reply-To) of its own, shows it in its
+ * settings and puts it on its emails, so fill each one in with how the store really sends: its name, its address on
+ * the relay (the platform's, or the owner's sending domain once verified), and replies to its administrator. Their
+ * recipients (order, form, booking, login and support notices) already follow the administrator's address.
+ * Runs again whenever one of those changes or a plugin is switched on. A value the owner typed is kept: only empty
+ * ones, the ones last set here, and the administrator's address older stores were given as the From are changed.
+ */
+$GLOBALS['waas_mail_plugins'] = [];
+// The plugins loaded on this request, before a plan's site type switches any on or off on `init`.
+add_action('plugins_loaded', function () {
+    $GLOBALS['waas_mail_plugins'] = (array) get_option('active_plugins', []);
+});
+add_action('init', function () use ($waas_mail) {
+    if (defined('WP_CLI') && WP_CLI) return;
+    $admin = strtolower((string) get_option('admin_email'));
+    if (!is_email($admin) || substr($admin, -8) === '.invalid') $admin = '';
+    $name = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
+    $want = ['name' => $name, 'email' => strtolower($waas_mail['from']), 'reply_name' => $admin === '' ? '' : $name, 'reply' => $admin];
+    $plugins = $GLOBALS['waas_mail_plugins'];
+    sort($plugins);
+    $key = md5(json_encode([$want, $plugins]));
+    $last = get_option('waas_mail_senders');
+    $last = is_array($last) ? $last : [];
+    if (($last['key'] ?? '') === $key) return;
+    $was = (array) ($last['set'] ?? []);
+    /** The fields of $current (role => setting name) still to be filled in, with their new values. */
+    $changes = function (array $current, array $fields) use ($want, $was, $admin) {
+        $out = [];
+        foreach ($fields as $role => $field) {
+            $value = trim((string) ($current[$field] ?? ''));
+            $ours = $value === '' || strcasecmp($value, (string) ($was[$role] ?? '')) === 0
+                || ($role === 'email' && (strtolower($value) === $admin || substr(strtolower($value), -8) === '.invalid'));
+            if ($ours && $value !== $want[$role]) $out[$field] = $want[$role];
+        }
+        return $out;
+    };
+    $sender = ['name' => 'from_name', 'email' => 'from_email', 'reply_name' => 'reply_to_name', 'reply' => 'reply_to_email'];
+    $steps = [
+        'FluentCart' => function () use ($changes, $sender) {
+            if (!class_exists('\FluentCart\App\Services\Email\EmailNotifications')) return;
+            $set = $changes(\FluentCart\App\Services\Email\EmailNotifications::getSettings(), $sender);
+            if ($set) \FluentCart\App\Services\Email\EmailNotifications::updateSettings($set);
+        },
+        // FluentBooking falls back to FluentCRM's sender, but only while its own is empty; it gets its own.
+        'FluentCRM' => function () use ($changes, $sender) {
+            if (!defined('FLUENTCRM') || !class_exists('\FluentCrm\App\Services\Helper')) return;
+            $email = \FluentCrm\App\Services\Helper::getGlobalEmailSettings();
+            $set = $changes($email, $sender);
+            if (!$set) return;
+            $crm = get_option('fluentcrm-global-settings', []);
+            $crm = is_array($crm) ? $crm : [];
+            $crm['email_settings'] = array_merge($email, $set);
+            update_option('fluentcrm-global-settings', $crm);
+        },
+        'FluentBooking' => function () use ($changes, $sender) {
+            if (!class_exists('\FluentBooking\App\Services\Helper')) return;
+            $settings = get_option('_fluent_booking_settings', []);
+            $settings = is_array($settings) ? $settings : [];
+            $set = $changes((array) ($settings['emailing'] ?? []), $sender);
+            if (!$set) return;
+            $settings['emailing'] = array_merge((array) ($settings['emailing'] ?? []), $set);
+            update_option('_fluent_booking_settings', $settings, false);
+        },
+        // Support email goes out from the mailbox's own name and address.
+        'Fluent Support' => function () use ($changes) {
+            if (!class_exists('\FluentSupport\App\Models\MailBox')) return;
+            foreach (\FluentSupport\App\Models\MailBox::where('box_type', 'web')->get() as $box) {
+                $set = $changes(['name' => $box->name, 'email' => $box->email], ['name' => 'name', 'email' => 'email']);
+                if ($set) $box->fill($set)->save();
+            }
+        },
+        'FluentAffiliate' => function () use ($changes) {
+            $utility = '\FluentAffiliate\App\Helper\Utility';
+            if (!class_exists($utility)) return;
+            $settings = array_merge($utility::defaultEmailSettings(), (array) $utility::getOption('global_email_settings', []));
+            $set = $changes($settings, ['name' => 'send_from_name', 'email' => 'send_from_email', 'reply_name' => 'reply_to_name', 'reply' => 'reply_to_email']);
+            if ($set) $utility::updateOption('global_email_settings', array_merge($settings, $set));
+        },
+        'FluentCommunity' => function () use ($changes) {
+            $utility = '\FluentCommunity\App\Functions\Utility';
+            if (!class_exists($utility)) return;
+            $settings = $utility::getOption('global_email_settings', []);
+            if (!is_array($settings) || !$settings) {
+                $settings = $utility::getEmailNotificationSettings();
+                unset($settings['email_footer_rendered']);
+            }
+            $set = $changes($settings, ['name' => 'send_from_name', 'email' => 'send_from_email', 'reply_name' => 'reply_to_name', 'reply' => 'reply_to_email']);
+            if ($set) $utility::updateOption('global_email_settings', array_merge($settings, $set));
+        },
+        // FluentAuth's login, sign-up and password emails.
+        'FluentAuth' => function () use ($changes, $sender) {
+            if (!class_exists('\FluentAuth\App\Services\SystemEmailService')) return;
+            $settings = get_option('fa_system_email_settings', []);
+            $settings = is_array($settings) ? $settings : [];
+            $set = $changes((array) ($settings['template_settings'] ?? []), $sender);
+            if (!$set) return;
+            $settings['template_settings'] = array_merge((array) ($settings['template_settings'] ?? []), $set);
+            update_option('fa_system_email_settings', $settings, false);
+        },
+    ];
+    foreach ($steps as $plugin => $step) {
+        try {
+            $step();
+        } catch (\Throwable $e) {
+            error_log("WaaS store mail: $plugin sender: " . $e->getMessage());
+        }
+    }
+    update_option('waas_mail_senders', ['key' => $key, 'set' => $want], false);
+}, PHP_INT_MAX);
 PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
 <?php
