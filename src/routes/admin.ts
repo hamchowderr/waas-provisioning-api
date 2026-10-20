@@ -3,6 +3,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
 import { adminApplicationRoutes } from '../applications.ts';
 import type { AppEnv, Deps } from '../app.ts';
+import { adminClientRoutes } from '../clients.ts';
 import type { Config } from '../config.ts';
 import { withTransaction, type Client, type Pool } from '../db.ts';
 import { HttpError, badRequest } from '../errors.ts';
@@ -299,6 +300,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/applications/*', adminOnly);
   app.use('/resellers', adminOnly);
   app.use('/resellers/*', adminOnly);
+  app.use('/clients', adminOnly);
+  app.use('/clients/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
@@ -308,6 +311,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Reseller accounts: storefronts grouped under one partner, and their usage (src/resellers.ts).
   app.route('/resellers', adminResellerRoutes(deps));
+
+  // Clients set up in one step: their own storefront, site and invitation (src/clients.ts).
+  app.route('/clients', adminClientRoutes(deps));
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));

@@ -4,6 +4,7 @@ import { createAuth } from './auth.ts';
 import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { backupCipherKey, DbBackups, pgDump, startDbBackups } from './dbbackup.ts';
+import { withClientSites } from './clients.ts';
 import { createJobHandlers } from './jobs.ts';
 import { startMailCounts } from './mailcount.ts';
 import { startMailDomainChecks } from './maildomains.ts';
@@ -32,7 +33,11 @@ const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
 const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
-const handlers = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config), pool, boss, webhooks);
+// A client's site is made once their storefront's version has built (src/clients.ts).
+const handlers = withClientSites(
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config), pool, boss, webhooks),
+  { config, pool, boss, secrets, provisioner },
+);
 await startWorker(boss, handlers);
 await startWebhookWorker(boss, pool, secrets, webhooks);
 // Daily off-site backup of this database (docs/db-backups.md), when the S3_* settings are set.
