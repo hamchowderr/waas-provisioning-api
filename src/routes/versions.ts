@@ -6,6 +6,7 @@ import { badRequest } from '../errors.ts';
 import { compact, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
+import { PRODUCT_TEMPLATES } from './basesnapshots.ts';
 import { Status, statusName } from '../status.ts';
 import { dnsSafeLabel } from '../tenants.ts';
 
@@ -82,8 +83,8 @@ export function versionService({ config, pool, boss, provisioner }: Deps) {
       'SELECT * FROM snapshots WHERE product_id = $1 AND id = ANY($2::uuid[]) AND status = $3',
       [productId, copyIds, Status.Done],
     );
-    // Ids that aren't version snapshots may be the product's base snapshots (templates).
-    const { rows: templates } = await pool.query('SELECT * FROM base_snapshots WHERE product_id = $1 AND id = ANY($2::uuid[])', [
+    // Ids that aren't version snapshots may be the product's base snapshots (templates), or its reseller's shared ones.
+    const { rows: templates } = await pool.query(`SELECT * FROM base_snapshots WHERE ${PRODUCT_TEMPLATES('$1')} AND id = ANY($2::uuid[])`, [
       productId,
       copyIds.filter((id) => !sources.some((s) => s.id === id)),
     ]);

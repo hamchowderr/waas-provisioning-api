@@ -5,6 +5,7 @@ import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from './keys.ts';
 import { SIZES, type Size } from './plans.ts';
+import { enqueue } from './queue.ts';
 
 /**
  * Reseller accounts (docs/resellers.md): a partner that sells stores from one or more storefronts
@@ -244,7 +245,12 @@ export function adminResellerRoutes(deps: Deps) {
   app.delete('/:id', async (c) => {
     const reseller = await find(c);
     if (reseller.products.length) throw conflict('Move its storefronts out first');
-    await pool.query('DELETE FROM resellers WHERE id = $1', [reseller.id]);
+    // Its shared templates go with it; their files are removed in the background.
+    await withTransaction(pool, async (client) => {
+      const { rows } = await client.query<{ id: string }>('DELETE FROM base_snapshots WHERE reseller_id = $1 RETURNING id', [reseller.id]);
+      for (const t of rows) await enqueue(deps.boss, client, { type: 'basesnapshot.delete', baseSnapshotId: t.id });
+      await client.query('DELETE FROM resellers WHERE id = $1', [reseller.id]);
+    });
     return c.json(reseller);
   });
 

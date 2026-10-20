@@ -29,7 +29,8 @@ describe('public API reference', () => {
     // Partner calls built so far are listed; ones not built yet are not, and the admin API is not public.
     expect(spec.paths['/v1/subscriptions'].get).toBeDefined();
     expect(spec.paths['/v1/subscriptions'].post).toBeUndefined();
-    expect(spec.paths['/v1/subscriptions/usage']).toBeUndefined();
+    expect(spec.paths['/v1/subscriptions/usage'].get).toBeDefined();
+    expect(spec.paths['/v1/products'].post).toBeDefined();
     expect(Object.keys(spec.paths).some((p) => p.startsWith('/admin'))).toBe(false);
   });
 

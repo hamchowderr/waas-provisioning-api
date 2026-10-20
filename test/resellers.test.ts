@@ -361,3 +361,140 @@ describe('partner keys', () => {
     expect((await admin('GET', `/admin/resellers/${account.id}/keys`)).map((k: { state: string }) => k.state)).toEqual(['revoked', 'revoked']);
   });
 });
+
+describe('partner storefronts, shared templates and usage', () => {
+  /** A public-contract response: its JSON must match the schema. */
+  async function contract(res: Response, schema: string, status = 200, array = false): Promise<any> {
+    expect(res.status, await res.clone().text()).toBe(status);
+    const body = await res.json();
+    const ref = { $ref: `spec#/components/schemas/${schema}` };
+    const validate = ajv.compile(array ? { type: 'array', items: ref } : ref);
+    expect(validate(body), `${schema}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+    return body;
+  }
+
+  let account: { id: string };
+  let auth: string;
+  let member: { id: string; auth: string };
+
+  beforeAll(async () => {
+    account = await admin('POST', '/admin/resellers', 201, { name: 'Builder Partner', maxProducts: 3 });
+    const key = await admin('POST', `/admin/resellers/${account.id}/keys`, 201, { label: 'Builder' });
+    auth = basic(key.id, key.secret);
+    member = await newProduct('Builder existing');
+    await admin('PUT', `/admin/resellers/${account.id}/products/${member.id}`);
+  });
+
+  it('makes a storefront in the account, and only there', async () => {
+    const made = await contract(
+      await t.call('POST', `/v1/products?subscriptionId=${account.id}`, { auth, body: { name: 'Builder new' } }),
+      'CreateProductCommandResult',
+    );
+    expect(made).toEqual({ id: expect.any(String), name: 'Builder new' });
+    const listed = (await (await t.call('GET', '/v1/products', { auth })).json()) as any[];
+    expect(listed.map((p) => p.name)).toEqual(['Builder existing', 'Builder new']);
+    // Its versions are reached with the partner key at once.
+    expect((await t.call('GET', `/v1/versions?productId=${made.id}`, { auth })).status).toBe(200);
+
+    expect((await t.call('POST', `/v1/products?subscriptionId=${partner.id}`, { auth, body: { name: 'Elsewhere' } })).status).toBe(403);
+    expect((await t.call('POST', `/v1/products?subscriptionId=${account.id}`, { auth, body: {} })).status).toBe(400);
+    expect((await t.call('POST', `/v1/products?subscriptionId=${account.id}`, { auth: member.auth, body: { name: 'Nope' } })).status).toBe(403);
+  });
+
+  it('shares templates made with the partner key across every storefront', async () => {
+    const template = await contract(
+      await t.call('POST', '/v1/basesnapshots', { auth, body: { name: 'Shared starter', comment: 'For every storefront' } }),
+      'CreateBaseSnapshotCommandResult',
+    );
+    const own = await contract(
+      await t.call('POST', '/v1/basesnapshots', { auth: member.auth, body: { name: 'Own starter', comment: 'Just this storefront' } }),
+      'CreateBaseSnapshotCommandResult',
+    );
+    const names = async (path: string, as = auth) => ((await contract(await t.call('GET', path, { auth: as }), 'GetBaseSnapshotsQueryResult', 200, true)) as any[]).map((b) => b.name);
+    expect(await names('/v1/basesnapshots')).toEqual(['Shared starter']);
+    expect(await names('/v1/basesnapshots', member.auth)).toEqual(['Shared starter', 'Own starter']);
+    expect(await names(`/v1/basesnapshots?productId=${member.id}`)).toEqual(['Shared starter', 'Own starter']);
+    expect(await names(`/v1/basesnapshots?productId=${member.id}&onlyPartnerSpecific=true`)).toEqual(['Shared starter']);
+    // Another storefront's key never sees them.
+    expect(await names('/v1/basesnapshots', partner.auth)).not.toContain('Shared starter');
+
+    // A storefront's key can't remove the shared one; the partner key removes either.
+    expect((await t.call('DELETE', `/v1/basesnapshots?id=${template.id}`, { auth: member.auth })).status).toBe(400);
+    expect((await t.call('DELETE', `/v1/basesnapshots?id=${own.id}&productId=${member.id}`, { auth })).status).toBe(200);
+    expect(await names('/v1/basesnapshots', member.auth)).toEqual(['Shared starter']);
+  });
+
+  it('starts a new storefront from a shared template, as its production version', async () => {
+    const template = await contract(
+      await t.call('POST', '/v1/basesnapshots', { auth, body: { name: 'Builder base', comment: 'Base for new storefronts' } }),
+      'CreateBaseSnapshotCommandResult',
+    );
+    const made = await contract(
+      await t.call('POST', `/v1/products?subscriptionId=${account.id}`, {
+        auth,
+        body: { name: 'Builder from template', version: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', snapshotId: template.id } },
+      }),
+      'CreateProductCommandResult',
+    );
+    expect(made.version).toMatchObject({ id: expect.any(String), phpVersion: '8.3', wordPressVersion: '6.8' });
+    const versions = (await (await t.call('GET', `/v1/versions?productId=${made.id}`, { auth })).json()) as any[];
+    expect(versions).toEqual([expect.objectContaining({ id: made.version.id, isProduction: true })]);
+
+    // A bad version leaves no storefront behind; the account is now at its limit of 3.
+    const bad = await t.call('POST', `/v1/products?subscriptionId=${account.id}`, {
+      auth,
+      body: { name: 'Builder broken', version: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', snapshotId: crypto.randomUUID() } },
+    });
+    expect(bad.status).toBe(400);
+    expect((await t.pool.query("SELECT 1 FROM products WHERE name = 'Builder broken'")).rowCount).toBe(0);
+    const full = await t.call('POST', `/v1/products?subscriptionId=${account.id}`, { auth, body: { name: 'Builder fourth' } });
+    expect(full.status).toBe(400);
+    expect((await full.json()).message).toContain('limit of 3');
+  });
+
+  it('answers usage in hours, from the usage ledger for stores', async () => {
+    const start = new Date(Date.now() - 4 * 3600_000);
+    const end = new Date(Date.now() - 3600_000);
+    // A store live for two hours of the window (one of them before it).
+    await t.pool.query(
+      `INSERT INTO tenant_periods (tenant_id, product_id, reseller_id, size, started_at, ended_at)
+       VALUES (gen_random_uuid(), $1, $2, 'small', $3, $4)`,
+      [member.id, account.id, new Date(start.getTime() - 3600_000), new Date(start.getTime() + 2 * 3600_000)],
+    );
+    const q = `startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
+    const sub = await contract(await t.call('GET', `/v1/subscriptions/usage?subscriptionId=${account.id}&${q}`, { auth }), 'GetSubscriptionUsageQueryResult');
+    expect(sub).toMatchObject({ subscriptionId: account.id, tenantHours: 2 });
+    const product = await contract(await t.call('GET', `/v1/products/usage?productId=${member.id}&${q}`, { auth }), 'GetProductUsageQueryResult');
+    expect(product).toMatchObject({ productId: member.id, tenantHours: 2, productHours: 0 });
+
+    expect((await t.call('GET', `/v1/subscriptions/usage?subscriptionId=${account.id}&startDate=${end.toISOString()}&endDate=${start.toISOString()}`, { auth })).status).toBe(400);
+    expect((await t.call('GET', `/v1/subscriptions/usage?subscriptionId=${partner.id}&${q}`, { auth })).status).toBe(403);
+    expect((await t.call('GET', `/v1/products/usage?productId=${partner.id}&${q}`, { auth })).status).toBe(403);
+    expect((await t.call('GET', `/v1/products/usage?productId=${member.id}&${q}`, { auth: member.auth })).status).toBe(403);
+  });
+
+  it('removes a storefront only once it has no stores', async () => {
+    const store = await newTenant(member.auth);
+    const refused = await t.call('DELETE', `/v1/products?productId=${member.id}`, { auth });
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).message).toContain('1 store');
+    expect((await t.call('DELETE', `/v1/products?productId=${partner.id}`, { auth })).status).toBe(403);
+
+    const bare = (await (await t.call('GET', '/v1/products?productName=Builder%20new', { auth })).json()) as any[];
+    const removed = await contract(await t.call('DELETE', `/v1/products?productId=${bare[0].id}`, { auth }), 'RemoveProductCommandResult');
+    expect(removed).toEqual({ productId: bare[0].id });
+    expect((await t.pool.query('SELECT 1 FROM products WHERE id = $1', [bare[0].id])).rowCount).toBe(0);
+    expect(store.id).toBeTruthy();
+  });
+
+  it('removes its shared templates with the reseller', async () => {
+    const empty = await admin('POST', '/admin/resellers', 201, { name: 'Short-lived Partner' });
+    const key = await admin('POST', `/admin/resellers/${empty.id}/keys`, 201, {});
+    await contract(
+      await t.call('POST', '/v1/basesnapshots', { auth: basic(key.id, key.secret), body: { name: 'Gone soon', comment: 'Deleted with the account' } }),
+      'CreateBaseSnapshotCommandResult',
+    );
+    await admin('DELETE', `/admin/resellers/${empty.id}`);
+    expect((await t.pool.query('SELECT 1 FROM base_snapshots WHERE reseller_id = $1', [empty.id])).rowCount).toBe(0);
+  });
+});
