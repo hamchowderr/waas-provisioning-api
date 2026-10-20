@@ -1652,6 +1652,8 @@ components:
         maxTenants: { type: integer, minimum: 0, nullable: true, description: 'Stores across all its storefronts; null is no limit' }
         wholesalePercent: { type: integer, minimum: 0, maximum: 100, description: 'Discount off list price on its bill (default 40)' }
         billingEmail: { type: string, format: email, nullable: true }
+        brandName: { type: string, maxLength: 60, nullable: true, description: 'Shown with brandUrl on the "website unavailable" page of its suspended stores, instead of the platform''s name' }
+        brandUrl: { type: string, maxLength: 500, pattern: '^https?://', nullable: true }
         listPriceCents:
           type: object
           additionalProperties: false
@@ -1683,7 +1685,7 @@ components:
     Reseller:
       type: object
       additionalProperties: false
-      required: [id, name, maxProducts, maxTenants, wholesalePercent, billingEmail, listPriceCents, products, tenantCount, liveTenantCount, dateCreated]
+      required: [id, name, maxProducts, maxTenants, wholesalePercent, billingEmail, brandName, brandUrl, listPriceCents, products, tenantCount, liveTenantCount, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -1691,6 +1693,8 @@ components:
         maxTenants: { type: integer, nullable: true }
         wholesalePercent: { type: integer }
         billingEmail: { type: string, nullable: true }
+        brandName: { type: string, nullable: true }
+        brandUrl: { type: string, nullable: true }
         listPriceCents:
           type: object
           additionalProperties: false

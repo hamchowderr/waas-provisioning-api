@@ -24,6 +24,7 @@ Everything is on the admin API (`Authorization: Bearer <ADMIN_TOKEN>`). Signed-i
 | `maxTenants` | Stores across all its storefronts. At the limit, creating or restoring a store answers 400, as a storefront's own `maxTenants` does. Both limits apply |
 | `wholesalePercent` | The discount off list price on its bill, 0 to 100 (default 40) |
 | `billingEmail` | Where its bill goes |
+| `brandName`, `brandUrl` | Its own name, and an http(s) link on it, for the "website unavailable" page its stores show while suspended, in place of the platform's (`STORE_BRAND_NAME`). `null` uses the platform's again. A store already suspended keeps the page it got; the next suspension uses the new brand |
 | `listPriceCents` | `{"small": 1200, "medium": 2400, "large": 4800}`: the monthly list price of one store of each size, in US cents, before the discount. Send only the sizes to change. The default is the Website plan's price |
 
 Lowering a limit below the current count removes nothing; it only stops new storefronts or stores.

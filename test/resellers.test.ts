@@ -139,6 +139,26 @@ describe('reseller accounts', () => {
     expect((await admin('GET', `/admin/resellers/${resellerId}`)).tenantCount).toBe(2);
   });
 
+  it("puts its own brand on its suspended stores' unavailable page", async () => {
+    await admin('PUT', `/admin/resellers/${resellerId}`, 400, { brandUrl: 'javascript:alert(1)' });
+    await admin('PUT', `/admin/resellers/${resellerId}`, 400, { brandName: 'x'.repeat(61) });
+    const branded = await admin('PUT', `/admin/resellers/${resellerId}`, 200, { brandName: ' Partner Sites ', brandUrl: 'https://partner.example' });
+    expect(branded).toMatchObject({ brandName: 'Partner Sites', brandUrl: 'https://partner.example' });
+
+    const suspend = async (auth: string) => {
+      const { id, externalId } = await newTenant(auth);
+      await t.call('POST', `/v1/tenants/suspend?externalId=${externalId}`, { body: { takeBackup: false }, auth });
+      await waitFor(async () => t.provisioner.stores.get(id)?.suspended);
+      return t.provisioner.stores.get(id)!.suspendedBrand;
+    };
+    expect(await suspend(partner.auth)).toEqual({ name: 'Partner Sites', url: 'https://partner.example' });
+    // A storefront with no reseller gets the platform's brand.
+    expect(await suspend((await newProduct('Own storefront')).auth)).toBeUndefined();
+
+    expect(await admin('PUT', `/admin/resellers/${resellerId}`, 200, { brandName: null, brandUrl: '' })).toMatchObject({ brandName: null, brandUrl: null });
+    expect(await suspend(partner.auth)).toBeUndefined();
+  });
+
   it('refuses to delete a reseller with storefronts', async () => {
     await admin('DELETE', `/admin/resellers/${resellerId}`, 409);
   });
