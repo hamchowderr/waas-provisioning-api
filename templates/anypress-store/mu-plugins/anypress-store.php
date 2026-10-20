@@ -38,6 +38,25 @@ add_filter('fluent_affiliate/will_load_tracker_js', function ($load) {
         && \FluentAffiliate\App\Models\Affiliate::where('status', 'active')->exists();
 });
 
+// A new store has no products yet, and FluentCart's product list (the Shop page's block, the store home page's
+// shortcode) would show visitors "No results found" with an empty filter bar. Until the first product is published,
+// show a short note instead. Owners see the same note in the editor preview, so they know where products will go.
+function anypress_store_has_products(): bool
+{
+    static $has = null;
+    return $has ??= (bool) get_posts(['post_type' => 'fluent-products', 'post_status' => 'publish', 'numberposts' => 1, 'fields' => 'ids', 'suppress_filters' => true]);
+}
+function anypress_no_products_note(): string
+{
+    return '<p class="has-text-align-center has-secondary-color has-text-color">' . esc_html__('New products are on their way. Check back soon.', 'anypress') . '</p>';
+}
+add_filter('pre_do_shortcode_tag', function ($output, $tag) {
+    return $tag === 'fluent_cart_products' && !anypress_store_has_products() ? anypress_no_products_note() : $output;
+}, 10, 2);
+add_filter('pre_render_block', function ($output, $block) {
+    return ($block['blockName'] ?? '') === 'fluent-cart/products' && !is_admin() && !anypress_store_has_products() ? anypress_no_products_note() : $output;
+}, 10, 2);
+
 // Once per store, and again whenever the store's address changes: the template's dates and rewrite rules
 // belong to the build, not to the store.
 // Web requests only, so the template build (WP-CLI) never records its own address.
