@@ -161,6 +161,54 @@ function teamRules(c: Context) {
   };
 }
 
+async function findProductOrganization(pool: Deps['pool'], productId: string) {
+  const { rows } = await pool.query('SELECT id, name, "createdAt" FROM auth.organization WHERE "productId" = $1', [productId]);
+  return rows[0] as { id: string; name: string; createdAt: Date } | undefined;
+}
+
+/** The product's organization, made on first use with the product's name. */
+async function ensureProductOrganization(pool: Deps['pool'], p: { id: string; name: string }, name?: string) {
+  // The slug only needs to be unique; the product id is.
+  const { rows } = await pool.query(
+    `INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2::text, now(), $2::uuid)
+     ON CONFLICT ("productId") DO NOTHING RETURNING id, name, "createdAt"`,
+    [name ?? p.name, p.id],
+  );
+  return { organization: rows[0] ?? (await findProductOrganization(pool, p.id))!, created: rows.length > 0 };
+}
+
+/** Where an invitation is accepted: the dashboard's /invite/<id>, or null when sign-in is off. */
+export const invitationUrl = (deps: Pick<Deps, 'config'>, invitationId: string) =>
+  deps.config.auth ? `${deps.config.auth.url}/invite/${invitationId}` : null;
+
+/**
+ * Invites `email` to the product's organization (made if it has none) as `role`, replacing a pending
+ * invitation for the same address. Sends no email. inviterId is null when the platform admin invites.
+ */
+export async function createInvitation(deps: Pick<Deps, 'pool'>, p: { id: string; name: string }, email: string, role: OrgRole, inviterId: string | null) {
+  const { pool } = deps;
+  const { organization } = await ensureProductOrganization(pool, p);
+  const invitation = await withTransaction(pool, async (client) => {
+    await client.query('SELECT 1 FROM auth.organization WHERE id = $1 FOR UPDATE', [organization.id]);
+    const member = await client.query(
+      'SELECT 1 FROM auth.member m JOIN auth."user" u ON u.id = m."userId" WHERE m."organizationId" = $1 AND lower(u.email) = $2',
+      [organization.id, email],
+    );
+    if (member.rowCount) throw conflict(`${email} is already a member`);
+    await client.query(
+      `UPDATE auth.invitation SET status = 'canceled' WHERE "organizationId" = $1 AND lower(email) = $2 AND status = 'pending'`,
+      [organization.id, email],
+    );
+    const { rows } = await client.query(
+      `INSERT INTO auth.invitation ("organizationId", email, role, status, "expiresAt", "inviterId")
+       VALUES ($1, $2, $3, 'pending', now() + make_interval(days => $4), $5) RETURNING id, email, role, "expiresAt", "createdAt"`,
+      [organization.id, email, role, INVITATION_DAYS, inviterId],
+    );
+    return rows[0] as { id: string; email: string; role: string; expiresAt: Date; createdAt: Date };
+  });
+  return { organization, invitation };
+}
+
 /**
  * Organizations for products: each product gets one, its first people are invited by the platform
  * admin, and then its owners and admins invite the rest. Invitations are emailed through toSend when
@@ -193,23 +241,9 @@ export function adminAccountRoutes(deps: Deps) {
     return { id: rows[0].id as string, userId: rows[0].user_id as string, role: rows[0].role as string, owners: rows[0].owners as number };
   }
 
-  async function findOrganization(productId: string) {
-    const { rows } = await pool.query('SELECT id, name, "createdAt" FROM auth.organization WHERE "productId" = $1', [productId]);
-    return rows[0] as { id: string; name: string; createdAt: Date } | undefined;
-  }
-
-  /** The product's organization, made on first use with the product's name. */
-  async function ensureOrganization(p: { id: string; name: string }, name?: string) {
-    // The slug only needs to be unique; the product id is.
-    const { rows } = await pool.query(
-      `INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2::text, now(), $2::uuid)
-       ON CONFLICT ("productId") DO NOTHING RETURNING id, name, "createdAt"`,
-      [name ?? p.name, p.id],
-    );
-    return { organization: rows[0] ?? (await findOrganization(p.id))!, created: rows.length > 0 };
-  }
-
-  const acceptUrl = (invitationId: string) => (deps.config.auth ? `${deps.config.auth.url}/invite/${invitationId}` : null);
+  const findOrganization = (productId: string) => findProductOrganization(pool, productId);
+  const ensureOrganization = (p: { id: string; name: string }, name?: string) => ensureProductOrganization(pool, p, name);
+  const acceptUrl = (invitationId: string) => invitationUrl(deps, invitationId);
 
   async function view(productId: string) {
     const organization = await findOrganization(productId);
@@ -266,25 +300,7 @@ export function adminAccountRoutes(deps: Deps) {
     // The platform admin usually invites a storefront's first person, its owner; a team adds members.
     const role = parseRole(body.role, rules.caller ? 'member' : 'owner');
     rules.mayGrant(role);
-    const { organization } = await ensureOrganization(p);
-    const invitation = await withTransaction(pool, async (client) => {
-      await client.query('SELECT 1 FROM auth.organization WHERE id = $1 FOR UPDATE', [organization.id]);
-      const member = await client.query(
-        'SELECT 1 FROM auth.member m JOIN auth."user" u ON u.id = m."userId" WHERE m."organizationId" = $1 AND lower(u.email) = $2',
-        [organization.id, email],
-      );
-      if (member.rowCount) throw conflict(`${email} is already a member`);
-      await client.query(
-        `UPDATE auth.invitation SET status = 'canceled' WHERE "organizationId" = $1 AND lower(email) = $2 AND status = 'pending'`,
-        [organization.id, email],
-      );
-      const { rows } = await client.query(
-        `INSERT INTO auth.invitation ("organizationId", email, role, status, "expiresAt", "inviterId")
-         VALUES ($1, $2, $3, 'pending', now() + make_interval(days => $4), $5) RETURNING id, email, role, "expiresAt", "createdAt"`,
-        [organization.id, email, role, INVITATION_DAYS, rules.caller?.user.id ?? null],
-      );
-      return rows[0];
-    });
+    const { organization, invitation } = await createInvitation(deps, p, email, role, rules.caller?.user.id ?? null);
     const url = acceptUrl(invitation.id)!;
     // The invitation stands even if the email fails; the dashboard shows the link to send by hand.
     let emailed = false;

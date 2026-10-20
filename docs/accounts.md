@@ -47,6 +47,15 @@ The invitation is emailed to them through toSend when sign-in email is set up (t
 
 After that the team runs itself from the dashboard's Team page, which calls the same endpoints under `/account` for its own product. Owners and admins invite people (as members unless they choose otherwise), change roles and remove people. Only an owner invites, changes or removes an owner. Nobody removes themselves or changes their own role, and a team always keeps at least one owner.
 
+## Applications to sell
+
+People can also apply for an account themselves. The marketing site's form sends `POST /applications` (no sign-in) with their name, email, business, website, who they sell to, how many sites they expect in their first year, and whether they want a ready-made storefront (with its address). Nothing is made yet: the applicant is emailed that it arrived, and the addresses in `APPLICATION_NOTIFY_EMAILS` get an email linking to it on the dashboard (`<AUTH_URL>/applications/<id>`). One application per email address waits at a time, and the API takes 20 an hour from everyone together.
+
+The platform admin reviews them on the dashboard (`GET /admin/applications?status=pending`):
+
+- `POST /admin/applications/{id}/approve` makes the product, named after the business, with 3 stores unless `maxTenants` says otherwise. It invites the applicant as its owner and emails them the link, then builds the ready-made storefront if they asked for one (`storefront` overrides that). If the storefront fails, the approval still stands and `storefrontError` says why. It can be built later from the product's keys page.
+- `POST /admin/applications/{id}/decline` emails the applicant that they weren't approved. They may apply again.
+
 ## What a signed-in person can call
 
 These calls need the session cookie and `X-Session-Auth: 1`:

@@ -227,6 +227,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
 | `STOREFRONT_PRODUCT_ID` | off | The product whose production version is the [agency storefront template](../templates/agency-storefront/README.md). Turns on ready-made storefronts (`POST /admin/products/{productId}/storefront`). Set `PUBLIC_URL` too: it is the address written into each storefront |
+| `APPLICATION_NOTIFY_EMAILS` | off | Comma-separated addresses emailed when someone applies to sell (`POST /applications`, [accounts](accounts.md#applications-to-sell)). Needs sign-in email. Without it, applications only show on the dashboard |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
 | `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([webhooks.md](webhooks.md)) |
 | `WEBHOOK_ALLOW_PRIVATE` | off | `true` lets webhook endpoints be `http://` and on private addresses, for an API on a private network |
