@@ -207,3 +207,44 @@ foreach ($GLOBALS['ct_registered_tables'] ?? [] as $table) {
 // an address for 30 minutes, a monthly login digest to the admin email); XML-RPC is off, since no store uses it and
 // it is the usual target for password guessing. Two-factor stays off for the owner to switch on.
 update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), ['disable_xmlrpc' => 'yes']));
+
+// Theme (Ollie). Without a menu its header lists every page (Receipt, Review Your Order...), so make one; the
+// navigation block uses the newest menu. Links to pages a site type hides (mu-plugins/anypress-store.php) render
+// nothing while those pages are drafts. The theme's footer is its demo (sample links, social icons, "Download for
+// free today!"), so the store gets a plain one: the site title and the same menu.
+$pageId = static fn(string $slug): int => (int) get_page_by_path($slug)?->ID;
+$link = static function (string $label, int $id): string {
+    $attrs = wp_json_encode(['label' => $label, 'type' => 'page', 'id' => $id, 'url' => get_permalink($id), 'kind' => 'post-type']);
+    return "<!-- wp:navigation-link $attrs /-->";
+};
+$menu = wp_insert_post([
+    'post_type' => 'wp_navigation',
+    'post_status' => 'publish',
+    'post_title' => 'Main menu',
+    'post_content' => implode('', [
+        $link('Shop', $pageId('shop')),
+        $link('Cart', $pageId('cart')),
+        $link('Account', $pageId('account')),
+        $link('Support', $pageId('support')),
+    ]),
+], true);
+if (is_wp_error($menu)) {
+    throw new RuntimeException($menu->get_error_message());
+}
+$footer = wp_insert_post([
+    'post_type' => 'wp_template_part',
+    'post_status' => 'publish',
+    'post_name' => 'footer',
+    'post_title' => 'Footer',
+    'post_content' => '<!-- wp:group {"metadata":{"name":"Footer"},"align":"full","style":{"spacing":{"padding":{"top":"var:preset|spacing|large","bottom":"var:preset|spacing|large","right":"var:preset|spacing|medium","left":"var:preset|spacing|medium"},"margin":{"top":"0px"}},"border":{"top":{"color":"var:preset|color|border-light","width":"1px"}}},"backgroundColor":"base","textColor":"main","layout":{"type":"constrained"}} -->'
+        . '<div class="wp-block-group alignfull has-main-color has-base-background-color has-text-color has-background" style="border-top-color:var(--wp--preset--color--border-light);border-top-width:1px;margin-top:0px;padding-top:var(--wp--preset--spacing--large);padding-right:var(--wp--preset--spacing--medium);padding-bottom:var(--wp--preset--spacing--large);padding-left:var(--wp--preset--spacing--medium)">'
+        . '<!-- wp:group {"align":"wide","layout":{"type":"flex","flexWrap":"wrap","justifyContent":"space-between"}} --><div class="wp-block-group alignwide">'
+        . '<!-- wp:site-title {"level":0} /-->'
+        . '<!-- wp:navigation {"ref":' . (int) $menu . ',"overlayMenu":"never","fontSize":"small"} /-->'
+        . '</div><!-- /wp:group --></div><!-- /wp:group -->',
+], true);
+if (is_wp_error($footer)) {
+    throw new RuntimeException($footer->get_error_message());
+}
+wp_set_object_terms($footer, get_stylesheet(), 'wp_theme');
+wp_set_object_terms($footer, 'footer', 'wp_template_part_area');

@@ -1,11 +1,11 @@
 # waas-provisioning-mcp
 
-An [MCP](https://modelcontextprotocol.io) server that lets an AI agent create and manage stores through the WaaS provisioning API: stores and their lifecycle, backups, domains, sending domains, Domain Connect links, versions, snapshots and templates. It is built on the [TypeScript SDK](../sdk/typescript), so its tools follow the API's OpenAPI contract, and on the v2 MCP TypeScript SDK: it speaks MCP 2026-07-28 and still serves 2025-era clients.
+An [MCP](https://modelcontextprotocol.io) server that lets an AI agent create and manage stores through the WaaS provisioning API: stores and their lifecycle, backups, domains, sending domains, Domain Connect links, versions, snapshots and templates, and each store's pages and design. It is built on the [TypeScript SDK](../sdk/typescript), so its tools follow the API's OpenAPI contract, and on the v2 MCP TypeScript SDK: it speaks MCP 2026-07-28 and still serves 2025-era clients.
 
 It comes with:
 
 - a **store panel** ([MCP App](https://modelcontextprotocol.io/extensions/apps)): `show_stores` renders your stores inline in clients that support MCP Apps (Claude, ChatGPT, VS Code and others), with back up, suspend and resume buttons. Other clients get the same list as text.
-- an **Agent Skill**, [`skills/anypress-stores`](skills/anypress-stores/SKILL.md), that teaches an agent the common jobs: launching a store, putting it on a custom domain, setting up its sending domain, backups and restores.
+- an **Agent Skill**, [`skills/anypress-stores`](skills/anypress-stores/SKILL.md), that teaches an agent the common jobs: launching a store, putting it on a custom domain, setting up its sending domain, backups and restores, and editing a store's pages and design.
 
 > The API secret has full control of your stores. Every tool says whether it only reads or can destroy something, so clients like Claude ask before deleting or restoring a store. The read-only endpoint (or `WAAS_MCP_READ_ONLY=1`) offers only the tools that read.
 
@@ -24,6 +24,7 @@ Add `https://<your API>/mcp` as a custom connector. The client finds the sign-in
 
 - **Sign in** (when sign-in is on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront and approve. The app then acts as you, with your role: someone who may only look gets the read tools only.
 - Or sign in with your product **API key and secret**. The secret stays on that page.
+- Or **Sign in with your website**, for someone who owns one store: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)).
 
 Either way the client only gets a token. You can untick "Allow it to make changes" to give it the read tools only.
 
@@ -103,6 +104,9 @@ Store tools take `externalId` (your own id) or `tenantId`. Writes return as soon
 | Domains | `list_store_domains`, `check_domain_availability`, `get_domain_connect_link` | `add_store_domain`, `set_store_main_domain` | `remove_store_domain` |
 | Sending domain | `get_store_mail_domain` | `set_store_mail_domain` | `remove_store_mail_domain` |
 | Versions | `list_versions`, `list_snapshots`, `list_templates` | `create_version`, `set_production_version` | `delete_version` |
+| Site editing | `get_site`, `list_pages`, `read_page`, `list_page_revisions`, `find_patterns`, `get_pattern`, `get_site_styles`, `get_header_footer`, `list_menus` | `create_page`, `update_page`, `add_section`, `replace_section`, `restore_page_revision`, `update_site_styles`, `update_header_footer`, `update_menu`, `add_image` | `remove_section` |
+
+The site-editing tools change a store's pages and design through its WaaS Client (2.3.0 or newer) and take effect at once; WordPress keeps a revision of every change. How they reach the store: [docs/site-editing.md](../docs/site-editing.md).
 
 Uploading custom snapshots and templates and downloading snapshot zips are left to the SDK, since they move files rather than JSON.
 

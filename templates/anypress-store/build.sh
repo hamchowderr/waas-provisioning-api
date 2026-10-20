@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the "AnyPress store" base snapshot: WordPress with the WaaS Client plugin, the Fluent suite,
-# Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and Twenty Twenty-Five,
+# Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and Ollie (block theme),
 # packaged as the provisioner restores it (see README).
 #
 #   templates/anypress-store/build.sh <path to a waas-plugins checkout>
@@ -32,9 +32,9 @@ fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05
 VENDORED="
 fluent-toolkit 2.1.3 e501b6f0abf9bf5db30c4f60b31702b3ffda217de0c85db408ff4ce210f51123
 "
-THEME=twentytwentyfive
-THEME_VERSION=${THEME_VERSION:-1.5}
-THEME_SHA256=${THEME_SHA256:-f333ce53aaa4049639298247d03480a4bd9b56fa8f0fea0440da262d7d595ba4}
+THEME=ollie
+THEME_VERSION=${THEME_VERSION:-1.6.5}
+THEME_SHA256=${THEME_SHA256:-66a050e5225ba3a43806a148adc3079c366b46cfc8396c8a6e44742f8958ddc7}
 PHP_VERSION=${PHP_VERSION:-8.3}
 
 # The build site's address. The provisioner rewrites it to each store's domain (wp search-replace),
@@ -113,7 +113,7 @@ mkdir -p "$SITE/wp-content/plugins/waas-client-data"
 cp "$HERE/roles.json" "$SITE/wp-content/plugins/waas-client-data/roles.json"
 # Template settings kept in code (see mu-plugins/anypress-store.php).
 mkdir -p "$SITE/wp-content/mu-plugins"
-cp "$HERE/mu-plugins/anypress-store.php" "$SITE/wp-content/mu-plugins/"
+cp "$HERE/mu-plugins/anypress-store.php" "$HERE/mu-plugins/anypress-patterns.php" "$SITE/wp-content/mu-plugins/"
 
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE"
 
@@ -172,6 +172,8 @@ wp transient delete --all
 wp cache flush 2>/dev/null || true
 
 echo "== Check"
+# Starter pages (mu-plugins/anypress-patterns.php) register, and the theme's own promotion patterns are hidden.
+[ "$(wp eval 'anypress_register_patterns(); $r = WP_Block_Patterns_Registry::get_instance(); echo count(array_filter($r->get_all_registered(), fn($p) => str_starts_with($p["name"], "anypress/"))) >= 4 && !$r->is_registered("ollie/page-download") ? "ok" : "missing";')" = ok ] || { echo "starter pages missing"; exit 1; }
 wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
 EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
@@ -182,6 +184,7 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
 # first match, and with pipefail the cut-off wp counts as a failure.
 grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
 [ "$(wp post list --post_type=page --meta_key=_anypress_needs --format=count)" -ge 7 ] || { echo "pages missing their site-type marker" >&2; exit 1; }
+[ "$(wp post list --post_type=wp_template_part --name=footer --format=count)" = 1 ] || { echo "store footer missing (the theme's demo footer would show)" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
 

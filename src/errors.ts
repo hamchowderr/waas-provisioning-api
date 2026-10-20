@@ -1,7 +1,7 @@
 /** Errors the API returns to the caller. 400s carry the contract's ExceptionResult body. */
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404 | 409 | 429 | 503,
+    readonly status: 400 | 403 | 404 | 409 | 429 | 502 | 503,
     message: string,
   ) {
     super(message);

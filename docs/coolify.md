@@ -117,7 +117,7 @@ Measured on a local copy with FluentCart, FluentCRM, Fluent Forms and Rank Math 
 
 ## Store setup
 
-`STORE_SETUP` (`provisioner.ts`) numbers what the compose file and the agent's files give a store; a store's Coolify description records the number it has and the size its compose file was rendered with (`WaaS store, version <id>, setup <n>, size <size>`; a description without a size is small). On every API start, `ensureStoreSetup` brings each older live store, and each store whose size differs from its tenant's, to the current setup at that size: the new compose file, one restart, then `configure` to reinstall the agent's files. Bump `STORE_SETUP` with any such change that existing stores should get. Setup 2 is the Apache worker cap and the page cache; setup 3 is sizes and the plan mu-plugin.
+`STORE_SETUP` (`provisioner.ts`) numbers what the compose file and the agent's files give a store; a store's Coolify description records the number it has and the size its compose file was rendered with (`WaaS store, version <id>, setup <n>, size <size>`; a description without a size is small). On every API start, `ensureStoreSetup` brings each older live store, and each store whose size differs from its tenant's, to the current setup at that size: the new compose file, one restart, then `configure` to reinstall the agent's files. Bump `STORE_SETUP` with any such change that existing stores should get. Setup 2 is the Apache worker cap and the page cache; setup 3 is sizes and the plan mu-plugin; setup 4 gives each store its site key (`WAAS_SITE_KEY`, see [site-editing.md](site-editing.md)).
 
 ## Security
 

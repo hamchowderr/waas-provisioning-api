@@ -7,6 +7,11 @@ import { storesViewHtml, STORES_VIEW_URI } from './view.js';
 export interface WaasMcpOptions {
   /** Registers only the tools that read; nothing the agent calls can change a store. */
   readOnly?: boolean;
+  /**
+   * Connected to one store only (its owner's "Sign in with your website"): registers only the site
+   * tools, and they act on this store whatever store the agent names.
+   */
+  store?: TenantRef;
   /** How often wait_for_store polls (tests shorten it). */
   pollIntervalMs?: number;
 }
@@ -66,10 +71,16 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       instructions:
         'Manages WordPress stores on the WaaS provisioning API. A store is a "tenant"; pick one by externalId (your own id) or tenantId. ' +
         'Every write is asynchronous: it returns once scheduled, and the store shows statusCode 0 (Pending) until the work finishes, then 1 (Done) or 2 (Failed). ' +
-        'Call wait_for_store after creating, restoring, moving or changing domains, and before the next write to the same store.' +
-        (options.readOnly ? ' This server is read-only: it cannot change anything.' : ''),
+        'Call wait_for_store after creating, restoring, moving or changing domains, and before the next write to the same store. ' +
+        'The site tools (get_site, list_pages, read_page, add_section, update_site_styles…) edit a store’s pages and design directly and take effect at once: ' +
+        'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so. ' +
+        'For a whole new page, start from a starter page (find_patterns with category anypress/pages: home pages per site type, about, services, contact) and then rewrite its text for the business.' +
+        (options.readOnly ? ' This server is read-only: it cannot change anything.' : '') +
+        (options.store ? ' This connection is for one website only: the site tools act on it, and the store ids can be left out.' : ''),
     },
   );
+  // Until the site tools below, every tool is for running stores, which a store's own connection can't do.
+  let siteTools = false;
 
   const tool = <Shape extends z.ZodRawShape>(
     name: string,
@@ -77,6 +88,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     run: (args: z.infer<z.ZodObject<Shape>>) => Promise<unknown>,
   ) => {
     if (options.readOnly && !config.annotations.readOnlyHint) return;
+    if (options.store && !siteTools) return;
     server.registerTool(
       name,
       { title: config.title, description: config.description, inputSchema: z.object(config.input), annotations: config.annotations },
@@ -91,37 +103,39 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   };
 
   // MCP App: a store panel that renders in clients supporting MCP Apps (Claude, ChatGPT, VS Code...).
-  // Clients without it get the same list as text.
+  // Clients without it get the same list as text. A store's own connection has no stores to list.
 
-  registerAppTool(
-    server,
-    'show_stores',
-    {
-      title: 'Show stores',
-      description:
-        'Shows your stores in an interactive panel (status, main domain, version) with buttons to back up, suspend and resume. ' +
-        'Use when the user wants to see or browse their stores; use list_stores when you only need the data.',
-      inputSchema: z.object({}),
-      annotations: READ,
-      _meta: { ui: { resourceUri: STORES_VIEW_URI } },
-    },
-    async () => {
-      try {
-        const stores = await client.tenants.list();
-        const summary = stores.length === 1 ? '1 store' : `${stores.length} stores`;
-        return {
-          content: [{ type: 'text', text: `${summary}:\n${JSON.stringify(stores, null, 2)}` }],
-          structuredContent: { stores, readOnly: !!options.readOnly },
-        };
-      } catch (error) {
-        return failure(error);
-      }
-    },
-  );
+  if (!options.store) {
+    registerAppTool(
+      server,
+      'show_stores',
+      {
+        title: 'Show stores',
+        description:
+          'Shows your stores in an interactive panel (status, main domain, version) with buttons to back up, suspend and resume. ' +
+          'Use when the user wants to see or browse their stores; use list_stores when you only need the data.',
+        inputSchema: z.object({}),
+        annotations: READ,
+        _meta: { ui: { resourceUri: STORES_VIEW_URI } },
+      },
+      async () => {
+        try {
+          const stores = await client.tenants.list();
+          const summary = stores.length === 1 ? '1 store' : `${stores.length} stores`;
+          return {
+            content: [{ type: 'text', text: `${summary}:\n${JSON.stringify(stores, null, 2)}` }],
+            structuredContent: { stores, readOnly: !!options.readOnly },
+          };
+        } catch (error) {
+          return failure(error);
+        }
+      },
+    );
 
-  registerAppResource(server, 'Store panel', STORES_VIEW_URI, { description: 'The show_stores panel' }, async () => ({
-    contents: [{ uri: STORES_VIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: storesViewHtml() }],
-  }));
+    registerAppResource(server, 'Store panel', STORES_VIEW_URI, { description: 'The show_stores panel' }, async () => ({
+      contents: [{ uri: STORES_VIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: storesViewHtml() }],
+    }));
+  }
 
   // Stores
 
@@ -408,6 +422,198 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     'list_templates',
     { title: 'List templates', description: 'Base snapshots (templates) new versions can start from.', input: {}, annotations: READ },
     () => client.templates.list(),
+  );
+
+  // Site editing: the store's pages and design, through its WaaS Client (docs/site-editing.md).
+
+  siteTools = true;
+  type SiteCall = Parameters<WaasClient['tenants']['editSite']>[1];
+  const site = async (args: { externalId?: string | undefined; tenantId?: string | undefined }, call: SiteCall) => {
+    const answer = await client.tenants.editSite(options.store ?? toRef(args), call);
+    if (answer.status && answer.status >= 400) {
+      const body = answer.body as { message?: string } | undefined;
+      throw new Error(`The store answered ${answer.status}: ${body?.message ?? JSON.stringify(answer.body)}`);
+    }
+    return answer.body;
+  };
+  const pageId = { pageId: z.number().int().positive().describe('The page id, from list_pages.') };
+  const section = z.number().int().min(0).describe('A section number from the page outline (read_page); 0 is the first.');
+  const blocks = z.string().describe('WordPress block markup (<!-- wp:paragraph --><p>…</p><!-- /wp:paragraph -->). Use the theme’s colour, font-size and spacing slugs from get_site_styles, not raw values.');
+  const pattern = z.string().describe('A pattern name from find_patterns, e.g. ollie/hero-light. Use instead of content to add a ready-made section.');
+
+  tool(
+    'get_site',
+    { title: 'Get a site', description: 'The site’s name, tagline, address, theme and what its home page shows. Start here before editing a site.', input: ref, annotations: READ },
+    (args) => site(args, { method: 'GET', path: '' }),
+  );
+
+  tool(
+    'list_pages',
+    { title: 'List pages', description: 'The site’s pages: id, title, slug, status (draft or publish) and link (a preview link for drafts).', input: ref, annotations: READ },
+    (args) => site(args, { method: 'GET', path: '/pages' }),
+  );
+
+  tool(
+    'read_page',
+    {
+      title: 'Read a page',
+      description: 'One page: its outline (numbered sections, each a top-level block with its first words) and its full block markup. Read a page before changing it; sections are addressed by their number.',
+      input: { ...ref, ...pageId },
+      annotations: READ,
+    },
+    ({ pageId: id, ...args }) => site(args, { method: 'GET', path: `/pages/${id}` }),
+  );
+
+  tool(
+    'create_page',
+    {
+      title: 'Create a page',
+      description: 'Adds a page. It is a draft (with a preview link) unless status is publish; publish only when the user says so. Content is optional: add sections afterwards with add_section.',
+      input: { ...ref, title: z.string().min(1), content: blocks.optional(), status: z.enum(['draft', 'publish']).optional() },
+      annotations: WRITE,
+    },
+    ({ title, content, status, ...args }) => site(args, { method: 'POST', path: '/pages', body: { title, content, status } }),
+  );
+
+  tool(
+    'update_page',
+    {
+      title: 'Update a page',
+      description: 'Changes a page’s title, slug or status (draft or publish), or replaces all of its content. To change one part of a page, use replace_section. WordPress keeps a revision.',
+      input: { ...ref, ...pageId, title: z.string().optional(), slug: z.string().optional(), status: z.enum(['draft', 'publish']).optional(), content: blocks.optional() },
+      annotations: WRITE,
+    },
+    ({ pageId: id, title, slug, status, content, ...args }) => site(args, { method: 'PATCH', path: `/pages/${id}`, body: { title, slug, status, content } }),
+  );
+
+  tool(
+    'add_section',
+    {
+      title: 'Add a section',
+      description: 'Adds a section to a page: a pattern (preferred, it matches the site’s design) or your own blocks. It goes before section `position`, or at the end. Then replace the pattern’s sample text and images with the user’s own.',
+      input: { ...ref, ...pageId, pattern: pattern.optional(), content: blocks.optional(), position: section.optional() },
+      annotations: WRITE,
+    },
+    ({ pageId: id, pattern: name, content, position, ...args }) => site(args, { method: 'POST', path: `/pages/${id}/sections`, body: { pattern: name, content, position } }),
+  );
+
+  tool(
+    'replace_section',
+    {
+      title: 'Replace a section',
+      description: 'Replaces one section of a page with new blocks or a pattern, e.g. to change its text. Copy the section’s markup from read_page and change only what the user asked for. WordPress keeps a revision.',
+      input: { ...ref, ...pageId, section, pattern: pattern.optional(), content: blocks.optional() },
+      annotations: WRITE,
+    },
+    ({ pageId: id, section: n, pattern: name, content, ...args }) => site(args, { method: 'PUT', path: `/pages/${id}/sections/${n}`, body: { pattern: name, content } }),
+  );
+
+  tool(
+    'remove_section',
+    { title: 'Remove a section', description: 'Removes one section of a page. WordPress keeps a revision, so restore_page_revision can bring it back.', input: { ...ref, ...pageId, section }, annotations: DESTRUCTIVE },
+    ({ pageId: id, section: n, ...args }) => site(args, { method: 'DELETE', path: `/pages/${id}/sections/${n}` }),
+  );
+
+  tool(
+    'list_page_revisions',
+    { title: 'List page revisions', description: 'A page’s last 20 saved versions, newest first, each with its outline.', input: { ...ref, ...pageId }, annotations: READ },
+    ({ pageId: id, ...args }) => site(args, { method: 'GET', path: `/pages/${id}/revisions` }),
+  );
+
+  tool(
+    'restore_page_revision',
+    { title: 'Restore a page revision', description: 'Puts a page back the way it was in one of its revisions (undo).', input: { ...ref, ...pageId, revisionId: z.number().int().positive() }, annotations: WRITE },
+    ({ pageId: id, revisionId, ...args }) => site(args, { method: 'POST', path: `/pages/${id}/revisions/${revisionId}/restore` }),
+  );
+
+  tool(
+    'find_patterns',
+    {
+      title: 'Find patterns',
+      description: 'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the site’s theme offers, and whole starter pages (category anypress/pages). Filter by a search word or a category.',
+      input: { ...ref, search: z.string().optional(), category: z.string().optional() },
+      annotations: READ,
+    },
+    ({ search, category, ...args }) => site(args, { method: 'GET', path: '/patterns', query: { ...(search ? { search } : {}), ...(category ? { category } : {}) } }),
+  );
+
+  tool(
+    'get_pattern',
+    { title: 'Get a pattern', description: 'One pattern’s block markup, to adapt before adding it.', input: { ...ref, name: pattern }, annotations: READ },
+    ({ name, ...args }) => site(args, { method: 'GET', path: `/patterns/${name}` }),
+  );
+
+  tool(
+    'get_site_styles',
+    {
+      title: 'Get site styles',
+      description: 'The site’s colours, fonts, font sizes and spacing (with the slugs to use in blocks), the styles in effect, and what the site has changed from the theme.',
+      input: ref,
+      annotations: READ,
+    },
+    (args) => site(args, { method: 'GET', path: '/styles' }),
+  );
+
+  tool(
+    'update_site_styles',
+    {
+      title: 'Update site styles',
+      description:
+        'Changes the whole site’s look, as Styles in the Site Editor does: theme.json settings and styles merged into the site’s changes. ' +
+        'E.g. styles.elements.button.color.background, styles.color.background, styles.typography.fontFamily, or settings.color.palette.custom.',
+      input: { ...ref, settings: z.record(z.string(), z.unknown()).optional(), styles: z.record(z.string(), z.unknown()).optional() },
+      annotations: WRITE,
+    },
+    ({ settings, styles, ...args }) => site(args, { method: 'PATCH', path: '/styles', body: { settings, styles } }),
+  );
+
+  const area = z.enum(['header', 'footer']);
+
+  tool(
+    'get_header_footer',
+    { title: 'Get the header or footer', description: 'The site’s header or footer as blocks, with its outline.', input: { ...ref, area }, annotations: READ },
+    ({ area: part, ...args }) => site(args, { method: 'GET', path: `/parts/${part}` }),
+  );
+
+  tool(
+    'update_header_footer',
+    {
+      title: 'Update the header or footer',
+      description: 'Replaces the whole header or footer (every page shows it). Start from get_header_footer’s markup and change only what the user asked for.',
+      input: { ...ref, area, content: blocks },
+      annotations: WRITE,
+    },
+    ({ area: part, content, ...args }) => site(args, { method: 'PUT', path: `/parts/${part}`, body: { content } }),
+  );
+
+  tool(
+    'list_menus',
+    { title: 'List menus', description: 'The site’s navigation menus with their links (navigation-link blocks).', input: ref, annotations: READ },
+    (args) => site(args, { method: 'GET', path: '/menus' }),
+  );
+
+  tool(
+    'update_menu',
+    {
+      title: 'Update a menu',
+      description:
+        'Replaces a menu’s links. Link pages with <!-- wp:navigation-link {"label":"About","type":"page","id":12,"kind":"post-type"} /-->, ' +
+        'other addresses with {"label":"…","url":"https://…","kind":"custom"}.',
+      input: { ...ref, menuId: z.number().int().positive(), content: z.string(), title: z.string().optional() },
+      annotations: WRITE,
+    },
+    ({ menuId, content, title, ...args }) => site(args, { method: 'PUT', path: `/menus/${menuId}`, body: { content, title } }),
+  );
+
+  tool(
+    'add_image',
+    {
+      title: 'Add an image',
+      description: 'Copies an image from a public https link into the site’s media library and returns its id and address, to use in an image or cover block.',
+      input: { ...ref, url: z.string().url(), alt: z.string().optional().describe('What the image shows, for people who can’t see it.') },
+      annotations: WRITE,
+    },
+    ({ url, alt, ...args }) => site(args, { method: 'POST', path: '/media', body: { url, alt } }),
   );
 
   return server;
