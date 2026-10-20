@@ -52,17 +52,34 @@ export function dnsSafeLabel(label: string, suffix: string): string {
 }
 
 /**
- * Refuses a new tenant when the product is at its max_tenants (NULL: no limit). Call inside the
- * transaction that inserts the tenant: the product row stays locked until it commits, so two
- * requests can't both take the last place.
+ * Refuses a new tenant when the product is at its max_tenants, or its reseller at its own across all
+ * its storefronts (NULL: no limit). Call inside the transaction that inserts the tenant: the product
+ * (and reseller) row stays locked until it commits, so two requests can't both take the last place.
  */
 export async function checkTenantCap(client: Client, productId: string): Promise<void> {
-  const { rows } = await client.query<{ max_tenants: number | null }>('SELECT max_tenants FROM products WHERE id = $1 FOR UPDATE', [productId]);
+  const { rows } = await client.query<{ max_tenants: number | null; reseller_id: string | null }>(
+    'SELECT max_tenants, reseller_id FROM products WHERE id = $1 FOR UPDATE',
+    [productId],
+  );
   const max = rows[0]?.max_tenants;
-  if (max === null || max === undefined) return;
-  const { rows: count } = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE product_id = $1', [productId]);
-  if (count[0]!.n >= max) {
-    throw badRequest(`This storefront has reached its limit of ${max} store${max === 1 ? '' : 's'}; delete one or ask for a higher limit`);
+  if (max !== null && max !== undefined) {
+    const { rows: count } = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE product_id = $1', [productId]);
+    if (count[0]!.n >= max) {
+      throw badRequest(`This storefront has reached its limit of ${max} store${max === 1 ? '' : 's'}; delete one or ask for a higher limit`);
+    }
+  }
+  // A reseller's limit counts the stores of all its storefronts; its row is locked the same way.
+  const resellerId = rows[0]?.reseller_id;
+  if (!resellerId) return;
+  const { rows: reseller } = await client.query<{ max_tenants: number | null }>('SELECT max_tenants FROM resellers WHERE id = $1 FOR UPDATE', [resellerId]);
+  const total = reseller[0]?.max_tenants;
+  if (total === null || total === undefined) return;
+  const { rows: count } = await client.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM tenants t JOIN products p ON p.id = t.product_id WHERE p.reseller_id = $1',
+    [resellerId],
+  );
+  if (count[0]!.n >= total) {
+    throw badRequest(`This account has reached its limit of ${total} store${total === 1 ? '' : 's'}; delete one or ask for a higher limit`);
   }
 }
 

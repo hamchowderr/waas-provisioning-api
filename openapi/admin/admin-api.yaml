@@ -1238,6 +1238,148 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers:
+    get:
+      operationId: adminListResellers
+      summary: Reseller accounts
+      description: >-
+        Partners that sell stores from one or more storefronts and pay a wholesale price for every live
+        store across them (docs/resellers.md). Platform admin only: 404 at /account.
+      responses:
+        '200':
+          description: All resellers, by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Reseller' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminCreateReseller
+      summary: A new reseller, optionally with storefronts moved into it
+      description: >-
+        productIds moves those storefronts into the new reseller in the same step ("Make reseller" on a
+        storefront). A storefront that belongs to another reseller is 409 and nothing is made.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ResellerSettings'
+                - type: object
+                  required: [name]
+                  properties:
+                    productIds: { type: array, maxItems: 100, items: { type: string, format: uuid } }
+      responses:
+        '201':
+          description: The reseller
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetReseller
+      summary: One reseller
+      responses:
+        '200':
+          description: The reseller
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminUpdateReseller
+      summary: A reseller's settings
+      description: Changes only the fields sent. Lowering a limit below the current count removes nothing; it only stops new ones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResellerSettings' }
+      responses:
+        '200':
+          description: The reseller
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteReseller
+      summary: Deletes a reseller with no storefronts
+      description: 409 while it has storefronts. Its usage history is kept.
+      responses:
+        '200':
+          description: The reseller as it was
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}/products/{productId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - $ref: '#/components/parameters/productId'
+    put:
+      operationId: adminAddResellerProduct
+      summary: Moves a storefront into the reseller
+      description: >-
+        Within the reseller's maxProducts (400 at the limit). A storefront of another reseller is 409.
+        Its live stores count for this reseller from now on.
+      responses:
+        '200':
+          description: The reseller
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      operationId: adminRemoveResellerProduct
+      summary: Moves a storefront out of the reseller
+      description: The storefront is its own again; its stores stop counting for the reseller from now on.
+      responses:
+        '200':
+          description: The reseller
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/usage:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminResellerUsage
+      summary: Store-days per size, what the wholesale bill is counted from
+      description: >-
+        A store counts from when it first finished building, while it is not suspended or being
+        removed, under the reseller its storefront belonged to at the time. A store live for all of a
+        30-day month is 30 store-days. Recorded from the release that added resellers on.
+      parameters:
+        - { name: from, in: query, description: 'Start (ISO 8601); default the start of this month, UTC', schema: { type: string, format: date-time } }
+        - { name: to, in: query, description: 'End, exclusive (ISO 8601); default the start of next month, UTC', schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Usage in the period
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResellerUsage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     adminToken: { type: http, scheme: bearer }
@@ -1374,7 +1516,7 @@ components:
     Product:
       type: object
       additionalProperties: false
-      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, dateCreated]
+      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -1382,7 +1524,69 @@ components:
         maxTenants: { type: integer, nullable: true, description: 'The most tenants it may have; null is no limit' }
         versionCount: { type: integer }
         productionVersionId: { type: string, format: uuid, nullable: true }
+        resellerId: { type: string, format: uuid, nullable: true, description: 'The reseller it belongs to; null for its own' }
+        resellerName: { type: string, nullable: true }
         dateCreated: { type: string, format: date-time }
+    StoreDays:
+      type: object
+      additionalProperties: false
+      required: [small, medium, large]
+      properties:
+        small: { type: number }
+        medium: { type: number }
+        large: { type: number }
+    ResellerSettings:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        maxProducts: { type: integer, minimum: 0, nullable: true, description: 'Storefronts it may have; null is no limit' }
+        maxTenants: { type: integer, minimum: 0, nullable: true, description: 'Stores across all its storefronts; null is no limit' }
+        wholesalePercent: { type: integer, minimum: 0, maximum: 100, description: 'Discount off list price on its bill (default 40)' }
+        billingEmail: { type: string, format: email, nullable: true }
+    Reseller:
+      type: object
+      additionalProperties: false
+      required: [id, name, maxProducts, maxTenants, wholesalePercent, billingEmail, products, tenantCount, liveTenantCount, dateCreated]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        maxProducts: { type: integer, nullable: true }
+        maxTenants: { type: integer, nullable: true }
+        wholesalePercent: { type: integer }
+        billingEmail: { type: string, nullable: true }
+        products:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, tenantCount]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              tenantCount: { type: integer }
+        tenantCount: { type: integer, description: 'Stores across its storefronts' }
+        liveTenantCount: { type: integer, description: 'Stores counting toward its bill now' }
+        dateCreated: { type: string, format: date-time }
+    ResellerUsage:
+      type: object
+      additionalProperties: false
+      required: [resellerId, from, to, wholesalePercent, storeDays, products]
+      properties:
+        resellerId: { type: string, format: uuid }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        wholesalePercent: { type: integer }
+        storeDays: { $ref: '#/components/schemas/StoreDays' }
+        products:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [productId, name, storeDays]
+            properties:
+              productId: { type: string, format: uuid }
+              name: { type: string, nullable: true, description: 'null once the storefront is deleted' }
+              storeDays: { $ref: '#/components/schemas/StoreDays' }
     Error:
       type: object
       required: [statusCode, message]
