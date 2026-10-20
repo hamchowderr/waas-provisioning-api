@@ -106,6 +106,7 @@ Writes return as soon as the work is queued; call `waitForTenant` or use webhook
 | | `moveTenantToVersion(array $ref, string $targetVersionId)` | Moves the store to another version |
 | | `suspendTenant(array $ref, bool $takeBackup = true)` | Takes the store offline (a 503 page), backing it up first unless `$takeBackup` is false |
 | | `resumeTenant(array $ref)` | Brings a suspended store back |
+| | `addTenantEmailPack(array $ref, int $emails, string $reference)` | Adds emails on top of the store's monthly plan (they never expire). A repeat with the same `$reference` adds nothing. Answers with the total bought |
 | | `restoreTenant(array $ref, ?string $backupId = null)` | Brings back a deleted store, or rolls a live one back, from a backup (the newest finished one when `$backupId` is null) |
 | | `listTenantBackups(array $ref)`, `createTenantBackup(array $ref)` | The store's backups; take one now |
 | | `waitForTenant(array $ref, int $intervalMs = 5000, int $timeoutMs = 900000)` | Polls until the store is Done (returns it) or Failed (throws `TenantFailedException`). Throws `RuntimeException` on timeout |

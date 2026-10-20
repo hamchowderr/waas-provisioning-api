@@ -198,7 +198,7 @@ x-webhooks:
       operationId: tenantEvent
       summary: A store finished a change, or failed to
       description: >-
-        tenant.ready (created and answering), tenant.updated (wpOptions, phpConstants or a new size applied),
+        tenant.ready (created and answering), tenant.updated (wpOptions, phpConstants, a new size or email packs applied),
         tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed,
         tenant.deleted (data.tenant is the store as it was), tenant.restored (a deleted store is back),
         tenant.rolled_back (a live store went back to a backup), tenant.backup_completed and

@@ -366,6 +366,101 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     expect(old.options.waas_plan_mail).toEqual({ month: month(), sent: 1 });
   });
 
+  describe('email packs', () => {
+    const bulk = `echo json_encode(apply_filters('fluent_crm/disable_email_processing', false));`;
+    const notices = `do_action('admin_notices');`;
+    const mail = (sent: number, m = month()) => ({ month: m, sent });
+
+    it('lifts the pause until the pack emails left are used too', () => {
+      const packs = { waas_plan_mail_packs: { purchased: 5, used: 0 } };
+      expect(plan(quotas, { waas_plan_mail: mail(10), ...packs }, bulk).out).toBe('false');
+      expect(plan(quotas, { waas_plan_mail: mail(14), ...packs }, bulk).out).toBe('false');
+      expect(plan(quotas, { waas_plan_mail: mail(15), ...packs }, bulk).out).toBe('true');
+      // Packs used in earlier months are gone.
+      expect(plan(quotas, { waas_plan_mail: mail(12), waas_plan_mail_packs: { purchased: 5, used: 3 } }, bulk).out).toBe('true');
+      expect(plan(quotas, { waas_plan_mail: mail(11), waas_plan_mail_packs: { purchased: 5, used: 3 } }, bulk).out).toBe('false');
+      // Within the month nothing is moved to used.
+      expect(plan(quotas, { waas_plan_mail: mail(14), ...packs }, bulk).options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 0 });
+    });
+
+    it('says how many pack emails are left', () => {
+      const packs = { waas_plan_mail_packs: { purchased: 8000, used: 0 } };
+      expect(plan(quotas, { waas_plan_mail: mail(8), ...packs }, notices).out).toBe(
+        '<div class="notice notice-warning"><p>This website has sent 8 of the 10 emails its plan includes this month, plus 8,000 pack emails left. Campaigns and sequences pause when both are used up; order, account and booking emails always go out.</p></div>',
+      );
+      expect(plan(quotas, { waas_plan_mail: mail(12), ...packs }, notices).out).toContain(
+        'has sent all 10 of the emails its plan includes this month and is now sending pack emails: 7,998 left.',
+      );
+      const out = plan(quotas, { waas_plan_mail: mail(8010), ...packs }, notices).out;
+      expect(out).toContain('notice-error');
+      expect(out).toContain('has sent all 10 of the emails its plan includes this month, and all of its pack emails. Campaigns and sequences are paused until');
+      expect(plan(quotas, { waas_plan_mail: mail(5), ...packs }, notices).out).toBe('');
+    });
+
+    it('moves last month\'s emails beyond the plan to used when a new month starts, once', () => {
+      const first = plan(quotas, { waas_plan_mail: mail(13, '2000-01'), waas_plan_mail_packs: { purchased: 5, used: 1 } }, bulk);
+      expect(first.out).toBe('false');
+      expect(first.options.waas_plan_mail).toEqual(mail(0));
+      expect(first.options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 4 });
+      const again = plan(quotas, first.options, bulk);
+      expect(again.options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 4 });
+      // The first email of the month counts after the move.
+      const sent = plan(quotas, { waas_plan_mail: mail(13, '2000-01'), waas_plan_mail_packs: { purchased: 5, used: 1 } }, `do_action('wp_mail_succeeded');`);
+      expect(sent.options).toMatchObject({ waas_plan_mail: mail(1), waas_plan_mail_packs: { purchased: 5, used: 4 } });
+    });
+
+    it('moves no more than were left, and nothing for a month within the plan or without a plan limit', () => {
+      expect(plan(quotas, { waas_plan_mail: mail(40, '2000-01'), waas_plan_mail_packs: { purchased: 5, used: 1 } }, bulk).options.waas_plan_mail_packs).toEqual({
+        purchased: 5,
+        used: 5,
+      });
+      const within = plan(quotas, { waas_plan_mail: mail(7, '2000-01'), waas_plan_mail_packs: { purchased: 5, used: 1 } }, bulk);
+      expect(within.options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 1 });
+      const unlimited = plan({ WAAS_STORAGE_GB: '1', WAAS_EMAILS_PER_MONTH: '0' }, { waas_plan_mail: mail(99, '2000-01'), waas_plan_mail_packs: { purchased: 5, used: 0 } }, bulk + notices);
+      expect(unlimited.out).toBe('false');
+      expect(unlimited.options.waas_plan_mail_packs).toEqual({ purchased: 5, used: 0 });
+    });
+
+    it('sets the total bought through the agent, keeping the pack emails used', () => {
+      const bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
+      chmodSync(bin, 0o755);
+      const wp = (held: string) =>
+        writeFileSync(
+          join(bin, 'wp'),
+          `#!/bin/sh
+case "$*" in
+  *"option get waas_plan_mail_packs"*) ${held ? `echo '${held}'` : 'exit 1'} ;;
+  *"option update waas_plan_mail_packs"*) printf '%s %s %s' "$7" "$8" "$9" > "$WAAS_ROOT/packs.txt" ;;
+esac
+`,
+          { mode: 0o755 },
+        );
+      const run = (args: unknown) =>
+        execFileSync('php', [AGENT, 'mail-packs', Buffer.from(JSON.stringify(args)).toString('base64')], {
+          env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}` },
+          encoding: 'utf8',
+        });
+      try {
+        wp('{"purchased":100,"used":40}');
+        expect(run({ purchased: 300 })).toContain('WAAS_RESULT {"purchased":300,"used":40}');
+        expect(readFileSync(join(root, 'packs.txt'), 'utf8')).toBe('{"purchased":300,"used":40} --format=json --autoload=no');
+        wp('');
+        expect(run({ purchased: 50 })).toContain('WAAS_RESULT {"purchased":50,"used":0}');
+        for (const bad of [{ purchased: '50' }, { purchased: -1 }, {}]) {
+          let stdout = '';
+          try {
+            run(bad);
+          } catch (err) {
+            stdout = String((err as { stdout?: string }).stdout);
+          }
+          expect(stdout).toBe('WAAS_ERROR purchased must be a whole number\n');
+        }
+      } finally {
+        rmSync(bin, { recursive: true, force: true });
+      }
+    });
+  });
+
   it('reports usage through the agent, measuring storage now and saving it for the mu-plugin', () => {
     const bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
     chmodSync(bin, 0o755);
@@ -376,6 +471,7 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
 case "$*" in
   *"db query"*) echo 2048 ;;
   *"option update waas_plan_usage"*) printf '%s' "$7" > "$WAAS_ROOT/usage.json" ;;
+  *"option get waas_plan_mail_packs"*) echo '{"purchased":10,"used":2}' ;;
   *"option get waas_plan_mail"*) echo '{"month":"${month()}","sent":7}' ;;
 esac
 `,
@@ -385,11 +481,12 @@ esac
     writeFileSync(join(content(), 'uploads/photo.jpg'), Buffer.alloc(3000));
     try {
       const out = execFileSync('php', [AGENT, 'usage', Buffer.from('{}').toString('base64')], {
-        env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}` },
+        env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}`, WAAS_EMAILS_PER_MONTH: '5' },
         encoding: 'utf8',
       });
       const result = JSON.parse(/^WAAS_RESULT (.*)$/m.exec(out)![1]!);
-      expect(result).toMatchObject({ mailMonth: month(), mailSent: 7 });
+      // 2 pack emails used in earlier months, and this month's 2 beyond the plan of 5.
+      expect(result).toMatchObject({ mailMonth: month(), mailSent: 7, packPurchased: 10, packUsed: 4 });
       expect(result.storageBytes).toBeGreaterThan(3000 + 2048);
       expect(new Date(result.measuredAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
       expect(JSON.parse(readFileSync(join(root, 'usage.json'), 'utf8')).bytes).toBe(result.storageBytes);

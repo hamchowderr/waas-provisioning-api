@@ -123,6 +123,18 @@ final class Client
     }
 
     /**
+     * Adds $emails on top of the store's monthly plan; they never expire. $reference (your order id, say) makes a
+     * repeat add nothing. The answer's `emailPacks` is the total bought for the store.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @return array<string, mixed>
+     */
+    public function addTenantEmailPack(array $tenant, int $emails, string $reference): array
+    {
+        return $this->call('addTenantEmailPack', 'POST', '/v1/tenants/email-packs', $this->ref($tenant), ['emails' => $emails, 'reference' => $reference]);
+    }
+
+    /**
      * Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when $backupId is null).
      *
      * @param array{externalId?: string, tenantId?: string} $tenant

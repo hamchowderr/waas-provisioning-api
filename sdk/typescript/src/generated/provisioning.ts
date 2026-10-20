@@ -177,6 +177,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/email-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an email pack
+         * @description Added for AnyPress.
+         *
+         *     Adds emails on top of the store's plan, which includes a number of emails each calendar month (UTC) from its size. Pack emails never expire: once a month's plan emails are used, the store sends from its packs, and only when those are used up too do campaigns and sequences (FluentCRM) wait for the next month. Order, account and booking emails always go out. The store's administrators see how many pack emails are left.
+         *
+         *     `reference` is an idempotency key, such as the shop's order (`fluentcart-order-123`): a repeat with a reference this tenant already used adds nothing and returns the same answer. `emailPacks` is the total of emails bought for the tenant so far.
+         *
+         *     The tenant shows `statusCode` 0 (Pending) until the store has the new total, then 1 (Done). Rejected for a tenant that is being removed or has failed.
+         */
+        post: operations["addTenantEmailPack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/restore": {
         parameters: {
             query?: never;
@@ -1513,6 +1539,28 @@ export interface components {
             /** @description The domain name */
             readonly domainName?: string;
         };
+        EmailPackParams: {
+            /**
+             * @description The emails the pack adds to the store's allowance. They never expire.
+             * @example 10000
+             */
+            emails: number;
+            /**
+             * @description Your idempotency key for this purchase, such as the order it was bought with. A repeat with a reference the tenant already used adds nothing.
+             * @example fluentcart-order-123
+             */
+            reference: string;
+        };
+        EmailPackResult: {
+            /** Format: uuid */
+            readonly tenantId?: string;
+            readonly externalId?: string;
+            /**
+             * @description The emails of every pack bought for the tenant, this one included.
+             * @example 10000
+             */
+            readonly emailPacks?: number;
+        };
         SuspendTenantParams: {
             /**
              * @description Take a full backup (files and database) before the tenant goes offline.
@@ -2095,6 +2143,63 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
                 };
+            };
+        };
+    };
+    addTenantEmailPack: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EmailPackParams"];
+            };
+        };
+        responses: {
+            /** @description The pack was recorded (or had been already) and is being applied to the store */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailPackResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

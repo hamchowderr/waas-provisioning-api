@@ -401,6 +401,28 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
   });
 
+  it('tells a store its email packs through the agent, without a restart', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+    await p.setEmailPacks({ storeId: STORE_ID, purchased: 15000 });
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'mail-packs', args: { purchased: 15000 } });
+    expect(store.started).toBe(starts);
+  });
+
+  it('brings a store from before email packs to the current setup first, so its agent has the operation', async () => {
+    await p.createStore({ ...storeInput, size: 'medium' });
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup 4, size medium`;
+    store.compose = 'old compose';
+    const starts = store.started;
+    await p.setEmailPacks({ storeId: STORE_ID, purchased: 5000 });
+    expect(store.started).toBe(starts + 1);
+    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_B64).toBe(Buffer.from(AGENT_SCRIPT).toString('base64'));
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size medium`);
+    expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['configure', 'mail-packs']);
+  });
+
   it('creates a store at its size: resources and quotas in the compose, the size in the description', async () => {
     await p.createStore({ ...storeInput, size: 'medium' });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;

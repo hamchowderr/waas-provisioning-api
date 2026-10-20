@@ -119,6 +119,11 @@ export class WaasClient {
     resume: (ref: TenantRef) => this.#call('resumeTenant', 'POST', '/v1/tenants/resume', ref),
     /** Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when backupId is omitted). */
     restore: (ref: TenantRef, params: BodyOf<'restoreTenant'> = {}) => this.#call('restoreTenant', 'POST', '/v1/tenants/restore', ref, params),
+    /**
+     * Adds emails on top of the store's monthly plan; they never expire. `reference` (your order id, say) makes a
+     * repeat add nothing. Answers with the total bought for the store.
+     */
+    addEmailPack: (ref: TenantRef, params: BodyOf<'addTenantEmailPack'>) => this.#call('addTenantEmailPack', 'POST', '/v1/tenants/email-packs', ref, params),
     listBackups: (ref: TenantRef) => this.#call('listTenantBackups', 'GET', '/v1/tenants/backups', ref),
     createBackup: (ref: TenantRef) => this.#call('createTenantBackup', 'POST', '/v1/tenants/backups', ref),
     /**
