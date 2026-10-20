@@ -40,7 +40,7 @@ info:
 
 
     History: docs/contract.md.'
-  version: 1.0.0-draft.6
+  version: 1.0.0
 servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
   description: Postman mock (private; send x-api-key)
