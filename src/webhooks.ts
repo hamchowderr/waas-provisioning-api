@@ -256,6 +256,7 @@ function eventFor(data: JobData, ok: boolean): EventType | null {
   const map: Partial<Record<JobData['type'], EventType>> = {
     'tenant.create': 'tenant.ready',
     'tenant.update': 'tenant.updated',
+    'tenant.email-packs': 'tenant.updated',
     'tenant.move': 'tenant.version_changed',
     'tenant.domains': 'tenant.domains_changed',
     'tenant.suspend': 'tenant.suspended',
@@ -287,6 +288,8 @@ async function subject(pool: Pool, data: JobData) {
 const ACTIONS: Record<string, string> = {
   'tenant.create': 'create',
   'tenant.update': 'update',
+  // Within v1 the action list doesn't grow: email packs not applied are a failed update.
+  'tenant.email-packs': 'update',
   'tenant.move': 'change_version',
   'tenant.domains': 'change_domains',
   'tenant.delete': 'delete',

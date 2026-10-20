@@ -129,6 +129,12 @@ export function toTenant(row: any) {
   return { ...tenant, isSuspended: row.is_suspended, dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null };
 }
 
+/** The emails of every pack bought for the tenant. */
+export async function emailPacksBought(db: Pool | Client, tenantId: string): Promise<number> {
+  const { rows } = await db.query('SELECT COALESCE(SUM(emails), 0)::bigint AS total FROM tenant_email_packs WHERE tenant_id = $1', [tenantId]);
+  return Number(rows[0].total);
+}
+
 /**
  * The tenant named by ?tenantId= or ?externalId=. A tenantId that isn't a UUID is looked up as an
  * external ID: release 2.2.7 of the storefront plugin sends the external ID as tenantId.

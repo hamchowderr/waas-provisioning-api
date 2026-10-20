@@ -32,6 +32,8 @@ export type JobData =
   | { type: 'tenant.suspend'; tenantId: string; backupId?: string }
   | { type: 'tenant.resume'; tenantId: string }
   | { type: 'tenant.backup'; tenantId: string; backupId: string }
+  /** Tells the store how many pack emails it has bought in all (tenant_email_packs, read when the job runs). */
+  | { type: 'tenant.email-packs'; tenantId: string }
   /** Re-creates a deleted tenant (already re-inserted by the request) from a kept backup. */
   | { type: 'tenant.restore'; tenantId: string; backupId: string }
   /**
