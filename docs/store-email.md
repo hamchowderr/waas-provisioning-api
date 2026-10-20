@@ -6,7 +6,7 @@ For whoever runs the API. Stores send their email (password resets, FluentCart o
 
 - The API holds the relay settings (below). When `STORE_SMTP_PASSWORD` is set, every store gets them as the Coolify variable `WAAS_MAIL_B64` (base64 JSON), which the compose file passes to the `wordpress` and `agent` containers. They are never in an agent command or in the store's files, so snapshots and backups carry no credentials.
 - The store agent writes the mu-plugin `wp-content/mu-plugins/waas-mail.php` with the guard (on restore, configure, suspend and resume). It reads `WAAS_MAIL_B64` and sets PHPMailer to SMTP. Without the variable (version sites, or the relay unset) it does nothing.
-- The relay only sends from its verified domain, so every message goes out **from `STORE_MAIL_FROM` under the store's name** (the sender name a plugin set, else the site title). The address the store meant to send from becomes the Reply-To, unless the message already has one or it is WordPress's placeholder `wordpress@<site>`.
+- The relay only sends from its verified domain, so every message goes out **from the store's own address on `STORE_MAIL_FROM`'s domain under the store's name** (the sender name a plugin set, else the site title); see [Each store's own address](#each-stores-own-address). The address the store meant to send from becomes the Reply-To, unless the message already has one or it is WordPress's placeholder `wordpress@<site>`. When none of that gives a Reply-To, it is the site's administration email, since nobody reads the store's address on the relay's domain.
 - Failures are written to the PHP error log (`WaaS store mail: …`), visible in the store's container logs.
 - Existing stores: on startup the API gives every live store the current settings (`ensureStoreMail`, next to the cron check in `src/maintenance.ts`). A store whose variable already matches is left alone. One that needs it gets the variable, a re-rendered compose if it never had one, **one restart**, and the mu-plugin. Changing any setting (a new key) does the same for every store on the next deploy.
 
@@ -19,7 +19,7 @@ For whoever runs the API. Stores send their email (password resets, FluentCart o
 | `STORE_SMTP_HOST` | `smtp.tosend.com` | |
 | `STORE_SMTP_PORT` | `587` | 465 uses implicit TLS; any other port STARTTLS |
 | `STORE_SMTP_USER` | `tosend` | |
-| `TOSEND_ADMIN_KEY` | | Optional. A toSend admin key (`tsend_admin_…`) with **Send email** on and write access to Domains and Sending keys. Gives each store its own sending key and lets stores send from their own domain (below). Without Send email, toSend refuses to create sending keys (403 `insufficient_scope`) and stores stay on the shared key |
+| `TOSEND_ADMIN_KEY` | | Optional. A toSend admin key (`tsend_admin_…`) with **Send email** on, write access to Domains and Sending keys, and read access to Emails. Gives each store its own sending key, lets stores send from their own domain, and counts each store's email (below). Without Send email, toSend refuses to create sending keys (403 `insufficient_scope`) and stores stay on the shared key |
 | `TOSEND_API_URL` | `https://api.tosend.com` | |
 
 ## Setting up toSend
@@ -31,6 +31,29 @@ For whoever runs the API. Stores send their email (password resets, FluentCart o
 Check the toSend plan's sending limits against the stores' order and password-reset volume before selling at scale.
 
 Another provider works the same way through its SMTP settings (`STORE_SMTP_HOST`, `_PORT`, `_USER`). Check its acceptable-use terms for what your stores sell first.
+
+## Each store's own address
+
+toSend's messages carry no key or account, only the From address, so each store sends from an address of its own; that is what lets the platform count each store's email (below). A store sends from `<name>@<STORE_MAIL_FROM's domain>`:
+
+- `<name>` is the first part of the store's main domain when that is a name directly under `PLATFORM_DOMAIN` or `STORES_DOMAIN` (`volume-test-two.anypress.site` sends from `volume-test-two@anypress.io`).
+- Otherwise, the first part of the store's base domain (`t-64e9c63d.stores.anypress.site` sends from `t-64e9c63d@anypress.io`). Also when the name is reserved (`no-reply`, `noreply`, `support`, `admin`, `billing`, `postmaster`, `abuse`, `hostmaster`, `webmaster`, `shop`, `app`, `mail`, `info`, `hello`), is the platform's own address, or another store has sent from it: an address is never shared by two stores.
+- A store with its own verified sending domain keeps `no-reply@<its domain>` (below).
+- The shop and the platform itself keep sending from `STORE_MAIL_FROM` (`no-reply@`).
+
+The address follows the store's main domain: a change of address (`addTenantDomain` with `setAsMainDomain`, or the dashboard's Change address) moves its sender in the same job, with the restart the domain change already has. Moving to a new name on the same domain keeps the store's toSend key (keys are restricted to a domain, not an address). Every address a store sent from is kept in `tenant_mail_senders`, with when it stopped being used.
+
+Existing stores move to their own address on the deploy that brings this (`ensureStoreMail` on startup), with one restart each; see [coolify.md](coolify.md#store-setup).
+
+## The platform's count
+
+A store counts its own email (the plan's monthly emails and email packs, see [coolify.md](coolify.md)), but a store administrator can edit that count. So the platform counts too, with `TOSEND_ADMIN_KEY`:
+
+- Every hour (`src/mailcount.ts`, the `mail-count` queue), for each live store that is not suspended, it asks toSend how many emails each address the store used this calendar month (UTC) sent since the first of the month. Messages toSend accepted but never sent (`suppressed`, `failed`, `spam`) are not counted; `sent`, `bounced`, `complained` and `pending` are, as toSend bills them. A store or address that sent nothing costs one request.
+- toSend's search matches the address anywhere in the sender, the subject or the recipients, so `acme@anypress.io` also matches `bigacme@anypress.io`. Every known address that contains another one, any store's or `STORE_MAIL_FROM` itself, has its own count taken off: count(`acme@`) = search(`acme@`) − count(`bigacme@`), the longer addresses counted first.
+- The count is kept in `tenant_mail_usage` and shown on the dashboard's store page (`emailUsage`). When it changed, the store is told it (the agent's `mail-count` operation), and its plan goes by the higher of its own count and the platform's.
+- Searches count against toSend's limit of 300 a minute: the job waits 250 ms between requests, and at a 429 it stops; the next run starts with the stores checked longest ago.
+- What a store sent from `STORE_MAIL_FROM` before it moved to its own address is not counted by the platform (it says nothing about which store sent it); the store's own count still has it.
 
 ## Per-store keys
 
@@ -58,5 +81,7 @@ A store has at most one sending domain. The platform's own domain and its subdom
 
 ## Not covered yet
 
-- Per-store sending limits, and a toSend team per customer (its own logs and suspension).
+- A toSend team per customer (its own logs and suspension).
+- The platform counts what a store sent, but the plan's limits are still applied in the store: a store owner who can run PHP in the store can get around them.
+- An address in a message's subject or recipients (a store emailing another store's address) adds to that address's count.
 - Without `TOSEND_ADMIN_KEY`, all stores share one key. A store admin cannot read it from wp-admin, but anyone able to run PHP in the store could.

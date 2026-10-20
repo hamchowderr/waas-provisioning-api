@@ -1,6 +1,7 @@
 import type { PgBoss } from 'pg-boss';
 import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
+import { ensureStoreSender, type MailboxDomains } from './mailcount.ts';
 import type { Provisioner, StoreSender } from './provisioner/provisioner.ts';
 import { Status } from './status.ts';
 import { normalizeDomain } from './tenants.ts';
@@ -98,10 +99,11 @@ export async function removeMailDomain(pool: Pool, tenantId: string): Promise<{ 
   return rows[0] ? { domainName: rows[0].domain_name } : null;
 }
 
-/** The verified sending domain of each live store that has one, by store id (for maintainStores). */
-export async function storeSenders(pool: Pool): Promise<Map<string, StoreSender>> {
+/** The verified sending domain of each live store that has one, or of `tenantId` only, by store id (for maintainStores). */
+export async function storeSenders(pool: Pool, tenantId?: string): Promise<Map<string, StoreSender>> {
   const { rows } = await pool.query(
-    "SELECT tenant_id, domain_name, tosend_domain_id FROM tenant_mail_domains WHERE status = 'verified' AND tenant_id IS NOT NULL",
+    "SELECT tenant_id, domain_name, tosend_domain_id FROM tenant_mail_domains WHERE status = 'verified' AND tenant_id IS NOT NULL AND ($1::uuid IS NULL OR tenant_id = $1)",
+    [tenantId ?? null],
   );
   return new Map(rows.map((r) => [r.tenant_id, { domain: r.domain_name, domainId: r.tosend_domain_id }]));
 }
@@ -109,10 +111,16 @@ export async function storeSenders(pool: Pool): Promise<Map<string, StoreSender>
 /**
  * One pass over every sending domain: a pending one toSend now reports verified becomes verified;
  * a live store with a verified domain sends from it (a no-op once it does); a removed one moves its
- * store back and leaves toSend; a deleted store's leaves toSend. A failure is logged and retried on
- * the next pass.
+ * store back, to its mailbox at the platform's domain (`mailboxDomains`, src/mailcount.ts), and leaves
+ * toSend; a deleted store's leaves toSend. A failure is logged and retried on the next pass.
  */
-export async function checkMailDomains(pool: Pool, domains: SendingDomains, provisioner: Provisioner, log: Pick<Console, 'log' | 'error'> = console): Promise<void> {
+export async function checkMailDomains(
+  pool: Pool,
+  domains: SendingDomains,
+  provisioner: Provisioner,
+  mailboxDomains: MailboxDomains,
+  log: Pick<Console, 'log' | 'error'> = console,
+): Promise<void> {
   const { rows } = await pool.query(
     `SELECT m.*, t.status AS tenant_status FROM tenant_mail_domains m LEFT JOIN tenants t ON t.id = m.tenant_id ORDER BY m.date_created`,
   );
@@ -122,7 +130,7 @@ export async function checkMailDomains(pool: Pool, domains: SendingDomains, prov
       if (!row.tenant_id || row.status === 'removing') {
         if (row.tenant_id) {
           if (!live) continue; // Moved back once the store is live again.
-          const result = await provisioner.ensureStoreMail({ storeId: row.tenant_id });
+          const result = await ensureStoreSender(pool, provisioner, mailboxDomains, row.tenant_id);
           if (result !== 'unchanged') log.log(`Store ${row.tenant_id}: back on the platform's address`);
         }
         await domains.deleteDomain(row.tosend_domain_id);
@@ -136,7 +144,7 @@ export async function checkMailDomains(pool: Pool, domains: SendingDomains, prov
         log.log(`Sending domain ${row.domain_name} verified`);
       }
       if (!live) continue;
-      const result = await provisioner.ensureStoreMail({ storeId: row.tenant_id, sender: { domain: row.domain_name, domainId: row.tosend_domain_id } });
+      const result = await ensureStoreSender(pool, provisioner, mailboxDomains, row.tenant_id, { domain: row.domain_name, domainId: row.tosend_domain_id });
       if (result !== 'unchanged') log.log(`Store ${row.tenant_id}: sending from ${row.domain_name}`);
     } catch (err) {
       log.error(`Sending domain ${row.domain_name}: not checked: ${(err as Error).message}`);
@@ -145,12 +153,18 @@ export async function checkMailDomains(pool: Pool, domains: SendingDomains, prov
 }
 
 /** Runs checkMailDomains every 10 minutes (toSend's own DNS check cadence) when toSend is set up. */
-export async function startMailDomainChecks(boss: PgBoss, pool: Pool, domains: SendingDomains | undefined, provisioner: Provisioner): Promise<void> {
+export async function startMailDomainChecks(
+  boss: PgBoss,
+  pool: Pool,
+  domains: SendingDomains | undefined,
+  provisioner: Provisioner,
+  mailboxDomains: MailboxDomains,
+): Promise<void> {
   if (!domains) {
     if (await boss.getQueue(MAIL_DOMAINS_QUEUE)) await boss.unschedule(MAIL_DOMAINS_QUEUE);
     return;
   }
   if (!(await boss.getQueue(MAIL_DOMAINS_QUEUE))) await boss.createQueue(MAIL_DOMAINS_QUEUE, { retryLimit: 0, expireInSeconds: 3600 });
   await boss.schedule(MAIL_DOMAINS_QUEUE, '*/10 * * * *');
-  await boss.work(MAIL_DOMAINS_QUEUE, { pollingIntervalSeconds: 60 }, () => checkMailDomains(pool, domains, provisioner));
+  await boss.work(MAIL_DOMAINS_QUEUE, { pollingIntervalSeconds: 60 }, () => checkMailDomains(pool, domains, provisioner, mailboxDomains));
 }

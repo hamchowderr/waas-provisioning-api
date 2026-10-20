@@ -49,7 +49,7 @@ export async function setup(): Promise<TestContext> {
   // Webhook endpoints in tests are local test servers.
   const webhooks: WebhookConfig = { allowPrivate: true, logDays: 30 };
   config.webhooks = webhooks;
-  await startWorker(boss, withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays), pool, boss, webhooks), 0.5);
+  await startWorker(boss, withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, 30, config), pool, boss, webhooks), 0.5);
   await startWebhookWorker(boss, pool, secrets, webhooks, { retryDelaySeconds: 1, retryLimit: 2, pollingIntervalSeconds: 0.5 });
   const deps: Deps = { config, pool, boss, provisioner, secrets };
   const app = createApp(deps);

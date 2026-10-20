@@ -5,6 +5,7 @@ import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { backupCipherKey, DbBackups, pgDump, startDbBackups } from './dbbackup.ts';
 import { createJobHandlers } from './jobs.ts';
+import { startMailCounts } from './mailcount.ts';
 import { startMailDomainChecks } from './maildomains.ts';
 import { maintainStores } from './maintenance.ts';
 import { S3 } from './provisioner/s3.ts';
@@ -31,7 +32,7 @@ const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
 const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
-const handlers = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays), pool, boss, webhooks);
+const handlers = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config), pool, boss, webhooks);
 await startWorker(boss, handlers);
 await startWebhookWorker(boss, pool, secrets, webhooks);
 // Daily off-site backup of this database (docs/db-backups.md), when the S3_* settings are set.
@@ -42,9 +43,11 @@ await startDbBackups(boss, dbBackups, config.dbBackup?.schedule ?? '');
 // Nightly backup of every live store (docs/store-backups.md), unless STORE_BACKUP=off.
 await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
 // Stores' own sending domains (docs/store-email.md): checked every 10 minutes, when toSend is set up.
-await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner);
+await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner, config);
+// The platform's count of each store's email (docs/store-email.md): every hour, when toSend is set up.
+await startMailCounts(boss, pool, config.mailCounter, provisioner);
 // In the background: a store already up to date costs two Coolify lookups.
-void maintainStores(pool, provisioner);
+void maintainStores(pool, provisioner, config);
 
 // Sign-in for people (docs/accounts.md), when AUTH_URL and AUTH_SECRET are set.
 const auth = config.auth ? createAuth(pool, config.auth) : undefined;

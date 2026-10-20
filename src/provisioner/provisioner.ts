@@ -58,8 +58,12 @@ export interface Provisioner {
   /** Creates a store from a snapshot on a version, with its constants, options and first user. */
   createStore(input: CreateStoreInput): Promise<void>;
 
-  /** Sets the domains a store answers on. The main domain is SiteUrl and Home; the rest redirect to it. */
-  setDomains(input: { storeId: string; mainDomain: string; redirectDomains: string[] }): Promise<void>;
+  /**
+   * Sets the domains a store answers on. The main domain is SiteUrl and Home; the rest redirect to it.
+   * `mail`, when given, is who the store's email is from afterwards (its mailbox follows its main
+   * domain), applied as ensureStoreMail would but with the same restart.
+   */
+  setDomains(input: { storeId: string; mainDomain: string; redirectDomains: string[]; mail?: StoreMailFrom }): Promise<void>;
 
   /**
    * Writes wpOptions and phpConstants into a running store. wpOptions holds only the options to
@@ -73,6 +77,12 @@ export interface Provisioner {
    * emails. The store keeps its own count of the pack emails it has used; packs never expire.
    */
   setEmailPacks(input: { storeId: string; purchased: number }): Promise<void>;
+
+  /**
+   * Tells a store how many emails it sent in `month` (UTC, YYYY-MM) as the platform counted them on the relay
+   * (src/mailcount.ts). The store keeps its own count too and goes by the higher of the two.
+   */
+  setMailCount(input: { storeId: string; month: string; sent: number }): Promise<void>;
 
   /**
    * Moves a store to another version: its WordPress and PHP, and its code unless the store keeps its
@@ -146,9 +156,13 @@ export interface Provisioner {
    * Makes sure a store sends email through the platform's mail relay with its current settings.
    * createStore already does this; the API calls it for every live store on startup, so older
    * stores, and every store after the relay's settings change, get it too. With `sender`, the store
-   * sends from its own verified domain (src/maildomains.ts) instead of the platform's.
+   * sends from its own verified domain (src/maildomains.ts) instead of the platform's; with `mailbox`,
+   * from that name at the platform's sending domain.
    */
-  ensureStoreMail(input: { storeId: string; sender?: StoreSender }): Promise<'created' | 'updated' | 'unchanged'>;
+  ensureStoreMail(input: { storeId: string } & StoreMailFrom): Promise<'created' | 'updated' | 'unchanged'>;
+
+  /** The address a store with these settings sends from (storeFromAddress), or null when stores send no email. */
+  mailFrom(input: StoreMailFrom): string | null;
 }
 
 /** A store's own sending domain, verified on toSend: it sends from the platform's address name at it. */
@@ -156,6 +170,24 @@ export interface StoreSender {
   domain: string;
   /** toSend's id for the domain; the store's key is restricted to it. */
   domainId: string;
+}
+
+/** Who a store's email is from: its own verified domain, else its own mailbox at the platform's sending domain. */
+export interface StoreMailFrom {
+  sender?: StoreSender;
+  /** A name at the platform's sending domain (src/mailcount.ts); unset: the platform's address itself. */
+  mailbox?: string;
+}
+
+/**
+ * The address a store sends from, given the platform's (STORE_MAIL_FROM, e.g. no-reply@anypress.io): its
+ * name at the store's own domain (no-reply@shop.example), or the store's mailbox at the platform's domain
+ * (acme@anypress.io), or the platform's address itself.
+ */
+export function storeFromAddress(platformFrom: string, { sender, mailbox }: StoreMailFrom): string {
+  const [name, domain] = platformFrom.split('@') as [string, string];
+  if (sender) return `${name}@${sender.domain}`;
+  return mailbox ? `${mailbox}@${domain}` : platformFrom;
 }
 
 export interface PhpConstant {
@@ -180,5 +212,7 @@ export interface CreateStoreInput {
   wpOptions: Record<string, string>;
   /** Its resources and quotas (src/plans.ts). */
   size: Size;
+  /** The store's mailbox at the platform's sending domain (StoreMailFrom); unset: the platform's address. */
+  mailbox?: string;
   user?: { name: string; email: string; role: string; password?: string };
 }
