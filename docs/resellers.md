@@ -2,7 +2,7 @@
 
 For whoever runs the API: how to group a partner's storefronts and count what to bill them.
 
-A **reseller** is a partner that sells stores from one or more storefronts (products) under its own brand, and pays the platform a wholesale price for every live store across them. The public contract calls this a *subscription*; a reseller's id will be its `subscriptionId` once the partner calls in [docs/contract.md](contract.md) are built.
+A **reseller** is a partner that sells stores from one or more storefronts (products) under its own brand, and pays the platform a wholesale price for every live store across them. The public contract calls this a *subscription*, and a reseller's id is its `subscriptionId`.
 
 A storefront that belongs to no reseller works exactly as before. Moving one into a reseller changes nothing for its API keys, team or stores; it only adds the reseller's limits and starts counting its stores toward the reseller's usage.
 
@@ -28,6 +28,27 @@ Everything is on the admin API (`Authorization: Bearer <ADMIN_TOKEN>`). Signed-i
 | `listPriceCents` | `{"small": 1200, "medium": 2400, "large": 4800}`: the monthly list price of one store of each size, in US cents, before the discount. Send only the sizes to change. The default is the Website plan's price |
 
 Lowering a limit below the current count removes nothing; it only stops new storefronts or stores.
+
+## Partner keys
+
+A partner key is an API key that belongs to the reseller instead of one storefront. It works on every storefront in the account, so a partner running several of them needs one key, not one per storefront.
+
+| Call | What it does |
+|---|---|
+| `GET /admin/resellers/{id}/keys` | Its keys: working ones and those revoked in the last 30 days. Never secrets |
+| `POST /admin/resellers/{id}/keys` `{"label": "…"}` | A new key. The secret is in this answer only |
+| `POST /admin/resellers/{id}/keys/{keyId}/rotate` `{"graceHours": 24}` | A new key in place of an active one; the old one keeps working for `graceHours` (0 to 720) |
+| `DELETE /admin/resellers/{id}/keys/{keyId}` | Revokes it now |
+
+A reseller can have 20 working keys, like a storefront. Deleting the reseller deletes its keys.
+
+On `/v1`, the partner key signs in with Basic auth like any key, and:
+
+- `GET /v1/subscriptions` answers its own account, and `GET /v1/products` its storefronts. These need no `productId`. A storefront's own key gets 403 on both.
+- Every other call takes `?productId=` to say which storefront it is for, and then works exactly as it would with that storefront's own key. Without it the answer is 400; a storefront outside the account is 403. A storefront moved out of the account is out of reach at once.
+- A storefront's own key ignores `productId`, as the contract says, so nothing changes for existing callers.
+
+Making and deleting storefronts with a partner key (`POST`, `DELETE /v1/products`) comes later.
 
 ## Usage
 

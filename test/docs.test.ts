@@ -26,8 +26,10 @@ describe('public API reference', () => {
     expect(spec.paths['/v1/tenants'].post).toBeDefined();
     expect(spec.paths['/v1/tenants/mail-domain']).toBeDefined();
     expect(spec.paths['/v1/plugins/{slug}/update']).toBeDefined();
-    // Not implemented yet, and the admin API is not public.
-    expect(spec.paths['/v1/subscriptions']).toBeUndefined();
+    // Partner calls built so far are listed; ones not built yet are not, and the admin API is not public.
+    expect(spec.paths['/v1/subscriptions'].get).toBeDefined();
+    expect(spec.paths['/v1/subscriptions'].post).toBeUndefined();
+    expect(spec.paths['/v1/subscriptions/usage']).toBeUndefined();
     expect(Object.keys(spec.paths).some((p) => p.startsWith('/admin'))).toBe(false);
   });
 

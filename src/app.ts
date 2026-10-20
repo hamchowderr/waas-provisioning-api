@@ -8,12 +8,13 @@ import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
 import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
-import { authenticate } from './keys.ts';
+import { authenticateKey } from './keys.ts';
 import { checkHealth } from './health.ts';
 import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
+import { partnerRoutes, PARTNER_ONLY } from './routes/partner.ts';
 import { importRoutes } from './imports.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -56,8 +57,11 @@ export interface Deps {
  */
 export type AppEnv = {
   Bindings: { internalAuth?: { productId: string; apiKeyId?: string; userId?: string } };
-  /** scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts). */
-  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string };
+  /**
+   * scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts).
+   * resellerId: set for a partner key, which also sets productId from the productId query.
+   */
+  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string };
 };
 
 export function createApp(deps: Deps) {
@@ -123,8 +127,23 @@ export function createApp(deps: Deps) {
     // The key is an id, kept in the request log even when the secret is wrong; anything else typed
     // as the username (a pasted secret, say) is not.
     if (isUuid(key)) c.set('apiKeyId', key);
-    const productId = key ? await authenticate(deps.pool, key, decoded.slice(colon + 1)) : null;
-    if (!productId) return c.json({ statusCode: 403, message: 'Invalid API key or secret' }, 403);
+    const caller = key ? await authenticateKey(deps.pool, key, decoded.slice(colon + 1)) : null;
+    if (!caller) return c.json({ statusCode: 403, message: 'Invalid API key or secret' }, 403);
+    if (caller.productId) {
+      // A storefront's own key ignores any productId query (the contract says so).
+      c.set('productId', caller.productId);
+      return next();
+    }
+    // A partner key (docs/resellers.md): the productId query says which of the reseller's storefronts
+    // the call is for, and every route below reads it as usual. The partner-only routes need none.
+    c.set('resellerId', caller.resellerId!);
+    if (PARTNER_ONLY.test(c.req.path)) return next();
+    const productId = c.req.query('productId');
+    if (!productId) return c.json({ statusCode: 400, message: 'productId is required with a partner key' }, 400);
+    const own =
+      isUuid(productId) &&
+      (await deps.pool.query('SELECT 1 FROM products WHERE id = $1 AND reseller_id = $2', [productId, caller.resellerId])).rowCount;
+    if (!own) return c.json({ statusCode: 403, message: `Product ${productId} is not one of this partner's storefronts` }, 403);
     c.set('productId', productId);
     await next();
   });
@@ -141,6 +160,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/plugins', pluginRoutes(deps));
   app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
+  app.route('/v1', partnerRoutes(deps));
 
   // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
   oauthRoutes(app, deps);
