@@ -35,7 +35,7 @@ Each request body is `{"type": "...", "timestamp": "<ISO time>", "data": {...}}`
 | `tenant.restored` | A deleted store is back from its backup | `tenant` |
 | `tenant.rolled_back` | A live store went back to one of its backups | `tenant` |
 | `tenant.backup_completed`, `tenant.backup_failed` | A backup finished or failed, nightly ones included | `tenant`, `backupId` |
-| `tenant.failed` | A change still failed after its retries (email packs not applied: `update`) | `tenant`, `action` (`create`, `update`, `change_version`, `change_domains`, `delete`, `suspend`, `resume`, `restore`, `roll_back`) |
+| `tenant.failed` | A change still failed after its retries (not sent for email packs: the store keeps working and the shop sends them again) | `tenant`, `action` (`create`, `update`, `change_version`, `change_domains`, `delete`, `suspend`, `resume`, `restore`, `roll_back`) |
 | `version.ready`, `version.deleted` | A version finished building, or is gone | `version` |
 | `version.failed` | A version build or delete failed | `version`, `action` |
 | `webhook.test` | Sent by `POST /v1/webhooks/{id}/test` | `endpointId` |

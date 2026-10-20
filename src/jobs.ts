@@ -123,7 +123,6 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
           if (!rowCount) return;
           // The total on record when the job runs, not when it was queued: packs bought meanwhile are included.
           await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
       }
@@ -163,8 +162,10 @@ export function createJobHandlers(pool: Pool, provisioner: Provisioner, secrets:
         case 'tenant.update':
         case 'tenant.move':
         case 'tenant.domains':
-        case 'tenant.email-packs':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
+        case 'tenant.email-packs':
+          // The store still works; it just doesn't have its new pack emails yet. The shop's retry sends them again.
           return;
         case 'tenant.delete':
           await setTenantStatus(data.tenantId, Status.Failed);

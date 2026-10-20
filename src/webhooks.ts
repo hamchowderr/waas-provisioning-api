@@ -251,6 +251,8 @@ function eventFor(data: JobData, ok: boolean): EventType | null {
     if (data.type === 'tenant.backup') return 'tenant.backup_failed';
     if (data.type === 'version.create') return 'version.failed';
     if (data.type === 'version.delete') return 'version.failed';
+    // The store still works; only its pack emails weren't sent yet.
+    if (data.type === 'tenant.email-packs') return null;
     return data.type.startsWith('tenant.') ? 'tenant.failed' : null;
   }
   const map: Partial<Record<JobData['type'], EventType>> = {
@@ -288,8 +290,6 @@ async function subject(pool: Pool, data: JobData) {
 const ACTIONS: Record<string, string> = {
   'tenant.create': 'create',
   'tenant.update': 'update',
-  // Within v1 the action list doesn't grow: email packs not applied are a failed update.
-  'tenant.email-packs': 'update',
   'tenant.move': 'change_version',
   'tenant.domains': 'change_domains',
   'tenant.delete': 'delete',

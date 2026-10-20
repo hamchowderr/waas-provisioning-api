@@ -67,15 +67,14 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
     const body = validateBody<{ emails: number; reference: string }>('EmailPackParams', await readJson(c));
     const emailPacks = await withTransaction(pool, async (client) => {
       // A repeat racing the first waits here for it to commit, then adds nothing.
-      const added = await client.query(
+      await client.query(
         `INSERT INTO tenant_email_packs (tenant_id, product_id, emails, reference) VALUES ($1, $2, $3, $4)
          ON CONFLICT (tenant_id, reference) DO NOTHING`,
         [tenant.id, tenant.product_id, body.emails, body.reference],
       );
-      if (added.rowCount) {
-        await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenant.id, Status.Pending]);
-        await enqueue(boss, client, { type: 'tenant.email-packs', tenantId: tenant.id });
-      }
+      // The store keeps working while its total is sent, so its status doesn't change. A repeat adds nothing but
+      // sends the total again, so the shop retrying a pack also repairs a send that failed.
+      await enqueue(boss, client, { type: 'tenant.email-packs', tenantId: tenant.id });
       return emailPacksBought(client, tenant.id);
     });
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id, emailPacks });

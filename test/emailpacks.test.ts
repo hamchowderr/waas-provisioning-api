@@ -32,20 +32,19 @@ describe('email packs', () => {
     const res = await addPack(`externalId=${tenant.externalId}`, { emails: 10000, reference: 'fluentcart-order-1' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, emailPacks: 10000 });
-    expect((await getTenant(tenant.externalId)).statusCode).toBe(Status.Pending);
-    await settled(tenant.externalId);
-    expect(t.provisioner.stores.get(tenant.id)!.emailPacks).toBe(10000);
+    // The store keeps working while the total is sent: its status doesn't change.
+    expect((await getTenant(tenant.externalId)).statusCode).toBe(Status.Done);
+    await waitFor(async () => t.provisioner.stores.get(tenant.id)!.emailPacks === 10000);
 
     // By tenantId too; the store gets the sum of every pack.
     expect(await (await addPack(`tenantId=${tenant.id}`, { emails: 5000, reference: 'fluentcart-order-2' })).json()).toMatchObject({ emailPacks: 15000 });
-    await settled(tenant.externalId);
-    expect(t.provisioner.stores.get(tenant.id)!.emailPacks).toBe(15000);
+    await waitFor(async () => t.provisioner.stores.get(tenant.id)!.emailPacks === 15000);
   });
 
-  it('adds nothing for a reference the tenant already used, and answers the same', async () => {
+  it('adds nothing for a reference the tenant already used, answers the same, and sends the total again', async () => {
     const tenant = await newTenant('Retry Shop');
     const first = await (await addPack(`externalId=${tenant.externalId}`, { emails: 2000, reference: 'order-7' })).json();
-    await settled(tenant.externalId);
+    await waitFor(async () => t.provisioner.stores.get(tenant.id)!.emailPacks === 2000);
     const calls: number[] = [];
     const set = t.provisioner.setEmailPacks.bind(t.provisioner);
     t.provisioner.setEmailPacks = async (input) => {
@@ -56,18 +55,20 @@ describe('email packs', () => {
       const again = await addPack(`externalId=${tenant.externalId}`, { emails: 2000, reference: 'order-7' });
       expect(again.status).toBe(200);
       expect(await again.json()).toEqual(first);
-      // No job and no status change.
+      // No status change; the total goes to the store again, so a retry repairs a send that failed.
       expect((await getTenant(tenant.externalId)).statusCode).toBe(Status.Done);
+      await waitFor(async () => calls.length === 1);
+      expect(calls).toEqual([2000]);
       // Racing repeats add it once.
       const raced = await Promise.all([1, 2, 3].map(() => addPack(`externalId=${tenant.externalId}`, { emails: 300, reference: 'order-8' }).then((r) => r.json())));
       expect(raced.map((r: any) => r.emailPacks)).toEqual([2300, 2300, 2300]);
-      await settled(tenant.externalId);
+      await waitFor(async () => calls.length === 4);
       const { rows } = await t.pool.query('SELECT reference, emails FROM tenant_email_packs WHERE tenant_id = $1 ORDER BY reference', [tenant.id]);
       expect(rows).toEqual([
         { reference: 'order-7', emails: 2000 },
         { reference: 'order-8', emails: 300 },
       ]);
-      expect(calls).toEqual([2300]);
+      expect(calls).toEqual([2000, 2300, 2300, 2300]);
     } finally {
       t.provisioner.setEmailPacks = set;
     }
@@ -112,17 +113,18 @@ describe('email packs', () => {
     expect((await addPack(`externalId=${failed.externalId}`, { emails: 100, reference: 'x' })).status).toBe(400);
   });
 
-  it('marks the tenant Failed when the store cannot be told, and records the failure', async () => {
+  it('leaves the store as it is when it cannot be told, and records the failure', async () => {
     const tenant = await newTenant('Broken Shop');
     t.provisioner.failNext('setEmailPacks', 10);
     try {
       await addPack(`externalId=${tenant.externalId}`, { emails: 100, reference: 'order-1' });
-      await waitFor(async () => (await getTenant(tenant.externalId))?.statusCode === Status.Failed, 30_000);
+      await waitFor(async () => (await t.pool.query('SELECT 1 FROM job_failures WHERE tenant_id = $1', [tenant.id])).rowCount === 1, 30_000);
     } finally {
       t.provisioner.failNext('setEmailPacks', 0);
     }
     const { rows } = await t.pool.query('SELECT job_type FROM job_failures WHERE tenant_id = $1', [tenant.id]);
     expect(rows).toEqual([{ job_type: 'tenant.email-packs' }]);
+    expect((await getTenant(tenant.externalId)).statusCode).toBe(Status.Done);
   }, 40_000);
 
   it('tells a store rolled back to a backup the total on record again', async () => {
@@ -130,7 +132,7 @@ describe('email packs', () => {
     await t.call('POST', `/v1/tenants/backups?externalId=${tenant.externalId}`);
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants/backups?externalId=${tenant.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
     await addPack(`externalId=${tenant.externalId}`, { emails: 700, reference: 'order-1' });
-    await settled(tenant.externalId);
+    await waitFor(async () => t.provisioner.stores.get(tenant.id)!.emailPacks === 700);
     t.provisioner.stores.get(tenant.id)!.emailPacks = 0; // what the backup's database held
     const [backup] = (await (await t.call('GET', `/v1/tenants/backups?externalId=${tenant.externalId}`)).json()) as any[];
     const res = await t.call('POST', `/admin/tenants/${tenant.id}/restore`, { body: { backupId: backup.id, takeBackup: false }, auth: `Bearer ${TEST_ADMIN_TOKEN}` });
