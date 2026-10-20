@@ -216,6 +216,18 @@ describe('stores that keep their own code', () => {
     expect(await tenant(id)).not.toHaveProperty('keepsOwnCode');
   });
 
+  it('the dashboard makes a new store from the production version', async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: {} })).status).toBe(400);
+    expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'X', size: 'huge' } })).status).toBe(400);
+    const res = await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'New from the dashboard', size: 'medium' } });
+    expect(res.status).toBe(201);
+    const made = (await res.json()) as { tenantId: string; externalId: string };
+    await waitFor(async () => (await tenant(made.tenantId))?.statusCode === Status.Done);
+    expect(await tenant(made.tenantId)).toMatchObject({ name: 'New from the dashboard', size: 'medium' });
+    expect(await tenant(made.tenantId)).not.toHaveProperty('keepsOwnCode');
+  });
+
   it('the dashboard makes a store that waits for its site, shows the move and renews the code', async () => {
     const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
     const res = await t.call('POST', `/admin/products/${t.productId}/imports`, { auth: ADMIN, body: { name: 'From the dashboard', size: 'medium' } });

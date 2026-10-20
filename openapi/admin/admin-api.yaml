@@ -606,6 +606,42 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/tenants:
+    post:
+      operationId: adminCreateTenant
+      summary: Make a new store of the product
+      description: >-
+        Builds a store from the product's production version and its latest template, as
+        POST /v1/tenants does, without the storefront or an API key: the dashboard's "New site".
+        Counts toward the product's store limit (and its reseller's).
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                size: { type: string, enum: [small, medium, large] }
+                customDomainName: { type: string, description: 'Its own address; default <label>.<platform domain>' }
+      responses:
+        '201':
+          description: The store is being built
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, externalId]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/import-code:
     post:
       operationId: adminRenewImportCode
