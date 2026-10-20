@@ -7,7 +7,7 @@ the store template and the storefront.
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress-install.sh
 curl -fsSL https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress.env.example -o /root/anypress.env
-nano /root/anypress.env        # your domains and email, and optionally storage and email keys
+nano /root/anypress.env        # your domains, email and storage bucket, and optionally email keys
 sudo bash anypress-install.sh
 ```
 
@@ -36,5 +36,5 @@ Running it again is safe: it finds what it made before (`/root/anypress/state.en
 1. Add the DNS records it printed.
 2. Publish a store template ([section 5](../docs/self-hosting.md#5-a-template-version)).
 3. Set up the storefront ([section 6](../docs/self-hosting.md#6-the-storefront)) with the key from `credentials.env`.
-4. Run `sudo bash anypress-install.sh check`: it checks Coolify, the API, the dashboard, DNS, HTTPS, storage and
-   email, and says which still fail.
+4. Run `sudo bash anypress-install.sh check`: it checks Coolify, the API, the dashboard, DNS, HTTPS and email,
+   and says which still fail.

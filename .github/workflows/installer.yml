@@ -23,6 +23,11 @@ jobs:
           ANYPRESS_STORE_DOMAIN=anypress-ci-sites.test
           ANYPRESS_ADMIN_EMAIL=ci@anypress.io
           ANYPRESS_API_REF=${{ github.head_ref || github.ref_name }}
+          # The API only needs the bucket's settings to start; nothing here uploads to it.
+          S3_ENDPOINT=https://storage.anypress-ci.test
+          S3_BUCKET=ci
+          S3_ACCESS_KEY_ID=ci
+          S3_SECRET_ACCESS_KEY=ci
           ANSWERS
       - name: Install
         run: sudo bash install/anypress-install.sh

@@ -43,6 +43,10 @@ load() {
   : "${ANYPRESS_BRAND_DOMAIN:?set ANYPRESS_BRAND_DOMAIN in $ANSWERS}"
   : "${ANYPRESS_STORE_DOMAIN:?set ANYPRESS_STORE_DOMAIN in $ANSWERS}"
   : "${ANYPRESS_ADMIN_EMAIL:?set ANYPRESS_ADMIN_EMAIL in $ANSWERS}"
+  local v
+  for v in S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+    [ -n "${!v:-}" ] || die "set $v in $ANSWERS: the API keeps store templates, snapshots and backups in that bucket and won't start without it"
+  done
   COOLIFY_VERSION=${ANYPRESS_COOLIFY_VERSION:-4.4.6}
   API_REF=${ANYPRESS_API_REF:-main}
   DASHBOARD_REF=${ANYPRESS_DASHBOARD_REF:-main}
@@ -341,7 +345,6 @@ check() {
     getent ahostsv4 "$host" | awk '{print $1}' | grep -qx "$ip"; result $? "$host points at this server"
   done
   curl -sf --max-time 10 "$API_URL/health" >/dev/null; result $? "$API_URL/health answers over HTTPS"
-  [ -n "${S3_BUCKET:-}" ]; result $? "Backups have a bucket (S3_BUCKET)"
   [ -n "${STORE_SMTP_PASSWORD:-}" ]; result $? "Stores and sign-in have email (STORE_SMTP_PASSWORD)"
   return $ok
 }
