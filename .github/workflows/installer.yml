@@ -1,0 +1,45 @@
+# Runs install/anypress-install.sh on a fresh GitHub runner: Coolify, the API (built from this branch),
+# Postgres and the dashboard, then the installer a second time to check it changes nothing, then its
+# own check. DNS and certificates can't be tested here: the test domains don't exist.
+name: Installer
+
+on:
+  pull_request:
+    paths: ['install/**', '.github/workflows/installer.yml']
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: shellcheck -S warning install/anypress-install.sh
+      - name: Answers
+        run: |
+          sudo tee /root/anypress.env > /dev/null <<ANSWERS
+          ANYPRESS_BRAND_DOMAIN=anypress-ci.test
+          ANYPRESS_STORE_DOMAIN=anypress-ci-sites.test
+          ANYPRESS_ADMIN_EMAIL=ci@anypress.io
+          ANYPRESS_API_REF=${{ github.head_ref || github.ref_name }}
+          ANSWERS
+      - name: Install
+        run: sudo bash install/anypress-install.sh
+      - name: Install again (nothing new is made)
+        run: |
+          sudo cp /root/anypress/state.env /tmp/state-before
+          sudo bash install/anypress-install.sh
+          sudo diff /tmp/state-before /root/anypress/state.env
+      - name: Check
+        run: |
+          sudo bash install/anypress-install.sh check | tee check.txt || true
+          for line in "Coolify is running" "Coolify's API takes the token" "The API answers /health" "The dashboard is running" "The Coolify cleanup job is set"; do
+            grep -q "ok.*$line" check.txt || { echo "Failed: $line"; exit 1; }
+          done
+      - name: Logs
+        if: failure()
+        run: |
+          sudo docker ps -a
+          sudo tail -50 /root/anypress/coolify-install.log || true
+          for c in $(sudo docker ps -aq); do echo "== $(sudo docker inspect -f '{{.Name}}' $c)"; sudo docker logs --tail 40 $c 2>&1; done
