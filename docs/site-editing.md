@@ -13,7 +13,7 @@ The routes WaaS Client answers, the signature format and its safety rules are in
 
 ## Site keys
 
-Each store's key is derived from `SECRETS_KEY` and the store's id (HKDF, then HMAC-SHA256), so the API stores no keys and can always derive one again. The Coolify provisioner gives each store its key as the `WAAS_SITE_KEY` variable: new stores when they are created, existing stores on the API's next start (store setup 3, which re-renders the store's compose file and restarts it once).
+Each store's key is derived from `SECRETS_KEY` and the store's id (HKDF, then HMAC-SHA256), so the API stores no keys and can always derive one again. The Coolify provisioner gives each store its key as the `WAAS_SITE_KEY` variable: new stores when they are created, existing stores on the API's next start (store setup 4, which re-renders the store's compose file and restarts it once).
 
 Changing `SECRETS_KEY` changes every store's site key; stores then refuse site requests until they get the new key (bump `STORE_SETUP` to hand it out).
 
