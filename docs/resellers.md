@@ -70,6 +70,61 @@ A template (base snapshot) made with a partner key belongs to the account and is
 - `createVersion` and `POST /v1/products` can start a version from a shared template by its id.
 - Only the partner key removes a shared template (`DELETE /v1/basesnapshots?id=`). With a `productId` it also removes that storefront's own templates. Deleting the reseller removes its shared templates.
 
+## A partner's first session
+
+What a partner does with a new partner key, start to finish. `API` is the API's address, and `-u` sends the key and secret with Basic auth. Every answer below is shortened from what `/docs` shows for that call, which has the full examples.
+
+```sh
+API=https://api.example.com
+AUTH="$PARTNER_KEY:$PARTNER_SECRET"
+
+# 1. The account: its id is the subscriptionId the other account calls take.
+curl -s -u "$AUTH" "$API/v1/subscriptions"
+# [{"id":"1f3ea976-…","name":"Acme Partners"}]
+SUB=1f3ea976-…
+
+# 2. A shared template, offered on every storefront in the account. PUT the site archive (.tgz) to uploadUrl.
+curl -s -u "$AUTH" -X POST "$API/v1/basesnapshots" -H 'Content-Type: application/json' \
+  -d '{"name":"Acme starter","comment":"Home, shop and contact pages","showInConsole":true}'
+# {"id":"4c8e2a6f-…","name":"Acme starter","comment":"…","showInConsole":true,"uploadUrl":"https://…"}
+curl -s -T acme-starter.tgz "<uploadUrl>"
+
+# 3. A storefront, with its first version started from that template. The version becomes production.
+curl -s -u "$AUTH" -X POST "$API/v1/products?subscriptionId=$SUB" -H 'Content-Type: application/json' \
+  -d '{"name":"Acme Florists","version":{"name":"v1.0.0","phpVersion":"8.3","wordPressVersion":"6.8","snapshotId":"4c8e2a6f-…"}}'
+# {"id":"9d4b7e12-…","name":"Acme Florists","version":{"id":"f742de68-…","domainName":"…","phpVersion":"8.3","wordPressVersion":"6.8"}}
+PRODUCT=9d4b7e12-…
+
+# 4. Wait for the version (statusCode 1 is Done), then make a store on that storefront.
+curl -s -u "$AUTH" "$API/v1/versions?productId=$PRODUCT"
+curl -s -u "$AUTH" -X POST "$API/v1/tenants?productId=$PRODUCT" -H 'Content-Type: application/json' \
+  -d '{"name":"Rose and Fern","externalId":"acme-order-1","wordPressUserName":"owner","wordPressUserEmail":"owner@roseandfern.example","wordPressUserRole":"administrator"}'
+curl -s -u "$AUTH" "$API/v1/tenants?productId=$PRODUCT&externalId=acme-order-1"
+
+# 5. Usage for a month, for the whole account or one storefront.
+curl -s -u "$AUTH" "$API/v1/subscriptions/usage?subscriptionId=$SUB&startDate=2026-09-01T00:00:00Z&endDate=2026-10-01T00:00:00Z"
+# {"subscriptionId":"1f3ea976-…","productHours":1440,"versionHours":1872.5,"tenantHours":10080}
+curl -s -u "$AUTH" "$API/v1/products/usage?productId=$PRODUCT&startDate=2026-09-01T00:00:00Z&endDate=2026-10-01T00:00:00Z"
+
+# 6. Removing a storefront: remove its stores first, or the answer is 400.
+curl -s -u "$AUTH" -X DELETE "$API/v1/tenants?productId=$PRODUCT&externalId=acme-order-1"
+curl -s -u "$AUTH" -X DELETE "$API/v1/products?productId=$PRODUCT"
+# {"productId":"9d4b7e12-…"}
+```
+
+What goes wrong, and the answer:
+
+| Mistake | Answer |
+|---|---|
+| A store or version call without `productId` | 400 `productId is required with a partner key` |
+| A `productId` or `subscriptionId` outside the account | 403 |
+| A new storefront past `maxProducts` | 400 `This account has reached its limit of 3 storefronts` |
+| Removing a storefront that still has stores | 400 `This storefront still has 2 stores; remove them first` |
+| Usage with `endDate` before `startDate` | 400 `endDate must be after startDate` |
+| A storefront's own key on `/v1/subscriptions` or `/v1/products` | 403 |
+
+`test/contract-phase2.test.ts` runs these same calls against the contract on every change.
+
 ## Reseller team
 
 People at the reseller sign in to the dashboard like any customer. A reseller has one team (an organization), and everyone on it reaches every storefront the reseller has, with their role on the team (`owner`, `admin` or `member`, as in [accounts.md](accounts.md#roles)). A storefront moved into the reseller is in reach at once; one moved out is out of reach at once.

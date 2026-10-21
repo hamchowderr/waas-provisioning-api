@@ -1,6 +1,7 @@
 // The public API reference (src/publicspec.ts): GET /openapi.json and the page at GET /docs.
 import { describe, expect, it } from 'vitest';
 import { createApp, type Deps } from '../src/app.ts';
+import { createAjv } from '../src/openapi.ts';
 
 // Neither route touches the database or the queue.
 const app = createApp({ config: {} } as Deps);
@@ -61,6 +62,41 @@ describe('public API reference', () => {
     expect(text).not.toMatch(/\((?:waas|wpcs)-[a-z0-9]+\)/i);
     expect(text).not.toMatch(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
     expect(text).not.toContain('](docs/');
+  });
+
+  it('gives examples that match their schemas', () => {
+    const ajv = createAjv();
+    ajv.addSchema({ components: spec.components }, 'public');
+    let count = 0;
+    for (const [path, item] of Object.entries<Record<string, any>>(spec.paths)) {
+      for (const [method, op] of Object.entries<any>(item)) {
+        if (method === 'parameters') continue;
+        const media = [
+          ...Object.entries<any>(op.requestBody?.content ?? {}).map(([type, m]) => [`request ${type}`, m]),
+          ...Object.entries<any>(op.responses ?? {}).flatMap(([status, r]) => Object.entries<any>(r.content ?? {}).map(([type, m]) => [`${status} ${type}`, m])),
+        ];
+        for (const [where, m] of media) {
+          if (!m.examples) continue;
+          const validate = ajv.compile(JSON.parse(JSON.stringify(m.schema).replaceAll('"#/components', '"public#/components')));
+          for (const [name, example] of Object.entries<any>(m.examples)) {
+            count++;
+            expect(validate(example.value), `${method.toUpperCase()} ${path} ${where} example ${name}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+          }
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(40);
+  });
+
+  it('gives every partner operation a worked example of its answer', () => {
+    const partner = ['/v1/subscriptions', '/v1/subscriptions/usage', '/v1/products', '/v1/products/usage', '/v1/basesnapshots'];
+    for (const path of partner) {
+      for (const [method, op] of Object.entries<any>(spec.paths[path])) {
+        if (method === 'parameters') continue;
+        expect(op.responses['200'].content['application/json'].examples, `${method} ${path} 200`).toBeDefined();
+        expect(op.responses['400']?.content['application/json'].examples, `${method} ${path} 400`).toBeDefined();
+      }
+    }
   });
 
   it('serves the reference page', async () => {

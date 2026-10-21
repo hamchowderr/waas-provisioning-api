@@ -40,7 +40,7 @@ info:
 
 
     History: docs/contract.md.'
-  version: 1.2.0
+  version: 1.2.1
 servers:
 - url: https://e98e6601-f3d6-40a0-a8bc-aa214b55a47e.mock.pstmn.io
   description: Postman mock (private; send x-api-key)
@@ -87,6 +87,18 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/GetTenantQueryResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                productIdMissing:
+                  summary: 'Partner key: 400 productId missing'
+                  value:
+                    statusCode: 400
+                    message: 'productId is required with a partner key'
         '401':
           description: Unauthorized
         '403':
@@ -1188,6 +1200,18 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/GetVersionQueryResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                productIdMissing:
+                  summary: 'Partner key: 400 productId missing'
+                  value:
+                    statusCode: 400
+                    message: 'productId is required with a partner key'
         '401':
           description: Unauthorized
         '403':
@@ -1453,6 +1477,24 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/GetSubscriptionsQueryResult'
+              examples:
+                ownAccount:
+                  summary: 'List subscriptions: The partner key''s own account'
+                  value:
+                  - id: 1f3ea976-d862-499d-8be2-b99c1aef21a9
+                    name: Acme Partners
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                badId:
+                  summary: 'List subscriptions: 400 subscriptionId not a UUID'
+                  value:
+                    statusCode: 400
+                    message: 'subscriptionId must be a UUID'
         '401':
           description: Unauthorized
         '403':
@@ -1551,6 +1593,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GetSubscriptionUsageQueryResult'
+              examples:
+                september:
+                  summary: 'Subscription usage: September 2026'
+                  value:
+                    subscriptionId: 1f3ea976-d862-499d-8be2-b99c1aef21a9
+                    productHours: 1440
+                    versionHours: 1872.5
+                    tenantHours: 10080
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                missingDate:
+                  summary: 'Subscription usage: 400 startDate missing'
+                  value:
+                    statusCode: 400
+                    message: 'startDate must be an ISO 8601 date-time'
+                backwards:
+                  summary: 'Subscription usage: 400 endDate before startDate'
+                  value:
+                    statusCode: 400
+                    message: 'endDate must be after startDate'
         '401':
           description: Unauthorized
         '403':
@@ -1593,6 +1660,34 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/GetProductsQueryResult'
+              examples:
+                twoStorefronts:
+                  summary: 'List products: Two storefronts in the account'
+                  value:
+                  - id: 6a2f0c4e-3b1d-4e8a-9f27-5c8d1e0b7a31
+                    name: Acme Bakeries
+                    subscriptionId: 1f3ea976-d862-499d-8be2-b99c1aef21a9
+                    subscriptionName: Acme Partners
+                    statusCode: 1
+                    statusName: Done
+                  - id: 9d4b7e12-8c3a-4f6e-b015-2e7a9c4d3f68
+                    name: Acme Florists
+                    subscriptionId: 1f3ea976-d862-499d-8be2-b99c1aef21a9
+                    subscriptionName: Acme Partners
+                    statusCode: 1
+                    statusName: Done
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                badId:
+                  summary: 'List products: 400 productId not a UUID'
+                  value:
+                    statusCode: 400
+                    message: 'productId must be a UUID'
         '401':
           description: Unauthorized
         '403':
@@ -1617,6 +1712,29 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateProductParams'
+            examples:
+              bare:
+                summary: 'Create product: Storefront only'
+                value:
+                  name: Acme Bakeries
+              withVersion:
+                summary: 'Create product: With a first version from an upload'
+                value:
+                  name: Acme Florists
+                  version:
+                    name: v1.0.0
+                    phpVersion: '8.3'
+                    wordPressVersion: '6.8'
+                    useCustomUpload: true
+              fromTemplate:
+                summary: 'Create product: With a first version from a shared template'
+                value:
+                  name: Acme Florists
+                  version:
+                    name: v1.0.0
+                    phpVersion: '8.3'
+                    wordPressVersion: '6.8'
+                    snapshotId: 4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47
       responses:
         '200':
           description: The product creation was scheduled succesfully
@@ -1624,12 +1742,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateProductCommandResult'
+              examples:
+                bare:
+                  summary: 'Create product: Storefront only'
+                  value:
+                    id: 6a2f0c4e-3b1d-4e8a-9f27-5c8d1e0b7a31
+                    name: Acme Bakeries
+                withVersion:
+                  summary: 'Create product: With a first version from an upload'
+                  value:
+                    id: 9d4b7e12-8c3a-4f6e-b015-2e7a9c4d3f68
+                    name: Acme Florists
+                    version:
+                      id: f742de68-a400-4bdb-99fe-c999fd33981a
+                      domainName: v1-0-0.versions.waas.example
+                      wordPressVersion: '6.8'
+                      phpVersion: '8.3'
+                      uploadUrl: https://uploads.waas.example/versions/f742de68-a400-4bdb-99fe-c999fd33981a.tgz?X-Amz-Signature=xxxxx
         '400':
           description: The validation of the request failed. See the message in the response to see why
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                atLimit:
+                  summary: 'Create product: 400 Storefront limit reached'
+                  value:
+                    statusCode: 400
+                    message: 'This account has reached its limit of 3 storefronts'
+                noName:
+                  summary: 'Create product: 400 name missing'
+                  value:
+                    statusCode: 400
+                    message: 'body must have required property ''name'''
         '401':
           description: Unauthorized
         '403':
@@ -1658,6 +1804,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RemoveProductCommandResult'
+              examples:
+                removed:
+                  summary: 'Delete product: Removed'
+                  value:
+                    productId: 6a2f0c4e-3b1d-4e8a-9f27-5c8d1e0b7a31
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                hasStores:
+                  summary: 'Delete product: 400 Stores left'
+                  value:
+                    statusCode: 400
+                    message: 'This storefront still has 2 stores; remove them first'
+                building:
+                  summary: 'Delete product: 400 Version still building'
+                  value:
+                    statusCode: 400
+                    message: 'A version of this storefront is still building; try again once it is done'
         '401':
           description: Unauthorized
         '403':
@@ -1702,6 +1870,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GetProductUsageQueryResult'
+              examples:
+                september:
+                  summary: 'Product usage: September 2026'
+                  value:
+                    productId: 9d4b7e12-8c3a-4f6e-b015-2e7a9c4d3f68
+                    productHours: 720
+                    versionHours: 936.25
+                    tenantHours: 5040
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                missingProduct:
+                  summary: 'Product usage: 400 productId missing'
+                  value:
+                    statusCode: 400
+                    message: 'productId is required'
+                backwards:
+                  summary: 'Product usage: 400 endDate before startDate'
+                  value:
+                    statusCode: 400
+                    message: 'endDate must be after startDate'
         '401':
           description: Unauthorized
         '403':
@@ -1750,6 +1943,29 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/GetBaseSnapshotsQueryResult'
+              examples:
+                shared:
+                  summary: 'List base snapshots: A shared template'
+                  value:
+                  - id: 4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47
+                    name: Acme starter
+                    comment: Home, shop and contact pages
+                    uri: https://templates.waas.example/4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47.tgz
+                    isDefault: false
+                    isTenantSnapshot: false
+                    showAsBaseSnapshot: true
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                badId:
+                  summary: 'List base snapshots: 400 baseSnapshotId not a UUID'
+                  value:
+                    statusCode: 400
+                    message: 'baseSnapshotId must be a UUID'
         '401':
           description: Unauthorized
         '403':
@@ -1771,6 +1987,20 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateBaseSnapshotParams'
+            examples:
+              template:
+                summary: 'Create base snapshot: A template for new versions'
+                value:
+                  name: Acme starter
+                  comment: Home, shop and contact pages
+                  showInConsole: true
+              tenantSnapshot:
+                summary: 'Create base snapshot: A tenant snapshot in a group'
+                value:
+                  name: Bakery menu
+                  comment: A store with the menu and order pages
+                  isTenantSnapshot: true
+                  groupName: bakery
           text/json:
             schema:
               $ref: '#/components/schemas/CreateBaseSnapshotParams'
@@ -1784,12 +2014,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateBaseSnapshotCommandResult'
+              examples:
+                created:
+                  summary: 'Create base snapshot: Created; PUT the archive to uploadUrl'
+                  value:
+                    id: 4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47
+                    name: Acme starter
+                    comment: Home, shop and contact pages
+                    showInConsole: true
+                    uploadUrl: https://uploads.waas.example/base/4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47.tgz?X-Amz-Signature=xxxxx
         '400':
           description: The validation of the request failed. See the message in the response to see why
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                badName:
+                  summary: 'Create base snapshot: 400 Name too short'
+                  value:
+                    statusCode: 400
+                    message: 'name must be 5 to 50 characters: letters, digits, spaces and dashes'
         '401':
           description: Unauthorized
         '403':
@@ -1821,12 +2066,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RemoveBaseSnapshotCommandResult'
+              examples:
+                removed:
+                  summary: 'Delete base snapshot: Removed'
+                  value:
+                    baseSnapshotId: 4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47
         '400':
           description: The validation of the request failed. See the message in the response to see why
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                unknown:
+                  summary: 'Delete base snapshot: 400 Unknown template'
+                  value:
+                    statusCode: 400
+                    message: 'Base snapshot 4c8e2a6f-1b3d-4a5e-8f70-9d2c6b1e3a47 not found'
         '401':
           description: Unauthorized
         '403':
@@ -3358,7 +3614,7 @@ tags:
 - name: Partner API Endpoints
   description: The following endpoints can *only* be used with a _Partner API key and secret_.
   x-traitTag: true
-  x-wpcs-group: Partner API
+  x-group: Partner API
 - name: Subscription
   description: Phase 2, reseller feature. Endpoint to manage Subscriptions - _Only available using a Partner API Key_
   x-phase: 2
