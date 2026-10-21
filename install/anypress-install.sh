@@ -18,7 +18,6 @@ CREDS=$STATE_DIR/credentials.env
 COOLIFY=http://127.0.0.1:8000/api/v1
 # Where the store templates are released (templates-v*, .github/workflows/release-templates.yml).
 TEMPLATES_REPO=hamchowderr/waas-provisioning-api
-CLOUDFLARE=${ANYPRESS_CLOUDFLARE_API:-https://api.cloudflare.com/client/v4}
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -56,6 +55,7 @@ load() {
   COOLIFY_VERSION=${ANYPRESS_COOLIFY_VERSION:-4.4.6}
   API_REF=${ANYPRESS_API_REF:-main}
   DASHBOARD_REF=${ANYPRESS_DASHBOARD_REF:-main}
+  CLOUDFLARE=${ANYPRESS_CLOUDFLARE_API:-https://api.cloudflare.com/client/v4}
   API_URL=https://api.$ANYPRESS_BRAND_DOMAIN
   DASHBOARD_URL=https://app.$ANYPRESS_BRAND_DOMAIN
 }
@@ -325,7 +325,8 @@ cloudflare() {
 cloudflare_zone() {
   local name=${1#\*.} id
   while [[ $name == *.* ]]; do
-    id=$(cloudflare GET "/zones?name=$name")
+    # Runs in a command substitution, where a failed call doesn't stop the script by itself.
+    id=$(cloudflare GET "/zones?name=$name") || exit 1
     id=$(jq -r '.[0].id // empty' <<<"$id")
     [ -n "$id" ] && { printf '%s' "$id"; return; }
     name=${name#*.}
