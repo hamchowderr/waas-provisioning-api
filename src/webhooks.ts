@@ -126,7 +126,7 @@ export function checkEndpointUrl(input: unknown, config: WebhookConfig): string 
  * A DNS lookup that refuses private addresses, used for the connection itself so the name can't
  * resolve to a public address when checked and a private one when connected.
  */
-function guardedLookup(allowPrivate: boolean) {
+export function guardedLookup(allowPrivate: boolean) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (hostname: string, options: any, callback: any) => {
     dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
