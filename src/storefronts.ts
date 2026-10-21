@@ -8,7 +8,7 @@ import { TENANT_SELECT, toTenant } from './tenants.ts';
 /**
  * Ready-made storefronts: a WordPress site with WaaS Host, built for a product so its owner can sell
  * without bringing a site of their own. The storefront is a store of the platform's storefront product
- * (STOREFRONT_PRODUCT_ID), made from that product's production version (templates/agency-storefront),
+ * (STOREFRONT_PRODUCT_ID), made from that product's production version (templates/seller-storefront),
  * and is connected to the API from the start: its own key and secret for the product it sells for, and
  * the API's address, are written into its wp-config as WaaS Host's WAAS_API_* constants.
  *

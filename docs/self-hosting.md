@@ -153,11 +153,11 @@ Stores are copies of a template version. Three templates ship in `templates/`, e
 |---|---|
 | [`starter-fluentcart`](../templates/starter-fluentcart/README.md) | The smallest store: WordPress, WaaS Client, FluentCart, Twenty Twenty-Five |
 | [`anypress-store`](../templates/anypress-store/README.md) | The full store AnyPress sells: the Fluent plugins, SEO and automation on the Ollie theme, with one role per site type (website, bookings, store, community and courses, everything) in `roles.json` |
-| [`agency-storefront`](../templates/agency-storefront/README.md) | Not a store: the ready-made storefront (section 6) |
+| [`seller-storefront`](../templates/seller-storefront/README.md) | Not a store: the ready-made storefront (section 6) |
 
 `publish.sh` needs `WAAS_API_URL` (your API's address) and a product key and secret (`WAAS_KEY`, `WAAS_SECRET`). You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
 
-Prebuilt archives of `anypress-store` and `agency-storefront`, with their checksums, are on this repository's [`templates-v*` releases](https://github.com/hamchowderr/waas-provisioning-api/releases) (built by `templates/release.sh`). The [installer](../install/README.md) publishes the newest one for you.
+Prebuilt archives of `anypress-store` and `seller-storefront`, with their checksums, are on this repository's [`templates-v*` releases](https://github.com/hamchowderr/waas-provisioning-api/releases) (built by `templates/release.sh`). The [installer](../install/README.md) publishes the newest one for you.
 
 ### 6. The storefront
 
@@ -167,7 +167,7 @@ Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** wit
 2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`. Use the same domain as the API's `PLATFORM_DOMAIN`.
 3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role (site type), size and snapshot group.
 
-**Or let the API build the storefront.** Publish `templates/agency-storefront` as the production version of a product of its own, set `STOREFRONT_PRODUCT_ID` to that product's id (and `PUBLIC_URL`), and `POST /admin/products/{productId}/storefront` builds a store that is already a connected storefront for that product: WaaS Host installed, the API key and encryption key in wp-config, the website domain set, and the owner made an administrator. Its owner then connects a payment method in FluentCart and makes the subscription products. Details in [the template's README](../templates/agency-storefront/README.md).
+**Or let the API build the storefront.** Publish `templates/seller-storefront` as the production version of a product of its own, set `STOREFRONT_PRODUCT_ID` to that product's id (and `PUBLIC_URL`), and `POST /admin/products/{productId}/storefront` builds a store that is already a connected storefront for that product: WaaS Host installed, the API key and encryption key in wp-config, the website domain set, and the owner made an administrator. Its owner then connects a payment method in FluentCart and makes the subscription products. Details in [the template's README](../templates/seller-storefront/README.md).
 
 The storefront needs a real cron: FluentCart creates stores in the background through Action Scheduler, which otherwise waits for the next page visit. Define `DISABLE_WP_CRON` and run `wp action-scheduler run` and `wp cron event run --due-now` every minute (a Coolify scheduled task works).
 
@@ -257,7 +257,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
-| `STOREFRONT_PRODUCT_ID` | off | The product whose production version is the [agency storefront template](../templates/agency-storefront/README.md). Turns on ready-made storefronts (`POST /admin/products/{productId}/storefront`). Set `PUBLIC_URL` too: it is the address written into each storefront |
+| `STOREFRONT_PRODUCT_ID` | off | The product whose production version is the [seller storefront template](../templates/seller-storefront/README.md). Turns on ready-made storefronts (`POST /admin/products/{productId}/storefront`). Set `PUBLIC_URL` too: it is the address written into each storefront |
 | `APPLICATION_NOTIFY_EMAILS` | off | Comma-separated addresses emailed when someone applies to sell (`POST /applications`, [accounts](accounts.md#applications-to-sell)). Needs sign-in email. Without it, applications only show on the dashboard |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
 | `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([webhooks.md](webhooks.md)) |

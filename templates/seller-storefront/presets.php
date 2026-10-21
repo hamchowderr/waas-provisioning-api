@@ -1,6 +1,6 @@
 <?php
 /**
- * Settings that are the same for every agency storefront, applied once on the template build:
+ * Settings that are the same for every seller storefront, applied once on the template build:
  *   wp eval-file presets.php --user=waas-admin
  * Each block says which plugin screen it stands in for. Per-storefront values (site title, the owner's email,
  * the API key and secret) are not set here; the API sets them when it creates the storefront.
@@ -12,7 +12,7 @@ update_option('fluent_cart_plugin_once_activated', '1');
 delete_option('fluent_cart_do_activation_redirect');
 (new \FluentCart\Api\StoreSettings())->save([
     'show_cart_icon_in_nav' => 'yes',
-    // Settings → Reminders: the agency's customers pay monthly, so they hear 7 days before each charge.
+    // Settings → Reminders: the seller's customers pay monthly, so they hear 7 days before each charge.
     'reminders_enabled' => 'yes',
     'monthly_renewal_reminders_enabled' => 'yes',
 ]);

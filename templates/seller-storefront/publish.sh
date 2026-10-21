@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Uploads dist/agency-storefront.zip as a base snapshot through the provisioning API, creates a
+# Uploads dist/seller-storefront.zip as a base snapshot through the provisioning API, creates a
 # version from it and, with --production, makes that version the product's production version.
 #
-#   WAAS_API_URL=... WAAS_KEY=... WAAS_SECRET=... templates/agency-storefront/publish.sh <version name> [--production]
+#   WAAS_API_URL=... WAAS_KEY=... WAAS_SECRET=... templates/seller-storefront/publish.sh <version name> [--production]
 #
 # WAAS_API_URL is the provisioning API's address. The key is the storefronts product's key (STOREFRONT_PRODUCT_ID on the API).
 # Prints the base snapshot id, the version id and its domain.
@@ -13,13 +13,13 @@ PRODUCTION=${2:-}
 API=${WAAS_API_URL:?set WAAS_API_URL to the provisioning API address}
 : "${WAAS_KEY:?set WAAS_KEY}" "${WAAS_SECRET:?set WAAS_SECRET}"
 # Base snapshot names allow only letters, digits, spaces and dashes (5 to 50).
-BASE_NAME=${BASE_NAME:-Agency storefront}
+BASE_NAME=${BASE_NAME:-Seller storefront}
 # The image tag the stores run: wordpress:<WP>-php<PHP>-apache. "7.1" follows 7.1.x patch releases.
 WP_VERSION=${WP_VERSION:-7.1}
 PHP_VERSION=${PHP_VERSION:-8.3}
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-ZIP=$HERE/dist/agency-storefront.zip
+ZIP=$HERE/dist/seller-storefront.zip
 [ -f "$ZIP" ] || { echo "no $ZIP; run build.sh first" >&2; exit 1; }
 
 api() { # method path [json]
@@ -40,7 +40,7 @@ wait_version() { # id
     return 1
 }
 
-COMMENT="Agency storefront: WordPress, WaaS Host, FluentCart, FluentAuth, Twenty Twenty-Five. $(unzip -p "$ZIP" waas-template.json | jq -c '{builtAt, wordPress, plugins}')"
+COMMENT="Seller storefront: WordPress, WaaS Host, FluentCart, FluentAuth, Twenty Twenty-Five. $(unzip -p "$ZIP" waas-template.json | jq -c '{builtAt, wordPress, plugins}')"
 BASE=$(api POST /v1/basesnapshots "$(jq -n --arg name "$BASE_NAME" --arg comment "${COMMENT:0:500}" '{name: $name, comment: $comment}')")
 BASE_ID=$(jq -r .id <<<"$BASE")
 curl -sSf -T "$ZIP" "$(jq -r .uploadUrl <<<"$BASE")" >/dev/null

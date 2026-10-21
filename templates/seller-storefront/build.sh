@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Builds the "Agency storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentAuth and
+# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentAuth and
 # Twenty Twenty-Five, packaged as the provisioner restores it (see README). A storefront made from it
 # is connected to the API when it is created: the API writes its key, secret and address into wp-config
 # (POST /admin/products/{productId}/storefront).
 #
-#   templates/agency-storefront/build.sh <path to a waas-plugins checkout> <WaaS Host version>
+#   templates/seller-storefront/build.sh <path to a waas-plugins checkout> <WaaS Host version>
 #
 # The version is stamped into WaaS Host the way a release is (waas-plugins scripts/release/build.sh), so the
 # storefront gets later releases from the update channel. Check out the matching tag first.
 #
-# Output: templates/agency-storefront/dist/agency-storefront.zip (database.sql + wp-content/).
+# Output: templates/seller-storefront/dist/seller-storefront.zip (database.sql + wp-content/).
 # Needs Docker, curl, unzip, zip and composer. Starts dockerd itself when it isn't running.
 set -euo pipefail
 
@@ -125,7 +125,7 @@ wp option update time_format 'H:i'
 wp option update default_comment_status closed
 wp option update default_ping_status closed
 wp option update default_pingback_flag 0
-# The agency turns this on at launch.
+# The seller turns this on at launch.
 wp option update blog_public 0
 wp option update users_can_register 0
 
@@ -159,7 +159,7 @@ PLUGINS_JSON=$( (echo "waas-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {
-  "name": "Agency storefront",
+  "name": "Seller storefront",
   "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "wordPress": "$WP_VERSION",
   "php": "$PHP_VERSION",
@@ -168,7 +168,7 @@ cat >"$WORK/out/waas-template.json" <<JSON
   "siteUrl": "$SITE_URL"
 }
 JSON
-rm -f "$DIST/agency-storefront.zip"
-(cd "$WORK/out" && zip -qr -X "$DIST/agency-storefront.zip" database.sql wp-content waas-template.json)
-ls -l "$DIST/agency-storefront.zip"
-sha256sum "$DIST/agency-storefront.zip"
+rm -f "$DIST/seller-storefront.zip"
+(cd "$WORK/out" && zip -qr -X "$DIST/seller-storefront.zip" database.sql wp-content waas-template.json)
+ls -l "$DIST/seller-storefront.zip"
+sha256sum "$DIST/seller-storefront.zip"

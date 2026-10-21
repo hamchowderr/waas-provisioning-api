@@ -1,4 +1,4 @@
-# Agency storefront
+# Seller storefront
 
 The template for ready-made storefronts: a WordPress site that sells websites with WaaS Host, for a customer
 who doesn't bring a WordPress site of their own. The API builds one with
@@ -39,8 +39,8 @@ What the owner still does: connect a payment method in FluentCart, then make a s
 
 ```sh
 git -C ../waas-plugins checkout waas-host-v2.3.0-beta.11
-templates/agency-storefront/build.sh ../waas-plugins 2.3.0-beta.11
-WAAS_API_URL=https://api.example.com WAAS_KEY=<storefront product key> WAAS_SECRET=<secret> templates/agency-storefront/publish.sh v1.0.0 --production
+templates/seller-storefront/build.sh ../waas-plugins 2.3.0-beta.11
+WAAS_API_URL=https://api.example.com WAAS_KEY=<storefront product key> WAAS_SECRET=<secret> templates/seller-storefront/publish.sh v1.0.0 --production
 ```
 
 Then set `STOREFRONT_PRODUCT_ID` on the API to that product's id. Plugin versions and SHA-256 checksums are pinned in

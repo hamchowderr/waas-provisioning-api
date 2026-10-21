@@ -180,7 +180,7 @@ export function versionService({ config, pool, boss, provisioner }: Deps) {
 
   /**
    * Gives a new product a copy of that version and template, as its production version, so stores can
-   * be made at once (the dashboard's New agency). It builds like any version; until it is Done, a new
+   * be made at once (the dashboard's New seller). It builds like any version; until it is Done, a new
    * store is refused as for any version still building.
    */
   async function copyProduction(productId: string, source: Awaited<ReturnType<typeof productionSource>>) {
