@@ -2,7 +2,7 @@
 
 `anypress-install.sh` sets up AnyPress on one fresh Ubuntu server (22.04 or 24.04, 4 GB RAM or more): it does
 Stage 1 of the [self-hosting guide](../docs/self-hosting.md#stage-1-one-vps-with-coolify) for you, DNS included when
-your domains are on Cloudflare.
+your domains are on Cloudflare. A short overview is on [anypress.io/self-host](https://anypress.io/self-host).
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress-install.sh
