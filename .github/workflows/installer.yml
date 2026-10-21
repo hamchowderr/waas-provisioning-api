@@ -1,5 +1,5 @@
 # Runs install/anypress-install.sh on a fresh GitHub runner: Coolify, the API (built from this branch),
-# Postgres, the dashboard, the store templates (built from this branch, into an S3 server on the runner)
+# Postgres, DNS records (against a stand-in for Cloudflare's API), the dashboard, the store templates (built from this branch, into an S3 server on the runner)
 # and the storefront, then the installer a second time to check it changes nothing, then its own check.
 # DNS and certificates can't be tested here: the test domains don't exist.
 name: Installer
@@ -39,6 +39,8 @@ jobs:
           nohup /tmp/s3/bin/moto_server -H 0.0.0.0 -p 9000 > /tmp/s3.log 2>&1 &
           for _ in $(seq 1 30); do curl -sf -X PUT http://127.0.0.1:9000/anypress-ci -o /dev/null && break; sleep 2; done
           echo "S3_HOST=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
+      - name: Cloudflare (a stand-in for its DNS API)
+        run: nohup python3 install/test/cloudflare-mock.py 9100 anypress-ci.test anypress-ci-sites.test > /tmp/cloudflare.log 2>&1 &
       - name: Answers
         run: |
           sudo tee /root/anypress.env > /dev/null <<ANSWERS
@@ -51,6 +53,8 @@ jobs:
           S3_ACCESS_KEY_ID=anypress-ci
           S3_SECRET_ACCESS_KEY=anypress-ci-secret
           S3_REGION=us-east-1
+          CLOUDFLARE_API_TOKEN=ci-cloudflare-token
+          ANYPRESS_CLOUDFLARE_API=http://127.0.0.1:9100/client/v4
           ANYPRESS_TEMPLATES_DIR=${{ !inputs.release && '/tmp/templates' || '' }}
           ANSWERS
       - name: Install
@@ -67,6 +71,11 @@ jobs:
                       "The store templates are published" "The storefront is built"; do
             grep -q "ok.*$line" check.txt || { echo "Failed: $line"; exit 1; }
           done
+      - name: DNS records (five set on the first run, nothing written on the second)
+        run: |
+          curl -s http://127.0.0.1:9100/state | tee dns.json | jq .
+          [ "$(jq '.result.writes | length' dns.json)" = 5 ] || { echo "expected 5 writes"; exit 1; }
+          [ "$(jq '[.result.records[] | select(.proxied == false)] | length' dns.json)" = 5 ] || { echo "expected 5 DNS-only records"; exit 1; }
       - name: Logs
         if: failure()
         run: |
