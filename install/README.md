@@ -1,8 +1,7 @@
 # Installer
 
 `anypress-install.sh` sets up AnyPress on one fresh Ubuntu server (22.04 or 24.04, 4 GB RAM or more): it does
-Stage 1 of the [self-hosting guide](../docs/self-hosting.md#stage-1-one-vps-with-coolify) for you, except DNS,
-the store template and the storefront.
+Stage 1 of the [self-hosting guide](../docs/self-hosting.md#stage-1-one-vps-with-coolify) for you, except DNS.
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress-install.sh
@@ -22,19 +21,25 @@ app, DigitalOcean's Coolify 1-Click).
 3. Creates the projects **WaaS API**, **WaaS Stores** and **WaaS Storefront**, and Postgres 16 in WaaS API.
 4. Deploys the provisioning API on `api.<brand domain>` with generated secrets, and waits for `/health`.
 5. Makes an API key for your storefront.
-6. Deploys the dashboard on `app.<brand domain>`, with you as its admin.
-7. Adds the daily job that keeps Coolify's task history to 7 days.
-8. Prints the DNS records to add.
+6. Publishes the store template and the storefront template from the newest
+   [templates release](https://github.com/hamchowderr/waas-provisioning-api/releases) (checksums checked), and makes
+   each the production version. New stores are made from the store template.
+7. Builds your storefront: a WordPress site with WaaS Host and FluentCart, already connected to the API, with you as
+   its administrator.
+8. Deploys the dashboard on `app.<brand domain>`, with you as its admin.
+9. Adds the daily job that keeps Coolify's task history to 7 days.
+10. Prints the DNS records to add and the storefront's address.
 
 Passwords, keys and the storefront's key go to `/root/anypress/credentials.env` (root only). Keep a copy of
 `SECRETS_KEY` somewhere safe: without it, store passwords and database backups can't be read.
 
-Running it again is safe: it finds what it made before (`/root/anypress/state.env`) and only updates settings.
+Running it again is safe: it finds what it made before (`/root/anypress/state.env`) and only updates settings. When
+there is a newer templates release, it publishes that one and makes it production.
 
 ## After it finishes
 
 1. Add the DNS records it printed.
-2. Publish a store template ([section 5](../docs/self-hosting.md#5-a-template-version)).
-3. Set up the storefront ([section 6](../docs/self-hosting.md#6-the-storefront)) with the key from `credentials.env`.
-4. Run `sudo bash anypress-install.sh check`: it checks Coolify, the API, the dashboard, DNS, HTTPS and email,
+2. Open the storefront's wp-admin (linked on the dashboard's **API keys** page), connect Stripe in FluentCart and make the plans
+   customers buy, each with WaaS Provisioning added ([section 6](../docs/self-hosting.md#6-the-storefront)).
+3. Run `sudo bash anypress-install.sh check`: it checks Coolify, the API, the dashboard, DNS, HTTPS and email,
    and says which still fail.

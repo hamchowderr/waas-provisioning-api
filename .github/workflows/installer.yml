@@ -1,21 +1,44 @@
 # Runs install/anypress-install.sh on a fresh GitHub runner: Coolify, the API (built from this branch),
-# Postgres and the dashboard, then the installer a second time to check it changes nothing, then its
-# own check. DNS and certificates can't be tested here: the test domains don't exist.
+# Postgres, the dashboard, the store templates (built from this branch, into an S3 server on the runner)
+# and the storefront, then the installer a second time to check it changes nothing, then its own check.
+# DNS and certificates can't be tested here: the test domains don't exist.
 name: Installer
 
 on:
   pull_request:
-    paths: ['install/**', '.github/workflows/installer.yml']
+    paths: ['install/**', 'templates/release.sh', 'templates/anypress-store/**', 'templates/agency-storefront/**', '.github/workflows/installer.yml']
   workflow_dispatch:
+    inputs:
+      release:
+        description: Publish the newest templates-v* release instead of templates built from this branch
+        type: boolean
+        default: false
 
 jobs:
   install:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Lint
-        run: shellcheck -S warning install/anypress-install.sh
+        run: shellcheck -S warning install/anypress-install.sh templates/release.sh
+      - uses: actions/checkout@v4
+        if: ${{ !inputs.release }}
+        with:
+          repository: hamchowderr/waas-plugins
+          path: waas-plugins
+          fetch-depth: 0
+      - name: Templates (what a templates-v* release carries)
+        if: ${{ !inputs.release }}
+        run: |
+          host=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'waas-host-v*' --sort=-v:refname | head -1 | sed 's/^waas-host-v//')
+          templates/release.sh "$PWD/waas-plugins" "$host" 0.0.0 /tmp/templates
+      - name: Bucket (an S3 server on this runner, at an address the stores reach too)
+        run: |
+          python3 -m venv /tmp/s3 && /tmp/s3/bin/pip install -q 'moto[server]'
+          nohup /tmp/s3/bin/moto_server -H 0.0.0.0 -p 9000 > /tmp/s3.log 2>&1 &
+          for _ in $(seq 1 30); do curl -sf -X PUT http://127.0.0.1:9000/anypress-ci -o /dev/null && break; sleep 2; done
+          echo "S3_HOST=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
       - name: Answers
         run: |
           sudo tee /root/anypress.env > /dev/null <<ANSWERS
@@ -23,11 +46,12 @@ jobs:
           ANYPRESS_STORE_DOMAIN=anypress-ci-sites.test
           ANYPRESS_ADMIN_EMAIL=ci@anypress.io
           ANYPRESS_API_REF=${{ github.head_ref || github.ref_name }}
-          # The API only needs the bucket's settings to start; nothing here uploads to it.
-          S3_ENDPOINT=https://storage.anypress-ci.test
-          S3_BUCKET=ci
-          S3_ACCESS_KEY_ID=ci
-          S3_SECRET_ACCESS_KEY=ci
+          S3_ENDPOINT=http://$S3_HOST:9000
+          S3_BUCKET=anypress-ci
+          S3_ACCESS_KEY_ID=anypress-ci
+          S3_SECRET_ACCESS_KEY=anypress-ci-secret
+          S3_REGION=us-east-1
+          ANYPRESS_TEMPLATES_DIR=${{ !inputs.release && '/tmp/templates' || '' }}
           ANSWERS
       - name: Install
         run: sudo bash install/anypress-install.sh
@@ -39,7 +63,8 @@ jobs:
       - name: Check
         run: |
           sudo bash install/anypress-install.sh check | tee check.txt || true
-          for line in "Coolify is running" "Coolify's API takes the token" "The API answers /health" "The dashboard is running" "The Coolify cleanup job is set"; do
+          for line in "Coolify is running" "Coolify's API takes the token" "The API answers /health" "The dashboard is running" "The Coolify cleanup job is set" \
+                      "The store templates are published" "The storefront is built"; do
             grep -q "ok.*$line" check.txt || { echo "Failed: $line"; exit 1; }
           done
       - name: Logs
@@ -47,4 +72,5 @@ jobs:
         run: |
           sudo docker ps -a
           sudo tail -50 /root/anypress/coolify-install.log || true
+          tail -30 /tmp/s3.log || true
           for c in $(sudo docker ps -aq); do echo "== $(sudo docker inspect -f '{{.Name}}' $c)"; sudo docker logs --tail 40 $c 2>&1; done
