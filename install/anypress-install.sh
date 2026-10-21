@@ -66,6 +66,7 @@ load() {
   API_REF=${ANYPRESS_API_REF:-main}
   DASHBOARD_REF=${ANYPRESS_DASHBOARD_REF:-main}
   CLOUDFLARE=${ANYPRESS_CLOUDFLARE_API:-https://api.cloudflare.com/client/v4}
+  VERCEL=${ANYPRESS_VERCEL_API:-https://api.vercel.com}
   API_URL=https://api.$ANYPRESS_BRAND_DOMAIN
   DASHBOARD_URL=https://app.$ANYPRESS_BRAND_DOMAIN
 }
@@ -278,6 +279,7 @@ wait_healthy() {
 
 dashboard() {
   say "Dashboard"
+  if [ -n "${VERCEL_TOKEN:-}" ]; then dashboard_vercel; return; fi
   if [ -z "${DASHBOARD_UUID:-}" ]; then
     DASHBOARD_UUID=$(app waas-dashboard https://github.com/hamchowderr/waas-dashboard "$DASHBOARD_REF" nixpacks 3000 "$DASHBOARD_URL")
     remember "$STATE" DASHBOARD_UUID "$DASHBOARD_UUID"
@@ -288,6 +290,66 @@ WAAS_ADMIN_TOKEN=$ADMIN_TOKEN
 ALLOWED_ADMIN_EMAILS=$ANYPRESS_ADMIN_EMAIL
 EOF
   deploy "$DASHBOARD_UUID" "the dashboard"
+}
+
+# Calls Vercel's API: vercel METHOD PATH [JSON]. Prints the response body; returns 1 on an HTTP error.
+vercel() {
+  local method=$1 path=$2 body=${3:-} out code sep='?'
+  [[ $path == *\?* ]] && sep='&'
+  [ -n "${VERCEL_TEAM_ID:-}" ] && path="$path${sep}teamId=$VERCEL_TEAM_ID"
+  out=$(mktemp)
+  code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "$VERCEL$path" -H "Authorization: Bearer $VERCEL_TOKEN" \
+    -H 'Content-Type: application/json' ${body:+--data-binary @-} <<<"$body") || code=000
+  cat "$out"; rm -f "$out"
+  [ "${code:0:1}" = 2 ]
+}
+
+# With VERCEL_TOKEN: the dashboard is a Vercel project in the client's account instead of a Coolify app. Its
+# source is uploaded from the dashboard repository, so the account needs no access to our GitHub.
+dashboard_vercel() {
+  local name=${ANYPRESS_VERCEL_PROJECT:-anypress-dashboard} domain=app.$ANYPRESS_BRAND_DOMAIN src files out id state f sha _
+  [ -z "${DASHBOARD_UUID:-}" ] || info "The dashboard was a Coolify app before; delete waas-dashboard in Coolify's WaaS API project."
+  if [ -z "${VERCEL_PROJECT_ID:-}" ]; then
+    out=$(vercel GET "/v9/projects/$name") || out=$(vercel POST /v11/projects "$(jq -nc --arg n "$name" '{name: $n, framework: "nextjs"}')") \
+      || die "Vercel did not make the project $name: $(jq -r '.error.message // .' <<<"$out")"
+    VERCEL_PROJECT_ID=$(jq -r .id <<<"$out")
+    remember "$STATE" VERCEL_PROJECT_ID "$VERCEL_PROJECT_ID"
+  fi
+  info "Vercel project $name"
+  out=$(vercel POST "/v10/projects/$VERCEL_PROJECT_ID/env?upsert=true" "$(jq -nc --arg u "$API_URL" --arg t "$ADMIN_TOKEN" --arg e "$ANYPRESS_ADMIN_EMAIL" \
+    '[{key: "WAAS_API_URL", value: $u}, {key: "WAAS_ADMIN_TOKEN", value: $t}, {key: "ALLOWED_ADMIN_EMAILS", value: $e}]
+     | map(. + {type: "encrypted", target: ["production", "preview"]})')") || die "Vercel did not take the settings: $out"
+  vercel GET "/v9/projects/$VERCEL_PROJECT_ID/domains/$domain" >/dev/null \
+    || out=$(vercel POST "/v10/projects/$VERCEL_PROJECT_ID/domains" "$(jq -nc --arg d "$domain" '{name: $d}')") \
+    || die "Vercel did not add $domain: $(jq -r '.error.message // .' <<<"$out")"
+
+  src=$(mktemp -d)
+  curl -fsSL "https://codeload.github.com/hamchowderr/waas-dashboard/tar.gz/$DASHBOARD_REF" | tar xz -C "$src" --strip-components=1 \
+    || die "could not download the dashboard ($DASHBOARD_REF)"
+  rm -rf "$src/.beads" "$src/.github"
+  files=$(mktemp)
+  info "Uploading $(cd "$src" && find . -type f | wc -l) files"
+  while IFS= read -r -d '' f; do
+    sha=$(sha1sum "$src/$f" | cut -d' ' -f1)
+    curl -fsS -o /dev/null -X POST "$VERCEL/v2/files${VERCEL_TEAM_ID:+?teamId=$VERCEL_TEAM_ID}" -H "Authorization: Bearer $VERCEL_TOKEN" \
+      -H 'Content-Type: application/octet-stream' -H "x-vercel-digest: $sha" --data-binary @"$src/$f" || die "Vercel did not take $f"
+    jq -nc --arg f "$f" --arg s "$sha" --argjson n "$(stat -c %s "$src/$f")" '{file: $f, sha: $s, size: $n}' >> "$files"
+  done < <(cd "$src" && find . -type f -printf '%P\0')
+  out=$(vercel POST /v13/deployments "$(jq -sc --arg n "$name" --arg p "$VERCEL_PROJECT_ID" \
+    '{name: $n, project: $p, target: "production", files: ., projectSettings: {framework: "nextjs"}}' "$files")") \
+    || die "Vercel did not start the deployment: $(jq -r '.error.message // .' <<<"$out")"
+  rm -rf "$src" "$files"
+  id=$(jq -r .id <<<"$out")
+  info "Building on Vercel ($id)"
+  for _ in $(seq 1 90); do
+    state=$(vercel GET "/v13/deployments/$id" | jq -r '.readyState // .status') || true
+    case "$state" in
+      READY) info "Deployed: https://$domain"; return ;;
+      ERROR|CANCELED) die "the dashboard's Vercel build failed; see the project's Deployments page on Vercel" ;;
+    esac
+    sleep 10
+  done
+  die "the dashboard is still building on Vercel after 15 minutes"
 }
 
 # Coolify keeps 60 days of scheduled task history and every store runs wp-cron each minute: keep 7.
@@ -344,45 +406,53 @@ cloudflare_zone() {
   die "no Cloudflare zone for $1 that the token can see"
 }
 
-# Points an A record at this server, DNS only (Traefik gets the certificates): dns_record NAME IP.
+# Sets a DNS-only record in Cloudflare (Traefik and Vercel get the certificates): dns_record NAME TYPE VALUE.
+# A record of another type is changed only when the installer made it (comment "AnyPress").
 dns_record() {
-  local name=$1 ip=$2 zone existing id content proxied
+  local name=$1 type=$2 value=$3 zone existing record id current proxied other
   zone=$(cloudflare_zone "$name")
   existing=$(cloudflare GET "/zones/$zone/dns_records?name=$(jq -rn --arg n "$name" '$n | @uri')")
-  if [ "$(jq '[.[] | select(.type != "A")] | length' <<<"$existing")" != 0 ]; then
-    die "$name already has a $(jq -r '[.[] | select(.type != "A")][0].type' <<<"$existing") record in Cloudflare. Remove it, then run again."
-  fi
-  id=$(jq -r '[.[] | select(.type == "A")][0].id // empty' <<<"$existing")
-  content=$(jq -r '[.[] | select(.type == "A")][0].content // empty' <<<"$existing")
-  proxied=$(jq -r '[.[] | select(.type == "A")][0].proxied // false' <<<"$existing")
+  other=$(jq -r --arg t "$type" '[.[] | select(.type != $t and .comment != "AnyPress")][0].type // empty' <<<"$existing")
+  [ -z "$other" ] || die "$name already has a $other record in Cloudflare. Remove it, then run again."
+  record=$(jq -c --arg t "$type" '([.[] | select(.type == $t)] + .)[0] // {}' <<<"$existing")
+  id=$(jq -r '.id // empty' <<<"$record")
+  current=$(jq -r '"\(.type) \(.content)"' <<<"$record")
+  proxied=$(jq -r '.proxied // false' <<<"$record")
   if [ -z "$id" ]; then
-    cloudflare POST "/zones/$zone/dns_records" "$(jq -nc --arg n "$name" --arg ip "$ip" \
-      '{type: "A", name: $n, content: $ip, ttl: 1, proxied: false, comment: "AnyPress"}')" >/dev/null
+    cloudflare POST "/zones/$zone/dns_records" "$(jq -nc --arg n "$name" --arg t "$type" --arg v "$value" \
+      '{type: $t, name: $n, content: $v, ttl: 1, proxied: false, comment: "AnyPress"}')" >/dev/null
     info "Added $name"
-  elif [ "$content" != "$ip" ] || [ "$proxied" != false ]; then
-    cloudflare PATCH "/zones/$zone/dns_records/$id" "$(jq -nc --arg ip "$ip" '{content: $ip, proxied: false}')" >/dev/null
-    info "Pointed $name at this server (was $content$([ "$proxied" = true ] && echo ', proxied'))"
+  elif [ "$current" != "$type $value" ] || [ "$proxied" != false ]; then
+    cloudflare PATCH "/zones/$zone/dns_records/$id" "$(jq -nc --arg t "$type" --arg v "$value" '{type: $t, content: $v, proxied: false}')" >/dev/null
+    info "Pointed $name at $value (was $current$([ "$proxied" = true ] && echo ', proxied'))"
   else
     info "$name is set"
   fi
 }
 
-# The five records, when the answers have a Cloudflare token for the domains' zones.
 dns() {
   say "DNS"
   if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
     info "No CLOUDFLARE_API_TOKEN: the records to add are printed at the end"
     return
   fi
-  local ip name
+  local ip name type value
   ip=$(public_ip)
   [ -n "$ip" ] || die "could not find this server's public IP address"
-  for name in $(dns_names); do dns_record "$name" "$ip"; done
+  while read -r type name value; do dns_record "$name" "$type" "$value"; done < <(dns_records "$ip")
 }
 
-dns_names() {
-  printf '%s\n' "*.$ANYPRESS_STORE_DOMAIN" "*.stores.$ANYPRESS_STORE_DOMAIN" "*.versions.$ANYPRESS_STORE_DOMAIN" \
-    "api.$ANYPRESS_BRAND_DOMAIN" "app.$ANYPRESS_BRAND_DOMAIN"
+# The records AnyPress needs, as TYPE NAME VALUE lines: dns_records IP. The dashboard is on Vercel with VERCEL_TOKEN.
+dns_records() {
+  local name
+  for name in "*.$ANYPRESS_STORE_DOMAIN" "*.stores.$ANYPRESS_STORE_DOMAIN" "*.versions.$ANYPRESS_STORE_DOMAIN" "api.$ANYPRESS_BRAND_DOMAIN"; do
+    printf 'A %s %s\n' "$name" "$1"
+  done
+  if [ -n "${VERCEL_TOKEN:-}" ]; then
+    printf 'CNAME %s cname.vercel-dns.com\n' "app.$ANYPRESS_BRAND_DOMAIN"
+  else
+    printf 'A %s %s\n' "app.$ANYPRESS_BRAND_DOMAIN" "$1"
+  fi
 }
 
 # Calls the provisioning API from this server, past DNS and certificates: waas AUTH METHOD PATH [JSON],
@@ -536,7 +606,7 @@ storefront() {
 public_ip() { curl -s4 --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}'; }
 
 summary() {
-  local ip
+  local ip type name value
   ip=$(public_ip)
   say "Done"
   if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
@@ -544,13 +614,13 @@ summary() {
   else
     echo "  Add these DNS records (DNS only, not proxied), if they aren't there yet:"
     echo
-    dns_names | while read -r name; do printf '    A  %-40s %s\n' "$name" "$ip"; done
+    dns_records "$ip" | while read -r type name value; do printf '    %-5s %-40s %s\n' "$type" "$name" "$value"; done
   fi
   cat <<EOF
 
   Coolify:    http://$ip:8000 (admin: $ANYPRESS_ADMIN_EMAIL)
   API:        $API_URL
-  Dashboard:  $DASHBOARD_URL (sign in with $ANYPRESS_ADMIN_EMAIL; needs store email set)
+  Dashboard:  $DASHBOARD_URL$([ -n "${VERCEL_TOKEN:-}" ] && echo ' (on Vercel)') (sign in with $ANYPRESS_ADMIN_EMAIL; needs store email set)
 
   Passwords, keys and the storefront's API key: $CREDS
   Keep a copy of SECRETS_KEY off this server: without it, store passwords and database backups can't be read.
@@ -579,12 +649,21 @@ check() {
   [ -n "${COOLIFY_TOKEN:-}" ] && coolify GET /version >/dev/null 2>&1; result $? "Coolify's API takes the token"
   name=$(container "${API_UUID:-none}")
   [ -n "$name" ] && docker exec "$name" wget -qO- http://127.0.0.1:4111/health >/dev/null 2>&1; result $? "The API answers /health"
-  [ -n "$(container "${DASHBOARD_UUID:-none}")" ]; result $? "The dashboard is running"
+  if [ -n "${VERCEL_TOKEN:-}" ]; then
+    [ "$(vercel GET "/v6/deployments?projectId=${VERCEL_PROJECT_ID:-none}&target=production&limit=1" 2>/dev/null | jq -r '.deployments[0].state // empty')" = READY ]
+    result $? "The dashboard is deployed on Vercel"
+  else
+    [ -n "$(container "${DASHBOARD_UUID:-none}")" ]; result $? "The dashboard is running"
+  fi
   [ -f /etc/cron.d/anypress-coolify-cleanup ]; result $? "The Coolify cleanup job is set"
   [ -n "${STORE_TEMPLATE_RELEASE:-}" ] && [ -n "${STOREFRONT_TEMPLATE_RELEASE:-}" ]; result $? "The store templates are published (${STORE_TEMPLATE_RELEASE:-none})"
   [ -n "${STOREFRONT_DOMAIN:-}" ]; result $? "The storefront is built (${STOREFRONT_DOMAIN:-none})"
   local host
   for host in "api.$ANYPRESS_BRAND_DOMAIN" "app.$ANYPRESS_BRAND_DOMAIN" "check.$ANYPRESS_STORE_DOMAIN" "check.stores.$ANYPRESS_STORE_DOMAIN"; do
+    if [ "$host" = "app.$ANYPRESS_BRAND_DOMAIN" ] && [ -n "${VERCEL_TOKEN:-}" ]; then
+      getent ahostsv4 "$host" | grep -q .; result $? "$host resolves (Vercel)"
+      continue
+    fi
     getent ahostsv4 "$host" | awk '{print $1}' | grep -qx "$ip"; result $? "$host points at this server"
   done
   curl -sf --max-time 10 "$API_URL/health" >/dev/null; result $? "$API_URL/health answers over HTTPS"
@@ -870,4 +949,5 @@ main() {
   esac
 }
 
-main "$@"
+# Sourced (the installer's CI does, to test single steps), it only defines the functions.
+[ "${BASH_SOURCE[0]}" != "$0" ] || main "$@"

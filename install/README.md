@@ -49,8 +49,9 @@ stores; put stores like that on another provider.
 1. Installs Coolify (4.4.6 unless `ANYPRESS_COOLIFY_VERSION` says otherwise), with your email as its admin, so its
    sign-up page is never open.
 2. Turns on Coolify's API and makes the token the provisioning API uses (or uses `COOLIFY_TOKEN` if you give one).
-3. With `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit), points the five A records at the server, DNS only: `*`, `*.stores` and
-   `*.versions` under the store domain, `api` and `app` under the brand domain. It corrects records that point
+3. With `CLOUDFLARE_API_TOKEN` (Zone:DNS:Edit), points the five records at the server, DNS only: `*`, `*.stores` and
+   `*.versions` under the store domain, `api` and `app` under the brand domain (`app` is a CNAME to
+   `cname.vercel-dns.com` when the dashboard is on Vercel). It corrects records that point
    elsewhere or are proxied, and stops if a name has another type of record (a CNAME, for example).
 4. Creates the projects **WaaS API**, **WaaS Stores** and **WaaS Storefront**, and Postgres 16 in WaaS API.
 5. Deploys the provisioning API on `api.<brand domain>` with generated secrets, and waits for `/health`.
@@ -61,6 +62,9 @@ stores; put stores like that on another provider.
 8. Builds your storefront: a WordPress site with WaaS Host and FluentCart, already connected to the API, with you as
    its administrator.
 9. Deploys the dashboard on `app.<brand domain>`, with you as its admin.
+   With `VERCEL_TOKEN`, the dashboard goes to your own Vercel account instead: the installer makes a project
+   (`anypress-dashboard`, in the team `VERCEL_TEAM_ID` if set), gives it its settings and `app.<brand domain>`, uploads
+   the dashboard's source and deploys it to production. Your Vercel account needs no access to GitHub.
 10. Adds the daily job that keeps Coolify's task history to 7 days.
 11. Prints the DNS records to add (without a Cloudflare token) and the storefront's address.
 
