@@ -162,7 +162,8 @@ describe('reviewing', () => {
     ]);
     expect((await call('POST', `/admin/applications/${id}/approve`, {})).status).toBe(409);
     expect((await call('POST', `/admin/applications/${id}/decline`)).status).toBe(409);
-    expect((await call('GET', `/admin/applications/${id}`)).json).toMatchObject({ productId, status: 'approved', dateDecided: expect.any(String) });
+    expect((await call('GET', `/admin/applications/${id}`)).json).toMatchObject({ productId, resellerId: null, status: 'approved', dateDecided: expect.any(String) });
+    expect(res.json.resellerId).toBeNull();
   });
 
   it('builds the ready-made storefront the applicant asked for', async () => {
@@ -188,6 +189,40 @@ describe('reviewing', () => {
     } finally {
       t.deps.config.storefrontProductId = saved;
     }
+  });
+
+  it('approves as a reseller: an account with the storefront inside, its team owner invited', async () => {
+    const applied = await apply(form({ email: 'hedy@partners.example', business: 'Lamarr Partners' }));
+    const id = applied.json.id;
+    expect((await call('POST', `/admin/applications/${id}/approve`, { reseller: 'yes' })).status).toBe(400);
+    expect((await call('POST', `/admin/applications/${id}/approve`, { maxProducts: 5 })).status).toBe(400);
+    expect((await call('POST', `/admin/applications/${id}/approve`, { reseller: true, maxProducts: -1 })).status).toBe(400);
+    expect((await call('GET', `/admin/applications/${id}`)).json.status).toBe('pending');
+
+    const res = await call('POST', `/admin/applications/${id}/approve`, { reseller: true, maxTenants: 25, maxProducts: 5 });
+    expect(res.status).toBe(200);
+    const { productId, resellerId } = res.json;
+    expect(resellerId).toEqual(expect.any(String));
+    expect(res.json.application).toMatchObject({ status: 'approved', productId, resellerId });
+    const reseller = (await (await t.call('GET', `/admin/resellers/${resellerId}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as any;
+    expect(reseller).toMatchObject({ name: 'Lamarr Partners', maxTenants: 25, maxProducts: 5, billingEmail: 'hedy@partners.example' });
+    expect(reseller.products.map((p: { id: string }) => p.id)).toEqual([productId]);
+    const products = (await (await t.call('GET', '/admin/products', { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as { id: string; maxTenants: number | null }[];
+    expect(products.find((p) => p.id === productId)).toMatchObject({ maxTenants: null });
+    const team = (await (await t.call('GET', `/admin/resellers/${resellerId}/organization`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as any;
+    expect(team.invitations).toEqual([expect.objectContaining({ email: 'hedy@partners.example', role: 'owner' })]);
+    expect(team.invitations[0].id).toBe(res.json.invitation.id);
+    const own = (await (await t.call('GET', `/admin/products/${productId}/organization`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as any;
+    expect(own.invitations ?? []).toEqual([]);
+    expect(sent.at(-1)).toMatchObject({ to: 'hedy@partners.example', text: expect.stringContaining(`/invite/${res.json.invitation.id}`) });
+    expect((await call('GET', `/admin/applications/${id}`)).json).toMatchObject({ productId, resellerId });
+  });
+
+  it('defaults a reseller approval to 3 stores across 3 storefronts', async () => {
+    const applied = await apply(form({ email: 'alan@partners.example', business: 'Turing Partners' }));
+    const res = await call('POST', `/admin/applications/${applied.json.id}/approve`, { reseller: true });
+    const reseller = (await (await t.call('GET', `/admin/resellers/${res.json.resellerId}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as any;
+    expect(reseller).toMatchObject({ maxTenants: 3, maxProducts: 3 });
   });
 
   it('declines and emails the applicant, after which they may apply again', async () => {

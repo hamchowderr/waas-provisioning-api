@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { createInvitation, invitationUrl } from './accounts.ts';
+import { createInvitation, createResellerInvitation, invitationUrl } from './accounts.ts';
 import type { AppEnv, Deps } from './app.ts';
 import { INVITATION_DAYS } from './auth.ts';
 import {
@@ -20,12 +20,15 @@ import { domainInUse } from './tenants.ts';
  * marketing site's form); nothing is made until the platform admin approves it on the dashboard.
  * Approving makes the seller's product with a store limit, invites the applicant as its owner (they
  * sign in to the dashboard from the email), and builds its ready-made storefront when they asked
- * for one. Declining only emails them.
+ * for one. Approving as a reseller (docs/resellers.md) makes a reseller account with that product
+ * inside it instead, and invites the applicant to the reseller's team. Declining only emails them.
  */
 
 export const EXPECTED_SITES = ['1-2', '3-9', '10-24', '25+'] as const;
 /** The store limit a newly approved seller starts with; the admin raises it on the dashboard. */
 export const DEFAULT_SELLER_STORES = 3;
+/** The storefronts a reseller approved from an application may have; the admin raises it on the dashboard. */
+export const DEFAULT_RESELLER_STOREFRONTS = 3;
 /** Applications accepted from everyone together per hour, so a flood can't bury real ones. */
 export const APPLICATIONS_PER_HOUR = 20;
 
@@ -48,9 +51,15 @@ function toApplication(row: any) {
     storefrontSubdomain: (row.storefront_subdomain as string | null) ?? null,
     status: row.status as Status,
     productId: (row.product_id as string | null) ?? null,
+    resellerId: (row.reseller_id as string | null) ?? null,
     dateDecided: row.decided_at ? (row.decided_at as Date).toISOString() : null,
     dateCreated: (row.created_at as Date).toISOString(),
   };
+}
+
+function limit(value: unknown, name: string): number | null {
+  if (value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100000)) return value;
+  throw badRequest(`${name} must be a whole number, 0 or more, or null for no limit`);
 }
 
 function text(value: unknown, name: string, max: number, required = true): string | null {
@@ -188,40 +197,55 @@ export function adminApplicationRoutes(deps: Deps) {
 
   // Approves: a product named after the business with maxTenants stores (3 unless given), the
   // applicant invited as its owner and emailed, and their ready-made storefront when `storefront`
-  // (default: what they asked for). A storefront that can't be built leaves the approval standing
-  // and answers storefrontError, so the admin can build it from the product's keys page.
+  // (default: what they asked for). With `reseller: true` it makes a reseller account named after the
+  // business instead, with maxTenants stores across up to maxProducts storefronts (3 each unless
+  // given), the product inside it with no limit of its own, and the applicant invited as the owner of
+  // the reseller's team. A storefront that can't be built leaves the approval standing and answers
+  // storefrontError, so the admin can build it from the product's keys page.
   app.post('/:id/approve', async (c) => {
     const pending = await find(c);
     if (pending.status !== 'pending') throw conflict('This application was already decided');
     if (!deps.auth) throw new HttpError(503, 'Sign-in is off: set AUTH_URL and AUTH_SECRET');
-    const body = ((await readJson(c)) ?? {}) as { maxTenants?: unknown; storefront?: unknown };
-    const max = body.maxTenants ?? DEFAULT_SELLER_STORES;
-    if (max !== null && !(typeof max === 'number' && Number.isInteger(max) && max >= 0 && max <= 100000)) {
-      throw badRequest('maxTenants must be a whole number, 0 or more, or null for no limit');
-    }
+    const body = ((await readJson(c)) ?? {}) as { maxTenants?: unknown; maxProducts?: unknown; storefront?: unknown; reseller?: unknown };
+    const max = limit(body.maxTenants === undefined ? DEFAULT_SELLER_STORES : body.maxTenants, 'maxTenants');
     if (body.storefront !== undefined && typeof body.storefront !== 'boolean') throw badRequest('storefront must be true or false');
+    if (body.reseller !== undefined && typeof body.reseller !== 'boolean') throw badRequest('reseller must be true or false');
+    const asReseller = body.reseller === true;
+    if (body.maxProducts !== undefined && !asReseller) throw badRequest('maxProducts is only for a reseller approval');
+    const maxProducts = asReseller ? limit(body.maxProducts === undefined ? DEFAULT_RESELLER_STOREFRONTS : body.maxProducts, 'maxProducts') : null;
     const wantStorefront = body.storefront ?? pending.wantsStorefront;
 
     const application = await claim(pending.id, 'approved');
     let product: { id: string; name: string };
+    let resellerId: string | null = null;
     let invitation: { id: string; expiresAt: Date };
     try {
+      if (asReseller) {
+        const { rows } = await pool.query<{ id: string }>(
+          'INSERT INTO resellers (name, max_products, max_tenants, billing_email) VALUES ($1, $2, $3, $4) RETURNING id',
+          [application.business, maxProducts, max, application.email],
+        );
+        resellerId = rows[0]!.id;
+      }
       const { rows } = await pool.query<{ id: string; name: string }>(
-        'INSERT INTO products (name, max_tenants) VALUES ($1, $2) RETURNING id, name',
-        [application.business, max],
+        'INSERT INTO products (name, max_tenants, reseller_id) VALUES ($1, $2, $3) RETURNING id, name',
+        [application.business, asReseller ? null : max, resellerId],
       );
       product = rows[0]!;
       try {
-        ({ invitation } = await createInvitation(deps, product, application.email, 'owner', null));
+        ({ invitation } = resellerId
+          ? await createResellerInvitation(deps, { id: resellerId, name: application.business }, application.email, 'owner', null)
+          : await createInvitation(deps, product, application.email, 'owner', null));
       } catch (err) {
         await pool.query('DELETE FROM products WHERE id = $1', [product.id]);
         throw err;
       }
     } catch (err) {
+      if (resellerId) await pool.query('DELETE FROM resellers WHERE id = $1', [resellerId]);
       await pool.query(`UPDATE seller_applications SET status = 'pending', decided_at = NULL WHERE id = $1`, [application.id]);
       throw err;
     }
-    await pool.query('UPDATE seller_applications SET product_id = $2 WHERE id = $1', [application.id, product.id]);
+    await pool.query('UPDATE seller_applications SET product_id = $2, reseller_id = $3 WHERE id = $1', [application.id, product.id, resellerId]);
 
     let storefront = null;
     let storefrontError: string | null = null;
@@ -252,8 +276,9 @@ export function adminApplicationRoutes(deps: Deps) {
       config.auth?.mail,
     );
     return c.json({
-      application: { ...application, productId: product.id },
+      application: { ...application, productId: product.id, resellerId },
       productId: product.id,
+      resellerId,
       invitation: { id: invitation.id, acceptUrl: url, expiresAt: invitation.expiresAt.toISOString(), emailed },
       storefront,
       storefrontError,
