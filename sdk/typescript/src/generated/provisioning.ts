@@ -1856,6 +1856,15 @@ export interface operations {
                     "application/json": components["schemas"]["GetTenantQueryResult"][];
                 };
             };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -2871,6 +2880,15 @@ export interface operations {
                     "application/json": components["schemas"]["GetVersionQueryResult"][];
                 };
             };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3161,6 +3179,15 @@ export interface operations {
                     "application/json": components["schemas"]["GetSubscriptionsQueryResult"][];
                 };
             };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3284,6 +3311,15 @@ export interface operations {
                     "application/json": components["schemas"]["GetSubscriptionUsageQueryResult"];
                 };
             };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3323,6 +3359,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GetProductsQueryResult"][];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
                 };
             };
             /** @description Unauthorized */
@@ -3412,6 +3457,15 @@ export interface operations {
                     "application/json": components["schemas"]["RemoveProductCommandResult"];
                 };
             };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3451,6 +3505,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GetProductUsageQueryResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
                 };
             };
             /** @description Unauthorized */
@@ -3494,6 +3557,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GetBaseSnapshotsQueryResult"][];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
                 };
             };
             /** @description Unauthorized */
