@@ -227,6 +227,11 @@ export function createInvitation(deps: Pick<Deps, 'pool'>, p: { id: string; name
   return inviteTo(deps.pool, { productId: p.id, name: p.name }, email, role, inviterId);
 }
 
+/** As createInvitation, for a reseller's organization: its members work on all the reseller's storefronts. */
+export function createResellerInvitation(deps: Pick<Deps, 'pool'>, r: { id: string; name: string }, email: string, role: OrgRole, inviterId: string | null) {
+  return inviteTo(deps.pool, { resellerId: r.id, name: r.name }, email, role, inviterId);
+}
+
 async function inviteTo(pool: Deps['pool'], owner: OrgOwner, email: string, role: OrgRole, inviterId: string | null) {
   const { organization } = await ensureOrganization(pool, owner);
   const invitation = await withTransaction(pool, async (client) => {

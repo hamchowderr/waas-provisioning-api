@@ -1059,15 +1059,20 @@ paths:
         Makes the seller's product, named after the business, with maxTenants stores; invites the applicant
         as its owner and emails them the link to sign in to the dashboard; and, when storefront is true
         (by default when they asked for one), builds its ready-made storefront. If the storefront can't be
-        built, the approval stands and storefrontError says why. Needs sign-in on (AUTH_URL), else 503.
+        built, the approval stands and storefrontError says why. With reseller true it makes a reseller account
+        named after the business instead (maxTenants stores across up to maxProducts storefronts), puts the
+        product in it with no store limit of its own, and invites the applicant as the owner of the
+        reseller's team. Needs sign-in on (AUTH_URL), else 503.
       requestBody:
         content:
           application/json:
             schema:
               type: object
               properties:
-                maxTenants: { type: integer, minimum: 0, nullable: true, default: 3, description: The most stores it may have; null for no limit }
+                maxTenants: { type: integer, minimum: 0, nullable: true, default: 3, description: The most stores it may have (across the reseller's storefronts for a reseller); null for no limit }
                 storefront: { type: boolean, description: Build its ready-made storefront. Defaults to what the applicant asked for }
+                reseller: { type: boolean, default: false, description: Approve as a reseller account instead of a seller }
+                maxProducts: { type: integer, minimum: 0, nullable: true, default: 3, description: Reseller approvals only. The most storefronts the reseller may have; null for no limit }
       responses:
         '200':
           description: Approved
@@ -1075,10 +1080,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [application, productId, invitation, storefront, storefrontError]
+                required: [application, productId, resellerId, invitation, storefront, storefrontError]
                 properties:
                   application: { $ref: '#/components/schemas/Application' }
                   productId: { type: string, format: uuid }
+                  resellerId: { type: string, format: uuid, nullable: true, description: The reseller account made, for a reseller approval }
                   invitation:
                     type: object
                     required: [id, acceptUrl, expiresAt, emailed]
@@ -1722,7 +1728,7 @@ components:
           description: With wantsStorefront, the storefront's address <subdomain>.<platform domain>. Must be free
     Application:
       type: object
-      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, status, productId, dateDecided, dateCreated]
+      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, status, productId, resellerId, dateDecided, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -1735,6 +1741,7 @@ components:
         storefrontSubdomain: { type: string, nullable: true }
         status: { type: string, enum: [pending, approved, declined] }
         productId: { type: string, format: uuid, nullable: true, description: The product made when it was approved }
+        resellerId: { type: string, format: uuid, nullable: true, description: The reseller account made when it was approved as a reseller }
         dateDecided: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }
     OrganizationRole:

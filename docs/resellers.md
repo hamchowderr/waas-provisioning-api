@@ -29,6 +29,8 @@ Everything is on the admin API (`Authorization: Bearer <ADMIN_TOKEN>`). Signed-i
 
 Lowering a limit below the current count removes nothing; it only stops new storefronts or stores.
 
+An application to sell can also be approved as a reseller: `POST /admin/applications/{id}/approve` with `{"reseller": true}` makes a reseller named after the business, with its billing email set to the applicant's, `maxTenants` stores (default 3) across up to `maxProducts` storefronts (default 3). The product it makes goes inside, with no store limit of its own, and the applicant is invited as the owner of the reseller's team rather than the product's ([accounts.md](accounts.md#applications-to-sell)). The answer and the application carry its `resellerId`.
+
 ## Partner keys
 
 A partner key is an API key that belongs to the reseller instead of one storefront. It works on every storefront in the account, so a partner running several of them needs one key, not one per storefront.
