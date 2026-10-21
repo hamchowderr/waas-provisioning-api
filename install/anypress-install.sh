@@ -6,7 +6,8 @@
 #   sudo bash anypress-install.sh            install, using /root/anypress.env (see anypress.env.example)
 #   sudo bash anypress-install.sh check      check an install
 #   bash anypress-install.sh hostinger       from your computer: set up a Hostinger VPS that installs itself,
-#                                            using ./anypress.env with HOSTINGER_API_TOKEN (see install/README.md)
+#   bash anypress-install.sh hetzner         or make a Hetzner Cloud server or a DigitalOcean Droplet that does,
+#   bash anypress-install.sh digitalocean    using ./anypress.env with the provider's token (install/README.md)
 #
 # Needs: root, Ubuntu 22.04 or 24.04, ports 80, 443 and 8000 free. Writes /root/anypress/ (state and
 # credentials, readable by root only).
@@ -591,79 +592,89 @@ check() {
   return $ok
 }
 
-# ---- Hostinger front door: runs on your own computer, not on the server ----
+# ---- Front doors: run on your own computer, not on the server. Each makes a server with the provider's
+# API and hands it post_install_script, which installs AnyPress on it. ----
 
-# Calls Hostinger's API: hostinger METHOD PATH [JSON]. Prints the response body; fails on an HTTP error.
-hostinger() {
-  local method=$1 path=$2 body=${3:-} out code
+# Calls a provider's API: provider_api BASE TOKEN METHOD PATH [JSON]. Prints the response body; fails on an
+# HTTP error.
+provider_api() {
+  local base=$1 token=$2 method=$3 path=$4 body=${5:-} out code
   out=$(mktemp)
-  code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "$HOSTINGER$path" \
-    -H "Authorization: Bearer $HOSTINGER_API_TOKEN" -H 'Content-Type: application/json' -H 'Accept: application/json' \
-    ${body:+--data-binary @-} <<<"$body") || { rm -f "$out"; die "Hostinger did not answer $method $path"; }
+  code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "$base$path" \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    ${body:+--data-binary @-} <<<"$body") || { rm -f "$out"; die "$PROVIDER did not answer $method $path"; }
   if [ "${code:0:1}" != 2 ]; then
-    jq -r '.message // .' "$out" >&2 2>/dev/null || cat "$out" >&2; rm -f "$out"
-    die "Hostinger answered $code to $method $path"
+    jq -r '.message // .error.message // .' "$out" >&2 2>/dev/null || cat "$out" >&2; rm -f "$out"
+    die "$PROVIDER answered $code to $method $path"
   fi
   cat "$out"; rm -f "$out"
 }
 
-# The script Hostinger runs once as root after installing the server (logged to /post_install.log): it writes
-# the answers (without the Hostinger settings) and this installer to /root, adds your SSH key and installs.
+hostinger() { provider_api "$HOSTINGER" "$HOSTINGER_API_TOKEN" "$@"; }
+hetzner() { provider_api "$HETZNER" "$HETZNER_API_TOKEN" "$@"; }
+digitalocean() { provider_api "$DIGITALOCEAN" "$DIGITALOCEAN_TOKEN" "$@"; }
+
+# The script the new server runs once as root (Hostinger's post-install script, cloud-init user data
+# elsewhere): it writes the answers (without the providers' settings) and this installer (compressed, to fit
+# the providers' size limits) to /root, adds your SSH key and installs, logging to /root/anypress/install.log.
 # It ends by writing the installer's exit code to /root/anypress/post-install.status.
 post_install_script() {
-  local key=$1 end
-  # A heredoc end marker the answers and the installer can't contain.
+  local end
+  # A heredoc end marker the answers can't contain.
   end=ANYPRESS_END_$(openssl rand -hex 8)
   cat <<SCRIPT
 #!/bin/bash
-# AnyPress, set up by anypress-install.sh hostinger.
+# AnyPress, set up by anypress-install.sh $FRONT_DOOR.
 umask 077
 mkdir -p /root/anypress /root/.ssh
 cat > /root/anypress.env <<'$end'
-$(grep -v '^[[:space:]]*\(export[[:space:]]\+\)\?HOSTINGER_' "$ANSWERS")
+$(grep -v '^[[:space:]]*\(export[[:space:]]\+\)\?\(HOSTINGER\|HETZNER\|DIGITALOCEAN\)_' "$ANSWERS")
 $end
 SCRIPT
-  [ -n "$key" ] && printf "echo '%s' >> /root/.ssh/authorized_keys\n" "$key"
+  [ -n "$SSH_KEY" ] && printf "echo '%s' >> /root/.ssh/authorized_keys\n" "$SSH_KEY"
   cat <<SCRIPT
-cat > /root/anypress-install.sh <<'$end'
-$(cat "$INSTALLER")
+base64 -d > /root/anypress-install.sh.gz <<'$end'
+$(gzip -9c "$INSTALLER" | base64)
 $end
-bash /root/anypress-install.sh
-status=\$?
+gunzip -f /root/anypress-install.sh.gz
+bash /root/anypress-install.sh 2>&1 | tee -a /root/anypress/install.log
+status=\${PIPESTATUS[0]}
 echo "\$status" > /root/anypress/post-install.status
 exit "\$status"
 SCRIPT
 }
 
-# Waits for the server to finish installing, then (with an SSH key) shows the installer's log as it runs.
-hostinger_follow() {
-  local vm=$1 action=${2:-} state ip known _
-  info "Installing Ubuntu (a few minutes)"
-  for _ in $(seq 1 120); do
-    if [ -n "$action" ]; then
-      state=$(hostinger GET "/api/vps/v1/virtual-machines/$vm/actions/$action") || exit 1
-      state=$(jq -r .state <<<"$state")
-      [ "$state" = error ] && die "Hostinger could not rebuild the server (see its actions in hPanel)"
-      [ "$state" = success ] && action=
-    fi
-    if [ -z "$action" ]; then
-      state=$(hostinger GET "/api/vps/v1/virtual-machines/$vm") || exit 1
-      ip=$(jq -r '.ipv4[0].address // empty' <<<"$state")
-      state=$(jq -r .state <<<"$state")
-      [ "$state" = error ] && die "Hostinger could not set up the server (see its actions in hPanel)"
-      [ "$state" = running ] && break
-    fi
-    sleep 10
-  done
-  [ "$state" = running ] || die "the server is still installing after 20 minutes"
-  hostinger DELETE "/api/vps/v1/post-install-scripts/$SCRIPT_ID" >/dev/null && SCRIPT_ID=
+# What every front door needs: the answers, the provider's token, this installer as a file and an SSH key.
+front_door() {
+  FRONT_DOOR=$1 PROVIDER=$2
+  ANSWERS=${ANYPRESS_ANSWERS:-./anypress.env}
+  INSTALLER=${BASH_SOURCE[0]}
+  [ -f "$INSTALLER" ] || die "save the installer to a file and run it from there (bash anypress-install.sh $FRONT_DOOR)"
+  local tool f
+  for tool in curl jq openssl gzip base64; do command -v "$tool" >/dev/null || die "install $tool first"; done
+  answers
+  LOCAL_DIR=${ANYPRESS_LOCAL_DIR:-$HOME/.anypress}
+  mkdir -p "$LOCAL_DIR" && chmod 700 "$LOCAL_DIR"
+  SSH_KEY=
+  case "${ANYPRESS_SSH_KEY:-}" in
+    none) ;;
+    "") for f in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do [ -f "$f" ] && { SSH_KEY=$(head -1 "$f"); break; }; done ;;
+    *) [ -f "$ANYPRESS_SSH_KEY" ] || die "no SSH public key at $ANYPRESS_SSH_KEY"; SSH_KEY=$(head -1 "$ANYPRESS_SSH_KEY") ;;
+  esac
+  SERVER_NAME=${ANYPRESS_SERVER_NAME:-anypress-${ANYPRESS_BRAND_DOMAIN//./-}}
+  say "$PROVIDER"
+}
+
+# Once the server is up: with an SSH key, shows the installer's log as it runs, until it ends.
+follow_install() {
+  local ip=$1 known=$LOCAL_DIR/$FRONT_DOOR-$2.known_hosts _
   info "Server $ip is up; AnyPress is installing on it (about 15 minutes)"
   if [ -z "$SSH_KEY" ]; then
-    echo "  Without an SSH key this stops here. Follow /post_install.log in hPanel's browser terminal, or wait"
-    echo "  for https://api.$ANYPRESS_BRAND_DOMAIN/health to answer."
+    echo "  Without an SSH key this stops here. Follow /root/anypress/install.log on the server (the provider's"
+    echo "  browser console), or wait for https://api.$ANYPRESS_BRAND_DOMAIN/health to answer."
     return
   fi
-  known=$LOCAL_DIR/hostinger-$vm.known_hosts
+  rm -f "$known"
   for _ in $(seq 1 30); do
     ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$known" \
       "root@$ip" true 2>/dev/null && break
@@ -671,30 +682,22 @@ hostinger_follow() {
   done
   # Shows the log until the installer writes its exit code, and exits with it.
   ssh -o BatchMode=yes -o UserKnownHostsFile="$known" "root@$ip" '
-    until [ -f /post_install.log ]; do sleep 2; done
-    tail -n +1 -f /post_install.log & t=$!
+    until [ -f /root/anypress/install.log ]; do sleep 2; done
+    tail -n +1 -f /root/anypress/install.log & t=$!
     until [ -f /root/anypress/post-install.status ]; do sleep 5; done
     sleep 2; kill $t; exit "$(cat /root/anypress/post-install.status)"' \
-    || die "the installer stopped on the server; its log is /post_install.log there (ssh root@$ip). Fix the answers in /root/anypress.env and run: bash /root/anypress-install.sh"
+    || die "the installer stopped on the server; its log is /root/anypress/install.log there (ssh root@$ip). Fix the answers in /root/anypress.env and run: bash /root/anypress-install.sh"
   say "Installed on $ip"
   echo "  Logins and keys: /root/anypress/credentials.env on the server (ssh root@$ip)"
 }
 
-# anypress-install.sh hostinger: sets up a Hostinger VPS from your computer with the Hostinger API. The VPS
-# gets plain Ubuntu 24.04 and this installer as its post-install script, with your answers file.
+# anypress-install.sh hostinger: sets up a Hostinger VPS you bought with plain Ubuntu 24.04 and
+# post_install_script as its post-install script (48 KB at most, logged to /post_install.log).
 hostinger_install() {
-  ANSWERS=${ANYPRESS_ANSWERS:-./anypress.env}
-  INSTALLER=${BASH_SOURCE[0]}
-  [ -f "$INSTALLER" ] || die "save the installer to a file and run it from there (bash anypress-install.sh hostinger)"
-  local tool
-  for tool in curl jq openssl; do command -v "$tool" >/dev/null || die "install $tool first"; done
-  answers
+  front_door hostinger Hostinger
   : "${HOSTINGER_API_TOKEN:?set HOSTINGER_API_TOKEN in $ANSWERS (hPanel → Account → API)}"
   HOSTINGER=${ANYPRESS_HOSTINGER_API:-https://developers.hostinger.com}
-  LOCAL_DIR=${ANYPRESS_LOCAL_DIR:-$HOME/.anypress}
-  mkdir -p "$LOCAL_DIR" && chmod 700 "$LOCAL_DIR"
-  local vm template dc script body password action=
-  say "Hostinger"
+  local vm template dc script body password action='' state hostname ip _
 
   vm=${HOSTINGER_VPS_ID:-}
   if [ -z "$vm" ]; then
@@ -706,7 +709,6 @@ hostinger_install() {
     vm=$(jq -r '.[] | select(.state == "initial") | .id' <<<"$vm")
   fi
   vm=$(hostinger GET "/api/vps/v1/virtual-machines/$vm") || exit 1
-  local state hostname
   state=$(jq -r .state <<<"$vm"); hostname=$(jq -r .hostname <<<"$vm")
   dc=${HOSTINGER_DATA_CENTER_ID:-$(jq -r '.data_center_id // empty' <<<"$vm")}
   vm=$(jq -r .id <<<"$vm")
@@ -729,14 +731,7 @@ hostinger_install() {
   fi
   info "Template $template"
 
-  SSH_KEY=
-  case "${ANYPRESS_SSH_KEY:-}" in
-    none) ;;
-    "") for f in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do [ -f "$f" ] && { SSH_KEY=$(head -1 "$f"); break; }; done ;;
-    *) [ -f "$ANYPRESS_SSH_KEY" ] || die "no SSH public key at $ANYPRESS_SSH_KEY"; SSH_KEY=$(head -1 "$ANYPRESS_SSH_KEY") ;;
-  esac
-
-  script=$(post_install_script "$SSH_KEY")
+  script=$(post_install_script)
   [ "$(printf '%s' "$script" | wc -c)" -le 49152 ] || die "the post-install script is over Hostinger's 48 KB limit"
   body=$(jq -n --arg name "AnyPress $ANYPRESS_BRAND_DOMAIN" --arg content "$script" '{name: $name, content: $content}')
   SCRIPT_ID=$(hostinger POST /api/vps/v1/post-install-scripts "$body" | jq -r .id) || exit 1
@@ -748,7 +743,6 @@ hostinger_install() {
   password="Ap$(openssl rand -hex 12)X9"
   printf 'HOSTINGER_ROOT_PASSWORD=%s\n' "$password" > "$LOCAL_DIR/hostinger-$vm.env"
   chmod 600 "$LOCAL_DIR/hostinger-$vm.env"
-  rm -f "$LOCAL_DIR/hostinger-$vm.known_hosts"
 
   if [ "$state" = initial ]; then
     body=$(jq -n --argjson t "$template" --argjson d "$dc" --argjson s "$SCRIPT_ID" --arg p "$password" \
@@ -762,7 +756,92 @@ hostinger_install() {
     info "Wiping and rebuilding the server"
   fi
   echo "  Root password: $LOCAL_DIR/hostinger-$vm.env"
-  hostinger_follow "$vm" "$action"
+
+  info "Installing Ubuntu (a few minutes)"
+  for _ in $(seq 1 120); do
+    if [ -n "$action" ]; then
+      state=$(hostinger GET "/api/vps/v1/virtual-machines/$vm/actions/$action") || exit 1
+      state=$(jq -r .state <<<"$state")
+      [ "$state" = error ] && die "Hostinger could not rebuild the server (see its actions in hPanel)"
+      [ "$state" = success ] && action=
+    fi
+    if [ -z "$action" ]; then
+      state=$(hostinger GET "/api/vps/v1/virtual-machines/$vm") || exit 1
+      ip=$(jq -r '.ipv4[0].address // empty' <<<"$state")
+      state=$(jq -r .state <<<"$state")
+      [ "$state" = error ] && die "Hostinger could not set up the server (see its actions in hPanel)"
+      [ "$state" = running ] && break
+    fi
+    sleep 10
+  done
+  [ "$state" = running ] || die "the server is still installing after 20 minutes"
+  hostinger DELETE "/api/vps/v1/post-install-scripts/$SCRIPT_ID" >/dev/null && SCRIPT_ID=
+  follow_install "$ip" "$vm"
+}
+
+# anypress-install.sh hetzner: makes a Hetzner Cloud server (Ubuntu 24.04) with post_install_script as its
+# user data (32 KiB at most).
+hetzner_install() {
+  front_door hetzner "Hetzner Cloud"
+  : "${HETZNER_API_TOKEN:?set HETZNER_API_TOKEN in $ANSWERS (Cloud Console → your project → Security → API tokens, Read & Write)}"
+  HETZNER=${ANYPRESS_HETZNER_API:-https://api.hetzner.cloud/v1}
+  local server script body id ip state _
+  server=$(hetzner GET "/servers?name=$SERVER_NAME") || exit 1
+  [ "$(jq '.servers | length' <<<"$server")" = 0 ] \
+    || die "a server named $SERVER_NAME is already in this project. To update its install, run the installer on it; to make another, set ANYPRESS_SERVER_NAME."
+  if [ -z "${HETZNER_SERVER_TYPE:-}" ]; then
+    hetzner GET "/server_types?per_page=50" | jq -r '.server_types[] | select(.deprecation == null)
+      | "    \(.name)  \(.cores) CPU, \(.memory) GB, \(.disk) GB, \(.architecture)"' >&2
+    die "set HETZNER_SERVER_TYPE in $ANSWERS to one of the types above (4 GB of memory or more; x86)"
+  fi
+  script=$(post_install_script)
+  [ "$(printf '%s' "$script" | wc -c)" -le 32768 ] || die "the user data is over Hetzner's 32 KiB limit"
+  body=$(jq -n --arg n "$SERVER_NAME" --arg t "$HETZNER_SERVER_TYPE" --arg l "${HETZNER_LOCATION:-}" --arg u "$script" \
+    '{name: $n, server_type: $t, image: "ubuntu-24.04", user_data: $u, labels: {anypress: "true"}} + (if $l == "" then {} else {location: $l} end)')
+  server=$(hetzner POST /servers "$body") || exit 1
+  id=$(jq -r .server.id <<<"$server")
+  ip=$(jq -r '.server.public_net.ipv4.ip // empty' <<<"$server")
+  # Hetzner emails a root password unless the server has a Hetzner SSH key; it is also in this answer.
+  jq -r '"HETZNER_ROOT_PASSWORD=\(.root_password // "")"' <<<"$server" > "$LOCAL_DIR/hetzner-$id.env"
+  chmod 600 "$LOCAL_DIR/hetzner-$id.env"
+  info "Made server $id ($SERVER_NAME, $HETZNER_SERVER_TYPE); root password: $LOCAL_DIR/hetzner-$id.env"
+  for _ in $(seq 1 60); do
+    server=$(hetzner GET "/servers/$id") || exit 1
+    state=$(jq -r .server.status <<<"$server")
+    ip=$(jq -r '.server.public_net.ipv4.ip // empty' <<<"$server")
+    [ "$state" = running ] && break
+    sleep 5
+  done
+  [ "$state" = running ] || die "the server is still starting after 5 minutes"
+  follow_install "$ip" "$id"
+}
+
+# anypress-install.sh digitalocean: makes a DigitalOcean Droplet (Ubuntu 24.04) with post_install_script as
+# its user data (64 KiB at most).
+digitalocean_install() {
+  front_door digitalocean DigitalOcean
+  : "${DIGITALOCEAN_TOKEN:?set DIGITALOCEAN_TOKEN in $ANSWERS (Control Panel → API → Personal access tokens, write)}"
+  DIGITALOCEAN=${ANYPRESS_DIGITALOCEAN_API:-https://api.digitalocean.com/v2}
+  local droplet script body id ip state _
+  droplet=$(digitalocean GET "/droplets?name=$SERVER_NAME") || exit 1
+  [ "$(jq '.droplets | length' <<<"$droplet")" = 0 ] \
+    || die "a Droplet named $SERVER_NAME is already in this account. To update its install, run the installer on it; to make another, set ANYPRESS_SERVER_NAME."
+  script=$(post_install_script)
+  [ "$(printf '%s' "$script" | wc -c)" -le 65536 ] || die "the user data is over DigitalOcean's 64 KiB limit"
+  body=$(jq -n --arg n "$SERVER_NAME" --arg r "${DIGITALOCEAN_REGION:-nyc3}" --arg s "${DIGITALOCEAN_SIZE:-s-4vcpu-8gb}" --arg u "$script" \
+    '{name: $n, region: $r, size: $s, image: "ubuntu-24-04-x64", user_data: $u, monitoring: true, tags: ["anypress"]}')
+  droplet=$(digitalocean POST /droplets "$body") || exit 1
+  id=$(jq -r .droplet.id <<<"$droplet")
+  info "Made Droplet $id ($SERVER_NAME, ${DIGITALOCEAN_SIZE:-s-4vcpu-8gb} in ${DIGITALOCEAN_REGION:-nyc3})"
+  for _ in $(seq 1 60); do
+    droplet=$(digitalocean GET "/droplets/$id") || exit 1
+    state=$(jq -r .droplet.status <<<"$droplet")
+    ip=$(jq -r '[.droplet.networks.v4[] | select(.type == "public")][0].ip_address // empty' <<<"$droplet")
+    [ "$state" = active ] && [ -n "$ip" ] && break
+    sleep 5
+  done
+  [ "$state" = active ] || die "the Droplet is still starting after 5 minutes"
+  follow_install "$ip" "$id"
 }
 
 main() {
@@ -785,7 +864,9 @@ main() {
       ;;
     check) check ;;
     hostinger) hostinger_install ;;
-    *) die "unknown command $1 (use install, check or hostinger)" ;;
+    hetzner) hetzner_install ;;
+    digitalocean) digitalocean_install ;;
+    *) die "unknown command $1 (use install, check, hostinger, hetzner or digitalocean)" ;;
   esac
 }
 
