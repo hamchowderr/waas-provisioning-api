@@ -4,7 +4,7 @@ For contributors: how the API's OpenAPI files are organised, and what the WordPr
 
 | File | What it describes |
 |---|---|
-| `openapi/waas-provisioning-api.yaml` | Stores, domains, versions, snapshots and templates. Version 1.1.0. The main file: edit this one for those calls |
+| `openapi/waas-provisioning-api.yaml` | Stores, domains, versions, snapshots and templates, and the partner calls. Its version is `info.version`. The main file: edit this one for those calls |
 | `openapi/store-mail.yaml` | A store's sending domain and Domain Connect links |
 | `openapi/api-keys.yaml` | `/v1/keys` |
 | `openapi/webhooks.yaml` | `/v1/webhooks` and the webhook events |
@@ -22,14 +22,14 @@ Every public call is under `/v1`, and v1 stays backwards compatible: storefront 
 - **Replacing something:** add the new call or field, mark the old one `deprecated: true` in the OpenAPI file, and keep it working. It is only removed in a new major version.
 - **A change that can't be made this way** goes in `/v2`, served next to `/v1`.
 
-`test/contract.test.ts` checks every response against these files, so a change that breaks existing callers fails CI. `info.version` in the main file follows semver: bump the minor for an addition, the patch for a docs fix.
+`test/contract.test.ts` (Phase 1) and `test/contract-phase2.test.ts` (Phase 2, and Phase 1 called with a partner key) check every response against these files, so a change that breaks existing callers fails CI. `test/docs.test.ts` checks that every example in the reference matches its schema. `info.version` in the main file follows semver: bump the minor for an addition, the patch for a docs fix.
 
 ## Phases
 
 Every operation in the main file carries `x-phase: 1` or `x-phase: 2`.
 
 - **Phase 1 (22 operations):** stores, store domains, versions and snapshots: everything the storefront plugin calls. Five of them were added for AnyPress (tag `TenantLifecycle`): suspend, resume, restore a deleted store, list backups, and back up a store. The storefront suspends and backs up a store when its subscription is cancelled or expires, deletes it after a grace period, and resumes it if the subscription comes back first. If the subscription comes back after the deletion, the storefront restores the store from its newest backup (kept 90 days after deletion), or creates a fresh store when there is none.
-- **Phase 2 (11 operations):** the reseller feature: subscriptions, products, templates (base snapshots) and usage, used with reseller (partner) keys. Phase 1 calls then take `productId`. Built so far: `listSubscriptions`, `listProducts`, `createProduct`, `deleteProduct`, `subscriptionUsage` and `productUsage` with a partner key, `productId` on every Phase 1 call with a partner key ([docs/resellers.md](resellers.md)), and the three template operations, which also work with a storefront's own key: a storefront's templates are created through the API and copied into a version with `createVersion`, which is how snapshot groups reach the storefront. A partner key's templates are shared by all its storefronts.
+- **Phase 2 (11 operations):** the reseller feature: subscriptions, products, templates (base snapshots) and usage, used with reseller (partner) keys. Phase 1 calls then take `productId`. Nine are built ([docs/resellers.md](resellers.md)): `listSubscriptions`, `listProducts`, `createProduct`, `deleteProduct`, `subscriptionUsage` and `productUsage` with a partner key, and the three template operations, which also work with a storefront's own key: a storefront's templates are created through the API and copied into a version with `createVersion`, which is how snapshot groups reach the storefront. A partner key's templates are shared by all its storefronts. `createSubscription` and `deleteSubscription` are not offered on `/v1`: the platform admin makes and removes reseller accounts (`/admin/resellers`), so they answer 404 and are left out of `/docs`. Every built one has worked examples of its request, its answer and its 400s in the main file.
 
 ## What the storefront plugin relies on
 
