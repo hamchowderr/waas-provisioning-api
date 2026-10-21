@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sets up AnyPress on one fresh Ubuntu server: Coolify, the provisioning API with its Postgres, the
-# dashboard and the Coolify cleanup job. Safe to run again: each step finds what it made before.
+# dashboard, the store templates, a ready-made storefront and the Coolify cleanup job. Safe to run again:
+# each step finds what it made before.
 #
 #   sudo bash anypress-install.sh            install, using /root/anypress.env (see anypress.env.example)
 #   sudo bash anypress-install.sh check      check an install
@@ -15,6 +16,8 @@ STATE_DIR=/root/anypress
 STATE=$STATE_DIR/state.env
 CREDS=$STATE_DIR/credentials.env
 COOLIFY=http://127.0.0.1:8000/api/v1
+# Where the store templates are released (templates-v*, .github/workflows/release-templates.yml).
+TEMPLATES_REPO=hamchowderr/waas-provisioning-api
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -239,9 +242,11 @@ S3_REGION=${S3_REGION:-auto}
 STORE_SMTP_PASSWORD=${STORE_SMTP_PASSWORD:-}
 STORE_MAIL_FROM=${STORE_MAIL_FROM:-}
 TOSEND_ADMIN_KEY=${TOSEND_ADMIN_KEY:-}
+STOREFRONT_PRODUCT_ID=${READY_MADE_PRODUCT:-}
 EOF
   deploy "$API_UUID" "the API"
   wait_healthy
+  API_STOREFRONT_PRODUCT_ID=${READY_MADE_PRODUCT:-}
 }
 
 # The newest running container of a Coolify application.
@@ -303,6 +308,154 @@ storefront_key() {
   info "Made (in $CREDS)"
 }
 
+# Calls the provisioning API from this server, past DNS and certificates: waas AUTH METHOD PATH [JSON],
+# AUTH being key:secret or "admin" for the admin token. Prints the response body; fails on an HTTP error.
+waas() {
+  local auth=$1 method=$2 path=$3 body=${4:-} out code ip
+  local -a login=(-u "$auth")
+  [ "$auth" = admin ] && login=(-H "Authorization: Bearer $ADMIN_TOKEN")
+  ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$(container "$API_UUID")" | awk '{print $1}')
+  out=$(mktemp)
+  code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "http://$ip:4111$path" "${login[@]}" \
+    -H 'Content-Type: application/json' ${body:+--data "$body"}) || { rm -f "$out"; die "the API did not answer $method $path"; }
+  if [ "${code:0:1}" != 2 ]; then
+    cat "$out" >&2; rm -f "$out"
+    die "the API answered $code to $method $path"
+  fi
+  cat "$out"; rm -f "$out"
+}
+
+# The template release to publish: ANYPRESS_TEMPLATES_REF (a templates-v* tag), else the newest release.
+# With ANYPRESS_TEMPLATES_DIR (a folder templates/release.sh wrote), that folder instead.
+templates_release() {
+  if [ -n "${ANYPRESS_TEMPLATES_DIR:-}" ]; then
+    printf 'folder %s' "$(sha256sum "$ANYPRESS_TEMPLATES_DIR/SHA256SUMS" | cut -c1-12)"
+  elif [ -n "${ANYPRESS_TEMPLATES_REF:-}" ]; then
+    printf '%s' "$ANYPRESS_TEMPLATES_REF"
+  else
+    curl -fsSL "https://api.github.com/repos/$TEMPLATES_REPO/releases?per_page=100" \
+      | jq -r 'map(select((.tag_name | startswith("templates-v")) and (.draft | not) and (.prerelease | not))) | .[0].tag_name // empty'
+  fi
+}
+
+# Puts the release's archives in a folder and checks them: templates_fetch RELEASE DIR.
+templates_fetch() {
+  local release=$1 dir=$2 file
+  for file in anypress-store.zip agency-storefront.zip version.txt SHA256SUMS; do
+    if [ -n "${ANYPRESS_TEMPLATES_DIR:-}" ]; then
+      cp "$ANYPRESS_TEMPLATES_DIR/$file" "$dir/$file"
+    else
+      curl -fsSL -o "$dir/$file" "https://github.com/$TEMPLATES_REPO/releases/download/$release/$file" \
+        || die "could not download $file of $release from github.com/$TEMPLATES_REPO"
+    fi
+  done
+  (cd "$dir" && sha256sum -c --quiet SHA256SUMS) || die "the archives of $release don't match their checksums"
+}
+
+# Uploads an archive as a template of the key's product, builds a version from it and makes that the
+# production version, which new stores are made from: publish_template ZIP KEY:SECRET TEMPLATE_NAME VERSION_NAME.
+publish_template() {
+  local zip=$1 auth=$2 name=$3 version_name=$4 base version status
+  base=$(waas "$auth" POST /v1/basesnapshots "$(jq -nc --arg n "$name" --arg c "$version_name, released on github.com/$TEMPLATES_REPO" \
+    '{name: $n, comment: $c}')")
+  curl -fsS -T "$zip" "$(jq -r .uploadUrl <<<"$base")" >/dev/null || die "could not upload $name to the bucket (S3_*)"
+  version=$(waas "$auth" POST /v1/versions "$(jq -nc --arg n "$version_name" --arg s "$(jq -r .id <<<"$base")" \
+    '{name: $n, wordPressVersion: "7.1", phpVersion: "8.3", snapshotId: $s}')")
+  version=$(jq -r .id <<<"$version")
+  info "Building $version_name (a few minutes)"
+  for _ in $(seq 1 90); do
+    status=$(waas "$auth" GET "/v1/versions?versionId=$version")
+    status=$(jq -r '.[0].statusCode' <<<"$status")
+    case "$status" in
+      1)
+        waas "$auth" PUT /v1/versions/production "$(jq -nc --arg v "$version" '{versionId: $v}')" >/dev/null
+        info "$version_name is the production version"
+        return
+        ;;
+      2) die "$version_name failed to build. See the Jobs page on the dashboard." ;;
+    esac
+    sleep 10
+  done
+  die "$version_name is still building after 15 minutes"
+}
+
+# The store template on the storefront's product, and the ready-made storefront template on a product of
+# its own (the API's STOREFRONT_PRODUCT_ID). A newer release is published on the next run.
+templates() {
+  say "Store templates"
+  if [ "${ANYPRESS_TEMPLATES:-on}" = off ]; then
+    info "Skipped (ANYPRESS_TEMPLATES=off)"
+    return
+  fi
+  local release dir version out
+  release=$(templates_release)
+  [ -n "$release" ] || die "no template release on github.com/$TEMPLATES_REPO"
+  if [ "$release" = "${STORE_TEMPLATE_RELEASE:-}" ] && [ "$release" = "${STOREFRONT_TEMPLATE_RELEASE:-}" ]; then
+    info "Already published ($release)"
+    return
+  fi
+  dir=$(mktemp -d)
+  templates_fetch "$release" "$dir"
+  version=$(cat "$dir/version.txt")
+  if [ "$release" != "${STORE_TEMPLATE_RELEASE:-}" ]; then
+    publish_template "$dir/anypress-store.zip" "$STOREFRONT_KEY:$STOREFRONT_SECRET" "AnyPress store" "AnyPress store $version"
+    STORE_TEMPLATE_RELEASE=$release; remember "$STATE" STORE_TEMPLATE_RELEASE "$release"
+  fi
+  if [ -z "${READY_MADE_KEY:-}" ]; then
+    out=$(docker exec "$(container "$API_UUID")" npm run -s create-key -- --product-name "Ready-made storefronts")
+    READY_MADE_PRODUCT=$(sed -n 's/^product: *//p' <<<"$out")
+    READY_MADE_KEY=$(sed -n 's/^key: *//p' <<<"$out")
+    READY_MADE_SECRET=$(sed -n 's/^secret: *//p' <<<"$out")
+    [ -n "$READY_MADE_SECRET" ] || die "could not make the ready-made storefronts' API key: $out"
+    remember "$CREDS" READY_MADE_PRODUCT "$READY_MADE_PRODUCT"
+    remember "$CREDS" READY_MADE_KEY "$READY_MADE_KEY"
+    remember "$CREDS" READY_MADE_SECRET "$READY_MADE_SECRET"
+  fi
+  if [ "$release" != "${STOREFRONT_TEMPLATE_RELEASE:-}" ]; then
+    publish_template "$dir/agency-storefront.zip" "$READY_MADE_KEY:$READY_MADE_SECRET" "Agency storefront" "Agency storefront $version"
+    STOREFRONT_TEMPLATE_RELEASE=$release; remember "$STATE" STOREFRONT_TEMPLATE_RELEASE "$release"
+  fi
+  rm -rf "$dir"
+}
+
+# The storefront customers buy stores on: a ready-made WordPress site with WaaS Host, already connected to
+# the API with its own key (POST /admin/products/{id}/storefront). Its owner adds payments and plans.
+storefront() {
+  say "Storefront"
+  if [ -z "${READY_MADE_PRODUCT:-}" ]; then
+    info "Skipped: no store templates"
+    return
+  fi
+  if [ "${API_STOREFRONT_PRODUCT_ID:-}" != "$READY_MADE_PRODUCT" ]; then
+    envs "$API_UUID" <<<"STOREFRONT_PRODUCT_ID=$READY_MADE_PRODUCT"
+    deploy "$API_UUID" "the API (with ready-made storefronts)"
+    wait_healthy
+    API_STOREFRONT_PRODUCT_ID=$READY_MADE_PRODUCT
+  fi
+  local current status
+  current=$(waas admin GET "/admin/products/$STOREFRONT_PRODUCT/storefront")
+  if [ "$current" = null ]; then
+    current=$(waas admin POST "/admin/products/$STOREFRONT_PRODUCT/storefront" "$(jq -nc --arg n "${STORE_BRAND_NAME:-AnyPress}" \
+      --arg e "$ANYPRESS_ADMIN_EMAIL" --arg s "${ANYPRESS_STOREFRONT_SUBDOMAIN:-}" '{name: $n, email: $e} + (if $s == "" then {} else {subdomain: $s} end)')")
+    info "Building it (a few minutes)"
+  fi
+  for _ in $(seq 1 90); do
+    status=$(jq -r .statusCode <<<"$current")
+    case "$status" in
+      1)
+        STOREFRONT_DOMAIN=$(jq -r .domainName <<<"$current")
+        remember "$STATE" STOREFRONT_DOMAIN "$STOREFRONT_DOMAIN"
+        info "https://$STOREFRONT_DOMAIN is ready"
+        return
+        ;;
+      2) die "the storefront failed to build. See the Jobs page on the dashboard." ;;
+    esac
+    sleep 10
+    current=$(waas admin GET "/admin/products/$STOREFRONT_PRODUCT/storefront")
+  done
+  die "the storefront is still building after 15 minutes"
+}
+
 public_ip() { curl -s4 --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}'; }
 
 summary() {
@@ -325,7 +478,16 @@ summary() {
   Passwords, keys and the storefront's API key: $CREDS
   Keep a copy of SECRETS_KEY off this server: without it, store passwords and database backups can't be read.
 
-  Next: publish a store template and set up the storefront (docs/self-hosting.md, sections 5 and 6).
+EOF
+  if [ -n "${STOREFRONT_DOMAIN:-}" ]; then
+    cat <<EOF
+  Storefront: https://$STOREFRONT_DOMAIN (the dashboard's API keys page links to its wp-admin)
+  Next: in its FluentCart, connect Stripe and make the plans customers buy (docs/self-hosting.md, section 6).
+EOF
+  else
+    echo "  Next: publish a store template and set up the storefront (docs/self-hosting.md, sections 5 and 6)."
+  fi
+  cat <<EOF
   Check everything with: sudo bash $0 check
 EOF
 }
@@ -342,6 +504,8 @@ check() {
   [ -n "$name" ] && docker exec "$name" wget -qO- http://127.0.0.1:4111/health >/dev/null 2>&1; result $? "The API answers /health"
   [ -n "$(container "${DASHBOARD_UUID:-none}")" ]; result $? "The dashboard is running"
   [ -f /etc/cron.d/anypress-coolify-cleanup ]; result $? "The Coolify cleanup job is set"
+  [ -n "${STORE_TEMPLATE_RELEASE:-}" ] && [ -n "${STOREFRONT_TEMPLATE_RELEASE:-}" ]; result $? "The store templates are published (${STORE_TEMPLATE_RELEASE:-none})"
+  [ -n "${STOREFRONT_DOMAIN:-}" ]; result $? "The storefront is built (${STOREFRONT_DOMAIN:-none})"
   local host
   for host in "api.$ANYPRESS_BRAND_DOMAIN" "app.$ANYPRESS_BRAND_DOMAIN" "check.$ANYPRESS_STORE_DOMAIN" "check.stores.$ANYPRESS_STORE_DOMAIN"; do
     getent ahostsv4 "$host" | awk '{print $1}' | grep -qx "$ip"; result $? "$host points at this server"
@@ -362,6 +526,8 @@ main() {
       database
       api
       storefront_key
+      templates
+      storefront
       dashboard
       cleanup_cron
       summary

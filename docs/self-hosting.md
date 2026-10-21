@@ -157,6 +157,8 @@ Stores are copies of a template version. Three templates ship in `templates/`, e
 
 `publish.sh` needs `WAAS_API_URL` (your API's address) and a product key and secret (`WAAS_KEY`, `WAAS_SECRET`). You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.
 
+Prebuilt archives of `anypress-store` and `agency-storefront`, with their checksums, are on this repository's [`templates-v*` releases](https://github.com/hamchowderr/waas-provisioning-api/releases) (built by `templates/release.sh`). The [installer](../install/README.md) publishes the newest one for you.
+
 ### 6. The storefront
 
 Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** with WP Swings' Subscriptions for WooCommerce. Install **WaaS Host** (and **WaaS Payments** for Authorize.Net on FluentCart). Then:
