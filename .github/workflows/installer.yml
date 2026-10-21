@@ -22,7 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint
-        run: shellcheck -S warning install/anypress-install.sh templates/release.sh
+        run: |
+          shellcheck -S warning install/anypress-install.sh templates/release.sh
           python3 -m py_compile install/test/*.py
       - uses: actions/checkout@v4
         if: ${{ !inputs.release }}
