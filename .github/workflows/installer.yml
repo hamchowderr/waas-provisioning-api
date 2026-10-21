@@ -47,6 +47,8 @@ jobs:
         run: nohup python3 install/test/cloudflare-mock.py 9100 anypress-ci.test anypress-ci-sites.test > /tmp/cloudflare.log 2>&1 &
       - name: Hostinger (a stand-in for its VPS API)
         run: nohup python3 install/test/hostinger-mock.py 9200 /tmp/post_install > /tmp/hostinger.log 2>&1 &
+      - name: Vercel (a stand-in for its API)
+        run: nohup python3 install/test/vercel-mock.py 9400 > /tmp/vercel.log 2>&1 &
       - name: Hetzner and DigitalOcean (stand-ins for their APIs)
         run: nohup python3 install/test/cloud-mock.py 9300 /tmp > /tmp/cloud.log 2>&1 &
       - name: Answers (on "your computer")
@@ -118,6 +120,22 @@ jobs:
           curl -s http://127.0.0.1:9100/state | tee dns.json | jq .
           [ "$(jq '.result.writes | length' dns.json)" = 5 ] || { echo "expected 5 writes"; exit 1; }
           [ "$(jq '[.result.records[] | select(.proxied == false)] | length' dns.json)" = 5 ] || { echo "expected 5 DNS-only records"; exit 1; }
+      - name: Dashboard on Vercel (the step alone, against the stand-in)
+        run: |
+          bash -c '
+            set -euo pipefail
+            source install/anypress-install.sh
+            VERCEL=http://127.0.0.1:9400 VERCEL_TOKEN=ci-vercel-token VERCEL_TEAM_ID=team_ci STATE=$(mktemp) DASHBOARD_REF=main
+            API_URL=https://api.anypress-ci.test ADMIN_TOKEN=ci ANYPRESS_ADMIN_EMAIL=ci@anypress.io
+            ANYPRESS_BRAND_DOMAIN=anypress-ci.test ANYPRESS_STORE_DOMAIN=anypress-ci-sites.test
+            dashboard
+            . "$STATE"
+            dashboard
+            dns_records 192.0.2.10 | grep -qx "CNAME app.anypress-ci.test cname.vercel-dns.com"
+          '
+          curl -s http://127.0.0.1:9400/state | tee vercel.json | jq -c '{projects, env, domains, files}'
+          jq -e '(.projects | length) == 1 and (.domains[] == ["app.anypress-ci.test"]) and (.env[] | keys == ["ALLOWED_ADMIN_EMAILS", "WAAS_ADMIN_TOKEN", "WAAS_API_URL"])
+                 and ([.deployments[] | select(.readyState == "READY" and .has_package_json)] | length) == 2' vercel.json
       - name: Logs
         if: failure()
         run: |
