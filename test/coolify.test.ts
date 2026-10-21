@@ -950,6 +950,13 @@ describe('Store compose file', () => {
     expect(script.endsWith('&& exec docker-entrypoint.sh apache2-foreground')).toBe(true);
   });
 
+  it('keeps the exact Apache and PHP versions out of response headers', () => {
+    const script = parse(renderCompose({ wordPressVersion: '7.1', phpVersion: '8.3' })).services.wordpress.entrypoint[2];
+    expect(script).toContain("printf 'ServerTokens Prod\\nServerSignature Off\\n' > /etc/apache2/conf-enabled/waas-hide-versions.conf");
+    expect(script).toContain("printf 'expose_php = Off\\n' > /usr/local/etc/php/conf.d/waas-hide-versions.ini");
+    expect(script).not.toContain('$');
+  });
+
   it('rejects versions that would not make a valid image tag', () => {
     expect(() => renderCompose({ wordPressVersion: 'latest; rm -rf /', phpVersion: '8.3' })).toThrow(/Unsupported/);
   });

@@ -28,10 +28,16 @@ const workersConf = (workers: number) =>
     'MaxConnectionsPerChild 500',
     '</IfModule>',
   ].join('\\n');
+/** Keeps the exact Apache and PHP versions out of response headers and error pages (Server, X-Powered-By). */
+const HIDE_VERSIONS_CONF = ['ServerTokens Prod', 'ServerSignature Off'].join('\\n');
+const HIDE_VERSIONS_INI = 'expose_php = Off';
 const wordpressEntrypoint = (workers: number) => [
   'sh',
   '-c',
-  `printf '${workersConf(workers)}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && exec docker-entrypoint.sh apache2-foreground`,
+  `printf '${workersConf(workers)}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && ` +
+    `printf '${HIDE_VERSIONS_CONF}\\n' > /etc/apache2/conf-enabled/waas-hide-versions.conf && ` +
+    `printf '${HIDE_VERSIONS_INI}\\n' > /usr/local/etc/php/conf.d/waas-hide-versions.ini && ` +
+    'exec docker-entrypoint.sh apache2-foreground',
 ];
 
 /**

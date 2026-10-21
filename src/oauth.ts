@@ -19,6 +19,7 @@ import type { Pool } from './db.ts';
 import type { SessionCaller } from './accounts.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
+import { publicFetch } from './publicfetch.ts';
 import { tokenMatches } from './routes/admin.ts';
 import { connectAnswerSignature, connectLinkSignature, siteKeys, type ConnectAnswer, type ConnectLink } from './sitekeys.ts';
 import { Status } from './status.ts';
@@ -165,7 +166,7 @@ interface Client {
 export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   const { pool } = deps;
   const base = (c: Context<AppEnv>) => publicBase(c, deps.config.publicUrl);
-  const fetchMetadata: typeof fetch = (input, init) => (deps.clientMetadataFetch ?? fetch)(input, init);
+  const fetchMetadata: typeof fetch = (input, init) => (deps.clientMetadataFetch ?? publicFetch)(input, init);
   const documents = new Map<string, { client: Client | null; until: number }>();
   const keyFor = siteKeys(deps.config.secretsKey);
   /** The brand on the "Sign in to …" button, when people can sign in (AUTH_URL set); else none. */

@@ -3,6 +3,7 @@ import { resolve4, resolve6, resolveTxt } from 'node:dns/promises';
 import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
 import { getMailDomain } from './maildomains.ts';
+import { publicFetch } from './publicfetch.ts';
 import { normalizeDomain } from './tenants.ts';
 import type { SendingDomains } from './tosend.ts';
 
@@ -55,7 +56,8 @@ export interface DomainConnectNet {
   fetch: typeof fetch;
 }
 
-const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, fetch: (...args) => fetch(...args) };
+// The settings host and urlAPI come from the domain's own DNS, so their fetches refuse private addresses.
+const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, fetch: publicFetch };
 
 /** The zone a name sits in at a Domain Connect DNS host, and its settings there; null when none. */
 async function discover(name: string, net: DomainConnectNet): Promise<{ zone: string; host: string; settings: Settings } | null> {
