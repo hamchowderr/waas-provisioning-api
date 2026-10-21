@@ -42,7 +42,7 @@ The fake provisioner builds no real stores, so a test order on the storefront ne
 
 ## Stage 1: one VPS with Coolify
 
-To do most of this stage with one command on a fresh server, use the [installer](../install/README.md). On Hostinger it can also set up the VPS for you from your computer, with a Hostinger API token.
+To do most of this stage with one command on a fresh server, use the [installer](../install/README.md). It can also make the server for you from your computer on Hostinger, Hetzner Cloud or DigitalOcean, with an API token from the provider.
 
 This is how [AnyPress](https://anypress.io) runs: one server with [Coolify](https://coolify.io) v4, Cloudflare R2 for storage, toSend for email and Cloudflare DNS. The API uses `PROVISIONER=coolify`: each store is a Coolify Service with its own WordPress, MariaDB and agent containers ([coolify.md](coolify.md)).
 

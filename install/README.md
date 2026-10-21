@@ -14,28 +14,32 @@ sudo bash anypress-install.sh
 It works on a plain server and on one that already runs Coolify (Hostinger's Coolify template, Hetzner's Coolify
 app, DigitalOcean's Coolify 1-Click).
 
-## On a Hostinger VPS, from your computer
+## From your computer: Hostinger, Hetzner or DigitalOcean
 
-With a Hostinger API token (hPanel → **Account** → **API**), the installer can set up a VPS you bought and haven't
-set up yet, without you logging in to it. It runs on your computer (Linux, macOS or WSL, with `curl`, `jq` and
-`openssl`):
+With an API token from your server provider, the installer can make the server for you, without you logging in to
+it. It runs on your computer (Linux, macOS or WSL, with `curl`, `jq` and `openssl`):
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress-install.sh
 curl -fsSL https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress.env.example -o anypress.env
-nano anypress.env              # the answers above, plus HOSTINGER_API_TOKEN
-bash anypress-install.sh hostinger
+nano anypress.env              # the answers above, plus your provider's token
+bash anypress-install.sh hostinger      # or: hetzner, digitalocean
 ```
 
-It sets the VPS up with plain Ubuntu 24.04 and gives Hostinger a post-install script holding your answers and the
-installer, which then runs on the server as below. The script is deleted from your Hostinger account once the server
-has it, and the Hostinger token is left out of it. The server's root password is saved on your computer in
-`~/.anypress/`. With an SSH key (`~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`, or `ANYPRESS_SSH_KEY`), the key is
-added to the server and you watch the install as it runs; without one, follow `/post_install.log` in hPanel's browser
-terminal.
+The server gets plain Ubuntu 24.04 and a start-up script holding your answers and the installer, which then runs on
+the server as below. Your provider tokens are left out of it. With an SSH key (`~/.ssh/id_ed25519.pub` or
+`~/.ssh/id_rsa.pub`, or `ANYPRESS_SSH_KEY`), the key is added to the server and you watch the install as it runs;
+without one, follow `/root/anypress/install.log` in the provider's browser console. The server's root password, when
+the provider gives one, is saved on your computer in `~/.anypress/`.
 
-When your account has more than one VPS waiting to be set up, set `HOSTINGER_VPS_ID`. A VPS that is already set up
-is left alone unless `HOSTINGER_RECREATE=yes`, which wipes it and starts over.
+| Provider | Token | What it does |
+|---|---|---|
+| `hostinger` | `HOSTINGER_API_TOKEN` (hPanel → **Account** → **API**) | Sets up a VPS you bought and haven't set up yet (`HOSTINGER_VPS_ID` when there are several), with the script as its post-install script, which is deleted from your account once the server has it. A VPS that is already set up is left alone unless `HOSTINGER_RECREATE=yes`, which wipes it. |
+| `hetzner` | `HETZNER_API_TOKEN` (Cloud Console → your project → **Security** → **API tokens**, Read & Write) | Makes a Hetzner Cloud server of type `HETZNER_SERVER_TYPE` (run it without one to see the types), in `HETZNER_LOCATION` if set. |
+| `digitalocean` | `DIGITALOCEAN_TOKEN` (Control Panel → **API**, with write access) | Makes a Droplet of size `DIGITALOCEAN_SIZE` (default `s-4vcpu-8gb`) in `DIGITALOCEAN_REGION` (default `nyc3`). |
+
+Hetzner and DigitalOcean servers are named `anypress-<your brand domain>` (or `ANYPRESS_SERVER_NAME`); the installer
+stops if one with that name exists, so running it again doesn't make a second server.
 
 Hostinger's terms allow it to suspend a whole server over flagged content, and they don't allow prescription-drug
 stores; put stores like that on another provider.

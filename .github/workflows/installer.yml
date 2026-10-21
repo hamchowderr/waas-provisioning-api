@@ -1,5 +1,6 @@
 # Runs install/anypress-install.sh on a fresh GitHub runner the way the Hostinger front door does (its
-# post-install script, made against a stand-in for Hostinger's API): Coolify, the API (built from this branch),
+# post-install script, made against a stand-in for Hostinger's API; the Hetzner and DigitalOcean front doors
+# are checked to hand their servers the same script): Coolify, the API (built from this branch),
 # Postgres, DNS records (against a stand-in for Cloudflare's API), the dashboard, the store templates (built from this branch, into an S3 server on the runner)
 # and the storefront, then the installer a second time to check it changes nothing, then its own check.
 # DNS and certificates can't be tested here: the test domains don't exist.
@@ -46,6 +47,8 @@ jobs:
         run: nohup python3 install/test/cloudflare-mock.py 9100 anypress-ci.test anypress-ci-sites.test > /tmp/cloudflare.log 2>&1 &
       - name: Hostinger (a stand-in for its VPS API)
         run: nohup python3 install/test/hostinger-mock.py 9200 /tmp/post_install > /tmp/hostinger.log 2>&1 &
+      - name: Hetzner and DigitalOcean (stand-ins for their APIs)
+        run: nohup python3 install/test/cloud-mock.py 9300 /tmp > /tmp/cloud.log 2>&1 &
       - name: Answers (on "your computer")
         run: |
           tee anypress.env > /dev/null <<ANSWERS
@@ -74,7 +77,26 @@ jobs:
           [ "$(jq '.scripts | length' hostinger.json)" = 0 ] || { echo "the post-install script was left in the account"; exit 1; }
           jq -e '.requests[] | select(.path | endswith("/setup")) | .body | .template_id == 1077 and .data_center_id == 17 and (.password | length) >= 12' hostinger.json
           [ "$(wc -c < /tmp/post_install)" -le 49152 ] || { echo "post-install script over 48 KB"; exit 1; }
-          ! grep -q HOSTINGER_ <(sed '/^cat > \/root\/anypress-install.sh/,$d' /tmp/post_install) || { echo "the Hostinger token went to the server"; exit 1; }
+          ! grep -q HOSTINGER_ /tmp/post_install || { echo "the Hostinger token went to the server"; exit 1; }
+      - name: Hetzner and DigitalOcean front doors (make the server with the same script as user data)
+        env:
+          ANYPRESS_HETZNER_API: http://127.0.0.1:9300/hetzner/v1
+          ANYPRESS_DIGITALOCEAN_API: http://127.0.0.1:9300/digitalocean/v2
+          ANYPRESS_SSH_KEY: none
+          HETZNER_API_TOKEN: ci-hetzner-token
+          HETZNER_SERVER_TYPE: cpx41
+          DIGITALOCEAN_TOKEN: ci-digitalocean-token
+        run: |
+          bash install/anypress-install.sh hetzner
+          bash install/anypress-install.sh digitalocean
+          curl -s http://127.0.0.1:9300/state | jq -c '.requests[] | select(.method == "POST")'
+          for f in /tmp/post_install /tmp/hetzner-user-data /tmp/digitalocean-user-data; do
+            bash -n "$f"
+            # The installer it carries is this one.
+            sed -n '/^base64 -d/,/^ANYPRESS_END_/p' "$f" | sed '1d;$d' | base64 -d | gunzip | cmp - install/anypress-install.sh
+            ! grep -q 'HOSTINGER_\|HETZNER_\|DIGITALOCEAN_' "$f" || { echo "a provider token went to the server in $f"; exit 1; }
+          done
+          [ "$(wc -c < /tmp/hetzner-user-data)" -le 32768 ]
       - name: Install (the post-install script, run as Hostinger runs it)
         run: |
           sudo bash /tmp/post_install
@@ -102,5 +124,5 @@ jobs:
           sudo docker ps -a
           sudo tail -50 /root/anypress/coolify-install.log || true
           tail -30 /tmp/s3.log || true
-          sudo tail -50 /post_install.log 2>/dev/null || true
+          sudo tail -50 /root/anypress/install.log 2>/dev/null || true
           for c in $(sudo docker ps -aq); do echo "== $(sudo docker inspect -f '{{.Name}}' $c)"; sudo docker logs --tail 40 $c 2>&1; done
