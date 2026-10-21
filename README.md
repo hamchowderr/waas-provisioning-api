@@ -119,6 +119,20 @@ Clients for the `/v1` API, tested against this API on every change:
 
 ## Running it for real
 
+### One-command install
+
+[install/README.md](install/README.md) sets up the whole platform on a fresh Ubuntu server with one script: Coolify,
+the API and its database, DNS (with a Cloudflare token), the store templates, your storefront and the dashboard. Run
+it on the server, or from your computer with a Hostinger, Hetzner or DigitalOcean API token and it makes the server
+too. The dashboard can go to your own Vercel account instead. Also on [anypress.io/self-host](https://anypress.io/self-host).
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/install/anypress-install.sh
+bash anypress-install.sh hetzner     # or hostinger, digitalocean; or `sudo bash anypress-install.sh` on the server
+```
+
+### The full guide
+
 [docs/self-hosting.md](docs/self-hosting.md) walks through a production setup: one server with Coolify, DNS, object storage, email, the storefront and the dashboard, then more servers. It ends with every setting the API reads.
 
 | Guide | What it covers |
