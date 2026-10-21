@@ -55,6 +55,7 @@ load() {
   COOLIFY_VERSION=${ANYPRESS_COOLIFY_VERSION:-4.4.6}
   API_REF=${ANYPRESS_API_REF:-main}
   DASHBOARD_REF=${ANYPRESS_DASHBOARD_REF:-main}
+  CLOUDFLARE=${ANYPRESS_CLOUDFLARE_API:-https://api.cloudflare.com/client/v4}
   API_URL=https://api.$ANYPRESS_BRAND_DOMAIN
   DASHBOARD_URL=https://app.$ANYPRESS_BRAND_DOMAIN
 }
@@ -308,6 +309,72 @@ storefront_key() {
   info "Made (in $CREDS)"
 }
 
+# Calls Cloudflare's API: cloudflare METHOD PATH [JSON]. Prints the result; fails when Cloudflare says it failed.
+cloudflare() {
+  local method=$1 path=$2 body=${3:-} out
+  out=$(curl -sS -X "$method" "$CLOUDFLARE$path" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    -H 'Content-Type: application/json' ${body:+--data "$body"}) || die "Cloudflare did not answer $method $path"
+  if [ "$(jq -r '.success // false' <<<"$out" 2>/dev/null)" != true ]; then
+    jq -r '.errors[]? | "  \(.code): \(.message)"' <<<"$out" >&2 2>/dev/null || printf '%s\n' "$out" >&2
+    die "Cloudflare refused $method $path (the token needs Zone:DNS:Edit on the zone)"
+  fi
+  jq -c .result <<<"$out"
+}
+
+# The id of the Cloudflare zone a name is in: the zone named like it or like the nearest parent domain.
+cloudflare_zone() {
+  local name=${1#\*.} id
+  while [[ $name == *.* ]]; do
+    # Runs in a command substitution, where a failed call doesn't stop the script by itself.
+    id=$(cloudflare GET "/zones?name=$name") || exit 1
+    id=$(jq -r '.[0].id // empty' <<<"$id")
+    [ -n "$id" ] && { printf '%s' "$id"; return; }
+    name=${name#*.}
+  done
+  die "no Cloudflare zone for $1 that the token can see"
+}
+
+# Points an A record at this server, DNS only (Traefik gets the certificates): dns_record NAME IP.
+dns_record() {
+  local name=$1 ip=$2 zone existing id content proxied
+  zone=$(cloudflare_zone "$name")
+  existing=$(cloudflare GET "/zones/$zone/dns_records?name=$(jq -rn --arg n "$name" '$n | @uri')")
+  if [ "$(jq '[.[] | select(.type != "A")] | length' <<<"$existing")" != 0 ]; then
+    die "$name already has a $(jq -r '[.[] | select(.type != "A")][0].type' <<<"$existing") record in Cloudflare. Remove it, then run again."
+  fi
+  id=$(jq -r '[.[] | select(.type == "A")][0].id // empty' <<<"$existing")
+  content=$(jq -r '[.[] | select(.type == "A")][0].content // empty' <<<"$existing")
+  proxied=$(jq -r '[.[] | select(.type == "A")][0].proxied // false' <<<"$existing")
+  if [ -z "$id" ]; then
+    cloudflare POST "/zones/$zone/dns_records" "$(jq -nc --arg n "$name" --arg ip "$ip" \
+      '{type: "A", name: $n, content: $ip, ttl: 1, proxied: false, comment: "AnyPress"}')" >/dev/null
+    info "Added $name"
+  elif [ "$content" != "$ip" ] || [ "$proxied" != false ]; then
+    cloudflare PATCH "/zones/$zone/dns_records/$id" "$(jq -nc --arg ip "$ip" '{content: $ip, proxied: false}')" >/dev/null
+    info "Pointed $name at this server (was $content$([ "$proxied" = true ] && echo ', proxied'))"
+  else
+    info "$name is set"
+  fi
+}
+
+# The five records, when the answers have a Cloudflare token for the domains' zones.
+dns() {
+  say "DNS"
+  if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+    info "No CLOUDFLARE_API_TOKEN: the records to add are printed at the end"
+    return
+  fi
+  local ip name
+  ip=$(public_ip)
+  [ -n "$ip" ] || die "could not find this server's public IP address"
+  for name in $(dns_names); do dns_record "$name" "$ip"; done
+}
+
+dns_names() {
+  printf '%s\n' "*.$ANYPRESS_STORE_DOMAIN" "*.stores.$ANYPRESS_STORE_DOMAIN" "*.versions.$ANYPRESS_STORE_DOMAIN" \
+    "api.$ANYPRESS_BRAND_DOMAIN" "app.$ANYPRESS_BRAND_DOMAIN"
+}
+
 # Calls the provisioning API from this server, past DNS and certificates: waas AUTH METHOD PATH [JSON],
 # AUTH being key:secret or "admin" for the admin token. Prints the response body; fails on an HTTP error.
 waas() {
@@ -462,14 +529,14 @@ summary() {
   local ip
   ip=$(public_ip)
   say "Done"
+  if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+    echo "  DNS: the records are set in Cloudflare (DNS only). Certificates follow once they resolve."
+  else
+    echo "  Add these DNS records (DNS only, not proxied), if they aren't there yet:"
+    echo
+    dns_names | while read -r name; do printf '    A  %-40s %s\n' "$name" "$ip"; done
+  fi
   cat <<EOF
-  Add these DNS records (DNS only, not proxied), if they aren't there yet:
-
-    A  *.$ANYPRESS_STORE_DOMAIN           $ip
-    A  *.stores.$ANYPRESS_STORE_DOMAIN    $ip
-    A  *.versions.$ANYPRESS_STORE_DOMAIN  $ip
-    A  api.$ANYPRESS_BRAND_DOMAIN         $ip
-    A  app.$ANYPRESS_BRAND_DOMAIN         $ip
 
   Coolify:    http://$ip:8000 (admin: $ANYPRESS_ADMIN_EMAIL)
   API:        $API_URL
@@ -522,6 +589,7 @@ main() {
       packages
       install_coolify
       coolify_token
+      dns
       projects
       database
       api
