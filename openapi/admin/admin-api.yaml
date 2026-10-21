@@ -53,9 +53,9 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
       operationId: adminCreateProduct
-      summary: A new product (an agency's storefront) with its first API key
+      summary: A new product (a seller's storefront) with its first API key
       description: >-
-        The key's secret is in this response only (Cache-Control no-store); hand it to the agency
+        The key's secret is in this response only (Cache-Control no-store); hand it to the seller
         once. They can then manage their own keys at /v1/keys (openapi/api-keys.yaml).
       requestBody:
         required: true

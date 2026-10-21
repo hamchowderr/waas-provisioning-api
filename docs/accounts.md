@@ -1,6 +1,6 @@
 # Customer accounts
 
-For whoever runs the API: how to let an agency's people sign in to the dashboard.
+For whoever runs the API: how to let a seller's or reseller's team sign in to the dashboard.
 
 A storefront's people can sign in to the dashboard and see their own stores, versions, backups, request log, API keys and webhooks. (The API calls a storefront a **product**.) Each product has one **organization**. Its members reach the API as that product, the same way the product's API key does. Signing in is optional: WaaS Host and any other API client keep using the key and secret, and a product nobody signs in for works exactly as before.
 

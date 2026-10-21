@@ -8,7 +8,7 @@ name: Installer
 
 on:
   pull_request:
-    paths: ['install/**', 'templates/release.sh', 'templates/anypress-store/**', 'templates/agency-storefront/**', '.github/workflows/installer.yml']
+    paths: ['install/**', 'templates/release.sh', 'templates/anypress-store/**', 'templates/seller-storefront/**', '.github/workflows/installer.yml']
   workflow_dispatch:
     inputs:
       release:

@@ -143,8 +143,8 @@ describe('self-service keys (/v1/keys)', () => {
   });
 });
 
-describe('admin keys and new agencies', () => {
-  it('creates an agency with its first key, which can sign in', async () => {
+describe('admin keys and new sellers', () => {
+  it('creates a seller with its first key, which can sign in', async () => {
     const { body, headers } = await call('POST', '/admin/products', { auth: ADMIN, body: { name: ' Acme Agency ', maxTenants: 10, keyLabel: 'Storefront' }, status: 201 });
     expect(headers.get('cache-control')).toBe('no-store');
     expect(body.product).toMatchObject({ name: 'Acme Agency', maxTenants: 10, tenantCount: 0 });
@@ -156,20 +156,20 @@ describe('admin keys and new agencies', () => {
   });
 
   it('lists, creates, rotates and revokes any product\'s keys, the last one included', async () => {
-    const { body: agency } = await call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Beta Agency' }, status: 201 });
-    const base = `/admin/products/${agency.product.id}/keys`;
+    const { body: seller } = await call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Beta Agency' }, status: 201 });
+    const base = `/admin/products/${seller.product.id}/keys`;
     const { body: list } = await call('GET', base, { auth: ADMIN });
-    expect(list.map((k: any) => k.id)).toEqual([agency.key.id]);
+    expect(list.map((k: any) => k.id)).toEqual([seller.key.id]);
     const { body: extra } = await call('POST', base, { auth: ADMIN, body: { label: 'Spare' }, status: 201 });
-    const { body: rotated } = await call('POST', `${base}/${agency.key.id}/rotate`, { auth: ADMIN, status: 201 });
+    const { body: rotated } = await call('POST', `${base}/${seller.key.id}/rotate`, { auth: ADMIN, status: 201 });
     expect(rotated.replaced.state).toBe('expiring');
     // Default grace period: 24 hours.
     expect(new Date(rotated.replaced.revokedAt).getTime() - Date.now()).toBeGreaterThan(23 * 3600_000);
-    for (const id of [extra.id, rotated.key.id, agency.key.id]) {
+    for (const id of [extra.id, rotated.key.id, seller.key.id]) {
       expect((await call('DELETE', `${base}/${id}`, { auth: ADMIN })).body.state).toBe('revoked');
     }
     expect(await signsIn(basic(rotated.key.id, rotated.key.secret))).toBe(false);
     await call('GET', '/admin/products/00000000-0000-0000-0000-000000000000/keys', { auth: ADMIN, status: 404 });
-    await call('DELETE', `/admin/products/${t.productId}/keys/${agency.key.id}`, { auth: ADMIN, status: 404 });
+    await call('DELETE', `/admin/products/${t.productId}/keys/${seller.key.id}`, { auth: ADMIN, status: 404 });
   });
 });

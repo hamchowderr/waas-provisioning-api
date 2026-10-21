@@ -738,7 +738,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json((await products(productId))[0]);
   });
 
-  // A new product (an agency's storefront) with its first API key. The secret is in this response
+  // A new product (a seller's storefront) with its first API key. The secret is in this response
   // only; the dashboard shows it once.
   app.post('/products', async (c) => {
     const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; keyLabel?: unknown; startFrom?: unknown };

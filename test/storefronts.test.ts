@@ -10,7 +10,7 @@ let t: TestContext;
 const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
 let storefrontProductId: string;
 let storefrontAuth: string;
-let agencyId: string;
+let sellerId: string;
 
 const build = (productId: string, body: unknown) => t.call('POST', `/admin/products/${productId}/storefront`, { body, auth: ADMIN });
 const get = async (productId: string) => (await t.call('GET', `/admin/products/${productId}/storefront`, { auth: ADMIN })).json() as Promise<any>;
@@ -30,7 +30,7 @@ beforeAll(async () => {
   const versionId = ((await res.json()) as { id: string }).id;
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`, { auth: storefrontAuth })).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId }, auth: storefrontAuth });
-  agencyId = (await newProduct('Example agency')).id;
+  sellerId = (await newProduct('Example agency')).id;
 });
 afterAll(async () => {
   await t.close();
@@ -38,19 +38,19 @@ afterAll(async () => {
 
 describe('ready-made storefronts', () => {
   it('are off until STOREFRONT_PRODUCT_ID is set', async () => {
-    const res = await build(agencyId, { name: 'Example Agency', email: 'owner@agency.example' });
+    const res = await build(sellerId, { name: 'Example Agency', email: 'owner@agency.example' });
     expect(res.status).toBe(400);
     expect(((await res.json()) as any).message).toMatch(/STOREFRONT_PRODUCT_ID/);
-    expect(await get(agencyId)).toBeNull();
+    expect(await get(sellerId)).toBeNull();
   });
 
   it('builds one, connected with a new key of the product', async () => {
     t.deps.config.storefrontProductId = storefrontProductId;
-    const res = await build(agencyId, { name: 'Example Agency', email: 'Owner@Agency.example', subdomain: 'example-agency' });
+    const res = await build(sellerId, { name: 'Example Agency', email: 'Owner@Agency.example', subdomain: 'example-agency' });
     expect(res.status).toBe(201);
     const storefront = (await res.json()) as any;
-    expect(storefront).toMatchObject({ externalId: `storefront-${agencyId}`, name: 'Example Agency', domainName: 'example-agency.waas.example' });
-    await waitFor(async () => (await get(agencyId))?.statusCode === Status.Done);
+    expect(storefront).toMatchObject({ externalId: `storefront-${sellerId}`, name: 'Example Agency', domainName: 'example-agency.waas.example' });
+    await waitFor(async () => (await get(sellerId))?.statusCode === Status.Done);
 
     const store = t.provisioner.stores.get(storefront.id)!;
     expect(store.user).toMatchObject({ email: 'owner@agency.example', role: 'administrator' });
@@ -61,8 +61,8 @@ describe('ready-made storefronts', () => {
     expect(constants.WAAS_API_SECRET!.isPrivate).toBe(true);
     expect(constants.WAAS_HOST_KEY_ENCRYPTION_KEY!.value.length).toBeGreaterThanOrEqual(48);
 
-    // The key in its wp-config works for the agency's product, and is labelled so the agency can tell it apart.
-    const keys = (await (await t.call('GET', `/admin/products/${agencyId}/keys`, { auth: ADMIN })).json()) as any[];
+    // The key in its wp-config works for the seller's product, and is labelled so the seller can tell it apart.
+    const keys = (await (await t.call('GET', `/admin/products/${sellerId}/keys`, { auth: ADMIN })).json()) as any[];
     expect(keys.find((k) => k.id === constants.WAAS_API_KEY!.value)).toMatchObject({ label: STOREFRONT_KEY_LABEL, state: 'active' });
     const own = await t.call('GET', '/v1/tenants', { auth: basic(constants.WAAS_API_KEY!.value, constants.WAAS_API_SECRET!.value) });
     expect(own.status).toBe(200);
@@ -70,7 +70,7 @@ describe('ready-made storefronts', () => {
   });
 
   it('builds only one per product', async () => {
-    const res = await build(agencyId, { name: 'Again', email: 'owner@agency.example' });
+    const res = await build(sellerId, { name: 'Again', email: 'owner@agency.example' });
     expect(res.status).toBe(409);
   });
 
@@ -88,8 +88,8 @@ describe('ready-made storefronts', () => {
   });
 
   it('are built by the platform admin only', async () => {
-    const { key, secret } = await createApiKey(t.pool, agencyId);
-    expect((await t.call('POST', `/admin/products/${agencyId}/storefront`, { body: { name: 'X', email: 'a@b.example' }, auth: basic(key, secret) })).status).toBe(403);
-    expect((await t.call('GET', `/admin/products/${agencyId}/storefront`, { auth: null })).status).toBe(403);
+    const { key, secret } = await createApiKey(t.pool, sellerId);
+    expect((await t.call('POST', `/admin/products/${sellerId}/storefront`, { body: { name: 'X', email: 'a@b.example' }, auth: basic(key, secret) })).status).toBe(403);
+    expect((await t.call('GET', `/admin/products/${sellerId}/storefront`, { auth: null })).status).toBe(403);
   });
 });

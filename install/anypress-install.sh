@@ -488,15 +488,27 @@ templates_release() {
 # Puts the release's archives in a folder and checks them: templates_fetch RELEASE DIR.
 templates_fetch() {
   local release=$1 dir=$2 file
-  for file in anypress-store.zip agency-storefront.zip version.txt SHA256SUMS; do
-    if [ -n "${ANYPRESS_TEMPLATES_DIR:-}" ]; then
-      cp "$ANYPRESS_TEMPLATES_DIR/$file" "$dir/$file"
-    else
-      curl -fsSL -o "$dir/$file" "https://github.com/$TEMPLATES_REPO/releases/download/$release/$file" \
-        || die "could not download $file of $release from github.com/$TEMPLATES_REPO"
-    fi
+  for file in anypress-store.zip version.txt SHA256SUMS; do
+    templates_get "$release" "$dir" "$file" || die "could not download $file of $release from github.com/$TEMPLATES_REPO"
   done
+  # Releases before templates-v1.0.14 named the storefront archive agency-storefront.zip.
+  if ! templates_get "$release" "$dir" seller-storefront.zip; then
+    templates_get "$release" "$dir" agency-storefront.zip \
+      || die "could not download seller-storefront.zip of $release from github.com/$TEMPLATES_REPO"
+    mv "$dir/agency-storefront.zip" "$dir/seller-storefront.zip"
+    sed -i 's/ agency-storefront\.zip$/ seller-storefront.zip/' "$dir/SHA256SUMS"
+  fi
   (cd "$dir" && sha256sum -c --quiet SHA256SUMS) || die "the archives of $release don't match their checksums"
+}
+
+# One file of a templates release into DIR: templates_get RELEASE DIR FILE. Fails if it isn't there.
+templates_get() {
+  local release=$1 dir=$2 file=$3
+  if [ -n "${ANYPRESS_TEMPLATES_DIR:-}" ]; then
+    [ -f "$ANYPRESS_TEMPLATES_DIR/$file" ] && cp "$ANYPRESS_TEMPLATES_DIR/$file" "$dir/$file"
+  else
+    curl -fsSL -o "$dir/$file" "https://github.com/$TEMPLATES_REPO/releases/download/$release/$file" 2>/dev/null
+  fi
 }
 
 # Uploads an archive as a template of the key's product, builds a version from it and makes that the
@@ -559,7 +571,7 @@ templates() {
     remember "$CREDS" READY_MADE_SECRET "$READY_MADE_SECRET"
   fi
   if [ "$release" != "${STOREFRONT_TEMPLATE_RELEASE:-}" ]; then
-    publish_template "$dir/agency-storefront.zip" "$READY_MADE_KEY:$READY_MADE_SECRET" "Agency storefront" "Agency storefront $version"
+    publish_template "$dir/seller-storefront.zip" "$READY_MADE_KEY:$READY_MADE_SECRET" "Seller storefront" "Seller storefront $version"
     STOREFRONT_TEMPLATE_RELEASE=$release; remember "$STATE" STOREFRONT_TEMPLATE_RELEASE "$release"
   fi
   rm -rf "$dir"

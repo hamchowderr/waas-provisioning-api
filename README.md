@@ -2,7 +2,7 @@
 
 An open-source API that creates and runs WordPress stores for a "website as a service" business. Your storefront, or your own code, asks for a store; the API builds it, gives it a domain and a login, backs it up, and suspends, restores or deletes it when you ask.
 
-It is written for agencies that sell websites and for anyone who wants to host the platform themselves. It is the backend of [AnyPress](https://anypress.io) and is licensed under GPL-3.0.
+It is written for businesses that sell websites to their own customers (sellers and resellers), for software teams that create websites from their own app, and for anyone who wants to host the platform themselves. It is the backend of [AnyPress](https://anypress.io) and is licensed under GPL-3.0.
 
 | Repository | What it is |
 |---|---|
@@ -26,14 +26,16 @@ It is written for agencies that sell websites and for anyone who wants to host t
 | Word | Meaning |
 |---|---|
 | **Store** | One customer's WordPress website. The API calls a store a **tenant**: `/v1/tenants`, `tenantId`. |
-| **Storefront** | The WordPress shop that sells stores, usually an agency's site running the WaaS Host plugin. The API calls a storefront a **product**: every API key, store, version and webhook belongs to one product. |
+| **Seller** | A business that sells websites to its own customers under its own name, from its own storefront. It pays per website. |
+| **Reseller** | A bigger partner account that runs several storefronts under one team and pays one monthly wholesale bill. Its partner keys work across its storefronts. |
+| **Storefront** | The WordPress shop a seller or reseller sells stores from, running the WaaS Host plugin. The API calls a storefront a **product**: every API key, store, version and webhook belongs to one product. |
 | **API key and secret** | How a storefront signs in. The **key** (a UUID, also called the key id) is the Basic auth username and the **secret** is the password. The secret is shown once, when the key is made. |
 | **externalId** | Your own id for a store, such as an order or subscription id. Every store call accepts `externalId` or `tenantId`. |
 | **Version** | The WordPress setup new stores are copied from: WordPress and PHP versions plus the plugins and themes. One version per product is the **production** version, and new stores use it. |
 | **Snapshot** | The content a store starts with (database and `wp-content`), kept in a version. |
 | **Template** | An uploaded archive a version can start from. The API calls a template a **base snapshot**: `/v1/basesnapshots`. |
 | **Status** | Every change runs in the background. `statusCode` is `0` Pending, `1` Done, `2` Failed or `3` Removing. Poll it, or get a [webhook](docs/webhooks.md). |
-| **Admin API** | `/admin/*`, for whoever runs the API. It sees every product. Agencies use the `/v1` API instead. |
+| **Admin API** | `/admin/*`, for whoever runs the API. It sees every product. Sellers and resellers use the `/v1` API instead. |
 
 ## Quick start
 
@@ -139,7 +141,7 @@ bash anypress-install.sh hetzner     # or hostinger, digitalocean; or `sudo bash
 |---|---|
 | [docs/self-hosting.md](docs/self-hosting.md) | Running the whole platform, from one server up |
 | [docs/coolify.md](docs/coolify.md) | How stores run on Coolify |
-| [docs/accounts.md](docs/accounts.md) | Letting agencies sign in to the dashboard: organizations, roles, invitations |
+| [docs/accounts.md](docs/accounts.md) | Letting sellers' and resellers' teams sign in to the dashboard: organizations, roles, invitations |
 | [docs/clients.md](docs/clients.md) | Clients: give someone a site in one step (their own storefront, site and invitation) |
 | [docs/resellers.md](docs/resellers.md) | Reseller accounts: storefronts grouped under one partner, store limits, usage, the monthly wholesale bill, partner keys, the storefronts and shared templates a partner key makes, and the reseller's team |
 | [docs/webhooks.md](docs/webhooks.md) | Signed webhooks when a store or version changes, and how to check them |
@@ -203,7 +205,7 @@ The first key comes from `npm run create-key` or from the dashboard. After that,
 | `GET /admin/products` | Products (storefronts) with store and version counts, the production version, and `maxTenants` |
 | `POST /admin/products` `{"name": "Acme Agency", "maxTenants": 10, "keyLabel": "…"}` | A new product and its first API key. The secret is in this answer only |
 | `GET`, `POST /admin/products/{productId}/keys`; `POST …/keys/{id}/rotate`; `DELETE …/keys/{id}` | A product's API keys. Same as `/v1/keys`, except the last active key can be revoked |
-| `GET`, `POST /admin/products/{productId}/storefront` `{"name": "Acme Agency", "email": "owner@acme.example", "subdomain": "acme"}` | The product's ready-made storefront: a WordPress site with WaaS Host, built from [`templates/agency-storefront`](templates/agency-storefront) and already connected with a new key of the product. One per product; needs `STOREFRONT_PRODUCT_ID`. `GET` answers `null` when there is none |
+| `GET`, `POST /admin/products/{productId}/storefront` `{"name": "Acme Agency", "email": "owner@acme.example", "subdomain": "acme"}` | The product's ready-made storefront: a WordPress site with WaaS Host, built from [`templates/seller-storefront`](templates/seller-storefront) and already connected with a new key of the product. One per product; needs `STOREFRONT_PRODUCT_ID`. `GET` answers `null` when there is none |
 | `GET /admin/applications?status=pending\|approved\|declined`; `GET …/{id}`; `POST …/{id}/approve` `{"maxTenants": 3, "storefront": true}`; `POST …/{id}/decline` | Applications to sell, sent by the public `POST /applications` form. Approving makes the product, invites the applicant as its owner and builds their storefront if they asked ([docs/accounts.md](docs/accounts.md#applications-to-sell)) |
 | `GET`, `POST /admin/clients` `{"name": "Example Bakery", "email": "owner@bakery.example", "size": "small"}` | Clients set up in one step: their own storefront started from the shop's template, their site once it has built, and an emailed invitation ([docs/clients.md](docs/clients.md)) |
 | `GET`, `POST /admin/resellers` `{"name": "Acme Partners", "productIds": ["…"]}`; `GET`, `PUT`, `DELETE …/{id}`; `PUT`, `DELETE …/{id}/products/{productId}`; `GET …/{id}/usage?from=…&to=…`; `GET …/{id}/bill?month=YYYY-MM`; `GET`, `POST …/{id}/keys`, `POST …/{id}/keys/{keyId}/rotate`, `DELETE …/{id}/keys/{keyId}`; `GET`, `PUT …/{id}/organization`, `POST …/{id}/invitations`, `DELETE …/{id}/invitations/{invitationId}`, `PATCH`, `DELETE …/{id}/members/{memberId}` | Reseller accounts: storefronts grouped under one partner, with limits across them, store-days per size, the monthly wholesale bill, partner keys and the reseller's team, who sign in and reach all its storefronts ([docs/resellers.md](docs/resellers.md)) |

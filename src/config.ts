@@ -60,7 +60,7 @@ export interface Config {
   /** Sign-in for people (src/auth.ts): AUTH_URL and AUTH_SECRET, plus AUTH_GITHUB_* and AUTH_GOOGLE_*. */
   auth?: AuthConfig;
   /**
-   * The platform's own product whose production version is the agency storefront template
+   * The platform's own product whose production version is the seller storefront template
    * (STOREFRONT_PRODUCT_ID). Ready-made storefronts (src/storefronts.ts) are its stores. Unset: off.
    */
   storefrontProductId?: string;

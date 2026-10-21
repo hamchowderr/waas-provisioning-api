@@ -56,7 +56,7 @@ jobs:
             echo "The store template and the ready-made storefront template. A new install publishes the newest release; run the installer again to publish this one."
             echo
             echo "- anypress-store.zip: WaaS Client from waas-plugins $(git -C waas-plugins rev-parse --short HEAD), $(unzip -p out/anypress-store.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
-            echo "- agency-storefront.zip: $(unzip -p out/agency-storefront.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
+            echo "- seller-storefront.zip: $(unzip -p out/seller-storefront.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
           } > notes.md
-          gh release create "templates-v$VERSION" out/anypress-store.zip out/agency-storefront.zip out/version.txt out/SHA256SUMS \
+          gh release create "templates-v$VERSION" out/anypress-store.zip out/seller-storefront.zip out/version.txt out/SHA256SUMS \
             --target "$GITHUB_SHA" --title "Templates $VERSION" --notes-file notes.md --latest=false
