@@ -5,6 +5,8 @@
 #
 #   sudo bash anypress-install.sh            install, using /root/anypress.env (see anypress.env.example)
 #   sudo bash anypress-install.sh check      check an install
+#   bash anypress-install.sh hostinger       from your computer: set up a Hostinger VPS that installs itself,
+#                                            using ./anypress.env with HOSTINGER_API_TOKEN (see install/README.md)
 #
 # Needs: root, Ubuntu 22.04 or 24.04, ports 80, 443 and 8000 free. Writes /root/anypress/ (state and
 # credentials, readable by root only).
@@ -37,13 +39,11 @@ remember() {
 random_secret() { openssl rand -base64 32; }
 random_hex() { openssl rand -hex 24; }
 
-load() {
-  mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR"
+# Reads the answers file and stops when a required answer is missing.
+answers() {
   [ -f "$ANSWERS" ] || die "no answers file at $ANSWERS. Copy install/anypress.env.example there and fill it in."
   set -a
   . "$ANSWERS"
-  [ -f "$STATE" ] && . "$STATE"
-  [ -f "$CREDS" ] && . "$CREDS"
   set +a
   : "${ANYPRESS_BRAND_DOMAIN:?set ANYPRESS_BRAND_DOMAIN in $ANSWERS}"
   : "${ANYPRESS_STORE_DOMAIN:?set ANYPRESS_STORE_DOMAIN in $ANSWERS}"
@@ -52,6 +52,15 @@ load() {
   for v in S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
     [ -n "${!v:-}" ] || die "set $v in $ANSWERS: the API keeps store templates, snapshots and backups in that bucket and won't start without it"
   done
+}
+
+load() {
+  mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR"
+  answers
+  set -a
+  [ -f "$STATE" ] && . "$STATE"
+  [ -f "$CREDS" ] && . "$CREDS"
+  set +a
   COOLIFY_VERSION=${ANYPRESS_COOLIFY_VERSION:-4.4.6}
   API_REF=${ANYPRESS_API_REF:-main}
   DASHBOARD_REF=${ANYPRESS_DASHBOARD_REF:-main}
@@ -582,6 +591,180 @@ check() {
   return $ok
 }
 
+# ---- Hostinger front door: runs on your own computer, not on the server ----
+
+# Calls Hostinger's API: hostinger METHOD PATH [JSON]. Prints the response body; fails on an HTTP error.
+hostinger() {
+  local method=$1 path=$2 body=${3:-} out code
+  out=$(mktemp)
+  code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "$HOSTINGER$path" \
+    -H "Authorization: Bearer $HOSTINGER_API_TOKEN" -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    ${body:+--data-binary @-} <<<"$body") || { rm -f "$out"; die "Hostinger did not answer $method $path"; }
+  if [ "${code:0:1}" != 2 ]; then
+    jq -r '.message // .' "$out" >&2 2>/dev/null || cat "$out" >&2; rm -f "$out"
+    die "Hostinger answered $code to $method $path"
+  fi
+  cat "$out"; rm -f "$out"
+}
+
+# The script Hostinger runs once as root after installing the server (logged to /post_install.log): it writes
+# the answers (without the Hostinger settings) and this installer to /root, adds your SSH key and installs.
+# It ends by writing the installer's exit code to /root/anypress/post-install.status.
+post_install_script() {
+  local key=$1 end
+  # A heredoc end marker the answers and the installer can't contain.
+  end=ANYPRESS_END_$(openssl rand -hex 8)
+  cat <<SCRIPT
+#!/bin/bash
+# AnyPress, set up by anypress-install.sh hostinger.
+umask 077
+mkdir -p /root/anypress /root/.ssh
+cat > /root/anypress.env <<'$end'
+$(grep -v '^[[:space:]]*\(export[[:space:]]\+\)\?HOSTINGER_' "$ANSWERS")
+$end
+SCRIPT
+  [ -n "$key" ] && printf "echo '%s' >> /root/.ssh/authorized_keys\n" "$key"
+  cat <<SCRIPT
+cat > /root/anypress-install.sh <<'$end'
+$(cat "$INSTALLER")
+$end
+bash /root/anypress-install.sh
+status=\$?
+echo "\$status" > /root/anypress/post-install.status
+exit "\$status"
+SCRIPT
+}
+
+# Waits for the server to finish installing, then (with an SSH key) shows the installer's log as it runs.
+hostinger_follow() {
+  local vm=$1 action=${2:-} state ip known _
+  info "Installing Ubuntu (a few minutes)"
+  for _ in $(seq 1 120); do
+    if [ -n "$action" ]; then
+      state=$(hostinger GET "/api/vps/v1/virtual-machines/$vm/actions/$action") || exit 1
+      state=$(jq -r .state <<<"$state")
+      [ "$state" = error ] && die "Hostinger could not rebuild the server (see its actions in hPanel)"
+      [ "$state" = success ] && action=
+    fi
+    if [ -z "$action" ]; then
+      state=$(hostinger GET "/api/vps/v1/virtual-machines/$vm") || exit 1
+      ip=$(jq -r '.ipv4[0].address // empty' <<<"$state")
+      state=$(jq -r .state <<<"$state")
+      [ "$state" = error ] && die "Hostinger could not set up the server (see its actions in hPanel)"
+      [ "$state" = running ] && break
+    fi
+    sleep 10
+  done
+  [ "$state" = running ] || die "the server is still installing after 20 minutes"
+  hostinger DELETE "/api/vps/v1/post-install-scripts/$SCRIPT_ID" >/dev/null && SCRIPT_ID=
+  info "Server $ip is up; AnyPress is installing on it (about 15 minutes)"
+  if [ -z "$SSH_KEY" ]; then
+    echo "  Without an SSH key this stops here. Follow /post_install.log in hPanel's browser terminal, or wait"
+    echo "  for https://api.$ANYPRESS_BRAND_DOMAIN/health to answer."
+    return
+  fi
+  known=$LOCAL_DIR/hostinger-$vm.known_hosts
+  for _ in $(seq 1 30); do
+    ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$known" \
+      "root@$ip" true 2>/dev/null && break
+    sleep 10
+  done
+  # Shows the log until the installer writes its exit code, and exits with it.
+  ssh -o BatchMode=yes -o UserKnownHostsFile="$known" "root@$ip" '
+    until [ -f /post_install.log ]; do sleep 2; done
+    tail -n +1 -f /post_install.log & t=$!
+    until [ -f /root/anypress/post-install.status ]; do sleep 5; done
+    sleep 2; kill $t; exit "$(cat /root/anypress/post-install.status)"' \
+    || die "the installer stopped on the server; its log is /post_install.log there (ssh root@$ip). Fix the answers in /root/anypress.env and run: bash /root/anypress-install.sh"
+  say "Installed on $ip"
+  echo "  Logins and keys: /root/anypress/credentials.env on the server (ssh root@$ip)"
+}
+
+# anypress-install.sh hostinger: sets up a Hostinger VPS from your computer with the Hostinger API. The VPS
+# gets plain Ubuntu 24.04 and this installer as its post-install script, with your answers file.
+hostinger_install() {
+  ANSWERS=${ANYPRESS_ANSWERS:-./anypress.env}
+  INSTALLER=${BASH_SOURCE[0]}
+  [ -f "$INSTALLER" ] || die "save the installer to a file and run it from there (bash anypress-install.sh hostinger)"
+  local tool
+  for tool in curl jq openssl; do command -v "$tool" >/dev/null || die "install $tool first"; done
+  answers
+  : "${HOSTINGER_API_TOKEN:?set HOSTINGER_API_TOKEN in $ANSWERS (hPanel → Account → API)}"
+  HOSTINGER=${ANYPRESS_HOSTINGER_API:-https://developers.hostinger.com}
+  LOCAL_DIR=${ANYPRESS_LOCAL_DIR:-$HOME/.anypress}
+  mkdir -p "$LOCAL_DIR" && chmod 700 "$LOCAL_DIR"
+  local vm template dc script body password action=
+  say "Hostinger"
+
+  vm=${HOSTINGER_VPS_ID:-}
+  if [ -z "$vm" ]; then
+    vm=$(hostinger GET /api/vps/v1/virtual-machines) || exit 1
+    if [ "$(jq '[.[] | select(.state == "initial")] | length' <<<"$vm")" != 1 ]; then
+      jq -r '.[] | "    \(.id)  \(.hostname)  \(.plan // "")  \(.state)"' <<<"$vm" >&2
+      die "set HOSTINGER_VPS_ID in $ANSWERS to one of the servers above"
+    fi
+    vm=$(jq -r '.[] | select(.state == "initial") | .id' <<<"$vm")
+  fi
+  vm=$(hostinger GET "/api/vps/v1/virtual-machines/$vm") || exit 1
+  local state hostname
+  state=$(jq -r .state <<<"$vm"); hostname=$(jq -r .hostname <<<"$vm")
+  dc=${HOSTINGER_DATA_CENTER_ID:-$(jq -r '.data_center_id // empty' <<<"$vm")}
+  vm=$(jq -r .id <<<"$vm")
+  info "Server $vm ($hostname) is $state"
+  if [ "$state" != initial ] && [ "${HOSTINGER_RECREATE:-}" != yes ]; then
+    die "server $vm is already set up. To wipe it and install AnyPress on it, set HOSTINGER_RECREATE=yes. To update an install, run the installer on the server."
+  fi
+  if [ "$state" = initial ] && [ -z "$dc" ]; then
+    hostinger GET /api/vps/v1/data-centers | jq -r '.[] | "    \(.id)  \(.city), \(.location)"' >&2
+    die "set HOSTINGER_DATA_CENTER_ID in $ANSWERS to one of the data centers above"
+  fi
+
+  template=${HOSTINGER_TEMPLATE_ID:-}
+  if [ -z "$template" ]; then
+    # Plain Ubuntu 24.04: the installer brings Coolify itself, with your email as its admin.
+    template=$(hostinger GET /api/vps/v1/templates) || exit 1
+    template=$(jq -r '[.[] | select((.name | test("^Ubuntu 24\\.04")) and (.name | test("with|panel|coolify"; "i") | not))]
+      | sort_by(.name | length) | .[0].id // empty' <<<"$template")
+    [ -n "$template" ] || die "Hostinger has no plain Ubuntu 24.04 template; set HOSTINGER_TEMPLATE_ID"
+  fi
+  info "Template $template"
+
+  SSH_KEY=
+  case "${ANYPRESS_SSH_KEY:-}" in
+    none) ;;
+    "") for f in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do [ -f "$f" ] && { SSH_KEY=$(head -1 "$f"); break; }; done ;;
+    *) [ -f "$ANYPRESS_SSH_KEY" ] || die "no SSH public key at $ANYPRESS_SSH_KEY"; SSH_KEY=$(head -1 "$ANYPRESS_SSH_KEY") ;;
+  esac
+
+  script=$(post_install_script "$SSH_KEY")
+  [ "$(printf '%s' "$script" | wc -c)" -le 49152 ] || die "the post-install script is over Hostinger's 48 KB limit"
+  body=$(jq -n --arg name "AnyPress $ANYPRESS_BRAND_DOMAIN" --arg content "$script" '{name: $name, content: $content}')
+  SCRIPT_ID=$(hostinger POST /api/vps/v1/post-install-scripts "$body" | jq -r .id) || exit 1
+  # The script holds the answers, so it is deleted from the Hostinger account once the server has it.
+  trap '[ -n "${SCRIPT_ID:-}" ] && hostinger DELETE "/api/vps/v1/post-install-scripts/$SCRIPT_ID" >/dev/null' EXIT
+
+  # The root password (Hostinger wants 12+ characters with upper and lower case and a digit) is kept on this
+  # computer for hPanel's browser terminal; SSH uses your key.
+  password="Ap$(openssl rand -hex 12)X9"
+  printf 'HOSTINGER_ROOT_PASSWORD=%s\n' "$password" > "$LOCAL_DIR/hostinger-$vm.env"
+  chmod 600 "$LOCAL_DIR/hostinger-$vm.env"
+  rm -f "$LOCAL_DIR/hostinger-$vm.known_hosts"
+
+  if [ "$state" = initial ]; then
+    body=$(jq -n --argjson t "$template" --argjson d "$dc" --argjson s "$SCRIPT_ID" --arg p "$password" \
+      '{template_id: $t, data_center_id: $d, post_install_script_id: $s, password: $p, enable_backups: true}')
+    hostinger POST "/api/vps/v1/virtual-machines/$vm/setup" "$body" >/dev/null || exit 1
+    info "Setting up the server"
+  else
+    body=$(jq -n --argjson t "$template" --argjson s "$SCRIPT_ID" --arg p "$password" \
+      '{template_id: $t, post_install_script_id: $s, password: $p}')
+    action=$(hostinger POST "/api/vps/v1/virtual-machines/$vm/recreate" "$body" | jq -r .id) || exit 1
+    info "Wiping and rebuilding the server"
+  fi
+  echo "  Root password: $LOCAL_DIR/hostinger-$vm.env"
+  hostinger_follow "$vm" "$action"
+}
+
 main() {
   case "${1:-install}" in
     install)
@@ -601,7 +784,8 @@ main() {
       summary
       ;;
     check) check ;;
-    *) die "unknown command $1 (use install or check)" ;;
+    hostinger) hostinger_install ;;
+    *) die "unknown command $1 (use install, check or hostinger)" ;;
   esac
 }
 

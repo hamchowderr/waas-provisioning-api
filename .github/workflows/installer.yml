@@ -1,4 +1,5 @@
-# Runs install/anypress-install.sh on a fresh GitHub runner: Coolify, the API (built from this branch),
+# Runs install/anypress-install.sh on a fresh GitHub runner the way the Hostinger front door does (its
+# post-install script, made against a stand-in for Hostinger's API): Coolify, the API (built from this branch),
 # Postgres, DNS records (against a stand-in for Cloudflare's API), the dashboard, the store templates (built from this branch, into an S3 server on the runner)
 # and the storefront, then the installer a second time to check it changes nothing, then its own check.
 # DNS and certificates can't be tested here: the test domains don't exist.
@@ -22,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Lint
         run: shellcheck -S warning install/anypress-install.sh templates/release.sh
+          python3 -m py_compile install/test/*.py
       - uses: actions/checkout@v4
         if: ${{ !inputs.release }}
         with:
@@ -41,9 +43,11 @@ jobs:
           echo "S3_HOST=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
       - name: Cloudflare (a stand-in for its DNS API)
         run: nohup python3 install/test/cloudflare-mock.py 9100 anypress-ci.test anypress-ci-sites.test > /tmp/cloudflare.log 2>&1 &
-      - name: Answers
+      - name: Hostinger (a stand-in for its VPS API)
+        run: nohup python3 install/test/hostinger-mock.py 9200 /tmp/post_install > /tmp/hostinger.log 2>&1 &
+      - name: Answers (on "your computer")
         run: |
-          sudo tee /root/anypress.env > /dev/null <<ANSWERS
+          tee anypress.env > /dev/null <<ANSWERS
           ANYPRESS_BRAND_DOMAIN=anypress-ci.test
           ANYPRESS_STORE_DOMAIN=anypress-ci-sites.test
           ANYPRESS_ADMIN_EMAIL=ci@anypress.io
@@ -56,9 +60,24 @@ jobs:
           CLOUDFLARE_API_TOKEN=ci-cloudflare-token
           ANYPRESS_CLOUDFLARE_API=http://127.0.0.1:9100/client/v4
           ANYPRESS_TEMPLATES_DIR=${{ !inputs.release && '/tmp/templates' || '' }}
+          HOSTINGER_API_TOKEN=ci-hostinger-token
           ANSWERS
-      - name: Install
-        run: sudo bash install/anypress-install.sh
+      - name: Hostinger front door (sets up the VPS with the installer as its post-install script)
+        env:
+          ANYPRESS_HOSTINGER_API: http://127.0.0.1:9200
+          ANYPRESS_SSH_KEY: none
+        run: |
+          bash install/anypress-install.sh hostinger
+          curl -s http://127.0.0.1:9200/state > hostinger.json
+          jq -c '.requests[] | select(.method != "GET")' hostinger.json
+          [ "$(jq '.scripts | length' hostinger.json)" = 0 ] || { echo "the post-install script was left in the account"; exit 1; }
+          jq -e '.requests[] | select(.path | endswith("/setup")) | .body | .template_id == 1077 and .data_center_id == 17 and (.password | length) >= 12' hostinger.json
+          [ "$(wc -c < /tmp/post_install)" -le 49152 ] || { echo "post-install script over 48 KB"; exit 1; }
+          ! grep -q HOSTINGER_ <(sed '/^cat > \/root\/anypress-install.sh/,$d' /tmp/post_install) || { echo "the Hostinger token went to the server"; exit 1; }
+      - name: Install (the post-install script, run as Hostinger runs it)
+        run: |
+          sudo bash /tmp/post_install
+          [ "$(sudo cat /root/anypress/post-install.status)" = 0 ]
       - name: Install again (nothing new is made)
         run: |
           sudo cp /root/anypress/state.env /tmp/state-before
@@ -82,4 +101,5 @@ jobs:
           sudo docker ps -a
           sudo tail -50 /root/anypress/coolify-install.log || true
           tail -30 /tmp/s3.log || true
+          sudo tail -50 /post_install.log 2>/dev/null || true
           for c in $(sudo docker ps -aq); do echo "== $(sudo docker inspect -f '{{.Name}}' $c)"; sudo docker logs --tail 40 $c 2>&1; done
