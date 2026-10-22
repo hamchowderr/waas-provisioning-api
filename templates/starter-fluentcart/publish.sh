@@ -40,7 +40,7 @@ wait_version() { # id
     return 1
 }
 
-COMMENT="Starter store (FluentCart): WordPress, WaaS Client, FluentCart, Twenty Twenty-Five. $(unzip -p "$ZIP" waas-template.json | jq -c '{builtAt, wordPress, plugins}')"
+COMMENT="Starter store, FluentCart (Twenty Twenty-Five). $(unzip -p "$ZIP" waas-template.json | jq -c '{builtAt, wordPress, plugins}')"
 BASE=$(api POST /v1/basesnapshots "$(jq -n --arg name "$BASE_NAME" --arg comment "${COMMENT:0:500}" '{name: $name, comment: $comment}')")
 BASE_ID=$(jq -r .id <<<"$BASE")
 curl -sSf -T "$ZIP" "$(jq -r .uploadUrl <<<"$BASE")" >/dev/null
