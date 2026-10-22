@@ -1,3 +1,4 @@
+import { maintainDashboardDomains } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
 import type { Brand, Provisioner } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
@@ -8,6 +9,7 @@ import { pruneRequestLog } from './requestlog.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, emailPacksBought, TENANT_SELECT } from './tenants.ts';
+import type { DashboardHost } from './vercel.ts';
 
 /**
  * `mailboxDomains` names each store's mailbox at the platform's sending domain (src/mailcount.ts); without
@@ -20,6 +22,8 @@ export function createJobHandlers(
   backupRetentionDays: number,
   requestLogDays = 30,
   mailboxDomains?: MailboxDomains,
+  /** Sellers' own dashboard addresses, checked nightly (src/dashboarddomains.ts). */
+  dashboardHost: () => DashboardHost | undefined = () => undefined,
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -169,6 +173,7 @@ export function createJobHandlers(
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
       await purgeExpiredImports(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
+      await maintainDashboardDomains(pool, dashboardHost());
     },
 
     async fail(data: JobData, error: unknown, job: { id: string; attempts: number }) {

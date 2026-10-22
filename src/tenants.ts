@@ -106,11 +106,12 @@ export function isReservedDomain(domain: string, platformDomain: string | undefi
   return RESERVED_LABELS.has(label);
 }
 
-/** Whether any store or version already answers on this domain, or the platform keeps it for itself. */
+/** Whether any store, version or seller's dashboard already answers on this domain, or the platform keeps it for itself. */
 export async function domainInUse(pool: Pool, domain: string, platformDomain?: string, brandDomain?: string): Promise<boolean> {
   if (isReservedDomain(domain, platformDomain, brandDomain)) return true;
   const { rowCount } = await pool.query(
-    'SELECT 1 FROM tenant_domains WHERE domain_name = $1 UNION ALL SELECT 1 FROM versions WHERE domain = $1',
+    `SELECT 1 FROM tenant_domains WHERE domain_name = $1 UNION ALL SELECT 1 FROM versions WHERE domain = $1
+     UNION ALL SELECT 1 FROM dashboard_domains WHERE domain = $1`,
     [domain],
   );
   return (rowCount ?? 0) > 0;

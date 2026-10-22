@@ -351,6 +351,71 @@ paths:
               schema: { $ref: '#/components/schemas/BrandingView' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/dashboard-domain:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminGetDashboardDomain
+      summary: The storefront's own dashboard address, if it has one (docs/branding.md)
+      description: enabled is false when this server doesn't offer own addresses (DASHBOARD_DOMAINS unset).
+      responses:
+        '200':
+          description: The address
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardDomainView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminPutDashboardDomain
+      summary: Set the storefront's own dashboard address, replacing the one before
+      description: >-
+        An address under the seller's own domain, like dashboard.yourbusiness.com. It is added to the
+        dashboard's host at once; records lists the DNS records still to add. 503 when this server doesn't
+        offer own addresses. At /account, a client's storefront gets 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties: { domain: { type: string, example: dashboard.janedesigns.com } }
+      responses:
+        '200':
+          description: The address
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardDomainView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteDashboardDomain
+      summary: Stop using the storefront's own dashboard address
+      responses:
+        '200':
+          description: The address
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardDomainView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/dashboard-domain/check:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    post:
+      operationId: adminCheckDashboardDomain
+      summary: Ask the host to check the address's DNS again
+      description: Also done nightly for every address still pending. A failed check leaves its reason in error.
+      responses:
+        '200':
+          description: The address
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardDomainView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/invitations:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -1924,6 +1989,30 @@ components:
           required: [shown]
           properties:
             shown: { $ref: '#/components/schemas/Branding' }
+    DashboardDomainView:
+      type: object
+      required: [enabled, dashboardDomain]
+      properties:
+        enabled: { type: boolean }
+        dashboardDomain:
+          type: object
+          nullable: true
+          required: [domain, status, records, error, checkedAt]
+          properties:
+            domain: { type: string }
+            status: { type: string, enum: [pending, active], description: 'active: the host serves it with a certificate' }
+            records:
+              type: array
+              description: DNS records still to add at the domain's DNS host; empty once nothing is missing.
+              items:
+                type: object
+                required: [type, name, value]
+                properties:
+                  type: { type: string, enum: [CNAME, A, TXT] }
+                  name: { type: string, description: Full hostname; most DNS hosts want only the part before their domain }
+                  value: { type: string }
+            error: { type: string, nullable: true, description: Why the last check failed }
+            checkedAt: { type: string, format: date-time, nullable: true }
     OrganizationView:
       type: object
       required: [organization, members, invitations]

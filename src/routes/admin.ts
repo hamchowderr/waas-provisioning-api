@@ -3,6 +3,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
 import { adminApplicationRoutes } from '../applications.ts';
 import { brandingRoutes } from '../branding.ts';
+import { dashboardDomainRoutes } from '../dashboarddomains.ts';
 import type { AppEnv, Deps } from '../app.ts';
 import { adminClientRoutes } from '../clients.ts';
 import type { Config } from '../config.ts';
@@ -309,6 +310,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Storefronts' and resellers' own look in the dashboard: the Branding page (src/branding.ts).
   app.route('/', brandingRoutes(deps));
+  // A storefront's own dashboard address (src/dashboarddomains.ts).
+  app.route('/', dashboardDomainRoutes(deps));
 
   // Applications to sell on the platform, waiting for the platform admin (src/applications.ts).
   app.route('/applications', adminApplicationRoutes(deps));
