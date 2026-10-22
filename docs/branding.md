@@ -33,3 +33,14 @@ A signed-in owner or admin brands their own storefront the same way under `/acco
 Every answer has the fields set on that storefront or reseller (null when not set), and `shown`: what the dashboard shows once the reseller's branding fills the gaps.
 
 `GET /account` includes `brand`: the look of the storefront the session acts for, or `null` for the platform's own.
+
+## Your own dashboard address
+
+A storefront can have the dashboard answer at its own address, like `dashboard.janedesigns.com`, so its team never sees the platform's. The server needs `DASHBOARD_DOMAINS` set ([self-hosting](self-hosting.md)); without it `enabled` is false and setting one answers 503.
+
+1. `PUT /admin/products/{productId}/dashboard-domain` `{"domain": "dashboard.janedesigns.com"}` adds the address to the dashboard's host. It must be under the seller's own domain (not a bare domain, and nothing of the platform's), and no store or other dashboard may use it. A new address replaces the one before.
+2. The answer's `records` are the DNS records to add at the domain's DNS host: usually one `CNAME`, and a `TXT` record when the host needs proof of ownership. `name` is the full hostname; most DNS hosts want only the part before their domain (`dashboard`).
+3. `POST …/dashboard-domain/check` looks again. Addresses still pending are also checked every night. `status` turns `active` once the host serves the address with a certificate, and `error` says why a check failed.
+4. `DELETE …/dashboard-domain` stops using it.
+
+A signed-in seller's or reseller's owner or admin does the same under `/account/products/{productId}/dashboard-domain`. A client's storefront gets its address from the platform admin.

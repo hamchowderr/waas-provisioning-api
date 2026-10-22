@@ -35,7 +35,7 @@ const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
 // A client's site is made once their storefront's version has built (src/clients.ts).
 const handlers = withClientSites(
-  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config), pool, boss, webhooks),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost), pool, boss, webhooks),
   { config, pool, boss, secrets, provisioner },
 );
 await startWorker(boss, handlers);

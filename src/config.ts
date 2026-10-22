@@ -6,6 +6,7 @@ import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/
 import type { S3Config } from './provisioner/s3.ts';
 import { ToSendAdmin, type MailCounter, type SendingDomains, type StoreMailKeys } from './tosend.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
+import { loadDashboardHost, type DashboardHost } from './vercel.ts';
 import { loadWebhookConfig, type WebhookConfig } from './webhooks.ts';
 
 export interface Config {
@@ -57,6 +58,11 @@ export interface Config {
   requestLogDays?: number;
   /** Outgoing webhooks (src/webhooks.ts): WEBHOOK_ALLOW_PRIVATE and WEBHOOK_LOG_DAYS. */
   webhooks?: WebhookConfig;
+  /**
+   * Sellers' own dashboard addresses (src/dashboarddomains.ts): DASHBOARD_DOMAINS=vercel with
+   * VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_TEAM_ID. Unset: off.
+   */
+  dashboardHost?: DashboardHost;
   /** Sign-in for people (src/auth.ts): AUTH_URL and AUTH_SECRET, plus AUTH_GITHUB_* and AUTH_GOOGLE_*. */
   auth?: AuthConfig;
   /**
@@ -192,6 +198,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
     webhooks: loadWebhookConfig(env),
     auth: loadAuthConfig(env),
+    dashboardHost: loadDashboardHost(env),
     storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
   };
