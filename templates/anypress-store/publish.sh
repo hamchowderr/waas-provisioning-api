@@ -40,7 +40,7 @@ wait_version() { # id
     return 1
 }
 
-COMMENT="AnyPress store: WordPress, WaaS Client, Fluent suite, Rank Math, WP Fusion Lite, AutomatorWP, FluentAuth, Ollie. $(unzip -p "$ZIP" waas-template.json | jq -c '{builtAt, wordPress, plugins}')"
+COMMENT="AnyPress store (Ollie). $(unzip -p "$ZIP" waas-template.json | jq -c '{builtAt, wordPress, plugins}')"
 BASE=$(api POST /v1/basesnapshots "$(jq -n --arg name "$BASE_NAME" --arg comment "${COMMENT:0:500}" '{name: $name, comment: $comment}')")
 BASE_ID=$(jq -r .id <<<"$BASE")
 curl -sSf -T "$ZIP" "$(jq -r .uploadUrl <<<"$BASE")" >/dev/null
