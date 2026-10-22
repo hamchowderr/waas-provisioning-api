@@ -59,7 +59,7 @@ export class CoolifyDashboardDomains implements DashboardHost {
   /** Sets the application's domains and deploys it, so its proxy picks them up. */
   private async setDomains(hosts: string[]) {
     await this.call('PATCH', `/applications/${this.config.appUuid}`, { domains: hosts.map((h) => `https://${h}`).join(',') });
-    await this.call('GET', `/deploy?uuid=${encodeURIComponent(this.config.appUuid)}`);
+    await this.call('POST', `/deploy?uuid=${encodeURIComponent(this.config.appUuid)}&force=false`);
   }
 
   /** Whether `domain` reaches the dashboard: a CNAME to the target, or the target's addresses. */

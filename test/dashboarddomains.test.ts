@@ -274,7 +274,7 @@ describe('the Coolify option', () => {
     dns['dash.seller.example'] = { cname: ['app.platform.example.'] };
     expect(await host.check('dash.seller.example')).toEqual({ verified: true, configured: true, records: [] });
     expect(app.fqdn).toBe('https://app.platform.example,https://dash.seller.example');
-    expect(calls).toEqual(['GET /applications/app1', 'PATCH /applications/app1', 'GET /deploy?uuid=app1']);
+    expect(calls).toEqual(['GET /applications/app1', 'PATCH /applications/app1', 'POST /deploy?uuid=app1&force=false']);
     // Already there: nothing to change.
     await host.check('dash.seller.example');
     expect(calls).toHaveLength(4);
