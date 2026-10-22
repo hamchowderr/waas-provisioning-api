@@ -1,3 +1,5 @@
+import { CoolifyDashboardDomains } from './coolifydashboard.ts';
+
 /**
  * The few Vercel REST calls that put a seller's own dashboard address on the dashboard's Vercel
  * project (src/dashboarddomains.ts): add, look up, verify and remove a project domain, and read
@@ -138,12 +140,22 @@ export class VercelDomains implements DashboardHost {
 
 /**
  * DASHBOARD_DOMAINS=vercel puts dashboard addresses on the Vercel project VERCEL_PROJECT_ID (team
- * VERCEL_TEAM_ID) with VERCEL_TOKEN. off (the default) turns the feature off.
+ * VERCEL_TEAM_ID) with VERCEL_TOKEN. coolify puts them on the Coolify application
+ * DASHBOARD_COOLIFY_APP (COOLIFY_URL, COOLIFY_TOKEN), and sellers point them at DASHBOARD_TARGET.
+ * off (the default) turns the feature off.
  */
 export function loadDashboardHost(env: NodeJS.ProcessEnv): DashboardHost | undefined {
   const mode = env.DASHBOARD_DOMAINS?.trim() || 'off';
   if (mode === 'off') return undefined;
-  if (mode !== 'vercel') throw new Error('DASHBOARD_DOMAINS must be vercel or off');
+  if (mode === 'coolify') {
+    const url = env.COOLIFY_URL?.trim();
+    const token = env.COOLIFY_TOKEN?.trim();
+    const appUuid = env.DASHBOARD_COOLIFY_APP?.trim();
+    const target = env.DASHBOARD_TARGET?.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/.]+$/, '');
+    if (!url || !token || !appUuid || !target) throw new Error('DASHBOARD_DOMAINS=coolify needs COOLIFY_URL, COOLIFY_TOKEN, DASHBOARD_COOLIFY_APP and DASHBOARD_TARGET');
+    return new CoolifyDashboardDomains({ url, token, appUuid, target });
+  }
+  if (mode !== 'vercel') throw new Error('DASHBOARD_DOMAINS must be vercel, coolify or off');
   const token = env.VERCEL_TOKEN?.trim();
   const projectId = env.VERCEL_PROJECT_ID?.trim();
   if (!token || !projectId) throw new Error('DASHBOARD_DOMAINS=vercel needs VERCEL_TOKEN and VERCEL_PROJECT_ID');

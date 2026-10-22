@@ -9,7 +9,8 @@ import { createApp } from '../src/app.ts';
 import { createAuth, type AuthConfig } from '../src/auth.ts';
 import { maintainDashboardDomains } from '../src/dashboarddomains.ts';
 import { createAjv } from '../src/openapi.ts';
-import { VercelDomains, VercelError, type DashboardHost, type HostDomainState } from '../src/vercel.ts';
+import { CoolifyDashboardDomains } from '../src/coolifydashboard.ts';
+import { loadDashboardHost, VercelDomains, VercelError, type DashboardHost, type HostDomainState } from '../src/vercel.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
@@ -234,5 +235,64 @@ describe('the Vercel calls', () => {
     await expect(vercel.remove('gone.jane.example')).resolves.toBeUndefined();
     const failing = fakeVercel({ 'DELETE /v9/projects/prj_1/domains/x.jane.example': () => ({ status: 403, body: { error: { code: 'forbidden', message: 'No access' } } }) });
     await expect(failing.vercel.remove('x.jane.example')).rejects.toThrow('No access');
+  });
+});
+
+describe('the Coolify option', () => {
+  /** A Coolify application with domains, answering GET, PATCH and deploy, and DNS pointing where told. */
+  function fakeCoolify(fqdn: string, dns: Record<string, { cname?: string[]; a?: string[] }>) {
+    const app = { fqdn };
+    const calls: string[] = [];
+    const fetchFn = (async (url: string, init: RequestInit) => {
+      const path = url.replace('https://coolify.example/api/v1', '');
+      calls.push(`${init.method} ${path}`);
+      if (init.method === 'PATCH') app.fqdn = JSON.parse(String(init.body)).domains;
+      return new Response(JSON.stringify(path.startsWith('/deploy') ? { deployments: [] } : app), { status: 200 });
+    }) as unknown as typeof fetch;
+    const lookup = (kind: 'cname' | 'a') => async (name: string) => {
+      const found = dns[name]?.[kind];
+      if (!found) throw Object.assign(new Error('ENODATA'), { code: 'ENODATA' });
+      return found;
+    };
+    const host = new CoolifyDashboardDomains(
+      { url: 'https://coolify.example', token: 't', appUuid: 'app1', target: 'app.platform.example' },
+      fetchFn,
+      { resolveCname: lookup('cname'), resolve4: lookup('a') },
+    );
+    return { host, app, calls };
+  }
+
+  it('asks for a CNAME, and adds the address and deploys only once the DNS points at the dashboard', async () => {
+    const dns: Record<string, { cname?: string[]; a?: string[] }> = { 'app.platform.example': { a: ['203.0.113.5'] } };
+    const { host, app, calls } = fakeCoolify('https://app.platform.example', dns);
+    expect(await host.add('dash.seller.example')).toEqual({
+      verified: true,
+      configured: false,
+      records: [{ type: 'CNAME', name: 'dash.seller.example', value: 'app.platform.example' }],
+    });
+    expect(calls).toEqual([]);
+    dns['dash.seller.example'] = { cname: ['app.platform.example.'] };
+    expect(await host.check('dash.seller.example')).toEqual({ verified: true, configured: true, records: [] });
+    expect(app.fqdn).toBe('https://app.platform.example,https://dash.seller.example');
+    expect(calls).toEqual(['GET /applications/app1', 'PATCH /applications/app1', 'GET /deploy?uuid=app1']);
+    // Already there: nothing to change.
+    await host.check('dash.seller.example');
+    expect(calls).toHaveLength(4);
+  });
+
+  it('accepts an A record to the same address, and removes only that domain', async () => {
+    const dns = { 'app.platform.example': { a: ['203.0.113.5'] }, 'dash.other.example': { a: ['203.0.113.5'] }, 'dash.wrong.example': { a: ['198.51.100.1'] } };
+    const { host, app } = fakeCoolify('https://app.platform.example', dns);
+    expect((await host.check('dash.wrong.example')).configured).toBe(false);
+    expect((await host.check('dash.other.example')).configured).toBe(true);
+    await host.remove('dash.other.example');
+    expect(app.fqdn).toBe('https://app.platform.example');
+  });
+
+  it('is set up from the environment', () => {
+    const env = { DASHBOARD_DOMAINS: 'coolify', COOLIFY_URL: 'https://coolify.example', COOLIFY_TOKEN: 't', DASHBOARD_COOLIFY_APP: 'app1', DASHBOARD_TARGET: 'https://app.platform.example/' };
+    expect(loadDashboardHost(env)?.name).toBe('coolify');
+    expect(() => loadDashboardHost({ ...env, DASHBOARD_TARGET: '' })).toThrow(/DASHBOARD_TARGET/);
+    expect(() => loadDashboardHost({ DASHBOARD_DOMAINS: 'netlify' })).toThrow(/vercel, coolify or off/);
   });
 });
