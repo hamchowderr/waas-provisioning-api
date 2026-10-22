@@ -65,6 +65,8 @@ stores; put stores like that on another provider.
    With `VERCEL_TOKEN`, the dashboard goes to your own Vercel account instead: the installer makes a project
    (`anypress-dashboard`, in the team `VERCEL_TEAM_ID` if set), gives it its settings and `app.<brand domain>`, uploads
    the dashboard's source and deploys it to production. Your Vercel account needs no access to GitHub.
+   Either way, the API is set up so sellers can give the dashboard their own address (`DASHBOARD_DOMAINS`).
+   Several such addresses on Vercel need a Pro plan.
 10. Adds the daily job that keeps Coolify's task history to 7 days.
 11. Prints the DNS records to add (without a Cloudflare token) and the storefront's address.
 

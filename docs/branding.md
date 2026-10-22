@@ -43,6 +43,8 @@ A storefront can have the dashboard answer at its own address, like `dashboard.j
 3. `POST …/dashboard-domain/check` looks again. Addresses still pending are also checked every night. `status` turns `active` once the host serves the address with a certificate, and `error` says why a check failed.
 4. `DELETE …/dashboard-domain` stops using it.
 
+On a dashboard hosted by Coolify (`DASHBOARD_DOMAINS=coolify`) the record is always a `CNAME` to the dashboard's own hostname. The address is added to the dashboard application only once that record is in place, and the application is deployed again so its proxy serves it and gets its certificate; the dashboard restarts briefly each time an address is added or removed.
+
 A signed-in seller's or reseller's owner or admin does the same under `/account/products/{productId}/dashboard-domain`. A client's storefront gets its address from the platform admin.
 
 Once an address is `active`, people sign in there with emailed links (GitHub and Google buttons stay on the platform's address, where their callbacks are registered). Sign-in links and redirects use the address the person is on. Only that storefront's team gets in, and only to that storefront: the dashboard sends the address it was opened on as `X-Dashboard-Host`, and `GET /account` then lists just that storefront's membership (none for anyone else). Any other address the dashboard forwards is treated as the platform's own, so a made-up host never ends up in a sign-in link.

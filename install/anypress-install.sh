@@ -290,6 +290,22 @@ WAAS_ADMIN_TOKEN=$ADMIN_TOKEN
 ALLOWED_ADMIN_EMAILS=$ANYPRESS_ADMIN_EMAIL
 EOF
   deploy "$DASHBOARD_UUID" "the dashboard"
+  dashboard_domains "DASHBOARD_DOMAINS=coolify
+DASHBOARD_COOLIFY_APP=$DASHBOARD_UUID
+DASHBOARD_TARGET=${DASHBOARD_URL#https://}"
+}
+
+# Lets sellers give the dashboard their own address (the API's docs/branding.md): tells the API where the
+# dashboard runs. The API is deployed again only when that changes.
+dashboard_domains() {
+  local settings=$1 sum
+  sum=$(sha1sum <<<"$settings" | cut -d' ' -f1)
+  [ "${API_DASHBOARD_DOMAINS:-}" = "$sum" ] && return
+  envs "$API_UUID" <<<"$settings"
+  deploy "$API_UUID" "the API (with sellers' own dashboard addresses)"
+  wait_healthy
+  API_DASHBOARD_DOMAINS=$sum
+  remember "$STATE" API_DASHBOARD_DOMAINS "$sum"
 }
 
 # Calls Vercel's API: vercel METHOD PATH [JSON]. Prints the response body; returns 1 on an HTTP error.
@@ -322,6 +338,10 @@ dashboard_vercel() {
   vercel GET "/v9/projects/$VERCEL_PROJECT_ID/domains/$domain" >/dev/null \
     || out=$(vercel POST "/v10/projects/$VERCEL_PROJECT_ID/domains" "$(jq -nc --arg d "$domain" '{name: $d}')") \
     || die "Vercel did not add $domain: $(jq -r '.error.message // .' <<<"$out")"
+  dashboard_domains "DASHBOARD_DOMAINS=vercel
+VERCEL_TOKEN=$VERCEL_TOKEN
+VERCEL_PROJECT_ID=$VERCEL_PROJECT_ID
+VERCEL_TEAM_ID=${VERCEL_TEAM_ID:-}"
 
   src=$(mktemp -d)
   curl -fsSL "https://codeload.github.com/hamchowderr/waas-dashboard/tar.gz/$DASHBOARD_REF" | tar xz -C "$src" --strip-components=1 \
