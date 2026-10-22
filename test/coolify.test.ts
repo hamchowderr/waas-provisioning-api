@@ -43,6 +43,8 @@ class FakeCloud {
     message: `WAAS_RESULT ${JSON.stringify(op === 'snapshot' ? { sizeBytes: 42 } : op === 'home' ? { home: 'https://shop.example.com' } : {})}`,
   });
   agentOps: { op: string; args: Record<string, unknown>; service: string }[] = [];
+  /** Each plugin-choices manifest as it was when the agent's plugins step ran. */
+  manifests: unknown[] = [];
   staged = new Map<string, string>();
   longestCommand = 0;
   /** How a restart looks through the API (Coolify's statuses lag the restart call). */
@@ -155,6 +157,10 @@ class FakeCloud {
         const payload = arg!.startsWith('@') ? this.staged.get(arg!.slice(1))! : arg!;
         const args = JSON.parse(Buffer.from(payload, 'base64').toString());
         this.agentOps.push({ op: op!, args, service: service.uuid });
+        if (op === 'plugins' && args.manifest) {
+          const key = decodeURIComponent(new URL(String(args.manifest)).pathname).replace(/^\/[^/]+\//, '');
+          this.manifests.push(JSON.parse(Buffer.from(this.objects.get(key)!).toString()));
+        }
         task.executions.push({ uuid: `exec-${++this.seq}`, ...this.agent(op!, args, service) });
         return json(200, { message: 'queued' });
       }
@@ -753,15 +759,20 @@ describe('CoolifyProvisioner', () => {
       plugins: [
         { slug: 'contact-form-7', action: 'add', version: '6.1.2', sha256: 'abc', siteTypes: ['website'] },
         { slug: 'wp-fusion-lite', action: 'off', siteTypes: [] },
+        { slug: 'gravityforms', action: 'add', version: '2.9.1', sha256: 'def', siteTypes: [], uploadId: 'up-1', constants: { GF_LICENSE_KEY: 'k' } },
       ],
     });
     const op = cloud.agentOps.find((o) => o.op === 'plugins')!;
     expect(String(op.args.manifest)).toMatch(/^https:\/\/s3\.test\/waas-stores\/versions\/v3\/plugin-choices\.json\?.*X-Amz-Signature=/);
-    const manifest = JSON.parse(Buffer.from(cloud.objects.get('versions/v3/plugin-choices.json')!).toString());
-    const [added, off] = manifest.plugins as Record<string, unknown>[];
+    // It can hold licence keys, so it's gone once the step has run.
+    expect(cloud.objects.has('versions/v3/plugin-choices.json')).toBe(false);
+    const manifest = cloud.manifests.at(-1) as { plugins: unknown[] };
+    const [added, off, premium] = manifest.plugins as Record<string, unknown>[];
     expect(added).toMatchObject({ slug: 'contact-form-7', action: 'add', sha256: 'abc', siteTypes: ['website'] });
     expect(String(added!.url)).toMatch(/^https:\/\/s3\.test\/waas-stores\/plugins\/wporg\/contact-form-7\/6\.1\.2\.zip\?.*X-Amz-Signature=/);
     expect(off).toEqual({ slug: 'wp-fusion-lite', action: 'off', siteTypes: [] });
+    expect(premium).toMatchObject({ slug: 'gravityforms', constants: { GF_LICENSE_KEY: 'k' } });
+    expect(String(premium!.url)).toMatch(/^https:\/\/s3\.test\/waas-stores\/plugins\/uploads\/up-1\.zip\?.*X-Amz-Signature=/);
   });
 
   it('fails a create when the snapshot archive is missing, before creating anything', async () => {

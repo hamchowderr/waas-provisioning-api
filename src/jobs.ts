@@ -37,7 +37,7 @@ export function createJobHandlers(
     async run(data: JobData) {
       switch (data.type) {
         case 'version.create':
-          return createVersion(pool, provisioner, data);
+          return createVersion(pool, provisioner, secrets, data);
         case 'basesnapshot.delete':
           await provisioner.deleteBaseSnapshot({ baseSnapshotId: data.baseSnapshotId });
           return;
@@ -245,20 +245,21 @@ async function resellerBrand(pool: Pool, tenantId: string): Promise<Brand | unde
   return rows[0] ? { name: rows[0].brand_name, url: rows[0].brand_url ?? undefined } : undefined;
 }
 
-async function createVersion(pool: Pool, provisioner: Provisioner, data: Extract<JobData, { type: 'version.create' }>) {
+async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'version.create' }>) {
   const { rows } = await pool.query('SELECT * FROM versions WHERE id = $1', [data.versionId]);
   const version = rows[0];
   if (!version) return; // removed before the build ran
 
   // Plugin choices (docs/plugin-choices.md) as they were when the version was made; each added plugin's file is kept.
-  const plugins: (VersionPlugin & { name?: string; file?: string })[] = version.plugin_choices ?? [];
+  // Licence constants stay encrypted in the row and are only opened here, for the build.
+  const plugins: (VersionPlugin & { name?: string; file?: string; licence?: string })[] = version.plugin_choices ?? [];
   const { pluginFiles } = await provisioner.buildVersion({
     versionId: version.id,
     domain: version.domain,
     wordPressVersion: version.wordpress_version,
     phpVersion: version.php_version,
     source: data.source,
-    plugins: plugins.map(({ name: _name, file: _file, ...p }) => p),
+    plugins: plugins.map(({ name: _name, file: _file, licence, ...p }) => (licence ? { ...p, constants: JSON.parse(secrets.decrypt(licence)) } : p)),
   });
   if (plugins.length) {
     const withFiles = plugins.map((p) => (pluginFiles[p.slug] ? { ...p, file: pluginFiles[p.slug] } : p));

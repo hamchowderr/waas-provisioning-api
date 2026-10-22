@@ -3,8 +3,8 @@ info:
   title: WaaS Provisioning API - Plugin choices
   version: 0.1.0
   description: >-
-    Plugin choices (docs/plugin-choices.md): wordpress.org plugins a storefront adds to its stores on top
-    of its template, or switches off, per site type. They are applied to each new version as it builds,
+    Plugin choices (docs/plugin-choices.md): wordpress.org plugins, or premium plugins uploaded as zips,
+    that a storefront adds to its stores on top of its template, or plugins it switches off, per site type. They are applied to each new version as it builds,
     so stores get them when they move to that version. A partner key without a productId (or with
     shared=true) works on the reseller's choices, which apply to all its storefronts; a storefront's own
     choice of the same plugin wins. The admin API has the same at /admin/products/{productId}/plugin-choices
@@ -52,6 +52,74 @@ paths:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/PluginChoice' } }
         '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+  /v1/plugin-choices/uploads:
+    get:
+      operationId: listPluginUploads
+      summary: Uploaded plugin zips
+      description: Newest first, with what each check found.
+      parameters:
+        - { name: shared, in: query, description: Partner keys with a productId; the reseller's uploads instead of the storefront's, schema: { type: boolean } }
+      responses:
+        '200':
+          description: The uploads
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PluginUpload' } }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+    post:
+      operationId: createPluginUpload
+      summary: Start uploading a premium plugin zip
+      description: >-
+        PUT the zip (as the vendor ships it, up to 64 MB) to uploadUrl within the hour, then check it.
+        At most 10 uploads wait to be checked at a time.
+      parameters:
+        - { name: shared, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Where to put the zip
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginUploadStart' }
+        '400': { $ref: '#/components/responses/PluginChoiceBadRequest' }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+  /v1/plugin-choices/uploads/{id}/check:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: checkPluginUpload
+      summary: Check an uploaded zip
+      description: >-
+        Reads the zip: one plugin folder, a main file with a "Plugin Name:" header, no unsafe paths, none
+        of the obfuscated code hacked copies carry, and not a plugin stores can't have. status is ready
+        (add it with PUT /v1/plugin-choices/{slug} and uploadId) or rejected, with reason; a rejected zip
+        is deleted.
+      parameters:
+        - { name: shared, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: The upload, checked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginUpload' }
+        '400': { $ref: '#/components/responses/PluginChoiceBadRequest' }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+  /v1/plugin-choices/uploads/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: deletePluginUpload
+      summary: Delete an uploaded zip
+      description: Refused while a plugin choice, or a version still building, uses it. Versions already built keep their copy.
+      parameters:
+        - { name: shared, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema: { type: object, required: [id], properties: { id: { type: string, format: uuid } } }
+        '400': { $ref: '#/components/responses/PluginChoiceBadRequest' }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
   /v1/plugin-choices/{slug}:
     parameters:
       - { name: slug, in: path, required: true, description: The plugin's wordpress.org slug, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,99}$' } }
@@ -60,7 +128,9 @@ paths:
       summary: Add a plugin, or switch one off
       description: >-
         add (the default) pins the plugin to version, or to the newest wordpress.org has, and keeps its
-        zip, so every version built later gets exactly those files. off takes the plugin out of the
+        zip, so every version built later gets exactly those files; with uploadId, to a checked upload of
+        that plugin instead. licence sets PHP constants (a premium plugin's licence key) that stores get
+        with the plugin. off takes the plugin out of the
         site types listed (a plugin the template has). At most 25 plugins added. Saving again replaces
         the choice.
       requestBody:
@@ -145,6 +215,37 @@ components:
           maxItems: 20
           items: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$' }
           description: The template's site types (roles.json keys) it applies to; empty or left out for all
+        uploadId: { type: string, format: uuid, description: 'add only: a ready upload of this plugin, instead of wordpress.org. Saving an uploaded choice again without uploadId or version keeps its upload' }
+        licence:
+          type: object
+          nullable: true
+          maxProperties: 10
+          additionalProperties: { type: string, maxLength: 500 }
+          description: >-
+            add only: PHP constants defined on every store with the plugin, e.g. {"GF_LICENSE_KEY": "..."}.
+            Names are upper case. Stored encrypted and never answered; left out keeps them, null removes them.
+    PluginUploadStart:
+      type: object
+      required: [id, uploadUrl, expiresIn, maxBytes]
+      properties:
+        id: { type: string, format: uuid }
+        uploadUrl: { type: string, description: PUT the zip here }
+        expiresIn: { type: integer, description: Seconds uploadUrl works for }
+        maxBytes: { type: integer }
+    PluginUpload:
+      type: object
+      required: [id, status, shared, dateCreated]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, ready, rejected] }
+        reason: { type: string, description: 'rejected: why' }
+        slug: { type: string, description: The plugin folder in the zip }
+        name: { type: string }
+        version: { type: string, description: 'The Version: header, or unknown' }
+        sha256: { type: string }
+        sizeBytes: { type: integer }
+        shared: { type: boolean }
+        dateCreated: { type: string, format: date-time }
     PluginChoice:
       type: object
       required: [slug, name, icon, action, siteTypes, shared, dateChanged]
@@ -155,6 +256,9 @@ components:
         action: { type: string, enum: [add, off] }
         version: { type: string, description: add only }
         sha256: { type: string, description: 'add only: of the plugin zip every version gets' }
+        source: { type: string, enum: [wporg, upload], description: 'add only: where the plugin comes from' }
+        uploadId: { type: string, format: uuid, description: 'source upload: the upload' }
+        licenceConstants: { type: array, items: { type: string }, description: add only. Names of the licence constants set; values are never answered }
         siteTypes: { type: array, items: { type: string } }
         shared: { type: boolean, description: The reseller's choice, for all its storefronts }
         dateChanged: { type: string, format: date-time }
