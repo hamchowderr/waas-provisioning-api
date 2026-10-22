@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
 import { adminApplicationRoutes } from '../applications.ts';
+import { brandingRoutes } from '../branding.ts';
 import type { AppEnv, Deps } from '../app.ts';
 import { adminClientRoutes } from '../clients.ts';
 import type { Config } from '../config.ts';
@@ -305,6 +306,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
+
+  // Storefronts' and resellers' own look in the dashboard: the Branding page (src/branding.ts).
+  app.route('/', brandingRoutes(deps));
 
   // Applications to sell on the platform, waiting for the platform admin (src/applications.ts).
   app.route('/applications', adminApplicationRoutes(deps));

@@ -277,6 +277,80 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/branding:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminGetProductBranding
+      summary: A storefront's own look in the dashboard (docs/branding.md)
+      description: >-
+        The fields set here (null when not set). shown is what the dashboard shows: for a storefront,
+        each empty field filled from its reseller's branding.
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminPutProductBranding
+      summary: Set some of the name, main color and support email
+      description: Fields left out stay as they are; null or an empty string clears one.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60, nullable: true }
+                color: { type: string, pattern: '^#[0-9a-fA-F]{6}$', nullable: true, example: '#1d4ed8' }
+                supportEmail: { type: string, format: email, nullable: true }
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/branding/{kind}:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [logo, icon] } }
+    put:
+      operationId: adminPutProductBrandingImage
+      summary: Upload the logo (up to 256 KB) or the icon (up to 64 KB)
+      description: >-
+        The image is the request body: PNG, JPEG or WebP, or an .ico file for the icon. The type is
+        read from the file itself; SVG is refused.
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteProductBrandingImage
+      summary: Remove the logo or the icon
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/invitations:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -1524,6 +1598,80 @@ paths:
               schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/branding:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetResellerBranding
+      summary: A reseller's own look in the dashboard (docs/branding.md)
+      description: >-
+        The fields set here (null when not set). shown is what the dashboard shows: for a storefront,
+        each empty field filled from its reseller's branding.
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminPutResellerBranding
+      summary: Set some of the name, main color and support email
+      description: Fields left out stay as they are; null or an empty string clears one.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60, nullable: true }
+                color: { type: string, pattern: '^#[0-9a-fA-F]{6}$', nullable: true, example: '#1d4ed8' }
+                supportEmail: { type: string, format: email, nullable: true }
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/branding/{kind}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [logo, icon] } }
+    put:
+      operationId: adminPutResellerBrandingImage
+      summary: Upload the logo (up to 256 KB) or the icon (up to 64 KB)
+      description: >-
+        The image is the request body: PNG, JPEG or WebP, or an .ico file for the icon. The type is
+        read from the file itself; SVG is refused.
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteResellerBrandingImage
+      summary: Remove the logo or the icon
+      responses:
+        '200':
+          description: The branding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandingView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/resellers/{id}/organization:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -1760,6 +1908,22 @@ components:
         dateCreated: { type: string, format: date-time }
         acceptUrl: { type: string, nullable: true, description: 'Where the person accepts: AUTH_URL/invite/<id>. null when sign-in is off.' }
         emailed: { type: boolean, description: 'Only when just made: whether the invitation was emailed. When false, send acceptUrl yourself.' }
+    Branding:
+      type: object
+      required: [name, color, supportEmail, logoUrl, iconUrl]
+      properties:
+        name: { type: string, nullable: true, description: "The name in place of the platform's" }
+        color: { type: string, nullable: true, description: 'Main color, #rrggbb' }
+        supportEmail: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true, description: 'Public address of the logo (GET /branding/{id}/logo)' }
+        iconUrl: { type: string, nullable: true, description: Public address of the small icon, for the browser tab }
+    BrandingView:
+      allOf:
+        - $ref: '#/components/schemas/Branding'
+        - type: object
+          required: [shown]
+          properties:
+            shown: { $ref: '#/components/schemas/Branding' }
     OrganizationView:
       type: object
       required: [organization, members, invitations]

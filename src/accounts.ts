@@ -5,7 +5,8 @@ import { sendInvitation } from './authmail.ts';
 import { withTransaction } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
-import { connectRoutes } from './oauth.ts';
+import { effectiveBrand } from './branding.ts';
+import { connectRoutes, publicBase } from './oauth.ts';
 import { adminRoutes } from './routes/admin.ts';
 
 /**
@@ -123,7 +124,9 @@ export function accountRoutes(deps: Deps) {
     if (!deps.auth) return forbidden(c, 'Sign-in is off on this server');
     const caller = await sessionCaller(deps, c.req.raw.headers);
     if (!caller) return forbidden(c, 'Sign in first');
-    return c.json(caller);
+    // The active storefront's look (src/branding.ts), or null for the platform's own.
+    const brand = caller.active ? await effectiveBrand(deps.pool, publicBase(c, deps.config.publicUrl), caller.active.productId) : null;
+    return c.json({ ...caller, brand });
   });
 
   // Connecting an AI app to /mcp as this person (src/oauth.ts). Needs no organization picked yet.
