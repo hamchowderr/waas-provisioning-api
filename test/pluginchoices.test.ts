@@ -10,6 +10,7 @@ import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import { toPlugin, type WpOrg } from '../src/wporg.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { pluginZip } from './zip.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const spec: any = parse(readFileSync(new URL('../openapi/plugin-choices.yaml', import.meta.url), 'utf8'));
@@ -17,6 +18,7 @@ const ajv = createAjv();
 ajv.addSchema({ components: spec.components }, 'choices');
 const validSearch = ajv.compile({ $ref: 'choices#/components/schemas/PluginSearchResult' });
 const validChoice = ajv.compile({ $ref: 'choices#/components/schemas/PluginChoice' });
+const validUpload = ajv.compile({ $ref: 'choices#/components/schemas/PluginUpload' });
 
 const zip = (slug: string, version: string) => new Uint8Array(Buffer.from(`PK fake zip of ${slug} ${version}`));
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -182,6 +184,85 @@ describe('plugin choices', () => {
     expect((await call('PUT', `/admin/products/${productId}/plugin-choices/contact-form-7`, { siteTypes: ['store'] }, admin)).status).toBe(200);
     const mixed = (await (await call('GET', `/admin/products/${productId}/plugin-choices`, undefined, admin)).json()) as any[];
     expect(mixed[0]).toMatchObject({ slug: 'contact-form-7', siteTypes: ['store'], shared: false });
+  });
+
+  it('adds an uploaded premium plugin with its licence key', async () => {
+    const start = (await (await call('POST', '/v1/plugin-choices/uploads')).json()) as any;
+    expect(start).toMatchObject({ uploadUrl: expect.stringContaining(start.id), expiresIn: 3600, maxBytes: 64 * 1024 * 1024 });
+    // Checking before the zip is there says so; then the zip arrives.
+    expect((await call('POST', `/v1/plugin-choices/uploads/${start.id}/check`)).status).toBe(400);
+    const zip = pluginZip('gravityforms', '2.9.1');
+    t.provisioner.pluginUploads.set(start.id, zip);
+    const checked = (await (await call('POST', `/v1/plugin-choices/uploads/${start.id}/check`)).json()) as any;
+    expect(validUpload(checked), JSON.stringify(validUpload.errors)).toBe(true);
+    expect(checked).toMatchObject({ status: 'ready', slug: 'gravityforms', name: 'gravityforms Pro', version: '2.9.1', sha256: sha(zip), sizeBytes: zip.length, shared: false });
+
+    // Only for its own slug, with a sensible licence.
+    expect((await call('PUT', '/v1/plugin-choices/other-plugin', { uploadId: start.id })).status).toBe(400);
+    expect((await call('PUT', '/v1/plugin-choices/gravityforms', { uploadId: start.id, licence: { 'bad name': 'x' } })).status).toBe(400);
+    expect((await call('PUT', '/v1/plugin-choices/gravityforms', { uploadId: start.id, version: '2.9.1' })).status).toBe(400);
+    const res = await call('PUT', '/v1/plugin-choices/gravityforms', { uploadId: start.id, siteTypes: ['store'], licence: { GF_LICENSE_KEY: 'gf-secret-123' } });
+    expect(res.status).toBe(200);
+    const choice = (await res.json()) as any;
+    expect(validChoice(choice), JSON.stringify(validChoice.errors)).toBe(true);
+    expect(choice).toMatchObject({ slug: 'gravityforms', source: 'upload', uploadId: start.id, version: '2.9.1', sha256: sha(zip), licenceConstants: ['GF_LICENSE_KEY'] });
+    expect(JSON.stringify(choice)).not.toContain('gf-secret-123');
+    const stored = (await t.pool.query("SELECT licence FROM plugin_choices WHERE slug = 'gravityforms'")).rows[0].licence;
+    expect(stored).not.toContain('gf-secret-123');
+    // Saving it again for other site types keeps the upload and the licence.
+    const again = (await (await call('PUT', '/v1/plugin-choices/gravityforms', { siteTypes: [] })).json()) as any;
+    expect(again).toMatchObject({ source: 'upload', uploadId: start.id, licenceConstants: ['GF_LICENSE_KEY'], siteTypes: [] });
+    // In use, so it can't be deleted.
+    expect((await call('DELETE', `/v1/plugin-choices/uploads/${start.id}`)).status).toBe(400);
+
+    // The build gets the upload and the licence, decrypted; the version row keeps it encrypted.
+    const v = (await (await call('POST', '/v1/versions', { name: 'with-premium', phpVersion: '8.3', wordPressVersion: '7.1', useCustomUpload: true })).json()) as { id: string };
+    await waitFor(async () => (await t.pool.query('SELECT status FROM versions WHERE id = $1', [v.id])).rows[0].status === Status.Done);
+    expect(t.provisioner.versions.get(v.id)!.plugins).toContainEqual({
+      slug: 'gravityforms',
+      action: 'add',
+      version: '2.9.1',
+      sha256: sha(zip),
+      siteTypes: [],
+      uploadId: start.id,
+      constants: { GF_LICENSE_KEY: 'gf-secret-123' },
+    });
+    expect(JSON.stringify((await t.pool.query('SELECT plugin_choices FROM versions WHERE id = $1', [v.id])).rows[0].plugin_choices)).not.toContain('gf-secret-123');
+
+    // Clearing the licence, then removing the choice, frees the upload.
+    expect(((await (await call('PUT', '/v1/plugin-choices/gravityforms', { licence: null })).json()) as any).licenceConstants).toEqual([]);
+    expect((await call('DELETE', '/v1/plugin-choices/gravityforms')).status).toBe(200);
+    expect((await call('DELETE', `/v1/plugin-choices/uploads/${start.id}`)).status).toBe(200);
+    expect(t.provisioner.pluginUploads.has(start.id)).toBe(false);
+  });
+
+  it('rejects uploads that are hacked, blocked or not plugins, and deletes them', async () => {
+    const tryZip = async (zip: Uint8Array) => {
+      const { id } = (await (await call('POST', '/v1/plugin-choices/uploads')).json()) as any;
+      t.provisioner.pluginUploads.set(id, zip);
+      const checked = (await (await call('POST', `/v1/plugin-choices/uploads/${id}/check`)).json()) as any;
+      expect(t.provisioner.pluginUploads.has(id)).toBe(false);
+      expect(checked.status).toBe('rejected');
+      expect((await call('PUT', `/v1/plugin-choices/${checked.slug ?? 'nulled'}`, { uploadId: id })).status).toBe(400);
+      return checked.reason as string;
+    };
+    expect(await tryZip(pluginZip('nulled', '1.0', { 'nulled/includes/l.php': '<?php eval(base64_decode($k));' }))).toContain('runs decoded code');
+    expect(await tryZip(pluginZip('wp-super-cache', '3.0'))).toContain('Page caching is part of the hosting');
+    expect(await tryZip(new Uint8Array(Buffer.from('hello')))).toBe('The file is not a zip');
+    const list = (await (await call('GET', '/v1/plugin-choices/uploads')).json()) as any[];
+    for (const u of list) expect(validUpload(u), JSON.stringify(validUpload.errors)).toBe(true);
+    expect(list.slice(0, 3).map((u) => u.status)).toEqual(['rejected', 'rejected', 'rejected']);
+    // The admin API has them too, for the storefront and for a reseller.
+    const admin = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const productId = (await t.pool.query('SELECT product_id FROM plugin_uploads LIMIT 1')).rows[0].product_id;
+    expect(((await (await call('GET', `/admin/products/${productId}/plugin-choices/uploads`, undefined, admin)).json()) as any[]).length).toBe(list.length);
+    const resellerId = (await t.pool.query("INSERT INTO resellers (name) VALUES ('Uploader') RETURNING id")).rows[0].id;
+    const shared = (await (await call('POST', `/admin/resellers/${resellerId}/plugin-choices/uploads`, undefined, admin)).json()) as any;
+    t.provisioner.pluginUploads.set(shared.id, pluginZip('shared-pro'));
+    expect(await (await call('POST', `/admin/resellers/${resellerId}/plugin-choices/uploads/${shared.id}/check`, undefined, admin)).json()).toMatchObject({ status: 'ready', shared: true });
+    // Another owner can't see or use it.
+    expect((await call('POST', `/v1/plugin-choices/uploads/${shared.id}/check`)).status).toBe(400);
+    expect((await call('PUT', '/v1/plugin-choices/shared-pro', { uploadId: shared.id })).status).toBe(400);
   });
 
   it('caps how many plugins are added', async () => {

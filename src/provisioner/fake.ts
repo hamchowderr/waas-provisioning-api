@@ -60,7 +60,9 @@ export class FakeProvisioner implements Provisioner {
     const pluginFiles: Record<string, string> = {};
     for (const p of input.plugins ?? []) {
       if (p.action !== 'add') continue;
-      if (!this.pluginPackages.has(`${p.slug}@${p.version}`)) throw new Error(`FakeProvisioner: no package for ${p.slug} ${p.version}`);
+      if (p.uploadId ? !this.pluginUploads.has(p.uploadId) : !this.pluginPackages.has(`${p.slug}@${p.version}`)) {
+        throw new Error(`FakeProvisioner: no package for ${p.slug} ${p.version}`);
+      }
       pluginFiles[p.slug] = `${p.slug}/${p.slug}.php`;
     }
     return { pluginFiles };
@@ -72,6 +74,26 @@ export class FakeProvisioner implements Provisioner {
   async storePluginPackage({ slug, version, body }: { slug: string; version: string; body: Uint8Array }) {
     this.check('storePluginPackage');
     this.pluginPackages.set(`${slug}@${version}`, body.length);
+  }
+
+  /** Uploaded plugin zips by upload id. Tests "upload" by setting one. */
+  readonly pluginUploads = new Map<string, Uint8Array>();
+
+  async createPluginUpload({ uploadId }: { uploadId: string }) {
+    this.check('createPluginUpload');
+    return { uploadUrl: `https://uploads.waas.example/plugins/${uploadId}.zip` };
+  }
+
+  async readPluginUpload({ uploadId, maxBytes }: { uploadId: string; maxBytes: number }) {
+    this.check('readPluginUpload');
+    const zip = this.pluginUploads.get(uploadId);
+    if (zip && zip.length > maxBytes) throw new Error(`The upload is larger than ${maxBytes} bytes`);
+    return zip ?? null;
+  }
+
+  async deletePluginUpload({ uploadId }: { uploadId: string }) {
+    this.check('deletePluginUpload');
+    this.pluginUploads.delete(uploadId);
   }
 
   async deleteVersion({ versionId }: { versionId: string }) {

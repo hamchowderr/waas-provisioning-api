@@ -835,7 +835,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.post('/products/:productId/basesnapshots', async (c) => c.json(await templates.create(await product(c), await readJson(c))));
   app.delete('/products/:productId/basesnapshots', async (c) => c.json(await templates.remove(await product(c), requiredUuidQuery(c, 'id'))));
 
-  // Plugin choices (docs/plugin-choices.md): wordpress.org plugins a storefront adds to its stores or switches off.
+  // Plugin choices (docs/plugin-choices.md): wordpress.org or uploaded plugins a storefront adds to its stores, or switches off.
   app.get('/products/:productId/plugin-choices/search', async (c) => {
     await product(c);
     return c.json(await pluginChoices.search(c.req.query('q'), c.req.query('page')));
@@ -843,6 +843,11 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.get('/products/:productId/plugin-choices', async (c) =>
     c.json(await pluginChoices.list(await product(c), { checkUpdates: c.req.query('checkUpdates') === 'true' })),
   );
+  // Premium plugin zips: create an upload, PUT the zip to its uploadUrl, then check it.
+  app.get('/products/:productId/plugin-choices/uploads', async (c) => c.json(await pluginChoices.uploads(await product(c))));
+  app.post('/products/:productId/plugin-choices/uploads', async (c) => c.json(await pluginChoices.createUpload(await product(c))));
+  app.post('/products/:productId/plugin-choices/uploads/:id/check', async (c) => c.json(await pluginChoices.checkUpload(await product(c), c.req.param('id'))));
+  app.delete('/products/:productId/plugin-choices/uploads/:id', async (c) => c.json(await pluginChoices.removeUpload(await product(c), c.req.param('id'))));
   app.put('/products/:productId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.set(await product(c), c.req.param('slug'), await readJson(c))));
   app.delete('/products/:productId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.remove(await product(c), c.req.param('slug'))));
   // A reseller's shared choices, for all its storefronts (the /resellers routes are the platform admin's only).
@@ -854,6 +859,10 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.get('/resellers/:resellerId/plugin-choices', async (c) =>
     c.json(await pluginChoices.list(await reseller(c), { checkUpdates: c.req.query('checkUpdates') === 'true' })),
   );
+  app.get('/resellers/:resellerId/plugin-choices/uploads', async (c) => c.json(await pluginChoices.uploads(await reseller(c))));
+  app.post('/resellers/:resellerId/plugin-choices/uploads', async (c) => c.json(await pluginChoices.createUpload(await reseller(c))));
+  app.post('/resellers/:resellerId/plugin-choices/uploads/:id/check', async (c) => c.json(await pluginChoices.checkUpload(await reseller(c), c.req.param('id'))));
+  app.delete('/resellers/:resellerId/plugin-choices/uploads/:id', async (c) => c.json(await pluginChoices.removeUpload(await reseller(c), c.req.param('id'))));
   app.put('/resellers/:resellerId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.set(await reseller(c), c.req.param('slug'), await readJson(c))));
   app.delete('/resellers/:resellerId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.remove(await reseller(c), c.req.param('slug'))));
 

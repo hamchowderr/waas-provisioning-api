@@ -27,6 +27,10 @@ export interface VersionPlugin {
   sha256?: string;
   /** roles.json keys; empty: all. */
   siteTypes: string[];
+  /** An added plugin from a seller's upload (storePluginPackage keeps wordpress.org ones). */
+  uploadId?: string;
+  /** Licence constants its stores define, e.g. a premium plugin's licence key. */
+  constants?: Record<string, string>;
 }
 
 export interface Provisioner {
@@ -50,6 +54,14 @@ export interface Provisioner {
 
   /** Keeps a wordpress.org plugin's zip for versions to install; the same slug and version is the same zip. */
   storePluginPackage(input: { slug: string; version: string; body: Uint8Array }): Promise<void>;
+
+  /** Where a seller PUTs a plugin zip they upload (a premium plugin), for an hour. */
+  createPluginUpload(input: { uploadId: string }): Promise<{ uploadUrl: string }>;
+
+  /** The uploaded zip, or null when nothing was uploaded; larger than maxBytes is refused with an error. */
+  readPluginUpload(input: { uploadId: string; maxBytes: number }): Promise<Uint8Array | null>;
+
+  deletePluginUpload(input: { uploadId: string }): Promise<void>;
 
   deleteVersion(input: { versionId: string }): Promise<void>;
 

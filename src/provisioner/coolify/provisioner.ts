@@ -170,6 +170,8 @@ const keys = {
   snapshot: (id: string) => `snapshots/${id}.zip`,
   /** A wordpress.org plugin zip for plugin choices; never changes once stored. */
   plugin: (slug: string, version: string) => `plugins/wporg/${slug}/${version}.zip`,
+  /** A plugin zip a seller uploaded. */
+  pluginUpload: (uploadId: string) => `plugins/uploads/${uploadId}.zip`,
   /** A version's plugin choices with signed links to their zips, for the agent's plugins step. */
   pluginChoices: (versionId: string) => `versions/${versionId}/plugin-choices.json`,
   backup: (id: string) => `backups/${id}.zip`,
@@ -413,11 +415,14 @@ export class CoolifyProvisioner implements Provisioner {
     // choices, with a signed link to each zip, go in a file the agent fetches: too long for task commands.
     let pluginArgs: Record<string, unknown> = { plugins: [] };
     if (input.plugins?.length) {
-      const plugins = input.plugins.map((p) => (p.action === 'add' ? { ...p, url: this.s3.presign('GET', keys.plugin(p.slug, p.version!), 3600) } : p));
+      const plugins = input.plugins.map((p) =>
+        p.action === 'add' ? { ...p, url: this.s3.presign('GET', p.uploadId ? keys.pluginUpload(p.uploadId) : keys.plugin(p.slug, p.version!), 3600) } : p,
+      );
       await this.s3.put(keys.pluginChoices(input.versionId), new TextEncoder().encode(JSON.stringify({ plugins })), 'application/json');
       pluginArgs = { manifest: this.s3.presign('GET', keys.pluginChoices(input.versionId)) };
     }
-    const applied = await this.exec(uuid, 'plugins', pluginArgs);
+    // The manifest can hold licence keys, so it's removed as soon as the agent has read it.
+    const applied = await this.exec(uuid, 'plugins', pluginArgs).finally(() => (input.plugins?.length ? this.s3.delete(keys.pluginChoices(input.versionId)) : undefined));
     await this.exec(uuid, 'code-export', { url: this.s3.presign('PUT', keys.code(input.versionId)) });
     return { pluginFiles: (applied.files ?? {}) as Record<string, string> };
   }
@@ -425,6 +430,21 @@ export class CoolifyProvisioner implements Provisioner {
   async storePluginPackage({ slug, version, body }: { slug: string; version: string; body: Uint8Array }) {
     if ((await this.s3.head(keys.plugin(slug, version))) !== null) return;
     await this.s3.put(keys.plugin(slug, version), body, 'application/zip');
+  }
+
+  async createPluginUpload({ uploadId }: { uploadId: string }) {
+    return { uploadUrl: this.s3.presign('PUT', keys.pluginUpload(uploadId), 3600) };
+  }
+
+  async readPluginUpload({ uploadId, maxBytes }: { uploadId: string; maxBytes: number }) {
+    const size = await this.s3.head(keys.pluginUpload(uploadId));
+    if (size === null) return null;
+    if (size > maxBytes) throw new Error(`The upload is larger than ${maxBytes} bytes`);
+    return this.s3.get(keys.pluginUpload(uploadId));
+  }
+
+  async deletePluginUpload({ uploadId }: { uploadId: string }) {
+    await this.s3.delete(keys.pluginUpload(uploadId));
   }
 
   async deleteVersion({ versionId }: { versionId: string }) {

@@ -730,6 +730,24 @@ describe.skipIf(!hasPhp)('store agent: plugin choices', () => {
     expect(roles().store.plugins).toContain('seo-tool/seo-tool.php');
   });
 
+  it('defines licence constants in a plugin every site type loads first, and undoes it', () => {
+    const premium = { ...add('gravityforms', 'gravityforms.php', ['store']), constants: { GF_LICENSE_KEY: "key-with-'quote", GF_EXTRA: 'x' } };
+    agent({ plugins: [premium] });
+    const file = join(plugins(), '000-plugin-licences/000-plugin-licences.php');
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('Plugin Name: Plugin licences');
+    expect(code).toContain("defined('GF_LICENSE_KEY') || define('GF_LICENSE_KEY', 'key-with-\\'quote');");
+    expect(execFileSync('php', ['-r', `require '${file}'; echo GF_LICENSE_KEY;`], { encoding: 'utf8' })).toBe("key-with-'quote");
+    expect(roles().website.plugins[0]).toBe('000-plugin-licences/000-plugin-licences.php');
+    expect(roles().store.plugins.slice(0, 1)).toEqual(['000-plugin-licences/000-plugin-licences.php']);
+    expect(roles().store.plugins).toContain('gravityforms/gravityforms.php');
+    // Bad names are refused; a build without licences takes the plugin away again.
+    expect(agent({ plugins: [{ ...premium, constants: { "X'); evil(); //": 'v' } }] }).error).toContain('bad constant name');
+    agent({ plugins: [] });
+    expect(existsSync(join(plugins(), '000-plugin-licences'))).toBe(false);
+    expect(roles().website.plugins).toEqual(['fluentform/fluentform.php', 'wp-fusion-lite/wp-fusion-lite.php']);
+  });
+
   it('refuses a zip that does not match, an unknown site type and a template without roles', () => {
     expect(agent({ plugins: [{ ...add('contact-form-7', 'wp-contact-form-7.php'), sha256: '0'.repeat(64) }] }).error).toContain('does not match its SHA-256');
     expect(agent({ plugins: [add('seo-tool', 'seo-tool.php', ['shop'])] }).error).toContain('no site type shop (it has website, store)');

@@ -1150,6 +1150,30 @@ switch ($op) {
                 }
             }
         }
+        // Licence constants (a premium plugin's licence key, say) go in a plugin of their own that every site
+        // type runs. Its name sorts first, so WordPress loads it before the plugins that read them.
+        $constants = [];
+        foreach ($plugins as $p) {
+            if (($p['action'] ?? '') !== 'add') continue;
+            foreach ((array) ($p['constants'] ?? []) as $name => $value) {
+                preg_match('/^[A-Z][A-Z0-9_]{2,63}$/', (string) $name) || fail("bad constant name $name");
+                $constants[(string) $name] = (string) $value;
+            }
+        }
+        if ($constants) {
+            $dir = CONTENT . '/plugins/000-plugin-licences';
+            is_dir($dir) || mkdir($dir, 0755, true) || fail('cannot make the licences plugin');
+            $php = "<?php\n/**\n * Plugin Name: Plugin licences\n * Description: Licence keys for this store's premium plugins, set by its seller.\n */\n";
+            foreach ($constants as $name => $value) $php .= "defined('$name') || define('$name', " . var_export($value, true) . ");\n";
+            file_put_contents("$dir/000-plugin-licences.php", $php) !== false || fail('cannot write the licences plugin');
+            $created[] = '000-plugin-licences';
+            foreach ($roles as $key => $role) {
+                if (!is_array($role)) continue;
+                $list = array_values(array_filter((array) ($role['plugins'] ?? []), 'is_string'));
+                if (!in_array('000-plugin-licences/000-plugin-licences.php', $list, true)) array_unshift($list, '000-plugin-licences/000-plugin-licences.php');
+                $roles[$key]['plugins'] = $list;
+            }
+        }
         copy($rolesFile, $baseFile) || fail('cannot keep the template roles.json');
         file_put_contents($rolesFile, json_encode($roles, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n") !== false || fail('cannot write roles.json');
         file_put_contents($addedFile, json_encode(['created' => $created, 'files' => $files], JSON_UNESCAPED_SLASHES)) !== false || fail('cannot write plugin-choices.json');
