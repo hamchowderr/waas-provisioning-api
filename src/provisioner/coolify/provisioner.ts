@@ -168,6 +168,10 @@ const keys = {
   base: (id: string) => `base/${id}.zip`,
   code: (versionId: string) => `versions/${versionId}/code.zip`,
   snapshot: (id: string) => `snapshots/${id}.zip`,
+  /** A wordpress.org plugin zip for plugin choices; never changes once stored. */
+  plugin: (slug: string, version: string) => `plugins/wporg/${slug}/${version}.zip`,
+  /** A version's plugin choices with signed links to their zips, for the agent's plugins step. */
+  pluginChoices: (versionId: string) => `versions/${versionId}/plugin-choices.json`,
   backup: (id: string) => `backups/${id}.zip`,
   /** A site being moved in: a zip or a gzipped tar, so no extension. */
   import: (storeId: string) => `imports/${storeId}`,
@@ -405,12 +409,28 @@ export class CoolifyProvisioner implements Provisioner {
     }
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home: https(input.domain), title: 'Version site' });
+    // Always run: it also undoes choices an earlier version applied to the archive this one comes from. The
+    // choices, with a signed link to each zip, go in a file the agent fetches: too long for task commands.
+    let pluginArgs: Record<string, unknown> = { plugins: [] };
+    if (input.plugins?.length) {
+      const plugins = input.plugins.map((p) => (p.action === 'add' ? { ...p, url: this.s3.presign('GET', keys.plugin(p.slug, p.version!), 3600) } : p));
+      await this.s3.put(keys.pluginChoices(input.versionId), new TextEncoder().encode(JSON.stringify({ plugins })), 'application/json');
+      pluginArgs = { manifest: this.s3.presign('GET', keys.pluginChoices(input.versionId)) };
+    }
+    const applied = await this.exec(uuid, 'plugins', pluginArgs);
     await this.exec(uuid, 'code-export', { url: this.s3.presign('PUT', keys.code(input.versionId)) });
+    return { pluginFiles: (applied.files ?? {}) as Record<string, string> };
+  }
+
+  async storePluginPackage({ slug, version, body }: { slug: string; version: string; body: Uint8Array }) {
+    if ((await this.s3.head(keys.plugin(slug, version))) !== null) return;
+    await this.s3.put(keys.plugin(slug, version), body, 'application/zip');
   }
 
   async deleteVersion({ versionId }: { versionId: string }) {
     await this.deleteService(VERSIONS_ENV, versionName(versionId));
     await this.s3.delete(keys.code(versionId));
+    await this.s3.delete(keys.pluginChoices(versionId));
     await this.s3.delete(keys.upload(versionId, true));
     await this.s3.delete(keys.upload(versionId, false));
   }

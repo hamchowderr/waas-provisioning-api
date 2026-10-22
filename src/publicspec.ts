@@ -9,6 +9,7 @@ const SOURCES = [
   { file: 'waas-provisioning-api.yaml' },
   { file: 'store-mail.yaml', tag: 'TenantMail' },
   { file: 'plugin-updates.yaml', tag: 'PluginUpdates' },
+  { file: 'plugin-choices.yaml', tag: 'PluginChoices' },
   { file: 'api-keys.yaml', tag: 'ApiKeys' },
   { file: 'webhooks.yaml', tag: 'Webhooks' },
 ];
@@ -42,6 +43,7 @@ const TAGS: Record<string, [string, string]> = {
   BaseSnapshot: ['Templates', 'Templates (base snapshots) that new versions start from. Partner keys only.'],
   ApiKeys: ['API keys', 'List, create, rotate and revoke your own API keys. A secret is shown once, in the response that creates the key.'],
   Webhooks: ['Webhooks', 'Endpoints that get a signed POST when a store or version finishes a change, and their deliveries. How to verify them: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/webhooks.md).'],
+  PluginChoices: ['Plugin choices', "wordpress.org plugins your stores get on top of your template, or that it switches off, per site type. Applied to each new version as it builds. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/plugin-choices.md)."],
   PluginUpdates: ['Plugin updates', 'Update checks made by the WaaS plugins. The response points at a signed release package.'],
 };
 

@@ -23,6 +23,7 @@ import { adminResellerRoutes } from '../resellers.ts';
 import { Status, statusName } from '../status.ts';
 import { createStorefront, getStorefront, type NewStorefront } from '../storefronts.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
+import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
@@ -264,6 +265,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   const { config, pool, boss, releases } = deps;
   const versions = versionService(deps);
   const templates = baseSnapshotService(deps);
+  const pluginChoices = pluginChoiceService(deps);
   const app = new Hono<AppEnv>();
 
   if (session) {
@@ -832,6 +834,28 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   });
   app.post('/products/:productId/basesnapshots', async (c) => c.json(await templates.create(await product(c), await readJson(c))));
   app.delete('/products/:productId/basesnapshots', async (c) => c.json(await templates.remove(await product(c), requiredUuidQuery(c, 'id'))));
+
+  // Plugin choices (docs/plugin-choices.md): wordpress.org plugins a storefront adds to its stores or switches off.
+  app.get('/products/:productId/plugin-choices/search', async (c) => {
+    await product(c);
+    return c.json(await pluginChoices.search(c.req.query('q'), c.req.query('page')));
+  });
+  app.get('/products/:productId/plugin-choices', async (c) =>
+    c.json(await pluginChoices.list(await product(c), { checkUpdates: c.req.query('checkUpdates') === 'true' })),
+  );
+  app.put('/products/:productId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.set(await product(c), c.req.param('slug'), await readJson(c))));
+  app.delete('/products/:productId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.remove(await product(c), c.req.param('slug'))));
+  // A reseller's shared choices, for all its storefronts (the /resellers routes are the platform admin's only).
+  const reseller = async (c: Context) => {
+    const resellerId = c.req.param('resellerId')!;
+    if (!isUuid(resellerId) || !(await pool.query('SELECT 1 FROM resellers WHERE id = $1', [resellerId])).rowCount) throw notFound(`Reseller ${resellerId} not found`);
+    return { resellerId };
+  };
+  app.get('/resellers/:resellerId/plugin-choices', async (c) =>
+    c.json(await pluginChoices.list(await reseller(c), { checkUpdates: c.req.query('checkUpdates') === 'true' })),
+  );
+  app.put('/resellers/:resellerId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.set(await reseller(c), c.req.param('slug'), await readJson(c))));
+  app.delete('/resellers/:resellerId/plugin-choices/:slug', async (c) => c.json(await pluginChoices.remove(await reseller(c), c.req.param('slug'))));
 
   // Plugin updates (waas-hw4): which version each site last reported, and per-product pins.
   app.get('/plugins', async (c) => {

@@ -1,4 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -659,5 +660,80 @@ describe.skipIf(!hasPhp)('store agent: owner mu-plugin', () => {
     expect(call('waas_owner_currency', 'GB')).toBe('GBP');
     expect(call('waas_owner_currency', 'DE')).toBe('EUR');
     expect(call('waas_owner_currency', '')).toBe('');
+  });
+});
+
+describe.skipIf(!hasPhp)('store agent: plugin choices', () => {
+  let root: string;
+  let zips: string;
+  const plugins = () => join(root, 'wp-content/plugins');
+  const rolesFile = () => join(plugins(), 'waas-client-data/roles.json');
+  const roles = () => JSON.parse(readFileSync(rolesFile(), 'utf8'));
+  const agent = (args: unknown) => {
+    try {
+      const out = execFileSync('php', [AGENT, 'plugins', Buffer.from(JSON.stringify(args)).toString('base64')], { env: { ...process.env, WAAS_ROOT: root }, encoding: 'utf8' });
+      return JSON.parse(/^WAAS_RESULT (.*)$/m.exec(out)![1]!);
+    } catch (err) {
+      return { error: /WAAS_ERROR (.*)/.exec(String((err as { stdout?: string }).stdout))?.[1] };
+    }
+  };
+  /** A wordpress.org-style zip: a <slug>/ folder with its main file. */
+  const pluginZip = (slug: string, main: string) => {
+    const dir = join(zips, `src-${slug}`);
+    mkdirSync(join(dir, slug), { recursive: true });
+    writeFileSync(join(dir, slug, 'uninstall.php'), '<?php // nothing');
+    writeFileSync(join(dir, slug, main), `<?php\n/**\n * Plugin Name: ${slug}\n * Version: 1.0\n */`);
+    const file = join(zips, `${slug}.zip`);
+    execFileSync('zip', ['-qr', file, slug], { cwd: dir });
+    chmodSync(file, 0o644);
+    return { url: `file://${file}`, sha256: createHash('sha256').update(readFileSync(file)).digest('hex') };
+  };
+  const add = (slug: string, main: string, siteTypes: string[] = []) => ({ slug, action: 'add', siteTypes, ...pluginZip(slug, main) });
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    zips = mkdtempSync(join(tmpdir(), 'waas-zips-'));
+    mkdirSync(join(plugins(), 'waas-client-data'), { recursive: true });
+    mkdirSync(join(plugins(), 'wp-fusion-lite'));
+    writeFileSync(rolesFile(), JSON.stringify({ website: { title: 'Website', plugins: ['fluentform/fluentform.php', 'wp-fusion-lite/wp-fusion-lite.php'] }, store: { title: 'Store', plugins: ['fluent-cart/fluent-cart.php', 'wp-fusion-lite/wp-fusion-lite.php'] } }));
+    execFileSync('chmod', ['-R', '777', root, zips]);
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(zips, { recursive: true, force: true });
+  });
+
+  it('adds plugins to the site types chosen and switches others off', () => {
+    const result = agent({ plugins: [add('contact-form-7', 'wp-contact-form-7.php', ['website']), add('seo-tool', 'seo-tool.php'), { slug: 'wp-fusion-lite', action: 'off', siteTypes: ['store'] }] });
+    expect(result.files).toEqual({ 'contact-form-7': 'contact-form-7/wp-contact-form-7.php', 'seo-tool': 'seo-tool/seo-tool.php' });
+    expect(existsSync(join(plugins(), 'contact-form-7/wp-contact-form-7.php'))).toBe(true);
+    expect(roles().website.plugins).toEqual(['fluentform/fluentform.php', 'wp-fusion-lite/wp-fusion-lite.php', 'contact-form-7/wp-contact-form-7.php', 'seo-tool/seo-tool.php']);
+    expect(roles().store.plugins).toEqual(['fluent-cart/fluent-cart.php', 'seo-tool/seo-tool.php']);
+    expect(roles().website.title).toBe('Website');
+  });
+
+  it('undoes the choices an earlier build applied before applying new ones', () => {
+    agent({ plugins: [add('contact-form-7', 'wp-contact-form-7.php'), { slug: 'wp-fusion-lite', action: 'off', siteTypes: [] }] });
+    // A later version from an archive with those applied, now with no choices: back to the template.
+    expect(agent({ plugins: [] })).toEqual({ files: {} });
+    expect(existsSync(join(plugins(), 'contact-form-7'))).toBe(false);
+    expect(existsSync(join(plugins(), 'wp-fusion-lite'))).toBe(true);
+    expect(roles().store.plugins).toEqual(['fluent-cart/fluent-cart.php', 'wp-fusion-lite/wp-fusion-lite.php']);
+    expect(existsSync(join(plugins(), 'waas-client-data/roles.template.json'))).toBe(false);
+  });
+
+  it('reads the choices from a file when the build sends one', () => {
+    const file = join(zips, 'choices.json');
+    writeFileSync(file, JSON.stringify({ plugins: [add('seo-tool', 'seo-tool.php', ['store'])] }));
+    chmodSync(file, 0o644);
+    expect(agent({ manifest: `file://${file}` }).files).toEqual({ 'seo-tool': 'seo-tool/seo-tool.php' });
+    expect(roles().store.plugins).toContain('seo-tool/seo-tool.php');
+  });
+
+  it('refuses a zip that does not match, an unknown site type and a template without roles', () => {
+    expect(agent({ plugins: [{ ...add('contact-form-7', 'wp-contact-form-7.php'), sha256: '0'.repeat(64) }] }).error).toContain('does not match its SHA-256');
+    expect(agent({ plugins: [add('seo-tool', 'seo-tool.php', ['shop'])] }).error).toContain('no site type shop (it has website, store)');
+    rmSync(rolesFile());
+    expect(agent({ plugins: [add('seo-tool', 'seo-tool.php')] }).error).toContain('has no site types');
   });
 });

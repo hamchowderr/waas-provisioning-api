@@ -17,6 +17,8 @@ import { oauthRoutes } from './oauth.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
 import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
+import { pluginChoiceRoutes } from './pluginchoices.ts';
+import type { WpOrg } from './wporg.ts';
 import { importRoutes } from './imports.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -47,6 +49,8 @@ export interface Deps {
   domainConnectNet?: DomainConnectNet;
   /** Fetches OAuth Client ID Metadata Documents (src/oauth.ts); tests replace it. */
   clientMetadataFetch?: typeof fetch;
+  /** The wordpress.org plugin directory, for plugin choices (src/wporg.ts); tests replace it. */
+  wporg?: WpOrg;
   /** Calls stores' site-editing routes (src/sitekeys.ts); tests replace it. */
   siteFetch?: typeof fetch;
   /** Sign-in for people (src/auth.ts); absent when AUTH_URL and AUTH_SECRET are not set. */
@@ -152,7 +156,7 @@ export function createApp(deps: Deps) {
     c.set('resellerId', caller.resellerId!);
     if (PARTNER_ONLY.test(c.req.path)) return next();
     const productId = c.req.query('productId');
-    // Templates made with a partner key are the reseller's, shared by all its storefronts: no productId needed.
+    // Templates and plugin choices made with a partner key are the reseller's, shared by all its storefronts: no productId needed.
     if (!productId && SHARED_TEMPLATES.test(c.req.path)) return next();
     if (!productId) return c.json({ statusCode: 400, message: 'productId is required with a partner key' }, 400);
     const own =
@@ -173,6 +177,7 @@ export function createApp(deps: Deps) {
   app.route('/v1/snapshots', snapshotRoutes(deps));
   app.route('/v1/basesnapshots', baseSnapshotRoutes(deps));
   app.route('/v1/plugins', pluginRoutes(deps));
+  app.route('/v1/plugin-choices', pluginChoiceRoutes(deps));
   app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
   app.route('/v1', partnerRoutes(deps));

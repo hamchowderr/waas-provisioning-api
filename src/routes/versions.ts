@@ -7,6 +7,7 @@ import { compact, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
 import { PRODUCT_TEMPLATES } from './basesnapshots.ts';
+import { forVersion, pluginChoiceService } from '../pluginchoices.ts';
 import { Status, statusName } from '../status.ts';
 import { dnsSafeLabel } from '../tenants.ts';
 
@@ -50,7 +51,9 @@ function slug(name: string): string {
  * The version operations, for one product. Used by the /v1 routes below (product from the API
  * key) and the admin routes (product from the path), so both behave and answer the same.
  */
-export function versionService({ config, pool, boss, provisioner }: Deps) {
+export function versionService(deps: Deps) {
+  const { config, pool, boss, provisioner } = deps;
+  const pluginChoices = pluginChoiceService(deps);
   async function findVersion(productId: string, versionId: string) {
     const { rows } = await pool.query('SELECT * FROM versions WHERE id = $1 AND product_id = $2', [versionId, productId]);
     if (!rows[0]) throw badRequest(`Version ${versionId} not found`);
@@ -96,12 +99,14 @@ export function versionService({ config, pool, boss, provisioner }: Deps) {
     const taken = await pool.query('SELECT 1 FROM versions WHERE domain = $1', [`${base}.${config.versionsDomain}`]);
     const domain = `${taken.rowCount ? dnsSafeLabel(`${base}-${id.slice(0, 8)}`, 'v') : base}.${config.versionsDomain}`;
     const uploadUrl = upload ? await provisioner.createUploadUrl({ versionId: id, asZip: body.asZip === true }) : undefined;
+    // The storefront's plugin choices as they are now (docs/plugin-choices.md); the build applies these.
+    const plugins = forVersion(await pluginChoices.effective(productId));
 
     await withTransaction(pool, async (client) => {
       await client.query(
-        `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, productId, body.name, domain, body.wordPressVersion, body.phpVersion, Status.Pending],
+        `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, status, plugin_choices)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, productId, body.name, domain, body.wordPressVersion, body.phpVersion, Status.Pending, JSON.stringify(plugins)],
       );
       for (const s of sources) {
         await client.query(

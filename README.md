@@ -144,6 +144,7 @@ bash anypress-install.sh hetzner     # or hostinger, digitalocean; or `sudo bash
 | [docs/accounts.md](docs/accounts.md) | Letting sellers' and resellers' teams sign in to the dashboard: organizations, roles, invitations |
 | [docs/branding.md](docs/branding.md) | Sellers' and resellers' own name, logo, icon, color and support address in the dashboard |
 | [docs/clients.md](docs/clients.md) | Clients: give someone a site in one step (their own storefront, site and invitation) |
+| [docs/plugin-choices.md](docs/plugin-choices.md) | Sellers' and resellers' own plugins: wordpress.org plugins added to their stores, or template plugins switched off, built into each version |
 | [docs/resellers.md](docs/resellers.md) | Reseller accounts: storefronts grouped under one partner, store limits, usage, the monthly wholesale bill, partner keys, the storefronts and shared templates a partner key makes, and the reseller's team |
 | [docs/webhooks.md](docs/webhooks.md) | Signed webhooks when a store or version changes, and how to check them |
 | [docs/store-backups.md](docs/store-backups.md) | Nightly store backups, how long they are kept, restoring |

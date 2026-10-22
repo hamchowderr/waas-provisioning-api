@@ -210,6 +210,19 @@ function adopt_prefix(?string $from): string
     return $from;
 }
 
+/** An added plugin's main file, as WordPress names it in active_plugins ("slug/file.php"): the PHP file with a Plugin Name header. */
+function plugin_main_file(string $slug): ?string
+{
+    $files = glob(CONTENT . "/plugins/$slug/*.php") ?: [];
+    // The usual name first.
+    usort($files, fn ($a, $b) => (basename($b) === "$slug.php") <=> (basename($a) === "$slug.php"));
+    foreach ($files as $file) {
+        $head = (string) file_get_contents($file, false, null, 0, 8192);
+        if (preg_match('/^[ \t\/*#@]*Plugin Name:/mi', $head)) return "$slug/" . basename($file);
+    }
+    return null;
+}
+
 /**
  * The "website unavailable" page every suspended store shows, branded with the platform's (or,
  * later, a reseller's) name and optional link. Self-contained: no scripts, fonts or images to load.
@@ -1071,6 +1084,76 @@ switch ($op) {
         $size = filesize("$tmp/snapshot.zip");
         curlTransfer($args['url'], "$tmp/snapshot.zip", true);
         done(['sizeBytes' => $size]);
+    }
+
+    case 'plugins': {
+        // Plugin choices (docs/plugin-choices.md), applied to a version site before its code is exported:
+        // wordpress.org plugins added to wp-content/plugins and to roles.json's site types, or taken out of
+        // them. The archive may come from a version or store that already had choices applied, so those are
+        // undone first: the plugins they added are removed and roles.json goes back to the template's own.
+        $data = CONTENT . '/plugins/waas-client-data';
+        $rolesFile = "$data/roles.json";
+        $baseFile = "$data/roles.template.json";
+        $addedFile = "$data/plugin-choices.json";
+        if (is_file($addedFile)) {
+            $earlier = json_decode((string) file_get_contents($addedFile), true);
+            foreach ((array) ($earlier['created'] ?? []) as $slug) {
+                if (is_string($slug) && preg_match('/^[a-z0-9][a-z0-9-]{0,99}$/', $slug)) run('rm -rf ' . escapeshellarg(CONTENT . "/plugins/$slug"));
+            }
+            unlink($addedFile);
+        }
+        if (is_file($baseFile)) rename($baseFile, $rolesFile) || fail('cannot restore the template roles.json');
+        $plugins = (array) ($args['plugins'] ?? []);
+        if (!empty($args['manifest'])) {
+            $tmp = tempDir();
+            curlTransfer((string) $args['manifest'], "$tmp/choices.json", false);
+            $manifest = json_decode((string) file_get_contents("$tmp/choices.json"), true);
+            is_array($manifest) || fail('the plugin choices file is not readable');
+            $plugins = (array) ($manifest['plugins'] ?? []);
+        }
+        if (!$plugins) done(['files' => (object) []]);
+
+        is_file($rolesFile) || fail("the template has no site types (waas-client-data/roles.json), so the plugins chosen can't be switched on");
+        $roles = json_decode((string) file_get_contents($rolesFile), true);
+        is_array($roles) && $roles || fail('the template roles.json is not readable');
+        $known = array_map('strval', array_keys($roles));
+        $tmp = tempDir();
+        $created = [];
+        $files = [];
+        foreach ($plugins as $p) {
+            $slug = (string) ($p['slug'] ?? '');
+            preg_match('/^[a-z0-9][a-z0-9-]{0,99}$/', $slug) || fail("bad plugin slug $slug");
+            $types = array_values(array_map('strval', (array) ($p['siteTypes'] ?? [])));
+            $unknown = array_diff($types, $known);
+            if ($unknown) fail("$slug: the template has no site type " . implode(', ', $unknown) . ' (it has ' . implode(', ', $known) . ')');
+            $applies = fn (string $key) => !$types || in_array($key, $types, true);
+            if (($p['action'] ?? '') === 'add') {
+                curlTransfer((string) $p['url'], "$tmp/$slug.zip", false);
+                hash_file('sha256', "$tmp/$slug.zip") === ($p['sha256'] ?? '') || fail("$slug: the zip does not match its SHA-256");
+                mkdir("$tmp/$slug");
+                extract_archive("$tmp/$slug.zip", "$tmp/$slug");
+                is_dir("$tmp/$slug/$slug") || fail("$slug: the zip has no $slug folder");
+                if (!is_dir(CONTENT . "/plugins/$slug")) $created[] = $slug;
+                run('rm -rf ' . escapeshellarg(CONTENT . "/plugins/$slug") . ' && cp -a ' . escapeshellarg("$tmp/$slug/$slug") . ' ' . escapeshellarg(CONTENT . '/plugins/'));
+                $file = plugin_main_file($slug) ?? fail("$slug: no plugin file with a Plugin Name header");
+                $files[$slug] = $file;
+                foreach ($roles as $key => $role) {
+                    if (!$applies((string) $key) || !is_array($role)) continue;
+                    $list = array_values(array_filter((array) ($role['plugins'] ?? []), 'is_string'));
+                    if (!in_array($file, $list, true)) $list[] = $file;
+                    $roles[$key]['plugins'] = $list;
+                }
+            } else {
+                foreach ($roles as $key => $role) {
+                    if (!$applies((string) $key) || !is_array($role)) continue;
+                    $roles[$key]['plugins'] = array_values(array_filter((array) ($role['plugins'] ?? []), fn ($f) => is_string($f) && !str_starts_with($f, "$slug/")));
+                }
+            }
+        }
+        copy($rolesFile, $baseFile) || fail('cannot keep the template roles.json');
+        file_put_contents($rolesFile, json_encode($roles, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n") !== false || fail('cannot write roles.json');
+        file_put_contents($addedFile, json_encode(['created' => $created, 'files' => $files], JSON_UNESCAPED_SLASHES)) !== false || fail('cannot write plugin-choices.json');
+        done(['files' => (object) $files]);
     }
 
     case 'code-export': {

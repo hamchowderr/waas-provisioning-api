@@ -1,0 +1,162 @@
+openapi: 3.0.1
+info:
+  title: WaaS Provisioning API - Plugin choices
+  version: 0.1.0
+  description: >-
+    Plugin choices (docs/plugin-choices.md): wordpress.org plugins a storefront adds to its stores on top
+    of its template, or switches off, per site type. They are applied to each new version as it builds,
+    so stores get them when they move to that version. A partner key without a productId (or with
+    shared=true) works on the reseller's choices, which apply to all its storefronts; a storefront's own
+    choice of the same plugin wins. The admin API has the same at /admin/products/{productId}/plugin-choices
+    and /admin/resellers/{resellerId}/plugin-choices.
+servers:
+  - url: http://localhost:4111
+    description: Local
+security:
+  - basic: []
+paths:
+  /v1/plugin-choices/search:
+    get:
+      operationId: searchPlugins
+      summary: Search wordpress.org plugins
+      description: >-
+        The wordpress.org plugin directory's own search, 24 plugins a page, with each plugin's icon and
+        name. blocked says why a plugin can't be added (it clashes with the hosting), or is null.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 1 } }
+      responses:
+        '200':
+          description: Plugins found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginSearchResult' }
+        '400': { $ref: '#/components/responses/PluginChoiceBadRequest' }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+        '503': { $ref: '#/components/responses/PluginDirectoryUnavailable' }
+  /v1/plugin-choices:
+    get:
+      operationId: listPluginChoices
+      summary: The storefront's plugin choices
+      description: >-
+        Its own and its reseller's, by slug. inProduction says whether the production version has the
+        choice as it is now; a new version is needed for stores to get a change. With checkUpdates=true,
+        latestVersion is the newest version wordpress.org has of each added plugin.
+      parameters:
+        - { name: checkUpdates, in: query, schema: { type: boolean } }
+        - { name: shared, in: query, description: Partner keys with a productId; the reseller's choices instead of the storefront's, schema: { type: boolean } }
+      responses:
+        '200':
+          description: The choices
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PluginChoice' } }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+  /v1/plugin-choices/{slug}:
+    parameters:
+      - { name: slug, in: path, required: true, description: The plugin's wordpress.org slug, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,99}$' } }
+    put:
+      operationId: setPluginChoice
+      summary: Add a plugin, or switch one off
+      description: >-
+        add (the default) pins the plugin to version, or to the newest wordpress.org has, and keeps its
+        zip, so every version built later gets exactly those files. off takes the plugin out of the
+        site types listed (a plugin the template has). At most 25 plugins added. Saving again replaces
+        the choice.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPluginChoice' }
+      responses:
+        '200':
+          description: The choice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginChoice' }
+        '400': { $ref: '#/components/responses/PluginChoiceBadRequest' }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+        '503': { $ref: '#/components/responses/PluginDirectoryUnavailable' }
+    delete:
+      operationId: deletePluginChoice
+      summary: Remove a plugin choice
+      description: Versions built from now on leave the template's plugins as they are for this slug.
+      responses:
+        '200':
+          description: Removed
+          content:
+            application/json:
+              schema: { type: object, required: [slug], properties: { slug: { type: string } } }
+        '400': { $ref: '#/components/responses/PluginChoiceBadRequest' }
+        '403': { $ref: '#/components/responses/PluginChoiceForbidden' }
+components:
+  securitySchemes:
+    basic: { type: http, scheme: basic, description: The API key as username, its secret as password }
+  responses:
+    PluginChoiceBadRequest:
+      description: Invalid request, or a plugin that can't be added
+      content: { application/json: { schema: { $ref: '#/components/schemas/PluginChoiceError' } } }
+    PluginChoiceForbidden:
+      description: Invalid API key or secret
+      content: { application/json: { schema: { $ref: '#/components/schemas/PluginChoiceError' } } }
+    PluginDirectoryUnavailable:
+      description: wordpress.org could not be reached; try again shortly
+      content: { application/json: { schema: { $ref: '#/components/schemas/PluginChoiceError' } } }
+  schemas:
+    PluginChoiceError:
+      type: object
+      required: [statusCode, message]
+      properties:
+        statusCode: { type: integer }
+        message: { type: string }
+    WordPressOrgPlugin:
+      type: object
+      required: [slug, name, version, icon, author, shortDescription, rating, numRatings, activeInstalls, lastUpdated, testedUpTo, requiresWordPress, requiresPhp, homepage, blocked]
+      properties:
+        slug: { type: string, example: contact-form-7 }
+        name: { type: string, example: Contact Form 7 }
+        version: { type: string, description: The newest version, example: 6.1.2 }
+        icon: { type: string, nullable: true, description: The plugin's icon (https) }
+        author: { type: string }
+        shortDescription: { type: string }
+        rating: { type: integer, minimum: 0, maximum: 100 }
+        numRatings: { type: integer }
+        activeInstalls: { type: integer }
+        lastUpdated: { type: string, format: date-time, nullable: true }
+        testedUpTo: { type: string, nullable: true, description: Newest WordPress version it was tested with }
+        requiresWordPress: { type: string, nullable: true }
+        requiresPhp: { type: string, nullable: true }
+        homepage: { type: string, nullable: true }
+        blocked: { type: string, nullable: true, description: Why it can't be added, or null }
+    PluginSearchResult:
+      type: object
+      required: [page, pages, results, plugins]
+      properties:
+        page: { type: integer }
+        pages: { type: integer }
+        results: { type: integer }
+        plugins: { type: array, items: { $ref: '#/components/schemas/WordPressOrgPlugin' } }
+    SetPluginChoice:
+      type: object
+      properties:
+        action: { type: string, enum: [add, off], default: add }
+        version: { type: string, description: 'add only: a wordpress.org version of the plugin; default the newest' }
+        siteTypes:
+          type: array
+          maxItems: 20
+          items: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$' }
+          description: The template's site types (roles.json keys) it applies to; empty or left out for all
+    PluginChoice:
+      type: object
+      required: [slug, name, icon, action, siteTypes, shared, dateChanged]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        icon: { type: string, nullable: true }
+        action: { type: string, enum: [add, off] }
+        version: { type: string, description: add only }
+        sha256: { type: string, description: 'add only: of the plugin zip every version gets' }
+        siteTypes: { type: array, items: { type: string } }
+        shared: { type: boolean, description: The reseller's choice, for all its storefronts }
+        dateChanged: { type: string, format: date-time }
+        inProduction: { type: boolean, description: 'Listing a storefront: whether its production version has this choice as it is now' }
+        latestVersion: { type: string, nullable: true, description: 'With checkUpdates, add only: the newest wordpress.org version' }
