@@ -61,7 +61,7 @@ The platform admin reviews them on the dashboard (`GET /admin/applications?statu
 These calls need the session cookie and `X-Session-Auth: 1`:
 
 - `/v1/*`: the whole provisioning API, as the organization's product.
-- `GET /account`: who is signed in, their storefronts (one membership each, with the organization it comes from), and the active one. Someone on a reseller's team has one per storefront of the reseller ([resellers.md](resellers.md#reseller-team)); the `X-Product-Id` header picks which one the call acts for. This works before they belong to any organization.
+- `GET /account`: who is signed in, their storefronts (one membership each, with the organization it comes from), and the active one. Someone on a reseller's team has one per storefront of the reseller ([resellers.md](resellers.md#reseller-team)); the `X-Product-Id` header picks which one the call acts for. `brand` is that storefront's look in the dashboard, or null ([branding.md](branding.md)). This works before they belong to any organization.
 - `/account/*`: the admin API's endpoints (`/admin/overview` becomes `/account/overview`, and so on), narrowed to the product. Lists hold only that product's records, another product's store, key or webhook answers 404, and the platform-only endpoints (creating products, product limits, plugins, database backups, renaming the organization) answer 404. This is what the dashboard shows a signed-in customer.
 
 ## Connecting an AI app as yourself

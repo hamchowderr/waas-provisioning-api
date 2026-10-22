@@ -3,6 +3,7 @@ import type { PgBoss } from 'pg-boss';
 import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
 import { publicApplicationRoutes } from './applications.ts';
 import type { Auth } from './auth.ts';
+import { publicBrandingRoutes } from './branding.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
@@ -101,6 +102,8 @@ export function createApp(deps: Deps) {
   // Sites moved in from another host: the AnyPress Export plugin, holding an import code (src/imports.ts). No API key,
   // and not in the request log, which would keep the code.
   app.route('/imports', importRoutes(deps));
+  // Dashboard logos and icons (src/branding.ts). Public: the sign-in page shows them.
+  app.route('/branding', publicBrandingRoutes(deps));
 
   app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
   app.route('/account', accountRoutes(deps));
