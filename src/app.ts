@@ -4,6 +4,7 @@ import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
 import { publicApplicationRoutes } from './applications.ts';
 import type { Auth } from './auth.ts';
 import { publicBrandingRoutes } from './branding.ts';
+import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
@@ -94,9 +95,18 @@ export function createApp(deps: Deps) {
   app.route('/admin', adminRoutes(deps));
 
   // Better Auth's own routes (src/auth.ts). The dashboard proxies /api/auth/* here from its origin.
-  app.on(['GET', 'POST'], '/api/auth/*', (c) =>
-    deps.auth ? deps.auth.handler(c.req.raw) : c.json({ statusCode: 404, message: 'Sign-in is off on this server' }, 404),
-  );
+  // It answers on AUTH_URL and on sellers' live dashboard addresses (src/dashboarddomains.ts): any other
+  // forwarded host is replaced with AUTH_URL's, so links in sign-in emails can't point anywhere else.
+  app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
+    if (!deps.auth || !deps.config.auth) return c.json({ statusCode: 404, message: 'Sign-in is off on this server' }, 404);
+    const own = new URL(deps.config.auth.url);
+    const asked = (c.req.header('x-forwarded-host') ?? c.req.header('host') ?? '').split(',')[0]!.trim().toLowerCase();
+    const live = asked && asked !== own.host && (await dashboardHostProduct(deps.pool, asked)) ? asked : null;
+    const headers = new Headers(c.req.raw.headers);
+    headers.set('x-forwarded-host', live ?? own.host);
+    headers.set('x-forwarded-proto', own.protocol.replace(':', ''));
+    return deps.auth.handler(new Request(c.req.raw, { headers }));
+  });
   // Applications to sell on the platform, from the marketing site's form (src/applications.ts). No sign-in.
   app.route('/applications', publicApplicationRoutes(deps));
   // Sites moved in from another host: the AnyPress Export plugin, holding an import code (src/imports.ts). No API key,

@@ -45,6 +45,23 @@ function hostMessage(err: unknown): string {
   return (err as Error).message;
 }
 
+/** host → the storefront whose live dashboard address it is, or null; kept 30 seconds. */
+const hostCache = new Map<string, { productId: string | null; until: number }>();
+
+/** Forgets what dashboardHostProduct looked up, after an address changes. */
+export const forgetDashboardHosts = () => hostCache.clear();
+
+/** The storefront whose live (active) dashboard address `host` is, or null. */
+export async function dashboardHostProduct(pool: Pool, host: string): Promise<string | null> {
+  const key = host.toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+  const hit = hostCache.get(key);
+  if (hit && hit.until > Date.now()) return hit.productId;
+  const { rows } = await pool.query("SELECT product_id FROM dashboard_domains WHERE domain = $1 AND status = 'active' AND product_id IS NOT NULL", [key]);
+  const productId = (rows[0]?.product_id as string | undefined) ?? null;
+  hostCache.set(key, { productId, until: Date.now() + 30_000 });
+  return productId;
+}
+
 async function current(pool: Pool, productId: string) {
   const { rows } = await pool.query<Row>("SELECT * FROM dashboard_domains WHERE product_id = $1 AND status <> 'removing'", [productId]);
   return rows[0];
@@ -52,6 +69,7 @@ async function current(pool: Pool, productId: string) {
 
 /** Removes a domain from the host, or leaves it as 'removing' for maintenance to try again. */
 async function release(pool: Pool, host: DashboardHost, row: Pick<Row, 'id' | 'domain'>) {
+  forgetDashboardHosts();
   try {
     await host.remove(row.domain);
     await pool.query('DELETE FROM dashboard_domains WHERE id = $1', [row.id]);
@@ -78,6 +96,7 @@ export async function maintainDashboardDomains(pool: Pool, host: DashboardHost |
 }
 
 async function record(pool: Pool, id: string, state: HostDomainState, error: string | null = null) {
+  forgetDashboardHosts();
   const { rows } = await pool.query<Row>(
     'UPDATE dashboard_domains SET status = $2, records = $3, error = $4, checked_at = now() WHERE id = $1 RETURNING *',
     [id, statusOf(state), JSON.stringify(state.records), error],
