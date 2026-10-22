@@ -296,9 +296,10 @@ DASHBOARD_TARGET=${DASHBOARD_URL#https://}"
 }
 
 # Lets sellers give the dashboard their own address (the API's docs/branding.md): tells the API where the
-# dashboard runs. The API is deployed again only when that changes.
+# dashboard runs. The API is deployed again only when that changes. Skipped when the API isn't installed.
 dashboard_domains() {
   local settings=$1 sum
+  [ -n "${API_UUID:-}" ] || return 0
   sum=$(sha1sum <<<"$settings" | cut -d' ' -f1)
   [ "${API_DASHBOARD_DOMAINS:-}" = "$sum" ] && return
   envs "$API_UUID" <<<"$settings"
