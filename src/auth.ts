@@ -60,14 +60,25 @@ export const ORG_ROLES: readonly OrgRole[] = ['owner', 'admin', 'member'];
 /** Days an invitation can be accepted. */
 export const INVITATION_DAYS = 7;
 
+/**
+ * Sign-in answers on the platform's dashboard address and on sellers' own ones (src/dashboarddomains.ts),
+ * so links and redirects use the address the person is on. That address comes from the dashboard's
+ * X-Forwarded-Host, which the API's /api/auth route has already checked (src/app.ts): it is AUTH_URL's
+ * host or a live dashboard address, never what a caller made up.
+ */
 export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterAuthPlugin[] = []) {
+  const protocol = new URL(config.url).protocol === 'http:' ? 'http' : 'https';
   return betterAuth({
-    baseURL: config.url,
+    baseURL: { allowedHosts: ['*'], fallback: config.url, protocol },
+    trustedOrigins: (request) => {
+      const host = request?.headers.get('x-forwarded-host');
+      return [config.url, ...(host ? [`${protocol}://${host}`] : [])];
+    },
     secret: config.secret,
     // Its own schema keeps Better Auth's tables apart from ours; migrations/…_accounts.sql creates them.
     database: { dialect: new PostgresDialect({ pool }), type: 'postgres', schemaName: 'auth', casing: 'snake' },
     telemetry: { enabled: false },
-    advanced: { database: { generateId: 'uuid' } },
+    advanced: { database: { generateId: 'uuid' }, trustedProxyHeaders: true },
     // githubLogin: the GitHub username, so the dashboard can tell its platform admins
     // (ALLOWED_GITHUB_LOGINS) from customers. Set from GitHub only, never from what the user sends.
     user: { additionalFields: { githubLogin: { type: 'string', required: false, input: false } } },

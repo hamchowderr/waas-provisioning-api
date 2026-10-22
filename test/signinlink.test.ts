@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { createAuth, loadAuthConfig, type AuthConfig } from '../src/auth.ts';
 import { sendSignInLink } from '../src/authmail.ts';
+import { forgetDashboardHosts } from '../src/dashboarddomains.ts';
 import { setup, type TestContext } from './helpers.ts';
 
 const MAIL = { key: 'tsend_test_key', from: 'no-reply@app.waas.example', brand: 'AnyPress' };
@@ -61,6 +62,71 @@ describe('emailed sign-in links', () => {
     // A link works once.
     const again = await app.request(link.pathname + link.search, { redirect: 'manual' });
     expect(again.headers.getSetCookie().some((c) => /^(__Secure-)?better-auth.session_token=/.test(c))).toBe(false);
+  });
+});
+
+describe("sign-in on a seller's own dashboard address", () => {
+  const OWN = 'dash.seller.example';
+  let sellerId: string;
+  let otherId: string;
+
+  /** Asks for a link the way the dashboard's proxy does, from `host`, and follows it. */
+  async function signInOn(host: string, email: string) {
+    sent.splice(0);
+    const res = await app.request('/api/auth/sign-in/magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: `https://${host}`, 'X-Forwarded-Host': host, 'X-Forwarded-Proto': 'https' },
+      body: JSON.stringify({ email, callbackURL: '/' }),
+    });
+    return { res, link: sent[0] ? new URL(sent[0].url) : null };
+  }
+
+  beforeAll(async () => {
+    const products = await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Seller shop'), ('Another shop') RETURNING id");
+    [sellerId, otherId] = products.rows.map((r) => r.id) as [string, string];
+    await t.pool.query("INSERT INTO dashboard_domains (product_id, domain, status, records) VALUES ($1, $2, 'active', '[]')", [sellerId, OWN]);
+    forgetDashboardHosts();
+  });
+
+  it('emails a link on that address, and it signs the person in there', async () => {
+    const { res, link } = await signInOn(OWN, 'team@seller.example');
+    expect(res.status).toBe(200);
+    expect(link!.origin).toBe(`https://${OWN}`);
+    const verified = await app.request(link!.pathname + link!.search, { redirect: 'manual', headers: { 'X-Forwarded-Host': OWN } });
+    expect(verified.status).toBe(302);
+    expect(verified.headers.get('location')).toMatch(new RegExp(`^(https://${OWN.replaceAll('.', '\\.')})?/`));
+  });
+
+  it('puts any other address back to the platform one', async () => {
+    const { res, link } = await signInOn('evil.example', 'victim@seller.example');
+    expect(res.status).toBe(200);
+    expect(link!.origin).toBe(AUTH.url);
+  });
+
+  it("lets only that storefront's team in on that address", async () => {
+    const { link } = await signInOn(AUTH.url.replace('https://', ''), 'both@seller.example');
+    const verified = await app.request(link!.pathname + link!.search, { redirect: 'manual' });
+    const cookie = verified.headers.getSetCookie().find((c) => /session_token=/.test(c))!.split(';')[0]!;
+    const userId = (await t.pool.query('SELECT id FROM auth."user" WHERE email = $1', ['both@seller.example'])).rows[0].id;
+    for (const [i, productId] of [sellerId, otherId].entries()) {
+      const org = await t.pool.query('INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2, now(), $3) RETURNING id', [`Org ${i}`, `org-host-${i}`, productId]);
+      await t.pool.query('INSERT INTO auth.member ("organizationId", "userId", role, "createdAt") VALUES ($1, $2, \'owner\', now())', [org.rows[0].id, userId]);
+    }
+    const me = async (host?: string) =>
+      (await (await app.request('/account', { headers: { Cookie: cookie, ...(host ? { 'X-Dashboard-Host': host } : {}) } })).json()) as { memberships: { productId: string }[]; active: { productId: string } | null };
+    expect((await me()).memberships.map((m) => m.productId).sort()).toEqual([sellerId, otherId].sort());
+    expect((await me('app.waas.example')).memberships).toHaveLength(2);
+    const own = await me(OWN);
+    expect(own.memberships.map((m) => m.productId)).toEqual([sellerId]);
+    expect(own.active?.productId).toBe(sellerId);
+    expect((await me('unknown.example')).memberships).toEqual([]);
+  });
+
+  it('shows the sign-in page its storefront, and nothing for other addresses', async () => {
+    const res = await app.request(`/branding/host/${OWN}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ productName: 'Seller shop', brand: null });
+    expect((await app.request('/branding/host/unknown.example')).status).toBe(404);
   });
 });
 

@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
+import { dashboardHostProduct } from './dashboarddomains.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { publicBase } from './oauth.ts';
@@ -223,9 +224,20 @@ export function brandingRoutes(deps: Deps) {
   return app;
 }
 
-/** GET /branding/:id/logo and /icon: the images, public, so the sign-in page can show them. */
-export function publicBrandingRoutes(deps: Pick<Deps, 'pool'>) {
+/**
+ * GET /branding/:id/logo and /icon: the images, public, so the sign-in page can show them. And
+ * GET /branding/host/:host: the look of the sign-in page on a seller's own dashboard address
+ * (src/dashboarddomains.ts), before anyone has signed in; 404 for any other address.
+ */
+export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
   const app = new Hono<AppEnv>();
+  app.get('/host/:host', async (c) => {
+    const productId = await dashboardHostProduct(deps.pool, c.req.param('host'));
+    if (!productId) return c.json({ statusCode: 404, message: 'This address is not a dashboard address' }, 404);
+    const { rows } = await deps.pool.query('SELECT name FROM products WHERE id = $1', [productId]);
+    const brand = await effectiveBrand(deps.pool, publicBase(c, deps.config.publicUrl), productId);
+    return c.json({ productName: rows[0]?.name ?? null, brand }, 200, { 'Cache-Control': 'public, max-age=60' });
+  });
   app.get('/:id/:kind{logo|icon}', async (c) => {
     const id = c.req.param('id');
     const kind = c.req.param('kind') as ImageKind;

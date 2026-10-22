@@ -6,6 +6,7 @@ import { withTransaction } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { effectiveBrand } from './branding.ts';
+import { dashboardHostProduct } from './dashboarddomains.ts';
 import { connectRoutes, publicBase } from './oauth.ts';
 import { adminRoutes } from './routes/admin.ts';
 
@@ -45,6 +46,11 @@ export interface SessionCaller {
 export const SESSION_HEADER = 'X-Session-Auth';
 /** The storefront the dashboard's switcher picked, among the session's memberships. */
 export const PRODUCT_HEADER = 'X-Product-Id';
+/**
+ * The address the dashboard was opened on. On a seller's own address (src/dashboarddomains.ts) only
+ * that storefront's team gets in, and only to that storefront.
+ */
+export const DASHBOARD_HOST_HEADER = 'X-Dashboard-Host';
 
 const ROLE_RANK: Record<OrgRole, number> = { member: 0, admin: 1, owner: 2 };
 
@@ -80,7 +86,12 @@ export async function sessionCaller(deps: Deps, headers: Headers): Promise<Sessi
     const seen = byProduct.get(m.productId);
     if (!seen || ROLE_RANK[topRole(m.role)] > ROLE_RANK[topRole(seen.role)]) byProduct.set(m.productId, m);
   }
-  const memberships = [...byProduct.values()];
+  let memberships = [...byProduct.values()];
+  const host = headers.get(DASHBOARD_HOST_HEADER)?.trim().toLowerCase();
+  if (host && deps.config.auth && host !== new URL(deps.config.auth.url).host) {
+    const only = await dashboardHostProduct(deps.pool, host);
+    memberships = memberships.filter((m) => m.productId === only);
+  }
   const picked = headers.get(PRODUCT_HEADER);
   const activeId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
   const inActive = memberships.filter((m) => m.organizationId === activeId);
