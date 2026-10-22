@@ -11,6 +11,8 @@ export interface AuthMail {
   /** Shown as the sender and in the subject. */
   brand: string;
   apiUrl?: string;
+  /** Set when `brand` is a seller's (src/branding.ts, brandedMail): the platform's name, for a small "Powered by" line. */
+  poweredBy?: string;
 }
 
 export async function sendSignInLink(mail: AuthMail, to: string, url: string, fetchFn: typeof fetch = fetch): Promise<void> {
@@ -35,14 +37,16 @@ export interface InvitationMail {
 /** An invitation to join a storefront's team. They sign in with this address, then accept. */
 export async function sendInvitation(mail: AuthMail, to: string, invite: InvitationMail, fetchFn: typeof fetch = fetch): Promise<void> {
   const who = invite.inviter ? `${invite.inviter} invited you` : "You've been invited";
-  const lead = `${who} to join ${invite.organization} on ${mail.brand}.`;
+  // A storefront's team invited in its own name (brandedMail) isn't told the name twice.
+  const where = invite.organization === mail.brand ? `the ${invite.organization} team` : `${invite.organization} on ${mail.brand}`;
+  const lead = `${who} to join ${where}.`;
   const how = `Open the link and sign in with this email address (${to}). The invitation lasts ${invite.days} days.`;
   const text = `${lead}\n\n${invite.url}\n\n${how} If you weren't expecting it, you can ignore this email.`;
   const html =
     `<p>${escape(lead)}</p>` +
     `<p><a href="${escape(invite.url)}">Join ${escape(invite.organization)}</a></p>` +
     `<p style="color:#666">${escape(how)} If you weren't expecting it, you can ignore this email.</p>`;
-  await send(mail, to, `Join ${invite.organization} on ${mail.brand}`, html, text, 'invitation email', fetchFn);
+  await send(mail, to, `Join ${where}`, html, text, 'invitation email', fetchFn);
 }
 
 /** What a seller application email needs to say. */
@@ -87,6 +91,10 @@ export async function sendApplicationDeclined(mail: AuthMail, to: string, app: A
 }
 
 async function send(mail: AuthMail, to: string, subject: string, html: string, text: string, what: string, fetchFn: typeof fetch) {
+  if (mail.poweredBy) {
+    html += `<p style="color:#999;font-size:12px">Powered by ${escape(mail.poweredBy)}</p>`;
+    text += `\n\nPowered by ${mail.poweredBy}`;
+  }
   const res = await fetchFn(`${(mail.apiUrl ?? 'https://api.tosend.com').replace(/\/$/, '')}/v2/emails`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${mail.key}`, 'Content-Type': 'application/json', Accept: 'application/json' },

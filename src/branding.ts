@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
-import { dashboardHostProduct } from './dashboarddomains.ts';
+import type { AuthMail } from './authmail.ts';
+import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { publicBase } from './oauth.ts';
@@ -103,6 +104,21 @@ export async function effectiveBrand(pool: Deps['pool'], base: string, productId
     iconUrl: a.iconUrl ?? b.iconUrl,
   };
   return Object.values(brand).some((v) => v !== null) ? brand : null;
+}
+
+/**
+ * Sign-in and invitation email for a storefront's team, in its look: sent in its brand's name (or,
+ * with its own dashboard address, its own name), with a small "Powered by" line. The platform's own
+ * email when it has neither.
+ */
+export async function brandedMail(pool: Deps['pool'], mail: AuthMail, productId: string): Promise<AuthMail> {
+  const [brand, address, product] = await Promise.all([
+    effectiveBrand(pool, '', productId),
+    activeDashboardDomain(pool, productId),
+    pool.query('SELECT name FROM products WHERE id = $1', [productId]),
+  ]);
+  const name = brand?.name ?? (address ? (product.rows[0]?.name as string | undefined) : undefined);
+  return name ? { ...mail, brand: name, poweredBy: mail.brand } : mail;
 }
 
 interface Fields {

@@ -391,6 +391,20 @@ describe('the Team page (/account, the team running itself)', () => {
     expect(rows[0].inviterId).toBe(owner.userId);
   });
 
+  it("sends invitations in the storefront's look, to accept on its own dashboard address", async () => {
+    await t.pool.query("INSERT INTO dashboard_domains (product_id, domain, status, records) VALUES ($1, 'team.agency.example', 'active', '[]')", [productId]);
+    try {
+      const res = await team(owner.cookie, 'POST', '/invitations', { email: 'branded@agency.example' });
+      const invitation = await res.json();
+      expect(invitation.acceptUrl).toBe(`https://team.agency.example/invite/${invitation.id}`);
+      expect(sent[0]).toMatchObject({ subject: 'Join the Team storefront team', text: expect.stringMatching(/Powered by AnyPress$/) });
+      const listed = (await (await team(owner.cookie, 'GET', '/organization')).json()).invitations.find((i: { id: string }) => i.id === invitation.id);
+      expect(listed.acceptUrl).toBe(invitation.acceptUrl);
+    } finally {
+      await t.pool.query('DELETE FROM dashboard_domains WHERE product_id = $1', [productId]);
+    }
+  });
+
   it("keeps the invitation when the email doesn't go, so its link can be sent by hand", async () => {
     const res = await team(owner.cookie, 'POST', '/invitations', { email: 'bounce@example.com' });
     expect(res.status).toBe(201);

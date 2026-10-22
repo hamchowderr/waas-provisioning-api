@@ -5,8 +5,8 @@ import { sendInvitation } from './authmail.ts';
 import { withTransaction } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
-import { effectiveBrand } from './branding.ts';
-import { dashboardHostProduct } from './dashboarddomains.ts';
+import { brandedMail, effectiveBrand } from './branding.ts';
+import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.ts';
 import { connectRoutes, publicBase } from './oauth.ts';
 import { adminRoutes } from './routes/admin.ts';
 
@@ -230,8 +230,9 @@ async function ensureOrganization(pool: Deps['pool'], owner: OrgOwner, name?: st
 }
 
 /** Where an invitation is accepted: the dashboard's /invite/<id>, or null when sign-in is off. */
-export const invitationUrl = (deps: Pick<Deps, 'config'>, invitationId: string) =>
-  deps.config.auth ? `${deps.config.auth.url}/invite/${invitationId}` : null;
+/** Where an invitation is accepted: on the storefront's own dashboard address when it has one live. */
+export const invitationUrl = (deps: Pick<Deps, 'config'>, invitationId: string, address?: string | null) =>
+  deps.config.auth ? `${address ? `${new URL(deps.config.auth.url).protocol}//${address}` : deps.config.auth.url}/invite/${invitationId}` : null;
 
 /**
  * Invites `email` to the product's organization (made if it has none) as `role`, replacing a pending
@@ -310,11 +311,14 @@ export function adminAccountRoutes(deps: Deps) {
     return { id: rows[0].id as string, userId: rows[0].user_id as string, role: rows[0].role as string, owners: rows[0].owners as number };
   }
 
-  const acceptUrl = (invitationId: string) => invitationUrl(deps, invitationId);
+  /** The storefront's own dashboard address, where its team signs in and accepts invitations. */
+  const addressOf = (owner: OrgOwner) => ('productId' in owner ? activeDashboardDomain(pool, owner.productId) : Promise.resolve(null));
 
   async function view(owner: OrgOwner) {
     const organization = await findOrganization(pool, owner);
     if (!organization) return { organization: null, members: [], invitations: [] };
+    const address = await addressOf(owner);
+    const acceptUrl = (invitationId: string) => invitationUrl(deps, invitationId, address);
     const [members, invitations] = await Promise.all([
       pool.query(
         `SELECT m.id, m.role, m."createdAt", u.id AS user_id, u.name, u.email FROM auth.member m JOIN auth."user" u ON u.id = m."userId"
@@ -375,10 +379,12 @@ export function adminAccountRoutes(deps: Deps) {
       const role = parseRole(body.role, rules.caller ? 'member' : 'owner');
       rules.mayGrant(role);
       const { organization, invitation } = await inviteTo(pool, owner, email, role, rules.caller?.user.id ?? null);
-      const url = acceptUrl(invitation.id)!;
+      const url = invitationUrl(deps, invitation.id, await addressOf(owner))!;
       // The invitation stands even if the email fails; the dashboard shows the link to send by hand.
       let emailed = false;
-      const mail = deps.config.auth?.mail;
+      const platformMail = deps.config.auth?.mail;
+      // A storefront's team gets it in the storefront's look (src/branding.ts).
+      const mail = platformMail && 'productId' in owner ? await brandedMail(pool, platformMail, owner.productId) : platformMail;
       if (mail) {
         const inviter = rules.caller ? rules.caller.user.name || rules.caller.user.email : null;
         try {

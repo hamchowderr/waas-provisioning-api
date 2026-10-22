@@ -92,6 +92,10 @@ describe("sign-in on a seller's own dashboard address", () => {
     const { res, link } = await signInOn(OWN, 'team@seller.example');
     expect(res.status).toBe(200);
     expect(link!.origin).toBe(`https://${OWN}`);
+    // In the seller's name, with a small line for the platform.
+    expect(sent[0]!.body.from).toEqual({ email: MAIL.from, name: 'Seller shop' });
+    expect(sent[0]!.body.subject).toBe('Your Seller shop sign-in link');
+    expect(sent[0]!.body.text).toMatch(/Powered by AnyPress$/);
     const verified = await app.request(link!.pathname + link!.search, { redirect: 'manual', headers: { 'X-Forwarded-Host': OWN } });
     expect(verified.status).toBe(302);
     expect(verified.headers.get('location')).toMatch(new RegExp(`^(https://${OWN.replaceAll('.', '\\.')})?/`));

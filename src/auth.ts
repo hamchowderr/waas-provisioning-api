@@ -2,6 +2,8 @@ import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
 import { magicLink, organization } from 'better-auth/plugins';
 import { sendSignInLink, type AuthMail } from './authmail.ts';
+import { brandedMail } from './branding.ts';
+import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
 
 /**
@@ -113,7 +115,13 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
               // Signing in by link proves the address, so it counts as verified (needed to accept invitations).
               expiresIn: 15 * 60,
               storeToken: 'hashed',
-              sendMagicLink: ({ email, url }) => sendSignInLink(config.mail!, email.toLowerCase(), url),
+              // On a seller's own dashboard address, the email comes in the seller's look (src/branding.ts).
+              sendMagicLink: async ({ email, url }) => {
+                const host = new URL(url).host;
+                const productId = host === new URL(config.url).host ? null : await dashboardHostProduct(pool, host);
+                const mail = productId ? await brandedMail(pool, config.mail!, productId) : config.mail!;
+                await sendSignInLink(mail, email.toLowerCase(), url);
+              },
             }),
           ]
         : []),

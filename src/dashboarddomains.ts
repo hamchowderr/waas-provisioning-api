@@ -62,6 +62,12 @@ export async function dashboardHostProduct(pool: Pool, host: string): Promise<st
   return productId;
 }
 
+/** The storefront's live (active) dashboard address, or null. */
+export async function activeDashboardDomain(pool: Pool, productId: string): Promise<string | null> {
+  const { rows } = await pool.query("SELECT domain FROM dashboard_domains WHERE product_id = $1 AND status = 'active'", [productId]);
+  return (rows[0]?.domain as string | undefined) ?? null;
+}
+
 async function current(pool: Pool, productId: string) {
   const { rows } = await pool.query<Row>("SELECT * FROM dashboard_domains WHERE product_id = $1 AND status <> 'removing'", [productId]);
   return rows[0];

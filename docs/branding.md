@@ -47,4 +47,6 @@ A signed-in seller's or reseller's owner or admin does the same under `/account/
 
 Once an address is `active`, people sign in there with emailed links (GitHub and Google buttons stay on the platform's address, where their callbacks are registered). Sign-in links and redirects use the address the person is on. Only that storefront's team gets in, and only to that storefront: the dashboard sends the address it was opened on as `X-Dashboard-Host`, and `GET /account` then lists just that storefront's membership (none for anyone else). Any other address the dashboard forwards is treated as the platform's own, so a made-up host never ends up in a sign-in link.
 
+Email to a storefront's team comes in its look too: sign-in links asked for on its own address, and invitations to its team, are sent in its brand's name (its own name when it has an address but no brand name), with a small "Powered by" line for the platform. Invitations are accepted on its own address once that is live. The sending address stays the platform's.
+
 `GET /branding/host/{host}` (public) gives the sign-in page on such an address its look before anyone signs in: `{"productName": "…", "brand": {…} | null}`, or 404 for an address that isn't a live dashboard address.
