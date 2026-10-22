@@ -17,8 +17,11 @@ import { versionService } from './versions.ts';
 
 /** Paths a partner key calls without a productId. */
 export const PARTNER_ONLY = /^\/v1\/(subscriptions|products)(\/|$)/;
-/** Template paths, where a partner key without a productId works on the reseller's shared templates. */
-export const SHARED_TEMPLATES = /^\/v1\/basesnapshots(\/|$)/;
+/**
+ * Template and plugin choice paths, where a partner key without a productId works on the reseller's shared
+ * templates and plugin choices.
+ */
+export const SHARED_TEMPLATES = /^\/v1\/(basesnapshots|plugin-choices)(\/|$)/;
 
 interface CreateProductParams {
   name: string;

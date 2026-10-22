@@ -1,5 +1,5 @@
 import type { Size } from '../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type StoreMailFrom } from './provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
@@ -19,7 +19,7 @@ interface FakeStore extends CreateStoreInput {
  * Failed status.
  */
 export class FakeProvisioner implements Provisioner {
-  readonly versions = new Map<string, { domain: string; wordPressVersion: string; phpVersion: string }>();
+  readonly versions = new Map<string, { domain: string; wordPressVersion: string; phpVersion: string; plugins?: VersionPlugin[] }>();
   readonly snapshots = new Map<string, { versionId: string; sourceSnapshotId?: string }>();
   readonly stores = new Map<string, FakeStore>();
   readonly backups = new Map<string, { storeId: string; sizeBytes: number }>();
@@ -57,6 +57,21 @@ export class FakeProvisioner implements Provisioner {
   async buildVersion(input: Parameters<Provisioner['buildVersion']>[0]) {
     this.check('buildVersion');
     this.versions.set(input.versionId, input);
+    const pluginFiles: Record<string, string> = {};
+    for (const p of input.plugins ?? []) {
+      if (p.action !== 'add') continue;
+      if (!this.pluginPackages.has(`${p.slug}@${p.version}`)) throw new Error(`FakeProvisioner: no package for ${p.slug} ${p.version}`);
+      pluginFiles[p.slug] = `${p.slug}/${p.slug}.php`;
+    }
+    return { pluginFiles };
+  }
+
+  /** Stored plugin zips, by "slug@version": their size. */
+  readonly pluginPackages = new Map<string, number>();
+
+  async storePluginPackage({ slug, version, body }: { slug: string; version: string; body: Uint8Array }) {
+    this.check('storePluginPackage');
+    this.pluginPackages.set(`${slug}@${version}`, body.length);
   }
 
   async deleteVersion({ versionId }: { versionId: string }) {

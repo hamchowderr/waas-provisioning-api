@@ -1,6 +1,6 @@
 import { maintainDashboardDomains } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
-import type { Brand, Provisioner } from './provisioner/provisioner.ts';
+import type { Brand, Provisioner, VersionPlugin } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import { purgeExpiredImports } from './imports.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
@@ -250,13 +250,20 @@ async function createVersion(pool: Pool, provisioner: Provisioner, data: Extract
   const version = rows[0];
   if (!version) return; // removed before the build ran
 
-  await provisioner.buildVersion({
+  // Plugin choices (docs/plugin-choices.md) as they were when the version was made; each added plugin's file is kept.
+  const plugins: (VersionPlugin & { name?: string; file?: string })[] = version.plugin_choices ?? [];
+  const { pluginFiles } = await provisioner.buildVersion({
     versionId: version.id,
     domain: version.domain,
     wordPressVersion: version.wordpress_version,
     phpVersion: version.php_version,
     source: data.source,
+    plugins: plugins.map(({ name: _name, file: _file, ...p }) => p),
   });
+  if (plugins.length) {
+    const withFiles = plugins.map((p) => (pluginFiles[p.slug] ? { ...p, file: pluginFiles[p.slug] } : p));
+    await pool.query('UPDATE versions SET plugin_choices = $2 WHERE id = $1', [version.id, JSON.stringify(withFiles)]);
+  }
 
   const snapshots = await pool.query('SELECT id, source_snapshot_id, source_base_snapshot_id FROM snapshots WHERE version_id = $1 AND status = $2', [
     version.id,

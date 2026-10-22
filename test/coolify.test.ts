@@ -54,8 +54,8 @@ class FakeCloud {
   fetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
+    if (url.origin === S3_ENDPOINT) return this.s3(method, url, init?.headers as Record<string, string>, init?.body);
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    if (url.origin === S3_ENDPOINT) return this.s3(method, url, init?.headers as Record<string, string>);
     const path = url.pathname.replace('/api/v1', '');
     this.calls.push(`${method} ${path}${url.search}`);
     const json = (status: number, data: unknown) => new Response(JSON.stringify(data), { status });
@@ -167,7 +167,7 @@ class FakeCloud {
     return json(404, { message: `No route ${method} ${path}` });
   };
 
-  private s3(method: string, url: URL, headers: Record<string, string>): Response {
+  private s3(method: string, url: URL, headers: Record<string, string>, body?: unknown): Response {
     const key = decodeURIComponent(url.pathname.replace(/^\/waas-stores\//, ''));
     if (!url.searchParams.has('X-Amz-Signature') && !headers?.authorization?.startsWith('AWS4-HMAC-SHA256 Credential=TESTKEY/')) return new Response('', { status: 403 });
     const object = this.objects.get(key);
@@ -182,6 +182,10 @@ class FakeCloud {
       if (!source) return new Response('', { status: 404 });
       this.objects.set(key, source);
       return new Response('<CopyObjectResult/>', { status: 200 });
+    }
+    if (method === 'PUT' && body instanceof Uint8Array) {
+      this.objects.set(key, new Uint8Array(body));
+      return new Response(null, { status: 200 });
     }
     return new Response('', { status: 405 });
   }
@@ -728,7 +732,36 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.calls).toContain(`POST /projects/${PROJECT}/environments`);
     const version = [...cloud.services.values()].find((s) => s.name === 'version-v2')!;
     expect(version.description).toBe('WaaS version, WordPress 6.8, PHP 8.2');
-    expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'code-export']);
+    // The plugins step runs with no choices too: it undoes any an earlier version applied to the archive.
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'plugins', 'code-export']);
+    expect(cloud.agentOps[2]!.args).toEqual({ plugins: [] });
+  });
+
+  it('applies plugin choices with signed links to the kept zips, and keeps each zip once', async () => {
+    await p.storePluginPackage({ slug: 'contact-form-7', version: '6.1.2', body: new Uint8Array([80, 75, 1]) });
+    expect(cloud.objects.get('plugins/wporg/contact-form-7/6.1.2.zip')).toEqual(new Uint8Array([80, 75, 1]));
+    await p.storePluginPackage({ slug: 'contact-form-7', version: '6.1.2', body: new Uint8Array([80, 75, 2]) });
+    expect(cloud.objects.get('plugins/wporg/contact-form-7/6.1.2.zip')).toEqual(new Uint8Array([80, 75, 1]));
+
+    cloud.objects.set('base/base-1.zip', new Uint8Array([80, 75]));
+    await p.buildVersion({
+      versionId: 'v3',
+      domain: 'v3.versions.example.com',
+      wordPressVersion: '6.8',
+      phpVersion: '8.2',
+      source: { baseSnapshotId: 'base-1' },
+      plugins: [
+        { slug: 'contact-form-7', action: 'add', version: '6.1.2', sha256: 'abc', siteTypes: ['website'] },
+        { slug: 'wp-fusion-lite', action: 'off', siteTypes: [] },
+      ],
+    });
+    const op = cloud.agentOps.find((o) => o.op === 'plugins')!;
+    expect(String(op.args.manifest)).toMatch(/^https:\/\/s3\.test\/waas-stores\/versions\/v3\/plugin-choices\.json\?.*X-Amz-Signature=/);
+    const manifest = JSON.parse(Buffer.from(cloud.objects.get('versions/v3/plugin-choices.json')!).toString());
+    const [added, off] = manifest.plugins as Record<string, unknown>[];
+    expect(added).toMatchObject({ slug: 'contact-form-7', action: 'add', sha256: 'abc', siteTypes: ['website'] });
+    expect(String(added!.url)).toMatch(/^https:\/\/s3\.test\/waas-stores\/plugins\/wporg\/contact-form-7\/6\.1\.2\.zip\?.*X-Amz-Signature=/);
+    expect(off).toEqual({ slug: 'wp-fusion-lite', action: 'off', siteTypes: [] });
   });
 
   it('fails a create when the snapshot archive is missing, before creating anything', async () => {

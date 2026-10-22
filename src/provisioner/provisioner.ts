@@ -15,20 +15,41 @@ export interface Brand {
   url?: string;
 }
 
+/**
+ * A plugin choice applied while a version builds (docs/plugin-choices.md): a wordpress.org plugin added
+ * (its zip as stored with storePluginPackage) or one switched off, for some or all of the site types in
+ * the version's roles.json.
+ */
+export interface VersionPlugin {
+  slug: string;
+  action: 'add' | 'off';
+  version?: string;
+  sha256?: string;
+  /** roles.json keys; empty: all. */
+  siteTypes: string[];
+}
+
 export interface Provisioner {
   // Versions: the shared WordPress code a set of stores runs on.
 
   /** An URL the caller PUTs a gzipped tar (or zip) to before the version is built. */
   createUploadUrl(input: { versionId: string; asZip: boolean }): Promise<string>;
 
-  /** Builds a version and serves it on its domain, from a snapshot or from the uploaded archive. */
+  /**
+   * Builds a version and serves it on its domain, from a snapshot or from the uploaded archive, with its
+   * plugin choices applied to its code. Returns the plugin file (as in active_plugins) of each added plugin.
+   */
   buildVersion(input: {
     versionId: string;
     domain: string;
     wordPressVersion: string;
     phpVersion: string;
     source: { snapshotId: string } | { baseSnapshotId: string } | { upload: true };
-  }): Promise<void>;
+    plugins?: VersionPlugin[];
+  }): Promise<{ pluginFiles: Record<string, string> }>;
+
+  /** Keeps a wordpress.org plugin's zip for versions to install; the same slug and version is the same zip. */
+  storePluginPackage(input: { slug: string; version: string; body: Uint8Array }): Promise<void>;
 
   deleteVersion(input: { versionId: string }): Promise<void>;
 
