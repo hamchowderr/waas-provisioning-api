@@ -1268,6 +1268,20 @@ switch ($op) {
         wp('core', 'update-db');
         done();
 
+    case 'verify': {
+        // After a restore test (Provisioner.testRestore): WordPress opens the restored database, and what it holds.
+        wpMayFail('core', 'is-installed') !== null || fail('WordPress is not installed after the restore');
+        $tables = wpMayFail('db', 'query', 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()', '--skip-column-names');
+        $posts = wpMayFail('post', 'list', '--post_type=any', '--post_status=any', '--format=count');
+        $posts !== null || fail('WordPress cannot read the restored posts');
+        done([
+            'name' => wpMayFail('option', 'get', 'blogname'),
+            'home' => wpMayFail('option', 'get', 'home'),
+            'tables' => (int) $tables,
+            'posts' => (int) $posts,
+        ]);
+    }
+
     case 'suspend':
         install_guard(is_array($args['brand'] ?? null) ? $args['brand'] : DEFAULT_BRAND);
         touch(FLAG) || fail('cannot write the suspension flag');

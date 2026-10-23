@@ -6,6 +6,7 @@ import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/
 import type { S3Config } from './provisioner/s3.ts';
 import { ToSendAdmin, type MailCounter, type SendingDomains, type StoreMailKeys } from './tosend.ts';
 import { loadResellerInvoiceConfig, type ResellerInvoiceConfig } from './resellerinvoices.ts';
+import { loadRestoreTestConfig, type RestoreTestConfig } from './restoretests.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 import { loadDashboardHost, type DashboardHost } from './vercel.ts';
 import { loadWebhookConfig, type WebhookConfig } from './webhooks.ts';
@@ -50,6 +51,8 @@ export interface Config {
   dbBackup?: DbBackupConfig;
   /** Nightly backups of every live store (src/storebackups.ts); on unless STORE_BACKUP=off. */
   storeBackup?: StoreBackupConfig;
+  /** The nightly restore test of one store's backup (src/restoretests.ts); on unless RESTORE_TEST=off. */
+  restoreTest?: RestoreTestConfig;
   /**
    * The API's public URL (PUBLIC_URL, e.g. https://api.anypress.io): the OAuth issuer and the MCP
    * server's resource id. Unset: taken from each request's Host and X-Forwarded-Proto.
@@ -205,6 +208,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     releases: loadReleases(env),
     dbBackup: loadDbBackupConfig(env),
     storeBackup: loadStoreBackupConfig(env),
+    restoreTest: loadRestoreTestConfig(env),
     requestLogDays: requestLogDays(env.REQUEST_LOG_DAYS),
     publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
     webhooks: loadWebhookConfig(env),

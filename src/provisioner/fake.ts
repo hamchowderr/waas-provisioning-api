@@ -1,5 +1,5 @@
 import type { Size } from '../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type RestoreTestResult, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
@@ -27,6 +27,8 @@ export class FakeProvisioner implements Provisioner {
   readonly imports = new Map<string, number>();
   /** Every store whose plugins and themes were replaced with its version's code, in order. */
   readonly codeReplaced: string[] = [];
+  /** Every restore test run (testRestore), in order. */
+  readonly restoreTests: { testId: string; backupId: string }[] = [];
   /** The platform's STORE_MAIL_FROM, as if stores sent email. Unset: they send none, as without a relay. */
   platformMailFrom?: string;
   private failures = new Map<keyof Provisioner, number>();
@@ -252,6 +254,19 @@ export class FakeProvisioner implements Provisioner {
   async deleteStore({ storeId }: { storeId: string }) {
     this.check('deleteStore');
     this.stores.delete(storeId);
+  }
+
+  async testRestore({ testId, backupId }: Parameters<Provisioner['testRestore']>[0]): Promise<RestoreTestResult> {
+    this.check('testRestore');
+    this.restoreTests.push({ testId, backupId });
+    const backup = this.backups.get(backupId);
+    if (!backup) throw new Error(`FakeProvisioner: no backup ${backupId}`);
+    const store = this.stores.get(backup.storeId);
+    return { name: store?.wpOptions.blogname ?? null, home: `https://restore-test-${testId}.invalid`, tables: 12, posts: 3 };
+  }
+
+  async deleteRestoreTest(_input: { testId: string }) {
+    this.check('deleteRestoreTest');
   }
 
   async ensureStoreSetup({ storeId, size }: { storeId: string; size: Size }): Promise<'updated' | 'unchanged'> {

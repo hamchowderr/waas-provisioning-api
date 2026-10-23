@@ -105,6 +105,15 @@ export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobF
   await send(mail, to, `Failed: ${job.what}`, html, text, 'job failure notice', fetchFn);
 }
 
+/** To the platform admins: the nightly restore test (src/restoretests.ts) could not restore a store's backup. */
+export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { store: string; backupAt: Date; error: string }, fetchFn: typeof fetch = fetch): Promise<void> {
+  const lead = `Last night's restore test failed: the backup of ${test.store} from ${test.backupAt.toISOString().slice(0, 16).replace('T', ' ')} UTC could not be restored into a test copy.`;
+  const next = 'The store itself is untouched and the test copy was deleted. The test runs again tomorrow night, on the store tested longest ago.';
+  const html = `<p>${escape(lead)}</p><p style="font-family:monospace;white-space:pre-wrap">${escape(test.error)}</p><p style="color:#666">${escape(next)}</p>`;
+  const text = `${lead}\n\n${test.error}\n\n${next}`;
+  await send(mail, to, `Failed: restore test of ${test.store}`, html, text, 'restore test notice', fetchFn);
+}
+
 /** To the applicant: not approved. */
 export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
