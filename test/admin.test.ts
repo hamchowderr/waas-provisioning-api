@@ -306,6 +306,29 @@ describe('job failures and retry', () => {
     const res = await admin('POST', `/admin/jobs/failures/${failure.id}/retry`, 400);
     expect(res.message).toMatch(/no longer Failed/);
   }, 60000);
+
+  it('dismisses a failure without running it', async () => {
+    const tenant = await newTenant({ name: 'Let It Go' });
+    t.provisioner.failNext('updateStore', 10);
+    await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body: { wpOptions: { a: 'b' } } });
+    await waitFor(async () => (await tenantStatus(tenant.externalId)) === Status.Failed, 30000);
+    t.provisioner.failNext('updateStore', 0);
+    const before = await admin('GET', '/admin/jobs?state=failed');
+    const failure = before.items.find((f: any) => f.tenantId === tenant.id);
+
+    const dismissed = await admin('POST', `/admin/jobs/failures/${failure.id}/dismiss`);
+    expect(dismissed).toMatchObject({ id: failure.id, status: 'dismissed', dismissedAt: expect.any(String), retryJobId: null });
+    const after = await admin('GET', '/admin/jobs?state=failed');
+    expect(after.items.some((f: any) => f.id === failure.id)).toBe(false);
+    expect(after.counts.failed).toBe(before.counts.failed - 1);
+    // Nothing ran: the store stays Failed.
+    expect(await tenantStatus(tenant.externalId)).toBe(Status.Failed);
+
+    // Idempotent, and a dismissed failure can't be retried.
+    expect(await admin('POST', `/admin/jobs/failures/${failure.id}/dismiss`)).toEqual(dismissed);
+    await admin('POST', `/admin/jobs/failures/${failure.id}/retry`, 400);
+    await admin('POST', `/admin/jobs/failures/${crypto.randomUUID()}/dismiss`, 404);
+  }, 60000);
 });
 
 describe('admin versions and templates (any product)', () => {

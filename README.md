@@ -218,6 +218,7 @@ The first key comes from `npm run create-key` or from the dashboard. After that,
 | `GET`, `POST /admin/products/{productId}/versions`; `DELETE …/versions/{id}`; `PUT …/versions/{id}/production` | A product's versions. Same requests, rules and answers as the `/v1/versions` calls |
 | `GET`, `POST`, `DELETE /admin/products/{productId}/basesnapshots` | A product's templates. Same as `/v1/basesnapshots`; `DELETE` takes `?id=` |
 | `POST /admin/jobs/failures/{id}/retry` | Queues a failed job again and puts its record back to Pending (Removing for a delete). Only while the record is still Failed. Safe to repeat |
+| `POST /admin/jobs/failures/{id}/dismiss` | Takes a failure off the failed list without running anything, for one whose store or version is gone or that later runs made good. Safe to repeat |
 
 A job that fails its last retry is recorded in `job_failures` (type, store or version, error, attempts) before the worker completes it. Job data is never returned, because it can hold encrypted secrets.
 
