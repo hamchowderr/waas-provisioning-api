@@ -23,7 +23,9 @@ Everything is on the admin API (`Authorization: Bearer <ADMIN_TOKEN>`). Signed-i
 | `maxProducts` | Storefronts it may have. `null`: no limit |
 | `maxTenants` | Stores across all its storefronts. At the limit, creating or restoring a store answers 400, as a storefront's own `maxTenants` does. Both limits apply |
 | `wholesalePercent` | The discount off list price on its bill, 0 to 100 (default 40) |
-| `billingEmail` | Where its bill goes |
+| `billingEmail` | Where its bill goes. Its Stripe customer is made from this on its first invoice |
+| `stripeCustomerId` | Its Stripe customer (`cus_…`), to bill one that already exists. `null` until the first invoice makes one |
+| `autoInvoice` | Send its bill as a Stripe invoice on the 1st (default `true`). `false` leaves it to be billed by hand |
 | `brandName`, `brandUrl` | Its own name, and an http(s) link on it, for the "website unavailable" page its stores show while suspended, in place of the platform's (`STORE_BRAND_NAME`). `null` uses the platform's again. A store already suspended keeps the page it got; the next suspension uses the new brand |
 | `listPriceCents` | `{"small": 1200, "medium": 2400, "large": 4800}`: the monthly list price of one store of each size, in US cents, before the discount. Send only the sizes to change. The default is the Website plan's price |
 
@@ -161,4 +163,20 @@ The record is the `tenant_periods` table, one row for each stretch a store was l
 
 Each store is charged its size's monthly list price less the wholesale discount, for the share of the month it was live: a store live all month pays the whole monthly price, one live 10 days of a 30-day month a third. There is one line per storefront and size, with its store-days, the store-months they make, the price after the discount and the amount, then the total. Amounts are US cents, rounded per line. A month not yet over is answered with `complete: false`, so it can be watched as it grows.
 
-The bill is worked out from the usage record each time it is asked for; nothing is stored. For now it is sent by hand to the reseller's `billingEmail`.
+The bill is worked out from the usage record each time it is asked for; nothing is stored.
+
+## Automatic invoices
+
+With `STRIPE_SECRET_KEY` set, the API sends each bill as a Stripe invoice. At 07:00 UTC on the 1st (`RESELLER_INVOICE_SCHEDULE` to change), every reseller with `autoInvoice` on gets last month's bill, one invoice line per bill line ("Acme shop: 2 Small stores (60 store-days) at $7.20 a month"):
+
+- The first time, a Stripe customer is made from its `billingEmail` and name, and kept as `stripeCustomerId`. To bill a customer that already exists, set `stripeCustomerId` first. A reseller with neither fails with an error saying so.
+- When the customer has a card on file (a default payment method), Stripe charges it. Otherwise Stripe emails the invoice to pay online within `RESELLER_INVOICE_DAYS_DUE` days (default 14). Stripe's own settings decide its emails, receipts and retries.
+- A month with nothing to charge is recorded as `nothing_due` and sends nothing.
+- Each reseller and month is sent once (the `reseller_invoices` table). Asking again answers the invoice already sent. A failed send is recorded with its error and can be tried again; a draft a stopped try left on Stripe is deleted first, and Stripe idempotency keys stop any part being made twice.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /admin/resellers/{id}/invoices` | Its invoices, newest month first, with status (`open`, `paid`, `failed`, …), Stripe's invoice page and any error. Open ones are checked with Stripe first, so paid ones show as paid. `enabled: false` while invoicing is off |
+| `POST /admin/resellers/{id}/invoices` | Sends a month now (`{"month": "2026-09"}`, default last month), or tries a failed one again. The month must be over. 503 while invoicing is off |
+
+The key needs write access to customers, invoices and invoice items; a restricted key (`rk_…`) with just those works. `RESELLER_INVOICE=off` turns invoicing off while keeping the key. Without a key, bills are only shown, and sent by hand.

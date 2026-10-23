@@ -1,11 +1,12 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
-import { withTransaction, type Client } from './db.ts';
+import { withTransaction, type Client, type Pool } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from './keys.ts';
 import { SIZES, type Size } from './plans.ts';
 import { enqueue } from './queue.ts';
+import { invoiceReseller, lastMonth, listResellerInvoices, refreshResellerInvoices } from './resellerinvoices.ts';
 
 /**
  * Reseller accounts (docs/resellers.md): a partner that sells stores from one or more storefronts
@@ -28,6 +29,8 @@ interface Settings {
   priceSmall?: number;
   priceMedium?: number;
   priceLarge?: number;
+  stripeCustomerId?: string | null;
+  autoInvoice?: boolean;
 }
 
 /** listPriceCents in requests and answers, and its columns. */
@@ -76,6 +79,16 @@ function parseSettings(body: unknown, creating: boolean): Settings {
     else if (typeof url === 'string' && url.length <= 500 && /^https?:\/\/[^\s]+$/.test(url)) out.brandUrl = url;
     else throw badRequest('brandUrl must be an http or https link, or null');
   }
+  if (b.stripeCustomerId !== undefined) {
+    const id = typeof b.stripeCustomerId === 'string' ? b.stripeCustomerId.trim() : b.stripeCustomerId;
+    if (id === null || id === '') out.stripeCustomerId = null;
+    else if (typeof id === 'string' && /^cus_[A-Za-z0-9]{1,250}$/.test(id)) out.stripeCustomerId = id;
+    else throw badRequest('stripeCustomerId must be a Stripe customer id (cus_…), or null');
+  }
+  if (b.autoInvoice !== undefined) {
+    if (typeof b.autoInvoice !== 'boolean') throw badRequest('autoInvoice must be true or false');
+    out.autoInvoice = b.autoInvoice;
+  }
   if (b.listPriceCents !== undefined) {
     const prices = b.listPriceCents as Record<string, unknown> | null;
     if (!prices || typeof prices !== 'object' || Array.isArray(prices) || Object.keys(prices).some((k) => !Object.hasOwn(PRICE_KEYS, k))) {
@@ -104,6 +117,8 @@ const COLUMNS = {
   priceSmall: 'price_small_cents',
   priceMedium: 'price_medium_cents',
   priceLarge: 'price_large_cents',
+  stripeCustomerId: 'stripe_customer_id',
+  autoInvoice: 'auto_invoice',
 } as const;
 
 /** A calendar month (UTC) from ?month=YYYY-MM; the default is last month, the one a bill is sent for. */
@@ -132,41 +147,144 @@ function dateQuery(c: Context, name: string, fallback: Date): Date {
 const days = (seconds: number) => Math.round((seconds / 86400) * 100) / 100;
 const emptySizes = () => Object.fromEntries(Object.keys(SIZES).map((s) => [s, 0])) as Record<Size, number>;
 
+
+export interface Reseller {
+  id: string;
+  name: string;
+  maxProducts: number | null;
+  maxTenants: number | null;
+  wholesalePercent: number;
+  billingEmail: string | null;
+  brandName: string | null;
+  brandUrl: string | null;
+  listPriceCents: Record<Size, number>;
+  stripeCustomerId: string | null;
+  autoInvoice: boolean;
+  products: { id: string; name: string; tenantCount: number }[];
+  tenantCount: number;
+  liveTenantCount: number;
+  dateCreated: string;
+}
+
+export interface ResellerBillLine {
+  productId: string;
+  name: string | null;
+  size: Size;
+  storeDays: number;
+  stores: number;
+  listPriceCents: number;
+  wholesalePriceCents: number;
+  amountCents: number;
+}
+
+export interface ResellerBill {
+  resellerId: string;
+  resellerName: string;
+  billingEmail: string | null;
+  month: string;
+  from: string;
+  to: string;
+  complete: boolean;
+  currency: 'usd';
+  wholesalePercent: number;
+  lines: ResellerBillLine[];
+  totalCents: number;
+}
+
+/** Resellers with their storefronts and store counts: all of them, or the one with `id`. */
+export async function loadResellers(pool: Pool, id: string | null): Promise<Reseller[]> {
+  const { rows } = await pool.query(
+    `SELECT r.*,
+       COALESCE((SELECT json_agg(json_build_object('id', p.id, 'name', p.name,
+                   'tenantCount', (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id)) ORDER BY p.name, p.id)
+                   FROM products p WHERE p.reseller_id = r.id), '[]') AS products,
+       (SELECT count(*)::int FROM tenants t JOIN products p ON p.id = t.product_id WHERE p.reseller_id = r.id) AS tenant_count,
+       (SELECT count(*)::int FROM tenant_periods tp WHERE tp.reseller_id = r.id AND tp.ended_at IS NULL) AS live_tenant_count
+     FROM resellers r WHERE ($1::uuid IS NULL OR r.id = $1) ORDER BY r.name, r.id`,
+    [id],
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    maxProducts: r.max_products as number | null,
+    maxTenants: r.max_tenants as number | null,
+    wholesalePercent: r.wholesale_percent as number,
+    billingEmail: (r.billing_email as string | null) ?? null,
+    brandName: (r.brand_name as string | null) ?? null,
+    brandUrl: (r.brand_url as string | null) ?? null,
+    listPriceCents: { small: r.price_small_cents as number, medium: r.price_medium_cents as number, large: r.price_large_cents as number } as Record<Size, number>,
+    stripeCustomerId: (r.stripe_customer_id as string | null) ?? null,
+    autoInvoice: r.auto_invoice as boolean,
+    products: r.products as { id: string; name: string; tenantCount: number }[],
+    tenantCount: r.tenant_count as number,
+    liveTenantCount: r.live_tenant_count as number,
+    dateCreated: (r.created_at as Date).toISOString(),
+  }));
+}
+
+/** Seconds each storefront's stores were live, by size, between `from` and `to`. */
+async function liveSeconds(pool: Pool, resellerId: string, from: Date, to: Date) {
+  const { rows } = await pool.query<{ product_id: string; name: string | null; size: Size; seconds: number }>(
+    `SELECT tp.product_id, p.name, tp.size,
+       sum(extract(epoch FROM least(coalesce(tp.ended_at, now()), $3) - greatest(tp.started_at, $2)))::float AS seconds
+     FROM tenant_periods tp LEFT JOIN products p ON p.id = tp.product_id
+     WHERE tp.reseller_id = $1 AND tp.started_at < $3 AND coalesce(tp.ended_at, now()) > $2
+     GROUP BY tp.product_id, p.name, tp.size
+     ORDER BY p.name, tp.product_id, array_position(ARRAY['small', 'medium', 'large'], tp.size)`,
+    [resellerId, from, to],
+  );
+  return rows.filter((r) => r.seconds > 0);
+}
+
+
+/**
+ * A reseller's wholesale bill for [from, to): each store is charged its size's monthly list price less
+ * the wholesale discount, for the share of the month it was live. Amounts are US cents, rounded per line.
+ */
+export async function resellerBill(pool: Pool, reseller: Reseller, month: string, from: Date, to: Date, now = new Date()): Promise<ResellerBill> {
+  const monthSeconds = (to.getTime() - from.getTime()) / 1000;
+  const lines = (await liveSeconds(pool, reseller.id, from, to)).map((r) => {
+    const listPriceCents = reseller.listPriceCents[r.size];
+    const wholesalePriceCents = Math.round((listPriceCents * (100 - reseller.wholesalePercent)) / 100);
+    return {
+      productId: r.product_id,
+      name: r.name,
+      size: r.size,
+      storeDays: days(r.seconds),
+      stores: Math.round((r.seconds / monthSeconds) * 100) / 100,
+      listPriceCents,
+      wholesalePriceCents,
+      amountCents: Math.round((r.seconds / monthSeconds) * wholesalePriceCents),
+    };
+  });
+  return {
+    resellerId: reseller.id,
+    resellerName: reseller.name,
+    billingEmail: reseller.billingEmail,
+    month,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    complete: to <= now,
+    currency: 'usd',
+    wholesalePercent: reseller.wholesalePercent,
+    lines,
+    totalCents: lines.reduce((sum, line) => sum + line.amountCents, 0),
+  };
+}
+
+/** A calendar month (UTC) from YYYY-MM: its first instant and the next month's. */
+export function monthRange(month: string): { from: Date; to: Date } {
+  const [year, m] = month.split('-').map(Number) as [number, number];
+  return { from: new Date(Date.UTC(year, m - 1, 1)), to: new Date(Date.UTC(year, m, 1)) };
+}
+
 export function adminResellerRoutes(deps: Deps) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
 
-  async function resellers(id: string | null) {
-    const { rows } = await pool.query(
-      `SELECT r.*,
-         COALESCE((SELECT json_agg(json_build_object('id', p.id, 'name', p.name,
-                     'tenantCount', (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id)) ORDER BY p.name, p.id)
-                     FROM products p WHERE p.reseller_id = r.id), '[]') AS products,
-         (SELECT count(*)::int FROM tenants t JOIN products p ON p.id = t.product_id WHERE p.reseller_id = r.id) AS tenant_count,
-         (SELECT count(*)::int FROM tenant_periods tp WHERE tp.reseller_id = r.id AND tp.ended_at IS NULL) AS live_tenant_count
-       FROM resellers r WHERE ($1::uuid IS NULL OR r.id = $1) ORDER BY r.name, r.id`,
-      [id],
-    );
-    return rows.map((r) => ({
-      id: r.id as string,
-      name: r.name as string,
-      maxProducts: r.max_products as number | null,
-      maxTenants: r.max_tenants as number | null,
-      wholesalePercent: r.wholesale_percent as number,
-      billingEmail: (r.billing_email as string | null) ?? null,
-      brandName: (r.brand_name as string | null) ?? null,
-      brandUrl: (r.brand_url as string | null) ?? null,
-      listPriceCents: { small: r.price_small_cents as number, medium: r.price_medium_cents as number, large: r.price_large_cents as number } as Record<Size, number>,
-      products: r.products as { id: string; name: string; tenantCount: number }[],
-      tenantCount: r.tenant_count as number,
-      liveTenantCount: r.live_tenant_count as number,
-      dateCreated: (r.created_at as Date).toISOString(),
-    }));
-  }
-
   async function find(c: Context) {
     const id = c.req.param('id')!;
-    const found = isUuid(id) ? (await resellers(id))[0] : undefined;
+    const found = isUuid(id) ? (await loadResellers(pool, id))[0] : undefined;
     if (!found) throw notFound(`Reseller ${id} not found`);
     return found;
   }
@@ -189,21 +307,7 @@ export function adminResellerRoutes(deps: Deps) {
     await client.query('UPDATE products SET reseller_id = $2 WHERE id = $1', [productId, resellerId]);
   }
 
-  /** Seconds each storefront's stores were live, by size, between `from` and `to`. */
-  async function liveSeconds(resellerId: string, from: Date, to: Date) {
-    const { rows } = await pool.query<{ product_id: string; name: string | null; size: Size; seconds: number }>(
-      `SELECT tp.product_id, p.name, tp.size,
-         sum(extract(epoch FROM least(coalesce(tp.ended_at, now()), $3) - greatest(tp.started_at, $2)))::float AS seconds
-       FROM tenant_periods tp LEFT JOIN products p ON p.id = tp.product_id
-       WHERE tp.reseller_id = $1 AND tp.started_at < $3 AND coalesce(tp.ended_at, now()) > $2
-       GROUP BY tp.product_id, p.name, tp.size
-       ORDER BY p.name, tp.product_id, array_position(ARRAY['small', 'medium', 'large'], tp.size)`,
-      [resellerId, from, to],
-    );
-    return rows.filter((r) => r.seconds > 0);
-  }
-
-  app.get('/', async (c) => c.json(await resellers(null)));
+  app.get('/', async (c) => c.json(await loadResellers(pool, null)));
 
   // A new reseller; `productIds` moves storefronts into it at once ("Make reseller" on a storefront).
   app.post('/', async (c) => {
@@ -222,7 +326,7 @@ export function adminResellerRoutes(deps: Deps) {
       for (const productId of productIds as string[]) await addProduct(client, rows[0]!.id, productId);
       return rows[0]!.id;
     });
-    return c.json((await resellers(id))[0], 201);
+    return c.json((await loadResellers(pool, id))[0], 201);
   });
 
   app.get('/:id', async (c) => c.json(await find(c)));
@@ -238,7 +342,7 @@ export function adminResellerRoutes(deps: Deps) {
         ...keys.map((k) => settings[k]),
       ]);
     }
-    return c.json((await resellers(id))[0]);
+    return c.json((await loadResellers(pool, id))[0]);
   });
 
   // Only an empty reseller can be deleted, so a mistake can't touch storefronts. Usage stays.
@@ -257,7 +361,7 @@ export function adminResellerRoutes(deps: Deps) {
   app.put('/:id/products/:productId', async (c) => {
     const { id } = await find(c);
     await withTransaction(pool, (client) => addProduct(client, id, c.req.param('productId')!));
-    return c.json((await resellers(id))[0]);
+    return c.json((await loadResellers(pool, id))[0]);
   });
 
   // The storefront goes back to being its own; its stores stop counting for the reseller from now.
@@ -266,7 +370,7 @@ export function adminResellerRoutes(deps: Deps) {
     const productId = c.req.param('productId')!;
     const moved = isUuid(productId) && (await pool.query('UPDATE products SET reseller_id = NULL WHERE id = $1 AND reseller_id = $2', [productId, id])).rowCount;
     if (!moved) throw notFound(`Product ${productId} is not one of this reseller's storefronts`);
-    return c.json((await resellers(id))[0]);
+    return c.json((await loadResellers(pool, id))[0]);
   });
 
   // Partner keys: the reseller's own API keys, which work on all its storefronts (each /v1 call names
@@ -296,7 +400,7 @@ export function adminResellerRoutes(deps: Deps) {
     const from = dateQuery(c, 'from', monthStart(now));
     const to = dateQuery(c, 'to', monthStart(now, 1));
     if (to <= from) throw badRequest('to must be after from');
-    const rows = await liveSeconds(reseller.id, from, to);
+    const rows = await liveSeconds(pool, reseller.id, from, to);
     const totalSeconds = emptySizes();
     const products = new Map<string, { productId: string; name: string | null; storeDays: Record<Size, number> }>();
     for (const r of rows) {
@@ -324,34 +428,28 @@ export function adminResellerRoutes(deps: Deps) {
     const now = new Date();
     const { month, from, to } = monthQuery(c, now);
     if (from > now) throw badRequest('That month has not started yet');
-    const monthSeconds = (to.getTime() - from.getTime()) / 1000;
-    const lines = (await liveSeconds(reseller.id, from, to)).map((r) => {
-      const listPriceCents = reseller.listPriceCents[r.size];
-      const wholesalePriceCents = Math.round((listPriceCents * (100 - reseller.wholesalePercent)) / 100);
-      return {
-        productId: r.product_id,
-        name: r.name,
-        size: r.size,
-        storeDays: days(r.seconds),
-        stores: Math.round((r.seconds / monthSeconds) * 100) / 100,
-        listPriceCents,
-        wholesalePriceCents,
-        amountCents: Math.round((r.seconds / monthSeconds) * wholesalePriceCents),
-      };
-    });
-    return c.json({
-      resellerId: reseller.id,
-      resellerName: reseller.name,
-      billingEmail: reseller.billingEmail,
-      month,
-      from: from.toISOString(),
-      to: to.toISOString(),
-      complete: to <= now,
-      currency: 'usd',
-      wholesalePercent: reseller.wholesalePercent,
-      lines,
-      totalCents: lines.reduce((sum, line) => sum + line.amountCents, 0),
-    });
+    return c.json(await resellerBill(pool, reseller, month, from, to, now));
+  });
+
+  // The Stripe invoices sent for its bills (src/resellerinvoices.ts), newest month first. Open ones are
+  // checked with Stripe first, so a paid invoice shows as paid.
+  app.get('/:id/invoices', async (c) => {
+    const reseller = await find(c);
+    const invoicing = deps.config.resellerInvoices;
+    if (invoicing) await refreshResellerInvoices(pool, invoicing.stripe, reseller.id);
+    return c.json({ enabled: Boolean(invoicing), invoices: await listResellerInvoices(pool, reseller.id) });
+  });
+
+  // Sends a month's invoice now (default last month), or tries a failed one again. A month already
+  // sent is answered as it is, never sent twice. 503 while invoicing is off.
+  app.post('/:id/invoices', async (c) => {
+    const reseller = await find(c);
+    const invoicing = deps.config.resellerInvoices;
+    if (!invoicing) throw new HttpError(503, 'Automatic invoices are off: STRIPE_SECRET_KEY is not set');
+    const body = (await readJson(c)) as { month?: unknown } | null;
+    const month = body?.month ?? lastMonth();
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw badRequest('month must be YYYY-MM');
+    return c.json(await invoiceReseller(pool, invoicing, reseller, month));
   });
 
   return app;
