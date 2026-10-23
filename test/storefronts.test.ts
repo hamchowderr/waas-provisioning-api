@@ -54,7 +54,7 @@ describe('ready-made storefronts', () => {
 
     const store = t.provisioner.stores.get(storefront.id)!;
     expect(store.user).toMatchObject({ email: 'owner@agency.example', role: 'administrator' });
-    expect(store.wpOptions).toEqual({ blogname: 'Example Agency', admin_email: 'owner@agency.example', wpcs_host_settings_root_domain: 'waas.example' });
+    expect(store.wpOptions).toEqual({ blogname: 'Example Agency', admin_email: 'owner@agency.example', waas_root_domain: 'waas.example', wpcs_host_settings_root_domain: 'waas.example' });
     const constants = store.phpConstants;
     expect(constants.WAAS_API_BASE_URL).toEqual({ value: 'http://localhost', isPrivate: false });
     expect(constants.WAAS_API_KEY!.isPrivate).toBe(true);

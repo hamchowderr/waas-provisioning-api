@@ -73,7 +73,8 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         blogname: name,
         admin_email: email,
         // Its customers' websites are named <name>.<platform domain>, like the platform's own.
-        ...(config.platformDomain ? { wpcs_host_settings_root_domain: config.platformDomain } : {}),
+        // waas_root_domain for WaaS Host 2.3.0 and later; the old name for storefront templates with an older one.
+        ...(config.platformDomain ? { waas_root_domain: config.platformDomain, wpcs_host_settings_root_domain: config.platformDomain } : {}),
       },
       phpConstants: {
         WAAS_API_BASE_URL: { value: apiUrl },
