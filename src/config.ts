@@ -5,6 +5,7 @@ import { isUuid } from './http.ts';
 import type { CoolifyProvisionerConfig, StoreMail } from './provisioner/coolify/provisioner.ts';
 import type { S3Config } from './provisioner/s3.ts';
 import { ToSendAdmin, type MailCounter, type SendingDomains, type StoreMailKeys } from './tosend.ts';
+import { loadResellerInvoiceConfig, type ResellerInvoiceConfig } from './resellerinvoices.ts';
 import { loadStoreBackupConfig, type StoreBackupConfig } from './storebackups.ts';
 import { loadDashboardHost, type DashboardHost } from './vercel.ts';
 import { loadWebhookConfig, type WebhookConfig } from './webhooks.ts';
@@ -75,6 +76,11 @@ export interface Config {
    * comma-separated. Empty: applications only show on the dashboard.
    */
   applicationNotify?: string[];
+  /**
+   * Automatic monthly Stripe invoices for resellers (src/resellerinvoices.ts): on when STRIPE_SECRET_KEY
+   * is set, unless RESELLER_INVOICE=off. Unset: bills are only shown, and sent by hand.
+   */
+  resellerInvoices?: ResellerInvoiceConfig;
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -201,6 +207,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dashboardHost: loadDashboardHost(env),
     storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
+    resellerInvoices: loadResellerInvoiceConfig(env),
   };
 }
 

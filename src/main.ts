@@ -10,6 +10,7 @@ import { startMailCounts } from './mailcount.ts';
 import { startMailDomainChecks } from './maildomains.ts';
 import { maintainStores } from './maintenance.ts';
 import { S3 } from './provisioner/s3.ts';
+import { startResellerInvoices } from './resellerinvoices.ts';
 import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
 import { FakeProvisioner } from './provisioner/fake.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -51,6 +52,8 @@ await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
 await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner, config);
 // The platform's count of each store's email (docs/store-email.md): every hour, when toSend is set up.
 await startMailCounts(boss, pool, config.mailCounter, provisioner);
+// Resellers' monthly wholesale bill as a Stripe invoice (docs/resellers.md), when STRIPE_SECRET_KEY is set.
+await startResellerInvoices(boss, pool, config.resellerInvoices);
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner, config);
 

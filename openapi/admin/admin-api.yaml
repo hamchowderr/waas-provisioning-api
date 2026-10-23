@@ -1900,6 +1900,49 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/resellers/{id}/invoices:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminResellerInvoices
+      summary: The Stripe invoices sent for its monthly bills
+      description: >-
+        Newest month first. Open invoices are checked with Stripe first, so a paid one shows as paid.
+        enabled is false while automatic invoices are off (STRIPE_SECRET_KEY not set).
+      responses:
+        '200':
+          description: Its invoices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResellerInvoices' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminSendResellerInvoice
+      summary: Send a month's invoice now, or try a failed one again
+      description: >-
+        The 1st's run does this for every reseller with autoInvoice on. With a card on file Stripe
+        charges it; otherwise Stripe emails the invoice to the billing email to pay online. A month
+        already sent (or with nothing due) is answered as it is and never sent twice. A failure is
+        answered with status failed and the error.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                month: { type: string, pattern: '^\d{4}-\d{2}$', description: 'YYYY-MM, a month that is over; default last month' }
+      responses:
+        '200':
+          description: The month's invoice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResellerInvoice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 components:
   securitySchemes:
     adminToken: { type: http, scheme: bearer }
@@ -2108,6 +2151,8 @@ components:
         billingEmail: { type: string, format: email, nullable: true }
         brandName: { type: string, maxLength: 60, nullable: true, description: 'Shown with brandUrl on the "website unavailable" page of its suspended stores, instead of the platform''s name' }
         brandUrl: { type: string, maxLength: 500, pattern: '^https?://', nullable: true }
+        stripeCustomerId: { type: string, pattern: '^cus_', nullable: true, description: 'Its Stripe customer, to bill an existing one; made from billingEmail on the first invoice when null' }
+        autoInvoice: { type: boolean, description: 'Send its bill as a Stripe invoice on the 1st (default true)' }
         listPriceCents:
           type: object
           additionalProperties: false
@@ -2139,7 +2184,7 @@ components:
     Reseller:
       type: object
       additionalProperties: false
-      required: [id, name, maxProducts, maxTenants, wholesalePercent, billingEmail, brandName, brandUrl, listPriceCents, products, tenantCount, liveTenantCount, dateCreated]
+      required: [id, name, maxProducts, maxTenants, wholesalePercent, billingEmail, brandName, brandUrl, listPriceCents, stripeCustomerId, autoInvoice, products, tenantCount, liveTenantCount, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2149,6 +2194,8 @@ components:
         billingEmail: { type: string, nullable: true }
         brandName: { type: string, nullable: true }
         brandUrl: { type: string, nullable: true }
+        stripeCustomerId: { type: string, nullable: true }
+        autoInvoice: { type: boolean }
         listPriceCents:
           type: object
           additionalProperties: false
@@ -2221,6 +2268,35 @@ components:
               wholesalePriceCents: { type: integer, description: 'Monthly price of one store after the discount' }
               amountCents: { type: integer }
         totalCents: { type: integer }
+    ResellerInvoice:
+      type: object
+      additionalProperties: false
+      required: [id, month, totalCents, status, stripeInvoiceId, hostedInvoiceUrl, chargeAutomatically, error, dateCreated, dateUpdated]
+      properties:
+        id: { type: string, format: uuid }
+        month: { type: string, description: 'YYYY-MM' }
+        totalCents: { type: integer }
+        status:
+          type: string
+          enum: [sending, nothing_due, open, paid, void, uncollectible, failed]
+          description: >-
+            open: Stripe has it, charging the card on file or emailed to pay. paid, void and
+            uncollectible as Stripe reports. nothing_due: no charge that month. failed: see error.
+        stripeInvoiceId: { type: string, nullable: true }
+        hostedInvoiceUrl: { type: string, nullable: true, description: "Stripe's page to view and pay the invoice" }
+        chargeAutomatically: { type: boolean, nullable: true, description: 'true: charged to the card on file; false: emailed to pay' }
+        error: { type: string, nullable: true }
+        dateCreated: { type: string, format: date-time }
+        dateUpdated: { type: string, format: date-time }
+    ResellerInvoices:
+      type: object
+      additionalProperties: false
+      required: [enabled, invoices]
+      properties:
+        enabled: { type: boolean, description: 'false while automatic invoices are off' }
+        invoices:
+          type: array
+          items: { $ref: '#/components/schemas/ResellerInvoice' }
     Error:
       type: object
       required: [statusCode, message]
