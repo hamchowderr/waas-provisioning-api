@@ -87,6 +87,8 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
     WAAS_MAIL_B64: '${WAAS_MAIL_B64:-}',
     // The store's site key: WaaS Client accepts site-editing requests signed with it (src/sitekeys.ts).
     WAAS_SITE_KEY: '${WAAS_SITE_KEY:-}',
+    WAAS_IS_TENANT: 'true',
+    // The same flag under the old platform's prefix, for template versions with WaaS Client before 2.4.0.
     WPCS_IS_TENANT: 'true',
     ...quotas,
   };
