@@ -672,6 +672,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       status: f.status,
       retriedAt: iso(f.retried_at),
       retryJobId: f.retry_job_id,
+      dismissedAt: iso(f.dismissed_at),
     };
   }
 
@@ -976,6 +977,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       const f = rows[0];
       if (!f) throw notFound(`Failure ${id} not found`);
       if (f.status === 'retried') return f;
+      if (f.status === 'dismissed') throw badRequest('This failure was dismissed');
       if (!(await resetForRetry(client, f.job_data))) {
         throw badRequest('The record this job worked on is gone or no longer Failed; nothing to retry');
       }
@@ -983,6 +985,27 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       const { rows: updated } = await client.query(
         "UPDATE job_failures SET status = 'retried', retried_at = now(), retry_job_id = $2 WHERE id = $1 RETURNING *",
         [id, jobId],
+      );
+      return updated[0];
+    });
+    return c.json(toFailure(failure));
+  });
+
+  // Drops a failure from the list without running anything (its store or version is gone, or later
+  // runs made it good). Only from failed; dismissing a dismissed failure returns it unchanged.
+  app.post('/jobs/failures/:id/dismiss', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Failure ${id} not found`);
+    const scope = scopedProduct(c);
+    const failure = await withTransaction(pool, async (client) => {
+      const { rows } = await client.query(`SELECT * FROM job_failures f WHERE id = $1 AND ${failureOfProduct(2)} FOR UPDATE`, [id, scope]);
+      const f = rows[0];
+      if (!f) throw notFound(`Failure ${id} not found`);
+      if (f.status === 'dismissed') return f;
+      if (f.status === 'retried') throw badRequest('This failure was already retried');
+      const { rows: updated } = await client.query(
+        "UPDATE job_failures SET status = 'dismissed', dismissed_at = now() WHERE id = $1 RETURNING *",
+        [id],
       );
       return updated[0];
     });

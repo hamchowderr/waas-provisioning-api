@@ -1008,7 +1008,7 @@ paths:
     get:
       operationId: adminListJobs
       summary: Queued, running or failed jobs
-      description: Failed means failed its last retry; those are kept in the job_failures table until retried.
+      description: Failed means failed its last retry; those are kept in the job_failures table until retried or dismissed.
       parameters:
         - { name: state, in: query, schema: { type: string, enum: [queued, running, failed], default: queued } }
         - $ref: '#/components/parameters/page'
@@ -1184,6 +1184,25 @@ paths:
       responses:
         '200':
           description: The failure record, now retried
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobFailure' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/jobs/failures/{id}/dismiss:
+    post:
+      operationId: adminDismissFailure
+      summary: Dismiss a failed job without running it
+      description: >-
+        For a failure there is nothing left to retry for: its store or version is gone, or later runs made
+        it good. The record is kept but no longer listed as failed or counted. Changes nothing else.
+        Only from Failed; a retried failure gets 400. Idempotent: dismissing a dismissed failure returns it unchanged.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The failure record, now dismissed
           content:
             application/json:
               schema: { $ref: '#/components/schemas/JobFailure' }
@@ -2631,16 +2650,17 @@ components:
       allOf:
         - $ref: '#/components/schemas/JobTarget'
         - type: object
-          required: [id, jobId, errorMessage, attempts, failedAt, status, retriedAt, retryJobId]
+          required: [id, jobId, errorMessage, attempts, failedAt, status, retriedAt, retryJobId, dismissedAt]
           properties:
             id: { type: string, format: uuid }
             jobId: { type: string, format: uuid }
             errorMessage: { type: string }
             attempts: { type: integer }
             failedAt: { type: string, format: date-time }
-            status: { type: string, enum: [failed, retried] }
+            status: { type: string, enum: [failed, retried, dismissed] }
             retriedAt: { type: string, format: date-time, nullable: true }
             retryJobId: { type: string, format: uuid, nullable: true }
+            dismissedAt: { type: string, format: date-time, nullable: true }
     PluginSlug: { type: string, enum: [wpcs-waas-host, wpcs-waas-client, waas-payments] }
     PluginInstall:
       type: object
