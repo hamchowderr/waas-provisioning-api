@@ -910,6 +910,38 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.calls.filter(isServiceDelete)).toHaveLength(1);
   });
 
+  it('tests a restore in a hidden, suspended test store with no mail, key or cron, and deletes it pass or fail', async () => {
+    await expect(p.testRestore({ testId: 't-1', backupId: 'b-1', versionId: VERSION_ID, size: 'small' })).rejects.toThrow(/No archive at backups\/b-1\.zip/);
+    expect(cloud.calls).not.toContain('POST /services');
+    cloud.objects.set('backups/b-1.zip', new Uint8Array(10));
+    const agent = cloud.agent;
+    cloud.agent = (op, args, service) =>
+      op === 'verify' ? { status: 'success', message: 'WAAS_RESULT {"name":"Shop","home":"https://restore-test-t-1.invalid","tables":40,"posts":"12"}' } : agent(op, args, service);
+    let seen: Service | undefined;
+    const real = cloud.agent;
+    cloud.agent = (op, args, service) => ((seen = service), real(op, args, service));
+
+    expect(await p.testRestore({ testId: 't-1', backupId: 'b-1', versionId: VERSION_ID, size: 'medium' })).toEqual({
+      name: 'Shop',
+      home: 'https://restore-test-t-1.invalid',
+      tables: 40,
+      posts: 12,
+    });
+    expect(seen!.name).toBe('store-restore-test-t-1');
+    expect(seen!.urls).toEqual([{ name: 'wordpress', url: 'https://restore-test-t-1.invalid' }]);
+    expect([...seen!.envs.keys()]).toEqual(['WAAS_CONSTANTS_B64']);
+    expect(parse(seen!.compose).services.wordpress.cpus).toBe(2);
+    // Suspended before the backup goes in, then checked.
+    expect(cloud.agentOps.map((o) => o.op).filter((op) => op !== 'ping')).toEqual(['suspend', 'restore', 'verify']);
+    expect(cloud.agentOps.find((o) => o.op === 'restore')!.args).toMatchObject({ home: 'https://restore-test-t-1.invalid' });
+    expect(cronTasks(cloud)).toEqual([]);
+    expect([...cloud.services.values()].some((s) => s.name === 'store-restore-test-t-1')).toBe(false);
+
+    cloud.agent = (op, args, service) => (op === 'restore' ? { status: 'failed', message: 'WAAS_ERROR wp db exited 1: broken dump' } : agent(op, args, service));
+    await expect(p.testRestore({ testId: 't-2', backupId: 'b-1', versionId: VERSION_ID, size: 'small' })).rejects.toThrow('broken dump');
+    expect([...cloud.services.values()].some((s) => s.name === 'store-restore-test-t-2')).toBe(false);
+  });
+
   it('copies snapshots and base snapshots in the bucket', async () => {
     await p.copySnapshot({ snapshotId: 'snap-1', newSnapshotId: 'snap-copy', targetVersionId: VERSION_ID });
     expect(cloud.objects.get('snapshots/snap-copy.zip')).toEqual(new Uint8Array([80, 75, 5, 6]));

@@ -2415,7 +2415,7 @@ components:
       properties:
         health:
           type: object
-          required: [ok, database, queue, dbBackup, jobs]
+          required: [ok, database, queue, dbBackup, jobs, restoreTest]
           additionalProperties: false
           properties:
             ok: { type: boolean }
@@ -2432,6 +2432,18 @@ components:
               properties:
                 ok: { type: boolean }
                 failedLastDay: { type: integer }
+            restoreTest:
+              type: object
+              description: >-
+                The nightly restore test: one store's newest nightly backup restored into a throwaway
+                copy, checked and deleted. ok is false when the last test failed, or tests are on and
+                none passed in about two days while there are live stores. Never affects health.ok.
+              required: [ok, status, lastPassedAt]
+              additionalProperties: false
+              properties:
+                ok: { type: boolean }
+                status: { type: string, enum: ['off', never, running, passed, failed] }
+                lastPassedAt: { type: string, format: date-time, nullable: true }
         tenants:
           type: object
           additionalProperties: false

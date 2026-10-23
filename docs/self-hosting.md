@@ -190,6 +190,7 @@ Stores have no mailer of their own. To give them one, verify your domain with to
 
 - `GET /health` answers 200 when Postgres and the queue respond, and 503 otherwise. Point an uptime monitor at it (UptimeRobot, for example). Its `dbBackup.stale` turns true when the last database backup is over 26 hours old.
 - `/health`'s `jobs.ok` turns false while a store or version job has failed its last retry in the last 24 hours and hasn't been retried. A keyword monitor on `"jobs":{"ok":true` alerts you through the monitor's own channels. The API also emails each failure to `JOB_ALERT_EMAILS` (comma-separated), or to `APPLICATION_NOTIFY_EMAILS` when that's unset, through the sign-in email settings.
+- `/health`'s `restoreTest.ok` turns false when last night's restore test of a store's backup failed, or none passed in about two days ([store-backups.md](store-backups.md#restore-test-nightly)). A keyword monitor on `"restoreTest":{"ok":true` alerts on it; failures are emailed to the same addresses.
 - The dashboard's **Jobs** page shows failed jobs with their errors, and retries them.
 
 ### Customers' own domains
@@ -268,6 +269,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `DB_BACKUP`, `DB_BACKUP_SCHEDULE`, `DB_BACKUP_PREFIX`, `DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY` | on, 02:30 UTC, `db-backups/`, 14, 8 | [db-backups.md](db-backups.md) |
 | `STRIPE_SECRET_KEY`, `RESELLER_INVOICE`, `RESELLER_INVOICE_SCHEDULE`, `RESELLER_INVOICE_DAYS_DUE` | off, on with a key, 07:00 UTC on the 1st, 14 | Resellers' monthly bill as a Stripe invoice ([resellers.md](resellers.md#automatic-invoices)) |
 | `STORE_BACKUP`, `STORE_BACKUP_SCHEDULE`, `STORE_BACKUP_KEEP_DAILY`, `STORE_BACKUP_KEEP_WEEKLY` | on, 09:00 UTC, 7, 4 | [store-backups.md](store-backups.md) |
+| `RESTORE_TEST`, `RESTORE_TEST_SCHEDULE` | on, 11:00 UTC | [store-backups.md](store-backups.md#restore-test-nightly) |
 | `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, none, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |
 | `TOSEND_ADMIN_KEY`, `TOSEND_API_URL` | off, `https://api.tosend.com` | Per-store keys and stores' own sending domains |
 | `RELEASES_S3_BUCKET` and `RELEASES_S3_*` | off | The plugin update channel; the other values default to `S3_*` |

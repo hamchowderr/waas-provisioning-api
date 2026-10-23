@@ -101,7 +101,7 @@ describe('admin endpoints', () => {
     shop = await newTenant({ name: 'Admin Shop', customDomainName: 'admin-shop.example.com', wpOptions: { blogname: 'secret-ish value' } });
     await newTenant({ name: 'Other Shop' }, otherAuth);
     const overview = await admin('GET', '/admin/overview');
-    expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 } });
+    expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 }, restoreTest: { ok: true, status: 'off', lastPassedAt: null } });
     expect(overview.tenants.done).toBe(2);
     expect(overview.products.map((p: any) => p.name).sort()).toEqual(['Example storefront', 'Other storefront']);
     const other = await admin('GET', `/admin/overview?productId=${otherProductId}`);

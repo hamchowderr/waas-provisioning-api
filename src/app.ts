@@ -77,7 +77,7 @@ export function createApp(deps: Deps) {
   // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
   // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
   app.get('/health', async (c) => {
-    const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup);
+    const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup, !!deps.config.restoreTest);
     return c.json(health, health.ok ? 200 : 503);
   });
 

@@ -15,6 +15,20 @@ For whoever runs the API. Every live store gets a full backup (its files under `
 | Status | `GET /v1/tenants/backups` and `GET /admin/backups` list them with reason `scheduled`; the dashboard's Backups page shows them. `GET /admin/overview` counts them with the other backups. |
 | On/off | On by default, with any provisioner. `STORE_BACKUP=off` turns it off (and removes the schedule); the startup log line then says `store backups off`. |
 
+## Restore test (nightly)
+
+A backup is only worth something if it restores, so every night the API proves one does.
+
+| | |
+|---|---|
+| When | Nightly at 11:00 UTC, two hours after the backups, pg-boss schedule on the `restore-test` queue (`RESTORE_TEST_SCHEDULE` to change). Also on startup when no test started in the last 26 hours (first deploy, or the API was down at 11:00). |
+| Which store | One per night: the live store (Done, not suspended) with a Done scheduled backup from the last 48 hours that was tested longest ago (never-tested stores first), so every store gets its turn. Its newest scheduled backup is the one tested. |
+| How | `Provisioner.testRestore`. On Coolify: a throwaway store Service `store-restore-test-<test id>` on the store's version and size, on the domain `restore-test-<test id>.invalid` (never resolves), with no mail relay settings, no site key and no `wp-cron` task, so it can't email anyone or run scheduled jobs. The agent suspends it first (every request gets the "unavailable" page), then restores the backup into it exactly as a restore does, then its `verify` operation checks that WordPress opens the restored database and reports the site title, home URL, table count and post count. The test store is deleted afterwards, pass or fail. The real store and its backup are never touched. |
+| Result | One `restore_tests` row per test: `running`, then `passed` (with `details`: name, home, tables, posts) or `failed` (with `error`). A test still `running` after 3 hours (the API restarted mid-test) is marked failed on the next run and its test store deleted. A test is not retried: a failure is the finding, and the next night tests again. |
+| Alerts | A failed test is emailed to `JOB_ALERT_EMAILS` (else `APPLICATION_NOTIFY_EMAILS`) through the sign-in email settings. `/health` reports `restoreTest: { ok, status, lastPassedAt }`; `ok` is false when the last test failed, or none passed in 50 hours while there are live stores. Like `jobs`, it never makes `/health` itself fail. A keyword monitor on `"restoreTest":{"ok":true` alerts on it. |
+| Cost | One extra store's containers for the length of the test (minutes for a typical store), one store at a time, and the backup's download from the bucket. |
+| On/off | On by default, with any provisioner. `RESTORE_TEST=off` turns it off (and removes the schedule); `/health` then reports `status: "off"`. |
+
 ## Size and cost
 
 A backup is about the size of the store's uploads plus its database, compressed. A fresh FluentCart store is a few MB; a store with a large media library can be hundreds of MB. With the defaults each store keeps at most 11 scheduled backups (7 daily + up to 4 weekly). At 100 stores of 100 MB that is about 110 GB in R2, roughly $1.65 a month at R2's $0.015/GB, with no egress charges.

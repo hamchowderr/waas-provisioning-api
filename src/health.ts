@@ -2,6 +2,7 @@ import type { PgBoss } from 'pg-boss';
 import type { Pool } from './db.ts';
 import { dbBackupStatus, type DbBackupStatus } from './dbbackup.ts';
 import { QUEUE } from './queue.ts';
+import { restoreTestStatus, type RestoreTestStatus } from './restoretests.ts';
 
 export interface Health {
   ok: boolean;
@@ -15,6 +16,11 @@ export interface Health {
    * to alert on (docs/self-hosting.md#monitoring).
    */
   jobs: { ok: boolean; failedLastDay: number };
+  /**
+   * Informational: the nightly restore test of a store's backup (src/restoretests.ts). `ok` is false when
+   * the last test failed or none passed in about two days, for an outside monitor to alert on.
+   */
+  restoreTest: RestoreTestStatus;
 }
 
 async function check(fn: () => Promise<unknown>): Promise<'ok' | 'down'> {
@@ -31,10 +37,11 @@ async function check(fn: () => Promise<unknown>): Promise<'ok' | 'down'> {
 
 const UNKNOWN: DbBackupStatus = { status: 'unknown', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false };
 
-/** Postgres and the job queue, each given 3 seconds to answer, plus the last database backup and failed jobs. */
-export async function checkHealth(pool: Pool, boss: PgBoss, dbBackupEnabled = false): Promise<Health> {
+/** Postgres and the job queue, each given 3 seconds to answer, plus the last database backup, failed jobs and the last restore test. */
+export async function checkHealth(pool: Pool, boss: PgBoss, dbBackupEnabled = false, restoreTestEnabled = false): Promise<Health> {
   let dbBackup = UNKNOWN;
   let failedLastDay = 0;
+  let restoreTest: RestoreTestStatus = { ok: true, status: restoreTestEnabled ? 'never' : 'off', lastPassedAt: null };
   const [database, queue] = await Promise.all([
     check(() => pool.query('SELECT 1')),
     check(async () => {
@@ -45,6 +52,7 @@ export async function checkHealth(pool: Pool, boss: PgBoss, dbBackupEnabled = fa
       const { rows } = await pool.query("SELECT count(*)::int AS n FROM job_failures WHERE status = 'failed' AND failed_at > now() - interval '24 hours'");
       failedLastDay = rows[0].n;
     }),
+    check(async () => (restoreTest = await restoreTestStatus(pool, restoreTestEnabled))),
   ]);
-  return { ok: database === 'ok' && queue === 'ok', database, queue, dbBackup, jobs: { ok: failedLastDay === 0, failedLastDay } };
+  return { ok: database === 'ok' && queue === 'ok', database, queue, dbBackup, jobs: { ok: failedLastDay === 0, failedLastDay }, restoreTest };
 }

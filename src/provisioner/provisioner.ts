@@ -171,6 +171,17 @@ export interface Provisioner {
   deleteStore(input: { storeId: string }): Promise<void>;
 
   /**
+   * Restores a store's backup into a throwaway test store, checks that WordPress opens it, and deletes
+   * the test store again, pass or fail (src/restoretests.ts). The test store never serves visitors, sends
+   * email or runs cron, and the real store is not touched. Returns what the restored copy holds; throws
+   * when the backup cannot be restored.
+   */
+  testRestore(input: { testId: string; backupId: string; versionId: string; size: Size }): Promise<RestoreTestResult>;
+
+  /** Deletes a test store testRestore left behind (the API stopped mid-test); nothing when there is none. */
+  deleteRestoreTest(input: { testId: string }): Promise<void>;
+
+  /**
    * Brings a store created under an older store setup (its compose file and the files the agent
    * installs, such as the page cache), or running at another size than `size`, to the current setup
    * at `size`, restarting it once. createStore already gives new stores the current setup; the API
@@ -221,6 +232,15 @@ export function storeFromAddress(platformFrom: string, { sender, mailbox }: Stor
   const [name, domain] = platformFrom.split('@') as [string, string];
   if (sender) return `${name}@${sender.domain}`;
   return mailbox ? `${mailbox}@${domain}` : platformFrom;
+}
+
+/** What a restored backup holds, as testRestore found it. */
+export interface RestoreTestResult {
+  /** The site's title and address in the restored database. */
+  name: string | null;
+  home: string | null;
+  tables: number;
+  posts: number;
 }
 
 export interface PhpConstant {

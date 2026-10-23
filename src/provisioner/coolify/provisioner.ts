@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_SIZE, isSize, type Size } from '../../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type StoreMailFrom } from '../provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type StoreMailFrom } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
@@ -820,7 +820,57 @@ export class CoolifyProvisioner implements Provisioner {
     if (keyId) await this.config.mailKeys!.delete(keyId);
     await this.deleteService(STORES_ENV, storeName(storeId));
   }
+
+  /**
+   * The test store is an ordinary store Service named after the test (store-restore-test-<id>) on a
+   * domain that never resolves, with no mail relay, site key or cron task. It is suspended before the
+   * backup goes in, so even a request that reached it would get the "unavailable" page.
+   */
+  async testRestore({ testId, backupId, versionId, size }: Parameters<Provisioner['testRestore']>[0]): Promise<RestoreTestResult> {
+    const key = keys.backup(backupId);
+    if ((await this.s3.head(key)) === null) throw new Error(`No archive at ${key}`);
+    const version = await this.versionMeta(versionId);
+    const domain = restoreTestDomain(testId);
+    let failed = false;
+    try {
+      const uuid = await this.ensureService({
+        envName: STORES_ENV,
+        name: storeName(restoreTestStoreId(testId)),
+        meta: { kind: 'store', versionId, size },
+        wordPressVersion: version.wordPressVersion,
+        phpVersion: version.phpVersion,
+        size,
+        domains: [domain],
+        envs: { WAAS_CONSTANTS_B64: encodeConstants({}) },
+      });
+      await this.exec(uuid, 'suspend', { brand: this.config.brand ?? DEFAULT_BRAND });
+      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', key), home: https(domain) });
+      const found = await this.exec(uuid, 'verify', {});
+      return {
+        name: typeof found.name === 'string' ? found.name : null,
+        home: typeof found.home === 'string' ? found.home : null,
+        tables: Number(found.tables ?? 0),
+        posts: Number(found.posts ?? 0),
+      };
+    } catch (err) {
+      failed = true;
+      throw err;
+    } finally {
+      // The restore's own error matters more; a test store left behind is deleted on the next run.
+      await this.deleteRestoreTest({ testId }).catch((err: unknown) => {
+        if (!failed) throw err;
+      });
+    }
+  }
+
+  async deleteRestoreTest({ testId }: { testId: string }) {
+    await this.deleteService(STORES_ENV, storeName(restoreTestStoreId(testId)));
+  }
 }
+
+const restoreTestStoreId = (testId: string) => `restore-test-${testId}`;
+/** .invalid never resolves (RFC 2606), so no visitor can reach a test store. */
+const restoreTestDomain = (testId: string) => `restore-test-${testId}.invalid`;
 
 /** Every container runs and none is unhealthy or still starting. */
 function allHealthy(statuses: string[]): boolean {

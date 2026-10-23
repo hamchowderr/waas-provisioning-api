@@ -12,6 +12,7 @@ import { startMailDomainChecks } from './maildomains.ts';
 import { maintainStores } from './maintenance.ts';
 import { S3 } from './provisioner/s3.ts';
 import { startResellerInvoices } from './resellerinvoices.ts';
+import { startRestoreTests } from './restoretests.ts';
 import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
 import { FakeProvisioner } from './provisioner/fake.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
@@ -54,6 +55,8 @@ const dbBackups = config.dbBackup
 await startDbBackups(boss, dbBackups, config.dbBackup?.schedule ?? '');
 // Nightly backup of every live store (docs/store-backups.md), unless STORE_BACKUP=off.
 await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
+// Nightly, one store's latest backup restored into a throwaway copy and checked (docs/store-backups.md), unless RESTORE_TEST=off.
+await startRestoreTests(boss, pool, provisioner, config.restoreTest, { mail: config.auth?.mail, to: config.jobAlerts });
 // Stores' own sending domains (docs/store-email.md): checked every 10 minutes, when toSend is set up.
 await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner, config);
 // The platform's count of each store's email (docs/store-email.md): every hour, when toSend is set up.
