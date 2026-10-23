@@ -50,7 +50,7 @@ describe('Basic auth', () => {
   it('leaves /health open, and it checks Postgres and the queue', async () => {
     const res = await t.call('GET', '/health', { auth: null });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false } });
+    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 } });
   });
 
   it('answers 503 from /health when Postgres is unreachable', async () => {

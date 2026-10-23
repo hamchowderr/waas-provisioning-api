@@ -189,6 +189,7 @@ Stores have no mailer of their own. To give them one, verify your domain with to
 ### 9. Watch it
 
 - `GET /health` answers 200 when Postgres and the queue respond, and 503 otherwise. Point an uptime monitor at it (UptimeRobot, for example). Its `dbBackup.stale` turns true when the last database backup is over 26 hours old.
+- `/health`'s `jobs.ok` turns false while a store or version job has failed its last retry in the last 24 hours and hasn't been retried. A keyword monitor on `"jobs":{"ok":true` alerts you through the monitor's own channels. The API also emails each failure to `JOB_ALERT_EMAILS` (comma-separated), or to `APPLICATION_NOTIFY_EMAILS` when that's unset, through the sign-in email settings.
 - The dashboard's **Jobs** page shows failed jobs with their errors, and retries them.
 
 ### Customers' own domains
@@ -259,6 +260,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
 | `STOREFRONT_PRODUCT_ID` | off | The product whose production version is the [seller storefront template](../templates/seller-storefront/README.md). Turns on ready-made storefronts (`POST /admin/products/{productId}/storefront`). Set `PUBLIC_URL` too: it is the address written into each storefront |
 | `APPLICATION_NOTIFY_EMAILS` | off | Comma-separated addresses emailed when someone applies to sell (`POST /applications`, [accounts](accounts.md#applications-to-sell)). Needs sign-in email. Without it, applications only show on the dashboard |
+| `JOB_ALERT_EMAILS` | `APPLICATION_NOTIFY_EMAILS` | Comma-separated addresses emailed when a store or version job fails its last retry, with a link to the dashboard's failed jobs. Needs sign-in email |
 | `DASHBOARD_DOMAINS` | off | Lets sellers give the dashboard their own address ([branding](branding.md#your-own-dashboard-address)). `vercel` for a dashboard on Vercel: needs `VERCEL_TOKEN` (with access to the dashboard project's team), `VERCEL_PROJECT_ID` and, for a team project, `VERCEL_TEAM_ID`; Vercel lets a Pro team add 100 domains an hour. `coolify` for a dashboard that is a Coolify application: needs `COOLIFY_URL`, `COOLIFY_TOKEN`, `DASHBOARD_COOLIFY_APP` (the application's UUID) and `DASHBOARD_TARGET` (the dashboard's own hostname, which sellers point a CNAME at). The installer sets these for either |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
 | `WEBHOOK_LOG_DAYS` | `30` | How long webhook events and deliveries are kept ([webhooks.md](webhooks.md)) |

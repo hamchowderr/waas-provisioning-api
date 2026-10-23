@@ -2323,13 +2323,23 @@ components:
       properties:
         health:
           type: object
-          required: [ok, database, queue, dbBackup]
+          required: [ok, database, queue, dbBackup, jobs]
           additionalProperties: false
           properties:
             ok: { type: boolean }
             database: { type: string, enum: [ok, down] }
             queue: { type: string, enum: [ok, down] }
             dbBackup: { $ref: '#/components/schemas/DbBackupStatus' }
+            jobs:
+              type: object
+              description: >-
+                Store and version jobs that failed their last retry in the last 24 hours and haven't
+                been retried. ok is false while there are any. Never affects health.ok.
+              required: [ok, failedLastDay]
+              additionalProperties: false
+              properties:
+                ok: { type: boolean }
+                failedLastDay: { type: integer }
         tenants:
           type: object
           additionalProperties: false

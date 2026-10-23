@@ -83,6 +83,28 @@ export async function sendApplicationApproved(mail: AuthMail, to: string, app: A
   await send(mail, to, `Your ${mail.brand} application is approved`, html, text, 'approval email', fetchFn);
 }
 
+/** What a failed-job alert says (src/jobalerts.ts). */
+export interface JobFailureMail {
+  /** "Build the store Acme (acme.anypress.site)" and the like. */
+  what: string;
+  error: string;
+  attempts: number;
+  /** The dashboard's Jobs page, where it can be retried. Unset when sign-in is off. */
+  url?: string;
+}
+
+/** To the platform admin: a store or version job failed its last retry. */
+export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobFailureMail, fetchFn: typeof fetch = fetch): Promise<void> {
+  const lead = `This failed after ${job.attempts} ${job.attempts === 1 ? 'try' : 'tries'}: ${job.what}.`;
+  const next = job.url ? 'Retry it from the Jobs page once the cause is fixed.' : 'Retry it with POST /admin/jobs/{id}/retry once the cause is fixed.';
+  const html =
+    `<p>${escape(lead)}</p><p style="font-family:monospace;white-space:pre-wrap">${escape(job.error)}</p>` +
+    (job.url ? `<p><a href="${escape(job.url)}">Open the Jobs page</a></p>` : '') +
+    `<p style="color:#666">${escape(next)}</p>`;
+  const text = `${lead}\n\n${job.error}\n\n${job.url ? `${job.url}\n\n` : ''}${next}`;
+  await send(mail, to, `Failed: ${job.what}`, html, text, 'job failure notice', fetchFn);
+}
+
 /** To the applicant: not approved. */
 export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;

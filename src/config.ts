@@ -77,6 +77,11 @@ export interface Config {
    */
   applicationNotify?: string[];
   /**
+   * Who is emailed when a store or version job fails its last retry (src/jobalerts.ts):
+   * JOB_ALERT_EMAILS, comma-separated, or the APPLICATION_NOTIFY_EMAILS people when unset.
+   */
+  jobAlerts?: string[];
+  /**
    * Automatic monthly Stripe invoices for resellers (src/resellerinvoices.ts): on when STRIPE_SECRET_KEY
    * is set, unless RESELLER_INVOICE=off. Unset: bills are only shown, and sent by hand.
    */
@@ -207,6 +212,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dashboardHost: loadDashboardHost(env),
     storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
+    jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     resellerInvoices: loadResellerInvoiceConfig(env),
   };
 }
