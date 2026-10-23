@@ -8,7 +8,7 @@ import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE } from '../plans.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { checkTenantCap, domainInUse, emailPacksBought, findTenant } from '../tenants.ts';
+import { checkTenantCap, domainInUse, emailPacksBought, findTenant, resumeTenant, suspendTenant } from '../tenants.ts';
 
 /** Suspend, resume, backups (contract draft.3, tag TenantLifecycle) and email packs. Mounted at /v1/tenants. */
 export function lifecycleRoutes({ pool, boss }: Deps) {
@@ -28,36 +28,12 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
   app.post('/suspend', async (c) => {
     const tenant = await liveTenant(c);
     const body = validateBody<{ takeBackup?: boolean }>('SuspendTenantParams', await readJson(c));
-    // Idempotent: no second suspension and no second backup.
-    if (tenant.is_suspended) return c.json(result(tenant, null));
-    const backupId = body.takeBackup === false ? null : randomUUID();
-    await withTransaction(pool, async (client) => {
-      if (backupId) {
-        await client.query(
-          "INSERT INTO tenant_backups (id, product_id, tenant_id, external_id, reason) VALUES ($1, $2, $3, $4, 'suspend')",
-          [backupId, tenant.product_id, tenant.id, tenant.external_id],
-        );
-      }
-      await client.query(
-        'UPDATE tenants SET is_suspended = true, date_suspended = now(), status = $2, date_changed = now() WHERE id = $1',
-        [tenant.id, Status.Pending],
-      );
-      await enqueue(boss, client, { type: 'tenant.suspend', tenantId: tenant.id, backupId: backupId ?? undefined });
-    });
-    return c.json(result(tenant, backupId));
+    return c.json(result(tenant, await suspendTenant(pool, boss, tenant, body.takeBackup !== false)));
   });
 
   app.post('/resume', async (c) => {
     const tenant = await liveTenant(c);
-    if (tenant.is_suspended) {
-      await withTransaction(pool, async (client) => {
-        await client.query(
-          'UPDATE tenants SET is_suspended = false, date_suspended = NULL, status = $2, date_changed = now() WHERE id = $1',
-          [tenant.id, Status.Pending],
-        );
-        await enqueue(boss, client, { type: 'tenant.resume', tenantId: tenant.id });
-      });
-    }
+    await resumeTenant(pool, boss, tenant);
     return c.json(result(tenant, null));
   });
 

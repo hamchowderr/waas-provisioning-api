@@ -11,7 +11,7 @@ import { createImport, importCode, renewImport } from '../imports.ts';
 import { publicBase } from '../oauth.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { checkTenantCap, dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
+import { checkTenantCap, deleteTenant, dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
 
 export interface CreateTenantParams {
   name: string;
@@ -88,13 +88,7 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
   });
 
   app.delete('/', async (c) => {
-    const tenant = await findTenant(pool, c, { allowWaiting: true });
-    if (tenant.status !== Status.Removing) {
-      await withTransaction(pool, async (client) => {
-        await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenant.id, Status.Removing]);
-        await enqueue(boss, client, { type: 'tenant.delete', tenantId: tenant.id });
-      });
-    }
+    await deleteTenant(pool, boss, await findTenant(pool, c, { allowWaiting: true }));
     return c.body(null, 200);
   });
 

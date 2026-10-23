@@ -219,6 +219,34 @@ describe('rolling a live store back', () => {
   });
 });
 
+describe('suspending, resuming and deleting a store', () => {
+  it('suspends with a backup, resumes, and deletes, as the storefront can', async () => {
+    const store = await newTenant({ name: 'Pause Shop' });
+    const suspended = await admin('POST', `/admin/tenants/${store.id}/suspend`, 200, {});
+    expect(suspended).toEqual({ tenantId: store.id, externalId: store.externalId, backupId: expect.any(String) });
+    await waitFor(async () => (await tenantStatus(store.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(store.id)!.suspended).toBe(true);
+    expect((await admin('GET', `/admin/tenants/${store.id}`)).backups[0]).toMatchObject({ id: suspended.backupId, reason: 'suspend' });
+    // A second suspend changes nothing.
+    expect((await admin('POST', `/admin/tenants/${store.id}/suspend`, 200, {})).backupId).toBeNull();
+
+    await admin('POST', `/admin/tenants/${store.id}/resume`, 200);
+    await waitFor(async () => (await tenantStatus(store.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(store.id)!.suspended).toBe(false);
+
+    const quiet = await newTenant({ name: 'Quiet Shop' });
+    expect((await admin('POST', `/admin/tenants/${quiet.id}/suspend`, 200, { takeBackup: false })).backupId).toBeNull();
+    await admin('POST', `/admin/tenants/${quiet.id}/suspend`, 400, { takeBackup: 'no' });
+
+    expect(await admin('DELETE', `/admin/tenants/${store.id}`, 200)).toEqual({ tenantId: store.id, externalId: store.externalId });
+    await waitFor(async () => !t.provisioner.stores.has(store.id));
+    await admin('GET', `/admin/tenants/${store.id}`, 404);
+    await admin('DELETE', `/admin/tenants/${store.id}`, 404);
+    await admin('POST', `/admin/tenants/${crypto.randomUUID()}/suspend`, 404, {});
+    await admin('POST', '/admin/tenants/not-a-uuid/resume', 404);
+  });
+});
+
 describe('job failures and retry', () => {
   it('records a job that fails its last retry, and retries it once', async () => {
     t.provisioner.failNext('createStore', 10);
