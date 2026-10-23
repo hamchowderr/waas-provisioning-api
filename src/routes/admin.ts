@@ -27,6 +27,7 @@ import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
+import { deleteTenant, resumeTenant, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 
@@ -580,6 +581,41 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       await enqueue(boss, client, { type: 'tenant.rollback', tenantId: id, backupId: body.backupId as string, ...(safetyBackupId ? { safetyBackupId } : {}) });
     });
     return c.json({ tenantId: id, externalId: tenant.external_id, backupId: body.backupId, safetyBackupId });
+  });
+
+  // Suspend, resume and delete a store from the dashboard, as the storefront's own calls do (src/tenants.ts).
+  // Platform admin only: a seller's stores follow their shop's subscriptions.
+  async function adminTenant(c: Context) {
+    const id = c.req.param('id');
+    if (!id || !isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query('SELECT id, product_id, external_id, status, is_suspended FROM tenants WHERE id = $1', [id]);
+    if (!rows[0]) throw notFound(`Tenant ${id} not found`);
+    return rows[0];
+  }
+  app.use('/tenants/:id/suspend', adminOnly);
+  app.use('/tenants/:id/resume', adminOnly);
+  app.delete('/tenants/:id', adminOnly);
+
+  app.post('/tenants/:id/suspend', async (c) => {
+    const tenant = await adminTenant(c);
+    assertChangeable(tenant);
+    const body = ((await readJson(c)) ?? {}) as { takeBackup?: unknown };
+    if (body.takeBackup !== undefined && typeof body.takeBackup !== 'boolean') throw badRequest('takeBackup must be a boolean');
+    const backupId = await suspendTenant(pool, boss, tenant, body.takeBackup !== false);
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, backupId });
+  });
+
+  app.post('/tenants/:id/resume', async (c) => {
+    const tenant = await adminTenant(c);
+    assertChangeable(tenant);
+    await resumeTenant(pool, boss, tenant);
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, backupId: null });
+  });
+
+  app.delete('/tenants/:id', async (c) => {
+    const tenant = await adminTenant(c);
+    await deleteTenant(pool, boss, tenant);
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id });
   });
 
   // The store's own sending domain (docs/store-email.md): GET shows it with the DNS records to add

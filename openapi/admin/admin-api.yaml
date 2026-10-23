@@ -664,6 +664,67 @@ paths:
               schema: { $ref: '#/components/schemas/TenantDetail' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteTenant
+      summary: Delete a store
+      description: >-
+        Removes the store, as the storefront's deleteTenant does: the tenant is Removing until the
+        job finishes, then it is gone and tenant.deleted is sent to the storefront's webhooks. Its
+        backups are kept for the retention period, so it can still be brought back. Platform admin
+        only; a signed-in customer gets 404. A store already being removed is left as it is.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The deletion was scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, externalId]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/suspend:
+    post:
+      operationId: adminSuspendTenant
+      summary: Take a store offline
+      description: >-
+        Suspends the store, as the storefront's suspendTenant does: visitors see the "website
+        unavailable" page until it is resumed. Unless takeBackup is false it is backed up first
+        (reason suspend; its id is backupId). A suspended store is left as it is and backupId is
+        null. Platform admin only. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                takeBackup: { type: boolean, default: true, description: Back up the store before taking it offline. }
+      responses:
+        '200': { $ref: '#/components/responses/TenantLifecycle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/resume:
+    post:
+      operationId: adminResumeTenant
+      summary: Bring a suspended store back online
+      description: >-
+        Resumes the store, as the storefront's resumeTenant does. A store that isn't suspended is
+        left as it is. Platform admin only. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/TenantLifecycle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/domains/main:
     put:
       operationId: adminSetTenantMainDomain
@@ -1951,6 +2012,18 @@ components:
     page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
     pageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
   responses:
+    TenantLifecycle:
+      description: The change was scheduled
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [tenantId, externalId, backupId]
+            properties:
+              tenantId: { type: string, format: uuid }
+              externalId: { type: string }
+              backupId: { type: string, format: uuid, nullable: true, description: The backup taken first; null when none was. }
     BadRequest:
       description: Invalid request
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }

@@ -1,11 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import type { Context } from 'hono';
+import type { PgBoss } from 'pg-boss';
 import type { AppEnv } from './app.ts';
-import type { Client, Pool } from './db.ts';
+import { withTransaction, type Client, type Pool } from './db.ts';
 import { badRequest, conflict } from './errors.ts';
 import { compact, isUuid } from './http.ts';
 import type { PhpConstant } from './provisioner/provisioner.ts';
+import { enqueue } from './queue.ts';
 import type { Secrets } from './secrets.ts';
-import { statusName } from './status.ts';
+import { Status, statusName } from './status.ts';
 
 /** How phpConstants are kept in tenants.php_constants: private values encrypted. */
 export type StoredPhpConstants = Record<string, { value: string; isPrivate: boolean }>;
@@ -176,4 +179,56 @@ export async function findTenant(pool: Pool, c: Context<AppEnv>, { allowWaiting 
     throw conflict(`Tenant ${rows[0].external_id} is waiting for its site to be moved in`);
   }
   return rows[0];
+}
+
+// Suspend, resume and delete, shared by the storefront API (/v1/tenants) and the dashboard (/admin/tenants/:id).
+// Each takes the tenant row and leaves the checks of who may and in what state to the caller.
+interface TenantRef {
+  id: string;
+  product_id: string;
+  external_id: string;
+  status: number;
+  is_suspended: boolean;
+}
+
+/** Takes the store offline. Backs it up first unless takeBackup is false; a suspended store is left as it is. */
+export async function suspendTenant(pool: Pool, boss: PgBoss, tenant: TenantRef, takeBackup = true): Promise<string | null> {
+  // Idempotent: no second suspension and no second backup.
+  if (tenant.is_suspended) return null;
+  const backupId = takeBackup ? randomUUID() : null;
+  await withTransaction(pool, async (client) => {
+    if (backupId) {
+      await client.query(
+        "INSERT INTO tenant_backups (id, product_id, tenant_id, external_id, reason) VALUES ($1, $2, $3, $4, 'suspend')",
+        [backupId, tenant.product_id, tenant.id, tenant.external_id],
+      );
+    }
+    await client.query(
+      'UPDATE tenants SET is_suspended = true, date_suspended = now(), status = $2, date_changed = now() WHERE id = $1',
+      [tenant.id, Status.Pending],
+    );
+    await enqueue(boss, client, { type: 'tenant.suspend', tenantId: tenant.id, backupId: backupId ?? undefined });
+  });
+  return backupId;
+}
+
+/** Brings a suspended store back online; one that isn't suspended is left as it is. */
+export async function resumeTenant(pool: Pool, boss: PgBoss, tenant: TenantRef): Promise<void> {
+  if (!tenant.is_suspended) return;
+  await withTransaction(pool, async (client) => {
+    await client.query(
+      'UPDATE tenants SET is_suspended = false, date_suspended = NULL, status = $2, date_changed = now() WHERE id = $1',
+      [tenant.id, Status.Pending],
+    );
+    await enqueue(boss, client, { type: 'tenant.resume', tenantId: tenant.id });
+  });
+}
+
+/** Removes the store; its backups are kept for the retention period. A store already being removed is left as it is. */
+export async function deleteTenant(pool: Pool, boss: PgBoss, tenant: TenantRef): Promise<void> {
+  if (tenant.status === Status.Removing) return;
+  await withTransaction(pool, async (client) => {
+    await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenant.id, Status.Removing]);
+    await enqueue(boss, client, { type: 'tenant.delete', tenantId: tenant.id });
+  });
 }

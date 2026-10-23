@@ -242,6 +242,11 @@ describe('a signed-in owner', () => {
     expect((await asUser(owner.cookie, 'GET', `/account/tenants/${theirs.id}/mail-domain`)).status).toBe(404);
     expect((await asUser(owner.cookie, 'PUT', `/account/tenants/${theirs.id}/domains/main`, { domainName: 'x.example.com' })).status).toBe(404);
     expect((await asUser(owner.cookie, 'POST', `/account/tenants/${theirs.id}/restore`, { backupId: theirs.id })).status).toBe(404);
+    // Suspending and deleting are the platform admin's, even for the owner's own store.
+    expect((await asUser(owner.cookie, 'POST', `/account/tenants/${mine.id}/suspend`, {})).status).toBe(404);
+    expect((await asUser(owner.cookie, 'POST', `/account/tenants/${mine.id}/resume`, {})).status).toBe(404);
+    expect((await asUser(owner.cookie, 'DELETE', `/account/tenants/${mine.id}`)).status).toBe(404);
+    expect((await asUser(owner.cookie, 'GET', `/account/tenants/${mine.id}`)).status).toBe(200);
 
     for (const state of ['queued', 'running', 'failed']) {
       expect((await asUser(owner.cookie, 'GET', `/account/jobs?state=${state}`)).status).toBe(200);
