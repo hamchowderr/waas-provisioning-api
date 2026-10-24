@@ -116,6 +116,10 @@ export class CoolifyClient {
     return this.request<unknown>('POST', `/services/${uuid}/start`);
   }
 
+  stopService(uuid: string) {
+    return this.request<unknown>('POST', `/services/${uuid}/stop`);
+  }
+
   restartService(uuid: string) {
     return this.request<unknown>('POST', `/services/${uuid}/restart`);
   }

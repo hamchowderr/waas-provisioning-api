@@ -283,6 +283,10 @@ async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secr
 
   // A delete queued meanwhile has already set Removing; leave that alone.
   await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [version.id, Status.Done, Status.Pending]);
+
+  // Its snapshots are taken, so the site isn't needed any more: 18 idle version sites once loaded the server.
+  // The version is built either way, so a failed stop is only logged.
+  await provisioner.stopVersion({ versionId: version.id }).catch((err: unknown) => console.error(`Version ${version.id}: stop failed: ${(err as Error).message}`));
 }
 
 async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'tenant.create' }>, mailbox?: string) {

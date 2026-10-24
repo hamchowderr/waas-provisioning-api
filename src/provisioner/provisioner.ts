@@ -65,6 +65,12 @@ export interface Provisioner {
 
   deleteVersion(input: { versionId: string }): Promise<void>;
 
+  /**
+   * Stops a built version's site to free the server. Stores are built from the version's saved code,
+   * not from its site, and building the version again starts the site again.
+   */
+  stopVersion(input: { versionId: string }): Promise<void>;
+
   // Snapshots: a store's files and database, used to create new stores.
 
   /** Copies a snapshot so it can be used with another version. */
