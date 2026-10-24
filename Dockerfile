@@ -9,6 +9,7 @@ COPY tsconfig.json ./
 COPY src ./src
 # The MCP server at /mcp (src/mcp.ts) and the TypeScript SDK it is built on.
 COPY mcp/src ./mcp/src
+COPY mcp/skills ./mcp/skills
 COPY sdk/typescript/src ./sdk/typescript/src
 COPY migrations ./migrations
 COPY openapi ./openapi
