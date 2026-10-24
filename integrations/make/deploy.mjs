@@ -58,7 +58,8 @@ if (!found) {
 }
 const appName = found.name;
 console.log(`App ${appName}`);
-const general = { base: 'base', common: 'common', readme: 'readme', groups: 'groups' };
+// groups goes up last: Make checks that the modules it names exist.
+const general = { base: 'base', common: 'common', readme: 'readme' };
 for (const [code, path] of Object.entries(general)) await putCode(`${api}/${appName}/${version}/${path}`, app.generalCodeFiles[code]);
 
 // The connection.
@@ -118,5 +119,7 @@ for (const [name, meta] of Object.entries(app.components.module)) {
   await putCode(`${url}/samples`, files.samples);
   await putCode(`${url}/scope`, files.scope);
 }
+
+await putCode(`${api}/${appName}/${version}/groups`, app.generalCodeFiles.groups);
 
 console.log(`Deployed ${appName} to ${zone}`);
