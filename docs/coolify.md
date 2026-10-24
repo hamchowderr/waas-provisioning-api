@@ -83,6 +83,8 @@ as the agent container's user (33, like WordPress), one run after another, so ru
 
 Stores before setup 9 ran their cron as a Coolify scheduled task named `wp-cron` (`CRON_TASK`, every 5 minutes, earlier every minute). Each run was a Coolify job plus a "task done" event in Coolify's queue, the same queue deploys and service starts wait in, and on 2026-10-23 they jammed it. On startup, `ensureStoreSetup` brings each older store to the current setup (one restart, then `configure`), and `ensureStoreCron` then removes its `wp-cron` task. A store whose setup fails keeps its task until the next start.
 
+From setup 10 the agent container is held to half a core (`cpus: 0.5`), the database to as many cores as the plan's WordPress, and each cron command is stopped after `CRON_LIMIT` (120) seconds, as the Coolify task's 5-minute timeout used to. On 2026-10-24 one store's agent ran a core flat out under setup 9, which had neither limit.
+
 **Pruning the executions.** Coolify trims that table itself, but only to 60 days: its scheduler runs `php artisan cleanup:database --yes` daily (`app/Console/Kernel.php`, not on dev instances), which deletes `scheduled_task_executions` rows older than `--keep-days` (default 60; no setting in the UI or API changes it). That leaves ~86,000 rows per store. The API cannot delete executions (no endpoint), so keep 7 days with one daily host cron job (step 4 of [self-hosting.md](self-hosting.md)). In Coolify → Servers → your server → Terminal (a root shell on the host), run `crontab -e` and add:
 
 ```

@@ -12,6 +12,7 @@ import { startMailDomainChecks } from './maildomains.ts';
 import { maintainStores } from './maintenance.ts';
 import { S3 } from './provisioner/s3.ts';
 import { startResellerInvoices } from './resellerinvoices.ts';
+import { CpuWatch } from './cpuwatch.ts';
 import { startRestoreTests } from './restoretests.ts';
 import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
 import { FakeProvisioner } from './provisioner/fake.ts';
@@ -69,7 +70,11 @@ void maintainStores(pool, provisioner, config);
 // Sign-in for people (docs/accounts.md), when AUTH_URL and AUTH_SECRET are set.
 const auth = config.auth ? createAuth(pool, config.auth) : undefined;
 
-const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets, releases, auth }).fetch, port: config.port }, (info) =>
+// The whole server's CPU for /health (src/cpuwatch.ts), sampled every minute, unless CPU_WATCH=off.
+const cpuWatch = config.cpuWatch ? new CpuWatch(config.cpuWatch) : undefined;
+cpuWatch?.start();
+
+const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets, releases, auth, cpuWatch }).fetch, port: config.port }, (info) =>
   console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'})`),
 );
 

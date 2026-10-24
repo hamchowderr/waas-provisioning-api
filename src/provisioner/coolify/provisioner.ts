@@ -156,8 +156,10 @@ export interface StoreMeta {
  * 8: the owner mu-plugin fills in the owner's address, phone, time zone, currency and name from the purchase.
  * 9: the agent container runs the store's cron (AGENT_COMMAND in compose.ts) instead of a Coolify scheduled task,
  *    and health checks run every minute instead of every 5 or 10 seconds.
+ * 10: the agent container is held to half a core, the database to the plan's cores, and each cron command stops
+ *    after CRON_LIMIT seconds.
  */
-export const STORE_SETUP = 9;
+export const STORE_SETUP = 10;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -460,7 +462,8 @@ export class CoolifyProvisioner implements Provisioner {
 
   async stopVersion({ versionId }: { versionId: string }) {
     const service = await this.findService(VERSIONS_ENV, versionName(versionId));
-    if (service) await this.coolify.stopService(service.uuid);
+    // Already stopped: no Coolify job, as daily maintenance asks for every built version.
+    if (service && !service.status?.startsWith('exited')) await this.coolify.stopService(service.uuid);
   }
 
   // Snapshots

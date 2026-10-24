@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CpuWatch } from '../src/cpuwatch.ts';
 import { createApp } from '../src/app.ts';
 import { createApiKey } from '../src/keys.ts';
 import { basic, setup, type TestContext } from './helpers.ts';
@@ -50,7 +51,17 @@ describe('Basic auth', () => {
   it('leaves /health open, and it checks Postgres and the queue', async () => {
     const res = await t.call('GET', '/health', { auth: null });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 }, restoreTest: { ok: true, status: 'off', lastPassedAt: null } });
+    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 }, restoreTest: { ok: true, status: 'off', lastPassedAt: null }, cpu: { ok: true, status: 'off' } });
+  });
+
+  it("reports the server's CPU in /health, and an hour over the limit doesn't make it a 503", async () => {
+    let tick = 0;
+    let now = 0;
+    const cpuWatch = new CpuWatch({ busyLimit: 0.45, stealLimit: 0.2, windowMinutes: 60 }, () => `cpu  ${60 * tick} 0 0 ${40 * tick} 0 0 0 0 0 0`, () => now);
+    for (; tick <= 60; tick++, now += 60_000) cpuWatch.sample();
+    const res = await createApp({ ...t.deps, cpuWatch }).request('/health');
+    expect(res.status).toBe(200);
+    expect((await res.json()).cpu).toEqual({ ok: false, busy: 0.6, steal: 0, minutes: 60 });
   });
 
   it('answers 503 from /health when Postgres is unreachable', async () => {

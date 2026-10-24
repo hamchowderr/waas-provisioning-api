@@ -1,7 +1,7 @@
 import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
-import { AGENT_COMMAND, AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
+import { AGENT_COMMAND, AGENT_SCRIPT, CRON_LIMIT, renderCompose } from '../src/provisioner/coolify/compose.ts';
 import { CRON_TASK, CoolifyProvisioner, formatMeta, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
@@ -73,7 +73,8 @@ class FakeCloud {
       return json(201, { uuid: `env-${body.name}` });
     }
     if (path === '/services' && method === 'GET') {
-      return json(200, [...this.services.values()].map(({ compose: _c, envs: _e, urls: _u, ...s }) => s));
+      // Coolify's list carries each Service's overall status, as GET /services/:uuid carries each container's.
+      return json(200, [...this.services.values()].map(({ compose: _c, envs: _e, urls: _u, ...s }) => ({ ...s, status: s.started ? 'running:healthy' : 'exited' })));
     }
     if (path === '/services' && method === 'POST') {
       const uuid = `svc-${++this.seq}`;
@@ -327,7 +328,11 @@ describe('CoolifyProvisioner', () => {
     expect(command[0]).toBe('php');
     expect(command[2]).toBe(AGENT_COMMAND);
     const wp = 'php -d memory_limit=192M /usr/local/bin/wp';
-    expect(AGENT_COMMAND).toContain(`passthru('${wp} action-scheduler run --quiet'); passthru('${wp} cron event run --due-now --quiet');`);
+    expect(AGENT_COMMAND).toContain(
+      `passthru('timeout ${CRON_LIMIT} ${wp} action-scheduler run --quiet'); passthru('timeout ${CRON_LIMIT} ${wp} cron event run --due-now --quiet');`,
+    );
+    // A cron run can't hold more than half a core, however long a store's queue is.
+    expect(parse(store.compose).services.agent.cpus).toBe(0.5);
     // Only once configured, never while suspended, and nothing Compose or Coolify would interpolate.
     expect(AGENT_COMMAND).toContain("is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')");
     expect(AGENT_COMMAND).toContain('sleep(300);');
@@ -470,6 +475,7 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'large' })).toBe('updated');
     const wordpress = parse(store.compose).services.wordpress;
     expect(wordpress).toMatchObject({ cpus: 4, mem_limit: '768m' });
+    expect(parse(store.compose).services.db.cpus).toBe(4);
     expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 32');
     expect(wordpress.environment).toMatchObject({ WAAS_STORAGE_GB: '25', WAAS_EMAILS_PER_MONTH: '50000' });
     expect(store.started).toBe(starts + 1);
@@ -770,6 +776,9 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.calls).toContain(`POST /services/${version.uuid}/stop`);
     expect(version.started).toBe(0);
     await p.stopVersion({ versionId: 'gone' });
+    expect(cloud.calls.filter((c) => c.endsWith('/stop'))).toHaveLength(1);
+    // Already stopped: nothing queued in Coolify, so daily maintenance can ask for every built version.
+    await p.stopVersion({ versionId: 'v2' });
     expect(cloud.calls.filter((c) => c.endsWith('/stop'))).toHaveLength(1);
   });
 

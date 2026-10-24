@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { purgeExpiredBackups } from '../src/jobs.ts';
+import { purgeExpiredBackups, stopBuiltVersions } from '../src/jobs.ts';
+import type { Provisioner } from '../src/provisioner/provisioner.ts';
 import { Status } from '../src/status.ts';
 import { setup, waitFor, type TestContext } from './helpers.ts';
 
@@ -68,6 +69,30 @@ describe('suspend, resume and backups', () => {
     expect(left).not.toContain('gone-91-days');
     expect(left).toContain('gone-89-days');
     expect(left).toContain(live.externalId);
+  });
+
+  it('stops the site of every built version, and leaves one still being built', async () => {
+    const versions = await t.pool.query<{ id: string; status: number }>(
+      `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, status) VALUES
+         (gen_random_uuid(), $1, 'Built', 'built.versions.waas.example', '6.8', '8.3', $2),
+         (gen_random_uuid(), $1, 'Building', 'building.versions.waas.example', '6.8', '8.3', $3)
+       RETURNING id, status`,
+      [t.productId, Status.Done, Status.Pending],
+    );
+    const stopped: string[] = [];
+    const provisioner = {
+      async stopVersion({ versionId }: { versionId: string }) {
+        if (versionId === built) throw new Error('Coolify down');
+        stopped.push(versionId);
+      },
+    } as unknown as Provisioner;
+    const built = versions.rows.find((v) => v.status === Status.Done)!.id;
+    const building = versions.rows.find((v) => v.status === Status.Pending)!.id;
+    // One version failing to stop doesn't stop the rest, or the maintenance after it.
+    await stopBuiltVersions(t.pool, provisioner);
+    expect(stopped).not.toContain(building);
+    const done = (await t.pool.query<{ id: string }>('SELECT id FROM versions WHERE status = $1', [Status.Done])).rows.map((r) => r.id);
+    expect(stopped.sort()).toEqual(done.filter((id) => id !== built).sort());
   });
 
   it('schedules the purge daily on the maintenance queue', async () => {

@@ -174,6 +174,7 @@ export function createJobHandlers(
       await purgeExpiredImports(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
       await maintainDashboardDomains(pool, dashboardHost());
+      await stopBuiltVersions(pool, provisioner);
     },
 
     async fail(data: JobData, error: unknown, job: { id: string; attempts: number }) {
@@ -342,4 +343,17 @@ export async function purgeExpiredBackups(pool: Pool, provisioner: Provisioner, 
     await pool.query('DELETE FROM tenant_backups WHERE id = $1', [id]);
   }
   return rows.length;
+}
+
+/**
+ * Stops the site of every built version. A version's site is only needed while it is built (stores start from its
+ * code and snapshots in storage), and the build stops it (createVersion), but one started again by hand, or built
+ * before that, kept running a full WordPress and MariaDB for nothing: on 2026-10-24 a template a day out of
+ * production still ran on a CPU-limited server.
+ */
+export async function stopBuiltVersions(pool: Pool, provisioner: Provisioner) {
+  const { rows } = await pool.query<{ id: string }>('SELECT id FROM versions WHERE status = $1', [Status.Done]);
+  for (const { id } of rows) {
+    await provisioner.stopVersion({ versionId: id }).catch((err: unknown) => console.error(`Version ${id}: stop failed: ${(err as Error).message}`));
+  }
 }
