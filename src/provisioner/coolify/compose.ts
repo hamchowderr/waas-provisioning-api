@@ -47,7 +47,7 @@ const wordpressEntrypoint = (workers: number) => [
  * from printing a warning.
  *
  * WP-cron does not run on page loads (DISABLE_WP_CRON): a quiet store would run its scheduled
- * jobs late or never. The store's `wp-cron` scheduled task runs them every minute instead
+ * jobs late or never. The store's `wp-cron` scheduled task runs them every 5 minutes instead
  * (CRON_TASK in provisioner.ts). WP_CACHE loads the page cache drop-in the agent installs (install_cache in
  * agent.php). A phpConstant of the same name comes first and wins.
  */

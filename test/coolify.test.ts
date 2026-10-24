@@ -315,12 +315,12 @@ describe('CoolifyProvisioner', () => {
     expect(onDemandTasks(cloud)).toEqual([]);
   });
 
-  it('gives a new store one enabled wp-cron task in the agent, every minute', async () => {
+  it('gives a new store one enabled wp-cron task in the agent, every 5 minutes', async () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     const crons = cronTasks(cloud);
     expect(crons).toHaveLength(1);
-    expect(crons[0]).toMatchObject({ service: store.uuid, container: 'agent', frequency: '* * * * *', timeout: 300, enabled: true });
+    expect(crons[0]).toMatchObject({ service: store.uuid, container: 'agent', frequency: '*/5 * * * *', timeout: 300, enabled: true });
     const command = crons[0]!.command;
     expect(command.length).toBeLessThanOrEqual(255);
     const wp = 'php -d memory_limit=192M /usr/local/bin/wp';
