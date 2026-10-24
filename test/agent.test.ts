@@ -301,6 +301,12 @@ do_action('shutdown');
     expect(saved()).toHaveLength(0);
   });
 
+  it("turns the store's cron on when configured", () => {
+    rmSync(join(content(), '.waas-cron'), { force: true });
+    configure();
+    expect(existsSync(join(content(), '.waas-cron'))).toBe(true);
+  });
+
   it("leaves another cache plugin's drop-in alone", () => {
     writeFileSync(join(content(), 'advanced-cache.php'), '<?php // Another cache plugin');
     configure();

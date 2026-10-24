@@ -1,7 +1,7 @@
 import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
-import { AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
+import { AGENT_COMMAND, AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
 import { CRON_TASK, CoolifyProvisioner, formatMeta, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
@@ -319,60 +319,75 @@ describe('CoolifyProvisioner', () => {
     expect(onDemandTasks(cloud)).toEqual([]);
   });
 
-  it('gives a new store one enabled wp-cron task in the agent, every 5 minutes', async () => {
+  it("runs a new store's cron in its agent, every 5 minutes, with no Coolify task", async () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
-    const crons = cronTasks(cloud);
-    expect(crons).toHaveLength(1);
-    expect(crons[0]).toMatchObject({ service: store.uuid, container: 'agent', frequency: '*/5 * * * *', timeout: 300, enabled: true });
-    const command = crons[0]!.command;
-    expect(command.length).toBeLessThanOrEqual(255);
+    expect(cronTasks(cloud)).toEqual([]);
+    const command = parse(store.compose).services.agent.command;
+    expect(command[0]).toBe('php');
+    expect(command[2]).toBe(AGENT_COMMAND);
     const wp = 'php -d memory_limit=192M /usr/local/bin/wp';
-    expect(command).toContain(`${wp} action-scheduler run --quiet; ${wp} cron event run --due-now --quiet`);
-    // Not while suspended, never overlapping, and nothing Coolify's sh -c '...' would cut.
-    expect(command).toMatch(/^\[ -f \/var\/www\/html\/wp-content\/\.waas-suspended \] \|\| flock -n /);
-    expect(command).not.toContain("'");
-    expect(command).not.toContain('$');
-    // Created once the store is restored and configured.
-    expect(cloud.calls.findLastIndex((c) => c.endsWith('/scheduled-tasks') && c.startsWith('POST'))).toBeGreaterThan(
-      cloud.calls.findLastIndex((c) => c.endsWith('/execute')),
-    );
+    expect(AGENT_COMMAND).toContain(`passthru('${wp} action-scheduler run --quiet'); passthru('${wp} cron event run --due-now --quiet');`);
+    // Only once configured, never while suspended, and nothing Compose or Coolify would interpolate.
+    expect(AGENT_COMMAND).toContain("is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')");
+    expect(AGENT_COMMAND).toContain('sleep(300);');
+    expect(AGENT_COMMAND).not.toContain('$');
+    expect(cloud.agentOps.map((o) => o.op)).toContain('configure');
   });
 
-  it('does not duplicate the wp-cron task when a create is retried', async () => {
+  it('removes a wp-cron task a retried create finds', async () => {
     await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    cloud.tasks.set('task-old', { ...CRON_TASK, service: store.uuid, executions: [] });
     await p.createStore(storeInput);
-    expect(cronTasks(cloud)).toHaveLength(1);
+    expect(cronTasks(cloud)).toEqual([]);
   });
 
-  it('replaces a wp-cron task that differs, and removes duplicates', async () => {
+  it("keeps an older store's wp-cron task as CRON_TASK says until it gets the current setup, then removes it", async () => {
     await p.createStore(storeInput);
-    const [uuid] = [...cloud.tasks].find(([, t]) => t.name === CRON_TASK.name)!;
-    cloud.tasks.get(uuid)!.enabled = false;
-    cloud.tasks.set('task-dup', { ...cloud.tasks.get(uuid)!, enabled: true, executions: [] });
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup 8, size small`;
+    cloud.tasks.set('task-old', { ...CRON_TASK, service: store.uuid, enabled: false, executions: [] });
+    cloud.tasks.set('task-dup', { ...CRON_TASK, service: store.uuid, executions: [] });
     expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('updated');
     expect(cronTasks(cloud)).toHaveLength(1);
     expect(cronTasks(cloud)[0]).toMatchObject({ enabled: true, command: CRON_TASK.command });
     expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
+
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
+    expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('updated');
+    expect(cronTasks(cloud)).toEqual([]);
+    expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
   });
 
-  it('backfills a store created before stores had a cron: new compose, one restart, then the task', async () => {
+  it('brings an older store with no cron at all to the current setup: new compose, one restart, configure', async () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
-    for (const [uuid, t] of cloud.tasks) if (t.name === CRON_TASK.name) cloud.tasks.delete(uuid);
+    store.description = `WaaS store, version ${VERSION_ID}`;
     store.compose = 'old compose';
     const starts = store.started;
 
     expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('created');
     expect(parse(store.compose).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA).toContain("define('DISABLE_WP_CRON', true)");
+    expect(parse(store.compose).services.agent.command[2]).toBe(AGENT_COMMAND);
     expect(store.started).toBe(starts + 1);
-    expect(cronTasks(cloud)).toHaveLength(1);
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure' });
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
+    expect(cronTasks(cloud)).toEqual([]);
 
     // Again: nothing to do, no restart.
     cloud.calls = [];
     expect(await p.ensureStoreCron({ storeId: STORE_ID })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
     expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('checks health every minute, and every 2 seconds while a container starts', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    for (const service of Object.values(parse(store.compose).services) as { healthcheck: Record<string, unknown> }[]) {
+      expect(service.healthcheck).toMatchObject({ interval: '60s', start_interval: '2s', start_period: '180s' });
+    }
   });
 
   it('brings a store from an older setup to the current one: new compose, one restart, agent files, then the description', async () => {
@@ -486,7 +501,7 @@ describe('CoolifyProvisioner', () => {
     expect(store.description).toBe(`WaaS store, version v9, setup ${STORE_SETUP}, size large`);
     expect(parse(store.compose).services.wordpress.cpus).toBe(4);
 
-    for (const [uuid, t] of cloud.tasks) if (t.name === CRON_TASK.name) cloud.tasks.delete(uuid);
+    store.description = 'WaaS store, version v9, setup 8, size large';
     store.compose = 'old compose';
     await p.ensureStoreCron({ storeId: STORE_ID });
     expect(parse(store.compose).services.wordpress.cpus).toBe(4);
@@ -887,7 +902,8 @@ describe('CoolifyProvisioner', () => {
     await p.setDomains({ storeId: STORE_ID, mainDomain: 'new-shop.example.com', redirectDomains: [] });
     await p.updateStore({ storeId: STORE_ID, phpConstants: storeInput.phpConstants, wpOptions: { blogdescription: 'New' } });
     await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
-    for (const [uuid, t] of cloud.tasks) if (t.name === CRON_TASK.name) cloud.tasks.delete(uuid);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = 'WaaS store, version v9';
     await p.ensureStoreCron({ storeId: STORE_ID });
     expect(cloud.calls.filter((c) => c.endsWith('/restart'))).toHaveLength(4);
     // No agent command ran in the old containers.
