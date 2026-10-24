@@ -1,6 +1,6 @@
 # Site editing
 
-An AI agent connected to the API's MCP server (`/mcp`) can change a store's pages and design: add a page, put a ready-made section on it, rewrite its text, change the site's colours and fonts, edit the header, footer and menus, and undo through revisions. The store's own plugin, WaaS Client (2.3.0 or newer), does the work in WordPress; the API passes each request on, signed for that store only.
+An AI agent connected to the API's MCP server (`/mcp`, or `/mcp/site` for a website's own owner) can change a store's pages and design: add a page, put a ready-made section on it, rewrite its text, change the site's colours and fonts, edit the header, footer and menus, and undo through revisions. The store's own plugin, WaaS Client (2.3.0 or newer), does the work in WordPress; the API passes each request on, signed for that store only.
 
 ## How a request reaches the store
 

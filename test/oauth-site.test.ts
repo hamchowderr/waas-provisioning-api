@@ -44,7 +44,7 @@ function provider() {
   return p;
 }
 
-const transportFor = (authProvider: OAuthClientProvider) => new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), { fetch: appFetch, authProvider });
+const transportFor = (authProvider: OAuthClientProvider) => new StreamableHTTPClientTransport(new URL(`${BASE}/mcp/site`), { fetch: appFetch, authProvider });
 const decode = (value: string) => value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 /** Starts a connection and types `site` on the approve page; returns the provider and the answer. */
@@ -53,7 +53,8 @@ async function typeAddress(site: string) {
   await expect(new Client({ name: 'agent', version: '1' }).connect(transportFor(p))).rejects.toBeInstanceOf(UnauthorizedError);
   const url = p.saved.authorizationUrl!;
   const html = await (await t.app.request(`${url.pathname}${url.search}`)).text();
-  expect(html).toContain('Sign in with your website');
+  expect(html).toContain('Your website');
+  expect(html).not.toContain('value="signin"');
   const hidden = Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, decode(m[2]!)]));
   const response = await t.app.request('/oauth/authorize', {
     method: 'POST',
@@ -164,5 +165,33 @@ describe('Sign in with your website', () => {
     const denied = await storeAnswers(link, 'deny');
     expect(new URL(denied.headers.get('Location')!).searchParams.get('error')).toBe('access_denied');
     expect((await storeAnswers(link, 'allow')).status).toBe(400);
+  });
+
+  it('keeps the store address for store owners: /mcp offers no website box and refuses one', async () => {
+    const p = provider();
+    const transport = new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), { fetch: appFetch, authProvider: p });
+    await expect(new Client({ name: 'agent', version: '1' }).connect(transport)).rejects.toBeInstanceOf(UnauthorizedError);
+    const url = p.saved.authorizationUrl!;
+    const html = await (await t.app.request(`${url.pathname}${url.search}`)).text();
+    expect(html).not.toContain('name="site"');
+    const hidden = Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, decode(m[2]!)]));
+    const response = await t.app.request('/oauth/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...hidden, action: 'site', site: mainDomain }).toString(),
+    });
+    expect(response.status).toBe(400);
+    expect(response.headers.get('Location')).toBeNull();
+  });
+
+  it('takes no API key at /mcp/site', async () => {
+    const { key, secret } = await createApiKey(t.pool, t.productId);
+    const response = await t.app.request('/mcp/site', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers.get('WWW-Authenticate')).not.toContain('Basic');
   });
 });
