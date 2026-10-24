@@ -8,7 +8,7 @@ export const AGENT_SCRIPT = readFileSync(new URL('./agent.php', import.meta.url)
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
 /** Per-store limits (docs/coolify.md). WordPress's CPU, memory and Apache workers come from the store's size (plans.ts). */
-export const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m' } };
+export const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 } };
 
 /**
  * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
@@ -66,20 +66,25 @@ export function wordpressImage(wordPressVersion: string, phpVersion: string): st
 
 const WP = 'php -d memory_limit=192M /usr/local/bin/wp';
 
+/** How long one cron command may run, in seconds (busybox `timeout` in the wordpress:cli image). */
+export const CRON_LIMIT = 120;
+
 /**
  * The agent container's command: it writes the agent script, then runs the store's cron (WP-cron and Action
  * Scheduler) every 5 minutes, one run after another, while the store is configured and not suspended (CRON_FLAG
  * and FLAG in agent.php). It used to be a Coolify scheduled task per store, but each run was a Coolify job and a
  * "task done" event, and on 2026-10-23 those jammed the queue that deploys and service starts wait in. The first
- * run waits a random 1 to 5 minutes, so stores that start together don't all run at once. Written without `$`,
- * which Docker Compose and Coolify would both try to interpolate.
+ * run waits a random 1 to 5 minutes, so stores that start together don't all run at once. Each command is stopped
+ * after CRON_LIMIT seconds, as the Coolify task's timeout used to: a queue that never empties (an action that keeps
+ * rescheduling itself) would otherwise keep one run going, and a core busy, forever. Written without `$`, which
+ * Docker Compose and Coolify would both try to interpolate.
  */
 export const AGENT_COMMAND = [
   "file_put_contents('/tmp/waas-agent.php', base64_decode(getenv('WAAS_AGENT_B64')));",
   'sleep(random_int(60, 300));',
   'while (true) {',
   "if (is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')) {",
-  `passthru('${WP} action-scheduler run --quiet'); passthru('${WP} cron event run --due-now --quiet');`,
+  `passthru('timeout ${CRON_LIMIT} ${WP} action-scheduler run --quiet'); passthru('timeout ${CRON_LIMIT} ${WP} cron event run --due-now --quiet');`,
   '}',
   'sleep(300);',
   '}',
@@ -154,6 +159,9 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         volumes: ['wp:/var/www/html'],
         depends_on: ['wordpress'],
         mem_limit: LIMITS.agent.mem,
+        // Cron and the agent's operations (backups, restores) never get more than half a core, whatever a store's
+        // plugins do: on 2026-10-24 one store's agent ran a core flat out on a shared server.
+        cpus: LIMITS.agent.cpus,
         healthcheck: { test: ['CMD', 'php', '-r', "exit(is_file('/tmp/waas-agent.php') ? 0 : 1);"], ...HEALTH },
       },
     },
