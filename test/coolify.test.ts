@@ -120,6 +120,10 @@ class FakeCloud {
         if (rest === '/restart') service.restarting = { ...this.restartPhases };
         return json(200, { message: 'queued' });
       }
+      if (rest === '/stop' && method === 'POST') {
+        service.started = 0;
+        return json(200, { message: 'queued' });
+      }
       if (rest === '/envs' && method === 'GET') {
         // Coolify hands a literal variable's real_value back wrapped in single quotes, as it writes it to .env.
         return json(200, [...service.envs].map(([key, e]) => ({ uuid: e.uuid, key, value: e.value, real_value: e.literal ? `'${e.value}'` : e.value })));
@@ -741,6 +745,17 @@ describe('CoolifyProvisioner', () => {
     // The plugins step runs with no choices too: it undoes any an earlier version applied to the archive.
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'plugins', 'code-export']);
     expect(cloud.agentOps[2]!.args).toEqual({ plugins: [] });
+  });
+
+  it('stops a version site, and does nothing for a version without one', async () => {
+    cloud.objects.set('base/base-1.zip', new Uint8Array([80, 75]));
+    await p.buildVersion({ versionId: 'v2', domain: 'v2.versions.example.com', wordPressVersion: '6.8', phpVersion: '8.2', source: { baseSnapshotId: 'base-1' } });
+    const version = [...cloud.services.values()].find((s) => s.name === 'version-v2')!;
+    await p.stopVersion({ versionId: 'v2' });
+    expect(cloud.calls).toContain(`POST /services/${version.uuid}/stop`);
+    expect(version.started).toBe(0);
+    await p.stopVersion({ versionId: 'gone' });
+    expect(cloud.calls.filter((c) => c.endsWith('/stop'))).toHaveLength(1);
   });
 
   it('applies plugin choices with signed links to the kept zips, and keeps each zip once', async () => {

@@ -103,6 +103,10 @@ export class FakeProvisioner implements Provisioner {
     this.versions.delete(versionId);
   }
 
+  async stopVersion(_input: { versionId: string }) {
+    this.check('stopVersion');
+  }
+
   async copySnapshot({ snapshotId, newSnapshotId, targetVersionId }: Parameters<Provisioner['copySnapshot']>[0]) {
     this.check('copySnapshot');
     this.snapshots.set(newSnapshotId, { versionId: targetVersionId, sourceSnapshotId: snapshotId });

@@ -457,6 +457,11 @@ export class CoolifyProvisioner implements Provisioner {
     await this.s3.delete(keys.upload(versionId, false));
   }
 
+  async stopVersion({ versionId }: { versionId: string }) {
+    const service = await this.findService(VERSIONS_ENV, versionName(versionId));
+    if (service) await this.coolify.stopService(service.uuid);
+  }
+
   // Snapshots
 
   async copySnapshot({ snapshotId, newSnapshotId }: Parameters<Provisioner['copySnapshot']>[0]) {
