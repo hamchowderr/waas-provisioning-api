@@ -6,6 +6,8 @@ name: Release Zapier app
 on:
   push:
     tags: ['zapier-v*']
+  # Or run it by hand on main: releases the version in package.json.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,10 +25,15 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: integrations/zapier/package-lock.json
-      - name: Check the tag matches package.json
+      - name: Check the tag (or branch, when run by hand) matches package.json
         run: |
           expected="zapier-v$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$GITHUB_REF" != refs/heads/main ]; then
+              echo "::error::Run it by hand on main only (got $GITHUB_REF)"
+              exit 1
+            fi
+          elif [ "$GITHUB_REF_NAME" != "$expected" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json (expected $expected)"
             exit 1
           fi
