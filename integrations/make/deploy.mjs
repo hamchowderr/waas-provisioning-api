@@ -22,7 +22,8 @@ async function call(method, url, body, contentType = 'application/json') {
   const res = await fetch(url, {
     method,
     headers: { Authorization: `Token ${token}`, ...(body === undefined ? {} : { 'Content-Type': contentType }) },
-    body: body === undefined ? undefined : contentType === 'application/json' ? JSON.stringify(body) : body,
+    // Code files arrive as text already; only objects get encoded here.
+    body: body === undefined || typeof body === 'string' ? body : JSON.stringify(body),
   });
   const text = await res.text();
   if (method === 'GET' && res.status === 404) return null;
@@ -33,8 +34,6 @@ async function call(method, url, body, contentType = 'application/json') {
 /** Uploads one code file. IML files go up as written, comments included, as the extension sends them. */
 async function putCode(url, file) {
   if (!file) return;
-  // Make refuses an empty object ("must be a collection"), and an empty file means nothing to set.
-  if (/^\s*\{\s*\}\s*$/.test(readFileSync(new URL(file, dir), 'utf8'))) return;
   const type = file.endsWith('.md') ? 'text/markdown' : file.endsWith('.jsonc') ? 'application/jsonc' : 'application/json';
   await call('PUT', url, readFileSync(new URL(file, dir), 'utf8'), type);
   console.log(`  ${file}`);
