@@ -11,6 +11,21 @@ const VERSION = /^\d+(\.\d+){0,2}$/;
 export const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m' } };
 
 /**
+ * A health check that runs every 5 seconds while the container starts (so creating or restarting a store,
+ * which waits for healthy, is as quick as ever) and every 5 minutes after. Each check is a `docker exec`, and
+ * at 5 to 10 seconds across every store those starts alone kept the server's load near 100 (waas-api-6b9).
+ * `startPeriod` covers the slowest start each service has; two failed checks after it mark it unhealthy.
+ */
+const healthcheck = (test: string[], startPeriod: string) => ({
+  test,
+  interval: '5m',
+  timeout: '5s',
+  retries: 2,
+  start_period: startPeriod,
+  start_interval: '5s',
+});
+
+/**
  * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
  * visitors at once push a store with every template plugin past its 512 MB, and the kernel then kills
  * workers mid-request. With 8 (about 30 MB each) a small store stays near 270 MB and later visitors wait in
@@ -103,7 +118,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         depends_on: { db: { condition: 'service_healthy' } },
         mem_limit: size.mem,
         cpus: size.cpus,
-        healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], interval: '10s', timeout: '5s', retries: 10 },
+        healthcheck: healthcheck(['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], '3m'),
       },
       db: {
         image: 'mariadb:11',
@@ -116,7 +131,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         },
         volumes: ['db:/var/lib/mysql'],
         mem_limit: LIMITS.db.mem,
-        healthcheck: { test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized'], interval: '10s', timeout: '5s', retries: 10 },
+        healthcheck: healthcheck(['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized'], '5m'),
       },
       agent: {
         image: `wordpress:cli-php${input.phpVersion}`,
@@ -127,7 +142,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         volumes: ['wp:/var/www/html'],
         depends_on: ['wordpress'],
         mem_limit: LIMITS.agent.mem,
-        healthcheck: { test: ['CMD', 'php', '-r', "exit(is_file('/tmp/waas-agent.php') ? 0 : 1);"], interval: '5s', timeout: '5s', retries: 10 },
+        healthcheck: healthcheck(['CMD', 'php', '-r', "exit(is_file('/tmp/waas-agent.php') ? 0 : 1);"], '1m'),
       },
     },
     volumes: { wp: {}, db: {} },

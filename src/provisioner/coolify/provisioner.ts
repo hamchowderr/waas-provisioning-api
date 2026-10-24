@@ -153,8 +153,9 @@ export interface StoreMeta {
  *    mail-count operation, and replies to the store's own mailbox reach its administrator.
  * 7: the mail mu-plugin fills in each Fluent plugin's own sender (From and Reply-To) with how the store sends.
  * 8: the owner mu-plugin fills in the owner's address, phone, time zone, currency and name from the purchase.
+ * 9: health checks every 5 minutes after start-up instead of every 5 to 10 seconds.
  */
-export const STORE_SETUP = 8;
+export const STORE_SETUP = 9;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;

@@ -989,6 +989,14 @@ describe('Store compose file', () => {
     }
   });
 
+  it('checks health every 5 seconds while starting and every 5 minutes after', () => {
+    const { services } = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' }));
+    const startPeriods = { wordpress: '3m', db: '5m', agent: '1m' };
+    for (const [name, startPeriod] of Object.entries(startPeriods)) {
+      expect(services[name].healthcheck).toMatchObject({ interval: '5m', start_interval: '5s', start_period: startPeriod, retries: 2 });
+    }
+  });
+
   it('runs a version site as small, without quotas', () => {
     const compose = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' }));
     expect(compose.services.wordpress).toMatchObject({ cpus: 1, mem_limit: '512m' });
