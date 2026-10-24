@@ -47,9 +47,8 @@ const wordpressEntrypoint = (workers: number) => [
  * from printing a warning.
  *
  * WP-cron does not run on page loads (DISABLE_WP_CRON): a quiet store would run its scheduled
- * jobs late or never. The store's `wp-cron` scheduled task runs them every 5 minutes instead
- * (CRON_TASK in provisioner.ts). WP_CACHE loads the page cache drop-in the agent installs (install_cache in
- * agent.php). A phpConstant of the same name comes first and wins.
+ * jobs late or never. The agent container runs them every 5 minutes instead (AGENT_COMMAND).
+ * WP_CACHE loads the page cache drop-in the agent installs (install_cache in agent.php). A phpConstant of the same name comes first and wins.
  */
 const CONFIG_EXTRA = [
   "@array_map('define',",
@@ -64,6 +63,34 @@ export function wordpressImage(wordPressVersion: string, phpVersion: string): st
   if (!VERSION.test(wordPressVersion) || !VERSION.test(phpVersion)) throw new Error(`Unsupported WordPress ${wordPressVersion} / PHP ${phpVersion}`);
   return `wordpress:${wordPressVersion}-php${phpVersion}-apache`;
 }
+
+const WP = 'php -d memory_limit=192M /usr/local/bin/wp';
+
+/**
+ * The agent container's command: it writes the agent script, then runs the store's cron (WP-cron and Action
+ * Scheduler) every 5 minutes, one run after another, while the store is configured and not suspended (CRON_FLAG
+ * and FLAG in agent.php). It used to be a Coolify scheduled task per store, but each run was a Coolify job and a
+ * "task done" event, and on 2026-10-23 those jammed the queue that deploys and service starts wait in. The first
+ * run waits a random 1 to 5 minutes, so stores that start together don't all run at once. Written without `$`,
+ * which Docker Compose and Coolify would both try to interpolate.
+ */
+export const AGENT_COMMAND = [
+  "file_put_contents('/tmp/waas-agent.php', base64_decode(getenv('WAAS_AGENT_B64')));",
+  'sleep(random_int(60, 300));',
+  'while (true) {',
+  "if (is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')) {",
+  `passthru('${WP} action-scheduler run --quiet'); passthru('${WP} cron event run --due-now --quiet');`,
+  '}',
+  'sleep(300);',
+  '}',
+].join(' ');
+
+/**
+ * Health checks run every minute: each one is a process in the container, and with every store's three containers
+ * checking every 5 or 10 seconds they added up to over a thousand a minute. While a container starts they run every
+ * 2 seconds, so a new or restarted store is seen healthy as soon as it is.
+ */
+const HEALTH = { interval: '60s', timeout: '5s', retries: 3, start_period: '180s', start_interval: '2s' };
 
 /**
  * The Docker Compose file of one store (or version site): WordPress, MariaDB and the WP-CLI agent. A store has a
@@ -103,7 +130,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         depends_on: { db: { condition: 'service_healthy' } },
         mem_limit: size.mem,
         cpus: size.cpus,
-        healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], interval: '10s', timeout: '5s', retries: 10 },
+        healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], ...HEALTH },
       },
       db: {
         image: 'mariadb:11',
@@ -116,18 +143,18 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         },
         volumes: ['db:/var/lib/mysql'],
         mem_limit: LIMITS.db.mem,
-        healthcheck: { test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized'], interval: '10s', timeout: '5s', retries: 10 },
+        healthcheck: { test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized'], ...HEALTH },
       },
       agent: {
         image: `wordpress:cli-php${input.phpVersion}`,
         restart: 'unless-stopped',
         user: '33:33',
         environment: { ...wpEnv, WAAS_AGENT_B64: Buffer.from(AGENT_SCRIPT).toString('base64'), WAAS_INIT_PASSWORD: '${WAAS_INIT_PASSWORD:-}' },
-        command: ['php', '-r', "file_put_contents('/tmp/waas-agent.php', base64_decode(getenv('WAAS_AGENT_B64'))); while (true) sleep(3600);"],
+        command: ['php', '-r', AGENT_COMMAND],
         volumes: ['wp:/var/www/html'],
         depends_on: ['wordpress'],
         mem_limit: LIMITS.agent.mem,
-        healthcheck: { test: ['CMD', 'php', '-r', "exit(is_file('/tmp/waas-agent.php') ? 0 : 1);"], interval: '5s', timeout: '5s', retries: 10 },
+        healthcheck: { test: ['CMD', 'php', '-r', "exit(is_file('/tmp/waas-agent.php') ? 0 : 1);"], ...HEALTH },
       },
     },
     volumes: { wp: {}, db: {} },

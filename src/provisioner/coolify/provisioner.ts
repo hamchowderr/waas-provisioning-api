@@ -97,13 +97,12 @@ const STAGE_CHUNK = 200;
 const WP = 'php -d memory_limit=192M /usr/local/bin/wp';
 
 /**
- * Each store's cron: WP-cron and Action Scheduler every 5 minutes, from the agent container (which
- * runs as uid 33, as WordPress does), since DISABLE_WP_CRON keeps page loads from running them
- * (compose.ts). Skipped while the store is suspended: the contract says its cron stops. `flock`
- * keeps a slow run from overlapping the next one in the agent's 256 MB. No single quotes:
- * Coolify wraps the command in sh -c '...'. Not every minute: each run is a Coolify job plus a
- * "task done" event, and at a minute per store they came in faster than Coolify's queue could
- * work them off, so deploys and service starts waited behind them (2026-10-23).
+ * The Coolify scheduled task that ran a store's cron before setup 9, when the agent container took it over
+ * (AGENT_COMMAND in compose.ts). A store still on an older setup keeps it, as it was, until ensureStoreSetup
+ * brings the store to the current one; then ensureStoreCron removes it. Every 5 minutes, not every minute: each
+ * run is a Coolify job plus a "task done" event, and at a minute per store they came in faster than Coolify's
+ * queue could work them off, so deploys and service starts waited behind them (2026-10-23). No single quotes:
+ * Coolify wraps the command in sh -c '...'.
  */
 export const CRON_TASK = {
   name: 'wp-cron',
@@ -155,8 +154,10 @@ export interface StoreMeta {
  *    mail-count operation, and replies to the store's own mailbox reach its administrator.
  * 7: the mail mu-plugin fills in each Fluent plugin's own sender (From and Reply-To) with how the store sends.
  * 8: the owner mu-plugin fills in the owner's address, phone, time zone, currency and name from the purchase.
+ * 9: the agent container runs the store's cron (AGENT_COMMAND in compose.ts) instead of a Coolify scheduled task,
+ *    and health checks run every minute instead of every 5 or 10 seconds.
  */
-export const STORE_SETUP = 8;
+export const STORE_SETUP = 9;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -536,12 +537,13 @@ export class CoolifyProvisioner implements Provisioner {
       // The first user's password is needed once; don't leave it in Coolify.
       if (envs.WAAS_INIT_PASSWORD) await this.removeEnv(uuid, 'WAAS_INIT_PASSWORD');
     }
-    await this.ensureCron(uuid);
+    // Its agent runs its cron from now on (configure set the flag); a task left by an older retry goes.
+    await this.removeCron(uuid);
   }
 
   /**
-   * Makes the Service's `wp-cron` task exist exactly once, as CRON_TASK says. Found by name, so a
-   * retry reuses it; a task of that name that differs (or a duplicate) is replaced.
+   * Makes the Service's `wp-cron` task exist exactly once, as CRON_TASK says, for a store on a setup
+   * before 9. Found by name, so a retry reuses it; a task of that name that differs (or a duplicate) is replaced.
    */
   private async ensureCron(uuid: string): Promise<'created' | 'updated' | 'unchanged'> {
     const named = (await this.coolify.listTasks(uuid)).filter((t) => t.name === CRON_TASK.name);
@@ -571,18 +573,29 @@ export class CoolifyProvisioner implements Provisioner {
     return 'updated';
   }
 
+  /** Removes the Service's `wp-cron` tasks: a store on the current setup runs its cron in its agent. */
+  private async removeCron(uuid: string): Promise<'updated' | 'unchanged'> {
+    const named = (await this.coolify.listTasks(uuid)).filter((t) => t.name === CRON_TASK.name);
+    for (const task of named) await this.coolify.deleteTask(uuid, task.uuid);
+    return named.length ? 'updated' : 'unchanged';
+  }
+
   /**
-   * Gives a store created before stores had a cron task its task. Such a store's compose also
-   * predates DISABLE_WP_CRON, so it is re-rendered from the store's version and the store restarted
-   * once, before the task is added: a store with the task is left alone, so this runs once.
+   * Makes sure a store's scheduled jobs run. A store on the current setup runs them in its agent, so its
+   * Coolify `wp-cron` task, if any, is removed. A store on an older setup keeps its task (CRON_TASK) until
+   * ensureStoreSetup brings it to the current one; one with no task at all is brought to the current setup
+   * here (new compose, one restart).
    */
-  async ensureStoreCron({ storeId }: { storeId: string }) {
+  async ensureStoreCron({ storeId }: { storeId: string }): Promise<'created' | 'updated' | 'unchanged'> {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    if (!(await this.coolify.listTasks(store.uuid)).some((t) => t.name === CRON_TASK.name)) {
-      await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(this.storeMeta(store)) });
-      await this.restart(store.uuid);
+    const meta = this.storeMeta(store);
+    if ((meta.setup ?? 1) < STORE_SETUP) {
+      if ((await this.coolify.listTasks(store.uuid)).some((t) => t.name === CRON_TASK.name)) return this.ensureCron(store.uuid);
+      await this.ensureStoreSetup({ storeId, size: meta.size });
+      await this.removeCron(store.uuid);
+      return 'created';
     }
-    return this.ensureCron(store.uuid);
+    return this.removeCron(store.uuid);
   }
 
   private siteKeyEnvs(storeId: string): Record<string, string> {
@@ -830,8 +843,9 @@ export class CoolifyProvisioner implements Provisioner {
 
   /**
    * The test store is an ordinary store Service named after the test (store-restore-test-<id>) on a
-   * domain that never resolves, with no mail relay, site key or cron task. It is suspended before the
-   * backup goes in, so even a request that reached it would get the "unavailable" page.
+   * domain that never resolves, with no mail relay or site key. It is never configured, so its agent runs
+   * no cron. It is suspended before the backup goes in, so even a request that reached it would get the
+   * "unavailable" page.
    */
   async testRestore({ testId, backupId, versionId, size }: Parameters<Provisioner['testRestore']>[0]): Promise<RestoreTestResult> {
     const key = keys.backup(backupId);

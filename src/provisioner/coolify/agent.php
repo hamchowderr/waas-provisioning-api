@@ -13,6 +13,12 @@
 define('ROOT', getenv('WAAS_ROOT') ?: '/var/www/html');
 const CONTENT = ROOT . '/wp-content';
 const FLAG = CONTENT . '/.waas-suspended';
+/**
+ * The agent container runs a store's cron (compose.ts) only while this flag exists. `configure` sets it, so a
+ * store's cron starts once it is built, never during the build, and never on a version site or the restore test's
+ * store, which are not configured. Kept out of archives; a restore leaves it as it was.
+ */
+const CRON_FLAG = CONTENT . '/.waas-cron';
 /** The page a suspended store shows. Rendered on suspend; kept out of snapshots, so it never spreads to other stores. */
 const PAGE = CONTENT . '/waas-unavailable.html';
 const DEFAULT_BRAND = ['name' => 'AnyPress'];
@@ -102,14 +108,14 @@ function extract_archive(string $file, string $dir): void
     }
 }
 
-/** Adds a directory to a zip under $prefix, skipping caches and the suspension flag. */
+/** Adds a directory to a zip under $prefix, skipping caches and the suspension and cron flags. */
 function zip_dir(ZipArchive $zip, string $dir, string $prefix): void
 {
     if (!is_dir($dir)) return;
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     foreach ($it as $path => $info) {
         $rel = substr($path, strlen($dir) + 1);
-        if ($rel === '.waas-suspended' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
+        if ($rel === '.waas-suspended' || $rel === '.waas-cron' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
         if ($info->isDir()) $zip->addEmptyDir("$prefix/$rel");
         elseif ($info->isFile()) $zip->addFile($path, "$prefix/$rel");
     }
@@ -1028,6 +1034,7 @@ switch ($op) {
         mkdir("$tmp/x");
         extract_archive("$tmp/archive", "$tmp/x");
         $suspended = file_exists(FLAG);
+        $cron = file_exists(CRON_FLAG);
         $page = is_file(PAGE) ? file_get_contents(PAGE) : null;
         $content = find_content("$tmp/x");
         $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
@@ -1052,6 +1059,7 @@ switch ($op) {
         }
         set_home($args['home']);
         if ($suspended) touch(FLAG); else @unlink(FLAG);
+        if ($cron) touch(CRON_FLAG); else @unlink(CRON_FLAG);
         if ($page !== null) file_put_contents(PAGE, $page);
         install_guard();
         done(['database' => $sql !== null, 'content' => $content !== null] + $result);
@@ -1069,6 +1077,7 @@ switch ($op) {
             wp('user', 'create', $user['name'], $user['email'], '--role=' . $user['role'], '--porcelain', ...$extra);
             $created = true;
         }
+        touch(CRON_FLAG) || fail('cannot write the cron flag');
         done(['userCreated' => $created]);
     }
 

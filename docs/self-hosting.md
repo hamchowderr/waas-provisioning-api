@@ -137,7 +137,7 @@ With the `S3_*` values set, the API also backs up its own database to the bucket
 
 Create the storefront's API key in the application's Terminal: `npm run create-key -- --product-name "My storefront"`. It prints the key and secret once.
 
-One host cron job keeps Coolify's own database small: each store runs a `wp-cron` task every minute, and Coolify keeps 60 days of task history. To keep 7 days, open a root shell on the server (Coolify → Servers → your server → Terminal), run `crontab -e` and add:
+One host cron job keeps Coolify's own database small: every command the API sends a store is a Coolify task, and Coolify keeps 60 days of task history. To keep 7 days, open a root shell on the server (Coolify → Servers → your server → Terminal), run `crontab -e` and add:
 
 ```
 23 4 * * * docker exec coolify-db psql -U coolify -d coolify -c "DELETE FROM scheduled_task_executions WHERE created_at < now() - interval '7 days'" > /dev/null 2>&1
@@ -232,7 +232,7 @@ Not supported for stores yet. Here is what works today and what a Kubernetes dri
 | Coolify environment variables (`WAAS_CONSTANTS_B64`, `WAAS_MAIL_B64`, `WAAS_SITE_KEY`) | A Secret per store, mounted as environment |
 | Traefik routers on the Service's domains, Let's Encrypt HTTP-01 | An Ingress per store with cert-manager; a wildcard certificate for `*.<domain>` through DNS-01 |
 | Commands as on-demand Coolify scheduled tasks in the agent | `kubectl exec` (the exec API) into the agent sidecar, running the same `agent.php` and WP-CLI commands |
-| The `wp-cron` scheduled task every minute | A CronJob per store, or one loop in the agent sidecar |
+| The cron loop in the agent container, every 5 minutes | The same loop in the agent sidecar |
 | Separate Docker network per store | A NetworkPolicy that denies traffic between stores and to the platform |
 | Coolify's own restart and status | Rollout status and readiness probes |
 
