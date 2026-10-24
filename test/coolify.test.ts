@@ -1,7 +1,7 @@
 import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
-import { AGENT_COMMAND, AGENT_SCRIPT, renderCompose } from '../src/provisioner/coolify/compose.ts';
+import { AGENT_COMMAND, AGENT_SCRIPT, CRON_LIMIT, renderCompose } from '../src/provisioner/coolify/compose.ts';
 import { CRON_TASK, CoolifyProvisioner, formatMeta, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
@@ -327,7 +327,11 @@ describe('CoolifyProvisioner', () => {
     expect(command[0]).toBe('php');
     expect(command[2]).toBe(AGENT_COMMAND);
     const wp = 'php -d memory_limit=192M /usr/local/bin/wp';
-    expect(AGENT_COMMAND).toContain(`passthru('${wp} action-scheduler run --quiet'); passthru('${wp} cron event run --due-now --quiet');`);
+    expect(AGENT_COMMAND).toContain(
+      `passthru('timeout ${CRON_LIMIT} ${wp} action-scheduler run --quiet'); passthru('timeout ${CRON_LIMIT} ${wp} cron event run --due-now --quiet');`,
+    );
+    // A cron run can't hold more than half a core, however long a store's queue is.
+    expect(parse(store.compose).services.agent.cpus).toBe(0.5);
     // Only once configured, never while suspended, and nothing Compose or Coolify would interpolate.
     expect(AGENT_COMMAND).toContain("is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')");
     expect(AGENT_COMMAND).toContain('sleep(300);');

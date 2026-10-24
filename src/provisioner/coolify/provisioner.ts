@@ -156,8 +156,9 @@ export interface StoreMeta {
  * 8: the owner mu-plugin fills in the owner's address, phone, time zone, currency and name from the purchase.
  * 9: the agent container runs the store's cron (AGENT_COMMAND in compose.ts) instead of a Coolify scheduled task,
  *    and health checks run every minute instead of every 5 or 10 seconds.
+ * 10: the agent container is held to half a core, and each cron command stops after CRON_LIMIT seconds.
  */
-export const STORE_SETUP = 9;
+export const STORE_SETUP = 10;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
