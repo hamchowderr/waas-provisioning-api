@@ -1,0 +1,18 @@
+[
+    {
+        "label": "Sites",
+        "modules": [
+            "createSite",
+            "getSite",
+            "suspendSite",
+            "resumeSite",
+            "deleteSite"
+        ]
+    },
+    {
+        "label": "Triggers",
+        "modules": [
+            "watchSiteEvents"
+        ]
+    }
+]

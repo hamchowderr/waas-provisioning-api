@@ -1,0 +1,20 @@
+// Each event is read back from the API with the connection's own key, so a request that
+// did not come from AnyPress can't pass made-up site data into the scenario.
+{
+    "url": "/tenants",
+    "method": "GET",
+    "qs": {
+        "tenantId": "{{ifempty(payload.data.tenant.id, '00000000-0000-0000-0000-000000000000')}}"
+    },
+    "response": {
+        "output": {
+            "event": "{{payload.type}}",
+            "timestamp": "{{payload.timestamp}}",
+            "verified": "{{length(body) > 0}}",
+            "action": "{{payload.data.action}}",
+            "backupId": "{{payload.data.backupId}}",
+            "site": "{{ifempty(first(body), payload.data.tenant)}}",
+            "url": "https://{{ifempty(get(first(body), 'domainName'), payload.data.tenant.domainName)}}"
+        }
+    }
+}

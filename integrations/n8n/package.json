@@ -1,0 +1,55 @@
+{
+	"name": "n8n-nodes-anypress",
+	"version": "0.1.0",
+	"description": "n8n nodes for AnyPress: create, get, suspend, resume and delete WordPress sites, and start a workflow when a site is ready",
+	"license": "MIT",
+	"homepage": "https://anypress.io/automate",
+	"keywords": [
+		"n8n-community-node-package",
+		"anypress",
+		"wordpress",
+		"websites"
+	],
+	"author": {
+		"name": "Otaku Solutions",
+		"email": "support@anypress.io"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/hamchowderr/waas-provisioning-api.git",
+		"directory": "integrations/n8n"
+	},
+	"scripts": {
+		"build": "n8n-node build",
+		"build:watch": "tsc --watch",
+		"dev": "n8n-node dev",
+		"lint": "n8n-node lint",
+		"lint:fix": "n8n-node lint --fix",
+		"release": "n8n-node release",
+		"prepublishOnly": "n8n-node prerelease"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"strict": true,
+		"credentials": [
+			"dist/credentials/AnyPressApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/AnyPress/AnyPress.node.js",
+			"dist/nodes/AnyPressTrigger/AnyPressTrigger.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "0.53.4",
+		"eslint": "9.39.4",
+		"prettier": "3.8.3",
+		"release-it": "20.2.0",
+		"typescript": "5.9.3"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	}
+}

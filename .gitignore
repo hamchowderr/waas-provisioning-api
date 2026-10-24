@@ -17,3 +17,8 @@ node_modules/
 # Store template builds (templates/*/build.sh)
 templates/*/.work/
 templates/*/dist/
+
+# Integrations (integrations/*): build output, and the app links and keys their tools write
+integrations/n8n/dist/
+integrations/zapier/.zapierapprc
+integrations/make/.secrets/

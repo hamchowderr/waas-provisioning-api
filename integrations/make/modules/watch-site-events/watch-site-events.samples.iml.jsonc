@@ -1,0 +1,17 @@
+{
+    "event": "tenant.ready",
+    "timestamp": "2026-10-24T17:03:00Z",
+    "verified": true,
+    "url": "https://rose-and-fern.anypress.site",
+    "site": {
+        "tenantId": "90b97b83-b320-4006-aaa8-dacb0639325c",
+        "externalId": "order-1042",
+        "name": "Rose and Fern",
+        "domainName": "rose-and-fern.anypress.site",
+        "statusCode": 1,
+        "statusName": "Done",
+        "isSuspended": false,
+        "size": "small",
+        "dateCreated": "2026-10-24T17:00:00Z"
+    }
+}

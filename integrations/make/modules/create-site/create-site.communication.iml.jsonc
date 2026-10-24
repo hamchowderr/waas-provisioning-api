@@ -1,0 +1,24 @@
+// Answers at once, before the site is built. Empty fields are left out of the request.
+{
+    "url": "/tenants",
+    "method": "POST",
+    "body": {
+        "name": "{{parameters.name}}",
+        "externalId": "{{ifempty(parameters.externalId, undefined)}}",
+        "wordPressUserEmail": "{{ifempty(parameters.email, undefined)}}",
+        "wordPressUserName": "{{if(parameters.email, ifempty(parameters.username, parameters.email), undefined)}}",
+        "wordPressUserRole": "{{if(parameters.email, ifempty(parameters.role, 'administrator'), undefined)}}",
+        "size": "{{ifempty(parameters.size, undefined)}}",
+        "groupName": "{{ifempty(parameters.groupName, undefined)}}",
+        "customDomainName": "{{ifempty(parameters.customDomainName, undefined)}}"
+    },
+    "response": {
+        "output": {
+            "tenantId": "{{body.id}}",
+            "externalId": "{{body.externalId}}",
+            "baseDomain": "{{body.baseDomain}}",
+            "customDomain": "{{body.customDomain}}",
+            "url": "https://{{ifempty(body.customDomain, body.baseDomain)}}"
+        }
+    }
+}

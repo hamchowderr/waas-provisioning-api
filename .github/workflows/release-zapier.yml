@@ -1,0 +1,41 @@
+# Pushes integrations/zapier to the AnyPress app on Zapier when a tag like zapier-v1.0.0 is pushed.
+# Needs the repository secret ZAPIER_DEPLOY_KEY (Zapier developer platform, Settings, Deploy Keys) and
+# the repository variable ZAPIER_APP_ID (the app's number in its developer.zapier.com address).
+name: Release Zapier app
+
+on:
+  push:
+    tags: ['zapier-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/zapier
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/zapier/package-lock.json
+      - name: Check the tag matches package.json
+        run: |
+          expected="zapier-v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json (expected $expected)"
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run validate
+      - name: Push
+        env:
+          ZAPIER_DEPLOY_KEY: ${{ secrets.ZAPIER_DEPLOY_KEY }}
+          ZAPIER_APP_ID: ${{ vars.ZAPIER_APP_ID }}
+        run: |
+          echo "{\"id\": $ZAPIER_APP_ID, \"key\": \"App$ZAPIER_APP_ID\"}" > .zapierapprc
+          npx zapier-platform push

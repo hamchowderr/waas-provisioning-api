@@ -1,0 +1,4 @@
+// Each request AnyPress sends is one bundle. Watch Site Events reads the site back from the API before passing it on.
+{
+    "output": "{{body}}"
+}

@@ -1,0 +1,39 @@
+# Publishes integrations/n8n to npm as n8n-nodes-anypress when a tag like n8n-v0.1.0 is pushed.
+# n8n only verifies community nodes published from GitHub Actions with npm provenance; this uses npm
+# Trusted Publishing (GitHub's OIDC token), so no npm token is stored. Steps: integrations/README.md.
+name: Release n8n node
+
+on:
+  push:
+    tags: ['n8n-v*']
+
+permissions:
+  contents: read
+  id-token: write # npm Trusted Publishing and provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/n8n
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/n8n/package-lock.json
+          registry-url: https://registry.npmjs.org
+      - name: Check the tag matches package.json
+        run: |
+          expected="n8n-v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json (expected $expected)"
+            exit 1
+          fi
+      # Trusted Publishing needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      - run: npm install -g npm@11.6.2
+      - run: npm ci
+      # In GitHub Actions, n8n-node release lints, builds and runs npm publish with provenance.
+      - run: npm run release

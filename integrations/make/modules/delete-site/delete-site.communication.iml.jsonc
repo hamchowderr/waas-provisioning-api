@@ -1,0 +1,16 @@
+{
+    "url": "/tenants",
+    "method": "DELETE",
+    "qs": {
+        "externalId": "{{if(parameters.findBy = 'tenantId', undefined, parameters.site)}}",
+        "tenantId": "{{if(parameters.findBy = 'tenantId', parameters.site, undefined)}}"
+    },
+    "response": {
+        "output": {
+            "tenantId": "{{ifempty(body.tenantId, if(parameters.findBy = 'tenantId', parameters.site, undefined))}}",
+            "externalId": "{{ifempty(body.externalId, if(parameters.findBy = 'tenantId', undefined, parameters.site))}}",
+            "backupId": "{{body.backupId}}",
+            "scheduled": true
+        }
+    }
+}

@@ -32,6 +32,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The n8n node and the Zapier app (integrations/) are driven against the app by test/integrations.test.ts.
+      - name: n8n node
+        working-directory: integrations/n8n
+        run: npm ci && npm run lint && npm run build
+      - name: Zapier app
+        working-directory: integrations/zapier
+        run: npm ci && npm run validate
       - run: npm run typecheck
       - run: npm run sdk:check
       - run: npm test

@@ -1,0 +1,15 @@
+// Registers the Make address with AnyPress; detach removes it by the id kept here.
+{
+    "url": "/webhooks",
+    "method": "POST",
+    "body": {
+        "url": "{{webhook.url}}",
+        "eventTypes": "{{parameters.events}}",
+        "description": "Make"
+    },
+    "response": {
+        "data": {
+            "externalHookId": "{{body.id}}"
+        }
+    }
+}

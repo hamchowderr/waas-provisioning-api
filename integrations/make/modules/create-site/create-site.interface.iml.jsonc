@@ -1,0 +1,27 @@
+[
+    {
+        "name": "tenantId",
+        "type": "text",
+        "label": "Site ID"
+    },
+    {
+        "name": "externalId",
+        "type": "text",
+        "label": "Your Reference"
+    },
+    {
+        "name": "baseDomain",
+        "type": "text",
+        "label": "Free Address"
+    },
+    {
+        "name": "customDomain",
+        "type": "text",
+        "label": "Custom Domain"
+    },
+    {
+        "name": "url",
+        "type": "url",
+        "label": "Site Address"
+    }
+]

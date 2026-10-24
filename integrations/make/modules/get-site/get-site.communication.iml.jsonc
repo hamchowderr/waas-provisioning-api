@@ -1,0 +1,34 @@
+{
+    "url": "/tenants",
+    "method": "GET",
+    "qs": {
+        "externalId": "{{if(parameters.findBy = 'tenantId', undefined, parameters.site)}}",
+        "tenantId": "{{if(parameters.findBy = 'tenantId', parameters.site, undefined)}}"
+    },
+    "response": {
+        "valid": "{{length(body) > 0}}",
+        "error": {
+            "message": "No site found with that reference or ID"
+        },
+        "iterate": "{{body}}",
+        "output": {
+            "tenantId": "{{item.tenantId}}",
+            "externalId": "{{item.externalId}}",
+            "name": "{{item.name}}",
+            "domainName": "{{item.domainName}}",
+            "redirectDomains": "{{item.redirectDomains}}",
+            "statusCode": "{{item.statusCode}}",
+            "statusName": "{{item.statusName}}",
+            "isSuspended": "{{item.isSuspended}}",
+            "dateSuspended": "{{item.dateSuspended}}",
+            "size": "{{item.size}}",
+            "versionId": "{{item.versionId}}",
+            "versionName": "{{item.versionName}}",
+            "snapshotName": "{{item.snapshotName}}",
+            "snapshotGroupName": "{{item.snapshotGroupName}}",
+            "dateCreated": "{{item.dateCreated}}",
+            "dateChanged": "{{item.dateChanged}}",
+            "url": "https://{{item.domainName}}"
+        }
+    }
+}

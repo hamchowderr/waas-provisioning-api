@@ -1,0 +1,22 @@
+[
+    {
+        "name": "tenantId",
+        "type": "text",
+        "label": "Site ID"
+    },
+    {
+        "name": "externalId",
+        "type": "text",
+        "label": "Your Reference"
+    },
+    {
+        "name": "backupId",
+        "type": "text",
+        "label": "Backup ID"
+    },
+    {
+        "name": "scheduled",
+        "type": "boolean",
+        "label": "Scheduled"
+    }
+]
