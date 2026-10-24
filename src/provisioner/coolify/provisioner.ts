@@ -97,16 +97,18 @@ const STAGE_CHUNK = 200;
 const WP = 'php -d memory_limit=192M /usr/local/bin/wp';
 
 /**
- * Each store's cron: WP-cron and Action Scheduler every minute, from the agent container (which
+ * Each store's cron: WP-cron and Action Scheduler every 5 minutes, from the agent container (which
  * runs as uid 33, as WordPress does), since DISABLE_WP_CRON keeps page loads from running them
  * (compose.ts). Skipped while the store is suspended: the contract says its cron stops. `flock`
  * keeps a slow run from overlapping the next one in the agent's 256 MB. No single quotes:
- * Coolify wraps the command in sh -c '...'.
+ * Coolify wraps the command in sh -c '...'. Not every minute: each run is a Coolify job plus a
+ * "task done" event, and at a minute per store they came in faster than Coolify's queue could
+ * work them off, so deploys and service starts waited behind them (2026-10-23).
  */
 export const CRON_TASK = {
   name: 'wp-cron',
   container: 'agent',
-  frequency: '* * * * *',
+  frequency: '*/5 * * * *',
   timeout: 300,
   enabled: true,
   command:

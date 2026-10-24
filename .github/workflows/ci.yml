@@ -7,7 +7,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04 (Oct 2026): its pg_dump 17+ writes dumps postgres:16 can't restore
+    # and its PHP ICU rejects the und_XX locale the owner mu-plugin test uses. Pinned until both are moved.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
