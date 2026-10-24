@@ -54,6 +54,7 @@ People can also apply for an account themselves. The marketing site's form sends
 The platform admin reviews them on the dashboard (`GET /admin/applications?status=pending`):
 
 - `POST /admin/applications/{id}/approve` makes the product, named after the business, with 3 stores unless `maxTenants` says otherwise. It invites the applicant as its owner and emails them the link, then builds the ready-made storefront if they asked for one (`storefront` overrides that). If the storefront fails, the approval still stands and `storefrontError` says why. It can be built later from the product's keys page. With `"reseller": true` it makes a reseller account instead, with the product inside it, and invites the applicant to the reseller's team ([resellers.md](resellers.md#making-one)).
+- When `CRM_URL` and `CRM_SECRET` are set, an approval also posts `{"email", "name", "business", "offering": "Seller" or "Reseller", "stage": "Active"}` to `CRM_URL` with the secret in the `X-CRM-Secret` header, so your CRM can tag the person and start its welcome emails. If the CRM doesn't answer, the approval still stands and the error is logged.
 - `POST /admin/applications/{id}/decline` emails the applicant that they weren't approved. They may apply again.
 
 ## What a signed-in person can call
