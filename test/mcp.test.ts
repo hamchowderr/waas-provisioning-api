@@ -244,3 +244,10 @@ describe('MCP server', () => {
     expect(await call(mcp, 'store_status', { action: 'delete', externalId: 'mcp-1' })).toMatchObject({ isError: false, text: 'Done.' });
   });
 });
+
+describe('the container image', () => {
+  it('ships the skills the MCP server reads', () => {
+    // Without them every MCP session fails to start in production (loadSkills can't find the folder).
+    expect(readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8')).toMatch(/^COPY mcp\/skills \.\/mcp\/skills$/m);
+  });
+});
