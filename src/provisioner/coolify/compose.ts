@@ -148,6 +148,9 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         },
         volumes: ['db:/var/lib/mysql'],
         mem_limit: LIMITS.db.mem,
+        // As many cores as the plan's WordPress gets (the load tests ran the database unlimited, and it never needed
+        // more), so one store's database can't take the whole server either.
+        cpus: size.cpus,
         healthcheck: { test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized'], ...HEALTH },
       },
       agent: {

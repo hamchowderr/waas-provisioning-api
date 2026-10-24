@@ -475,6 +475,7 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'large' })).toBe('updated');
     const wordpress = parse(store.compose).services.wordpress;
     expect(wordpress).toMatchObject({ cpus: 4, mem_limit: '768m' });
+    expect(parse(store.compose).services.db.cpus).toBe(4);
     expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 32');
     expect(wordpress.environment).toMatchObject({ WAAS_STORAGE_GB: '25', WAAS_EMAILS_PER_MONTH: '50000' });
     expect(store.started).toBe(starts + 1);
