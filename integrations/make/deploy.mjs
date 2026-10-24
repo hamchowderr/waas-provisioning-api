@@ -22,7 +22,8 @@ async function call(method, url, body, contentType = 'application/json') {
   const res = await fetch(url, {
     method,
     headers: { Authorization: `Token ${token}`, ...(body === undefined ? {} : { 'Content-Type': contentType }) },
-    body: body === undefined ? undefined : contentType === 'application/json' ? JSON.stringify(body) : body,
+    // Code files arrive as text already; only objects get encoded here.
+    body: body === undefined || typeof body === 'string' ? body : JSON.stringify(body),
   });
   const text = await res.text();
   if (method === 'GET' && res.status === 404) return null;
@@ -57,7 +58,8 @@ if (!found) {
 }
 const appName = found.name;
 console.log(`App ${appName}`);
-const general = { base: 'base', common: 'common', readme: 'readme', groups: 'groups' };
+// groups goes up last: Make checks that the modules it names exist.
+const general = { base: 'base', common: 'common', readme: 'readme' };
 for (const [code, path] of Object.entries(general)) await putCode(`${api}/${appName}/${version}/${path}`, app.generalCodeFiles[code]);
 
 // The connection.
@@ -117,5 +119,7 @@ for (const [name, meta] of Object.entries(app.components.module)) {
   await putCode(`${url}/samples`, files.samples);
   await putCode(`${url}/scope`, files.scope);
 }
+
+await putCode(`${api}/${appName}/${version}/groups`, app.generalCodeFiles.groups);
 
 console.log(`Deployed ${appName} to ${zone}`);
