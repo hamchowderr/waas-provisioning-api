@@ -1,0 +1,22 @@
+// Checks the key: starting sites answer for storefront keys and partner keys alike.
+{
+    "url": "{{ifempty(parameters.baseUrl, 'https://api.anypress.io')}}/v1/basesnapshots",
+    "method": "GET",
+    "headers": {
+        "authorization": "Basic {{base64(parameters.apiKey + ':' + parameters.apiSecret)}}",
+        "accept": "application/json"
+    },
+    "qs": {
+        "productId": "{{ifempty(parameters.storefront, undefined)}}"
+    },
+    "response": {
+        "error": {
+            "message": "{{ifempty(body.message, 'AnyPress answered ' + statusCode)}}"
+        }
+    },
+    "log": {
+        "sanitize": [
+            "request.headers.authorization"
+        ]
+    }
+}

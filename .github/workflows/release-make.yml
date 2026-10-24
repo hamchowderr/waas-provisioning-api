@@ -1,0 +1,27 @@
+# Deploys integrations/make to the AnyPress custom app on Make when a tag like make-v1.0.0 is pushed.
+# Needs the repository secret MAKE_API_TOKEN (Make profile, API access, with the sdk-apps:read and
+# sdk-apps:write scopes) and the repository variables MAKE_ZONE (us1.make.com, eu2.make.com, ...)
+# and MAKE_APP_ID. The first run creates the app when it doesn't exist yet.
+name: Release Make app
+
+on:
+  push:
+    tags: ['make-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy
+        env:
+          MAKE_API_TOKEN: ${{ secrets.MAKE_API_TOKEN }}
+          MAKE_ZONE: ${{ vars.MAKE_ZONE }}
+          MAKE_APP_ID: ${{ vars.MAKE_APP_ID }}
+        run: node integrations/make/deploy.mjs

@@ -1,0 +1,63 @@
+[
+    {
+        "name": "events",
+        "type": "select",
+        "multiple": true,
+        "label": "Events",
+        "required": true,
+        "default": [
+            "tenant.ready"
+        ],
+        "options": [
+            {
+                "label": "Site ready",
+                "value": "tenant.ready"
+            },
+            {
+                "label": "Site failed",
+                "value": "tenant.failed"
+            },
+            {
+                "label": "Site updated",
+                "value": "tenant.updated"
+            },
+            {
+                "label": "Domains changed",
+                "value": "tenant.domains_changed"
+            },
+            {
+                "label": "Version changed",
+                "value": "tenant.version_changed"
+            },
+            {
+                "label": "Site suspended",
+                "value": "tenant.suspended"
+            },
+            {
+                "label": "Site resumed",
+                "value": "tenant.resumed"
+            },
+            {
+                "label": "Site deleted",
+                "value": "tenant.deleted"
+            },
+            {
+                "label": "Site restored",
+                "value": "tenant.restored"
+            },
+            {
+                "label": "Site rolled back",
+                "value": "tenant.rolled_back"
+            },
+            {
+                "label": "Backup completed",
+                "value": "tenant.backup_completed"
+            },
+            {
+                "label": "Backup failed",
+                "value": "tenant.backup_failed"
+            }
+        ],
+        "help": "Which site events start the scenario."
+    }
+]

@@ -1,0 +1,31 @@
+[
+    {
+        "name": "apiKey",
+        "type": "text",
+        "label": "API Key",
+        "required": true,
+        "help": "Make one at app.anypress.io under API keys. Resellers can ask for a partner key, which works on every storefront in the account."
+    },
+    {
+        "name": "apiSecret",
+        "type": "password",
+        "label": "API Secret",
+        "required": true,
+        "help": "Shown once, when the key was made."
+    },
+    {
+        "name": "storefront",
+        "type": "text",
+        "label": "Storefront ID",
+        "required": false,
+        "help": "Partner keys only: the storefront this connection works on. Leave it empty with a storefront's own API key."
+    },
+    {
+        "name": "baseUrl",
+        "type": "url",
+        "label": "API Address",
+        "required": false,
+        "advanced": true,
+        "help": "Change this only if you run your own copy of the API. Default: https://api.anypress.io"
+    }
+]

@@ -1,0 +1,26 @@
+[
+    {
+        "name": "findBy",
+        "type": "select",
+        "label": "Find Site By",
+        "required": true,
+        "default": "externalId",
+        "options": [
+            {
+                "label": "Your reference",
+                "value": "externalId"
+            },
+            {
+                "label": "Site ID",
+                "value": "tenantId"
+            }
+        ]
+    },
+    {
+        "name": "site",
+        "type": "text",
+        "label": "Your Reference or Site ID",
+        "required": true,
+        "help": "The reference the site was created with (such as the order number), or its Site ID."
+    }
+]

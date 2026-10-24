@@ -1,0 +1,123 @@
+[
+    {
+        "name": "event",
+        "type": "text",
+        "label": "Event"
+    },
+    {
+        "name": "timestamp",
+        "type": "date",
+        "label": "When"
+    },
+    {
+        "name": "verified",
+        "type": "boolean",
+        "label": "Confirmed With AnyPress",
+        "help": "Yes when the site was read back from AnyPress with your key. No for a deleted site, or a request that did not come from AnyPress."
+    },
+    {
+        "name": "action",
+        "type": "text",
+        "label": "Failed Action"
+    },
+    {
+        "name": "backupId",
+        "type": "text",
+        "label": "Backup ID"
+    },
+    {
+        "name": "url",
+        "type": "url",
+        "label": "Site Address"
+    },
+    {
+        "name": "site",
+        "type": "collection",
+        "label": "Site",
+        "spec": [
+            {
+                "name": "tenantId",
+                "type": "text",
+                "label": "Site ID"
+            },
+            {
+                "name": "externalId",
+                "type": "text",
+                "label": "Your Reference"
+            },
+            {
+                "name": "name",
+                "type": "text",
+                "label": "Site Name"
+            },
+            {
+                "name": "domainName",
+                "type": "text",
+                "label": "Domain"
+            },
+            {
+                "name": "redirectDomains",
+                "type": "array",
+                "label": "Other Domains",
+                "spec": {
+                    "type": "text"
+                }
+            },
+            {
+                "name": "statusCode",
+                "type": "uinteger",
+                "label": "Status Code"
+            },
+            {
+                "name": "statusName",
+                "type": "text",
+                "label": "Status"
+            },
+            {
+                "name": "isSuspended",
+                "type": "boolean",
+                "label": "Suspended"
+            },
+            {
+                "name": "dateSuspended",
+                "type": "date",
+                "label": "Suspended At"
+            },
+            {
+                "name": "size",
+                "type": "text",
+                "label": "Size"
+            },
+            {
+                "name": "versionId",
+                "type": "text",
+                "label": "Version ID"
+            },
+            {
+                "name": "versionName",
+                "type": "text",
+                "label": "Version"
+            },
+            {
+                "name": "snapshotName",
+                "type": "text",
+                "label": "Starting Site"
+            },
+            {
+                "name": "snapshotGroupName",
+                "type": "text",
+                "label": "Starting Site Group"
+            },
+            {
+                "name": "dateCreated",
+                "type": "date",
+                "label": "Created"
+            },
+            {
+                "name": "dateChanged",
+                "type": "date",
+                "label": "Changed"
+            }
+        ]
+    }
+]

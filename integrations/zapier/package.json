@@ -1,0 +1,26 @@
+{
+  "name": "anypress-zapier",
+  "version": "1.0.0",
+  "description": "The AnyPress app for Zapier: create, find, suspend, resume and delete WordPress sites, and start a Zap when a site is ready",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://anypress.io/automate",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamchowderr/waas-provisioning-api.git",
+    "directory": "integrations/zapier"
+  },
+  "main": "index.js",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "validate": "zapier-platform validate --without-style"
+  },
+  "dependencies": {
+    "zapier-platform-core": "19.2.1"
+  },
+  "devDependencies": {
+    "zapier-platform-cli": "19.2.1"
+  }
+}

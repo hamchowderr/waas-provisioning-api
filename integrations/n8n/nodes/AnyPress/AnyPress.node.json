@@ -1,0 +1,10 @@
+{
+	"node": "n8n-nodes-anypress.anyPress",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Development", "Marketing & Content"],
+	"resources": {
+		"credentialDocumentation": [{ "url": "https://shop.anypress.io/docs-category/automation/" }],
+		"primaryDocumentation": [{ "url": "https://anypress.io/automate" }]
+	}
+}

@@ -1,0 +1,83 @@
+[
+    {
+        "name": "name",
+        "type": "text",
+        "label": "Site Name",
+        "required": true,
+        "help": "Up to 30 characters, starting and ending with a letter or number. The free address is made from it."
+    },
+    {
+        "name": "externalId",
+        "type": "text",
+        "label": "Your Reference",
+        "help": "Your own ID for the site, such as the order or deal number. Letters, numbers and dashes only. The same create sent again answers with the site already made, so a retry never builds a second one."
+    },
+    {
+        "name": "email",
+        "type": "email",
+        "label": "Client Email",
+        "help": "Makes a WordPress login for your client with this email."
+    },
+    {
+        "name": "username",
+        "type": "text",
+        "label": "Client Username",
+        "help": "Their WordPress username. The email is used when empty."
+    },
+    {
+        "name": "role",
+        "type": "select",
+        "label": "Client Role",
+        "default": "administrator",
+        "options": [
+            {
+                "label": "Administrator",
+                "value": "administrator"
+            },
+            {
+                "label": "Editor",
+                "value": "editor"
+            },
+            {
+                "label": "Author",
+                "value": "author"
+            },
+            {
+                "label": "Contributor",
+                "value": "contributor"
+            }
+        ]
+    },
+    {
+        "name": "size",
+        "type": "select",
+        "label": "Size",
+        "default": "small",
+        "options": [
+            {
+                "label": "Small",
+                "value": "small"
+            },
+            {
+                "label": "Medium",
+                "value": "medium"
+            },
+            {
+                "label": "Large",
+                "value": "large"
+            }
+        ]
+    },
+    {
+        "name": "groupName",
+        "type": "text",
+        "label": "Starting Site Group",
+        "help": "Which starting site to copy, by group name. Empty uses your current one."
+    },
+    {
+        "name": "customDomainName",
+        "type": "text",
+        "label": "Custom Domain",
+        "help": "The client's own domain, if they have one."
+    }
+]

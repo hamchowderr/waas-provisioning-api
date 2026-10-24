@@ -1,0 +1,148 @@
+{
+    "fileVersion": 1,
+    "generalCodeFiles": {
+        "base": "general/base.iml.jsonc",
+        "common": "general/common.json",
+        "readme": "README.md",
+        "groups": "modules/groups.json"
+    },
+    "components": {
+        "connection": {
+            "anypress": {
+                "label": "AnyPress",
+                "connectionType": "basic",
+                "codeFiles": {
+                    "communication": "connections/anypress/anypress.communication.iml.jsonc",
+                    "params": "connections/anypress/anypress.params.iml.jsonc",
+                    "common": null
+                }
+            }
+        },
+        "webhook": {
+            "siteEvents": {
+                "label": "AnyPress site events",
+                "webhookType": "web",
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "webhooks/site-events/site-events.communication.iml.jsonc",
+                    "params": "webhooks/site-events/site-events.params.iml.jsonc",
+                    "attach": "webhooks/site-events/site-events.attach.iml.jsonc",
+                    "detach": "webhooks/site-events/site-events.detach.iml.jsonc",
+                    "update": "webhooks/site-events/site-events.update.iml.jsonc",
+                    "requiredScope": "webhooks/site-events/site-events.required-scope.iml.jsonc"
+                }
+            }
+        },
+        "module": {
+            "createSite": {
+                "label": "Create a Site",
+                "description": "Creates a site from your starting site. Watch Site Events tells you when it is ready.",
+                "moduleType": "action",
+                "actionCrud": "create",
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "modules/create-site/create-site.communication.iml.jsonc",
+                    "staticParams": "modules/create-site/create-site.static-params.iml.jsonc",
+                    "mappableParams": "modules/create-site/create-site.mappable-params.iml.jsonc",
+                    "interface": "modules/create-site/create-site.interface.iml.jsonc",
+                    "samples": "modules/create-site/create-site.samples.iml.jsonc",
+                    "scope": "modules/create-site/create-site.scope.iml.jsonc"
+                }
+            },
+            "getSite": {
+                "label": "Get a Site",
+                "description": "Gets a site with its status and address.",
+                "moduleType": "action",
+                "actionCrud": "read",
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "modules/get-site/get-site.communication.iml.jsonc",
+                    "staticParams": "modules/get-site/get-site.static-params.iml.jsonc",
+                    "mappableParams": "modules/get-site/get-site.mappable-params.iml.jsonc",
+                    "interface": "modules/get-site/get-site.interface.iml.jsonc",
+                    "samples": "modules/get-site/get-site.samples.iml.jsonc",
+                    "scope": "modules/get-site/get-site.scope.iml.jsonc"
+                }
+            },
+            "suspendSite": {
+                "label": "Suspend a Site",
+                "description": "Takes a site offline, backing it up first.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "modules/suspend-site/suspend-site.communication.iml.jsonc",
+                    "staticParams": "modules/suspend-site/suspend-site.static-params.iml.jsonc",
+                    "mappableParams": "modules/suspend-site/suspend-site.mappable-params.iml.jsonc",
+                    "interface": "modules/suspend-site/suspend-site.interface.iml.jsonc",
+                    "samples": "modules/suspend-site/suspend-site.samples.iml.jsonc",
+                    "scope": "modules/suspend-site/suspend-site.scope.iml.jsonc"
+                }
+            },
+            "resumeSite": {
+                "label": "Resume a Site",
+                "description": "Brings a suspended site back online.",
+                "moduleType": "action",
+                "actionCrud": "update",
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "modules/resume-site/resume-site.communication.iml.jsonc",
+                    "staticParams": "modules/resume-site/resume-site.static-params.iml.jsonc",
+                    "mappableParams": "modules/resume-site/resume-site.mappable-params.iml.jsonc",
+                    "interface": "modules/resume-site/resume-site.interface.iml.jsonc",
+                    "samples": "modules/resume-site/resume-site.samples.iml.jsonc",
+                    "scope": "modules/resume-site/resume-site.scope.iml.jsonc"
+                }
+            },
+            "deleteSite": {
+                "label": "Delete a Site",
+                "description": "Deletes a site. Its backups are kept, so it can be restored.",
+                "moduleType": "action",
+                "actionCrud": "delete",
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "modules/delete-site/delete-site.communication.iml.jsonc",
+                    "staticParams": "modules/delete-site/delete-site.static-params.iml.jsonc",
+                    "mappableParams": "modules/delete-site/delete-site.mappable-params.iml.jsonc",
+                    "interface": "modules/delete-site/delete-site.interface.iml.jsonc",
+                    "samples": "modules/delete-site/delete-site.samples.iml.jsonc",
+                    "scope": "modules/delete-site/delete-site.scope.iml.jsonc"
+                }
+            },
+            "watchSiteEvents": {
+                "label": "Watch Site Events",
+                "description": "Starts when a site is ready, fails, is suspended, resumed, deleted and more.",
+                "moduleType": "instant_trigger",
+                "actionCrud": null,
+                "connection": "anypress",
+                "altConnection": null,
+                "codeFiles": {
+                    "communication": "modules/watch-site-events/watch-site-events.communication.iml.jsonc",
+                    "staticParams": "modules/watch-site-events/watch-site-events.static-params.iml.jsonc",
+                    "mappableParams": "modules/watch-site-events/watch-site-events.mappable-params.iml.jsonc",
+                    "interface": "modules/watch-site-events/watch-site-events.interface.iml.jsonc",
+                    "samples": "modules/watch-site-events/watch-site-events.samples.iml.jsonc"
+                },
+                "webhook": "siteEvents"
+            }
+        },
+        "rpc": {},
+        "function": {},
+        "endpoint": {}
+    },
+    "origins": [
+        {
+            "label": "Make",
+            "baseUrl": "https://us1.make.com/api",
+            "appId": "anypress",
+            "appVersion": 1,
+            "apikeyFile": ".secrets/apikey"
+        }
+    ]
+}

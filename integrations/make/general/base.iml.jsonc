@@ -1,0 +1,21 @@
+// Every request: the connection's key and secret as Basic auth, and its storefront for partner keys.
+{
+    "baseUrl": "{{ifempty(connection.baseUrl, 'https://api.anypress.io')}}/v1",
+    "headers": {
+        "authorization": "Basic {{base64(connection.apiKey + ':' + connection.apiSecret)}}",
+        "accept": "application/json"
+    },
+    "qs": {
+        "productId": "{{ifempty(connection.storefront, undefined)}}"
+    },
+    "response": {
+        "error": {
+            "message": "{{ifempty(body.message, 'AnyPress answered ' + statusCode)}}"
+        }
+    },
+    "log": {
+        "sanitize": [
+            "request.headers.authorization"
+        ]
+    }
+}
