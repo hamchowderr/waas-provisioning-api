@@ -44,11 +44,15 @@ export function grantedScopes(scope: string, legacy: boolean): string[] {
   return legacy ? expandLegacyScopes(scope) : parseScopes(scope);
 }
 
-/** The scopes an endpoint offers: /mcp/read-only only the read ones. */
-export const scopesFor = (path: string) => (path.endsWith('/read-only') ? READ_SCOPES : ALL_SCOPES);
+/** The scopes an endpoint offers: /mcp/read-only only the read ones, /mcp/site only the site ones. */
+export const scopesFor = (path: string) =>
+  path.endsWith('/read-only') ? READ_SCOPES : isSiteResource(path) ? [scopeOf('site', 'read'), scopeOf('site', 'write')] : ALL_SCOPES;
 
-/** The MCP endpoints a token can be for (RFC 8707 resource), by path. */
-export const MCP_PATHS = ['/mcp', '/mcp/read-only'] as const;
+/** The MCP endpoints a token can be for (RFC 8707 resource), by path. /mcp/site is for one website's owner. */
+export const MCP_PATHS = ['/mcp', '/mcp/read-only', '/mcp/site'] as const;
+
+/** Whether a resource (or path) is the endpoint for one website's owner ("Sign in with your website"). */
+export const isSiteResource = (resource: string) => resource.endsWith('/mcp/site');
 
 const CODE_TTL_S = 10 * 60;
 const ACCESS_TTL_S = 60 * 60;
@@ -186,7 +190,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
         authorization_servers: [base(c)],
         scopes_supported: scopesFor(path),
         bearer_methods_supported: ['header'],
-        resource_name: path === '/mcp' ? 'Store management' : 'Store management (read-only)',
+        resource_name: path === '/mcp' ? 'Store management' : isSiteResource(path) ? 'Your website' : 'Store management (read-only)',
       }),
     );
   }
@@ -315,7 +319,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     const { request } = parsed;
     // Sign in as a person instead: the dashboard (where the session cookie lives) finishes the approval.
     const auth = deps.config.auth;
-    if (form.action === 'signin' && auth) {
+    if (form.action === 'signin' && auth && !isSiteResource(request.resource)) {
       const { rows } = await pool.query<{ id: string }>(
         `INSERT INTO oauth_requests (client_id, client_name, redirect_uri, state, code_challenge, scope, resource, issuer, expires_at, legacy_scope)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + make_interval(secs => $9), false) RETURNING id`,
@@ -325,7 +329,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
       return c.redirect(`${auth.url}/connect/${rows[0]!.id}`, 302);
     }
     // Sign in with your website: the store's own wp-admin (WaaS Client) asks its admin, then answers at /oauth/site/answer.
-    if (form.action === 'site') {
+    if (form.action === 'site' && isSiteResource(request.resource)) {
       const store = await findStoreByAddress(pool, form.site ?? '');
       const retry = (message: string) => page(c, approvePage(request, form, signInBrand(), message), 400);
       if (!store?.main_domain) return retry('We could not find an AnyPress website at that address. Type the address people visit it at, such as mybakery.com.');
@@ -779,6 +783,23 @@ function approvePage(request: AuthorizeRequest, params: Record<string, string | 
     .map((name) => `<input type="hidden" name="${name}" value="${esc(params[name]!)}">`)
     .join('');
   const where = returnHost(request.redirectUri);
+  const cancel = `<button type="submit" name="action" value="deny">Cancel</button>`;
+  // One website's owner (the /mcp/site address): they type their site and approve in its WordPress dashboard.
+  if (isSiteResource(request.resource)) {
+    return shell(
+      'Connect your website',
+      `<h1>Connect ${esc(request.client.name)}</h1>
+<p><strong>${esc(request.client.name)}</strong> wants to edit your website's pages and design, and nothing else.</p>
+<p class="muted">Type your website's address, then approve in its WordPress dashboard. After you approve, you go back to <code>${esc(where)}</code>.</p>
+${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}
+<form method="post" action="/oauth/authorize">${hidden}
+<label for="site">Your website</label><input type="text" id="site" name="site" required spellcheck="false" placeholder="mybakery.com" value="${esc(params.site ?? '')}">
+${siteError ? `<p class="error" role="alert">${esc(siteError)}</p>` : ''}
+<div class="buttons"><button type="submit" name="action" value="site" class="primary">Continue to your website</button></div>
+</form>
+<form method="post" action="/oauth/authorize">${hidden}<div class="buttons">${cancel}</div></form>`,
+    );
+  }
   return shell(
     'Connect to your stores',
     `<h1>Connect ${esc(request.client.name)}</h1>
@@ -790,13 +811,6 @@ function approvePage(request: AuthorizeRequest, params: Record<string, string | 
 ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}
 <form method="post" action="/oauth/authorize">${hidden}<div class="buttons">${
       signIn ? `<button type="submit" name="action" value="signin" class="primary">Sign in to ${esc(signIn)}</button>` : ''
-    }<button type="submit" name="action" value="deny">Cancel</button></div></form>
-<div class="or"><h2>Sign in with your website</h2>
-<p class="muted">Own one AnyPress website? Type its address and approve in its WordPress dashboard. The app can then edit that website's pages and design, and nothing else.</p>
-<form method="post" action="/oauth/authorize">${hidden}
-<label for="site">Your website</label><input type="text" id="site" name="site" required spellcheck="false" placeholder="mybakery.com" value="${esc(params.site ?? '')}">
-${siteError ? `<p class="error" role="alert">${esc(siteError)}</p>` : ''}
-<div class="buttons"><button type="submit" name="action" value="site" class="primary">Continue to your website</button></div>
-</form></div>`,
+    }${cancel}</div></form>`,
   );
 }

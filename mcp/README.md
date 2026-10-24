@@ -17,15 +17,16 @@ The API serves the MCP server itself, so there is nothing to run:
 |---|---|
 | `https://<your API>/mcp` | All tools |
 | `https://<your API>/mcp/read-only` | Only the tools and actions that read |
+| `https://<your API>/mcp/site` | For someone who owns one website: its pages and design tools only |
 
 ### Sign in with OAuth (Claude, ChatGPT and other connectors)
 
-Add `https://<your API>/mcp` as a custom connector. There is no client id or secret to copy: the client registers itself, finds the sign-in on its own and opens the API's approve page. There you either:
+Add the address as a custom connector. There is no client id or secret to copy: the client registers itself, finds the sign-in on its own and opens the API's approve page.
 
-- **Sign in** (sign-in must be on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront, tick what the app may see and change, and approve. The app then acts as you, with your role: someone who may only look can only allow looking. A platform admin can pick any storefront.
-- Or **Sign in with your website**, for someone who owns one store: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)).
+- At `/mcp` (and `/mcp/read-only`) the page has one way in, **Sign in** (sign-in must be on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront, tick what the app may see and change, and approve. The app then acts as you, with your role: someone who may only look can only allow looking. A platform admin can pick any storefront.
+- At `/mcp/site` it has only **Sign in with your website**, for someone who owns one website and has no dashboard account: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)). This address takes no API key.
 
-Either way the client only gets a token.
+Either way the client only gets a token. Website connections made at `/mcp` before `/mcp/site` existed keep working.
 
 #### Scopes
 
@@ -40,11 +41,11 @@ Each area has a scope to see and a scope to change. The approve page has a box f
 | `versions` | `manage_versions` (list, snapshots, templates) | `manage_versions` (create, set_production, delete) |
 | `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (find, get), `site_styles` (get), `header_footer` (get), `site_menus` (list) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update), `header_footer` (update), `site_menus` (update), `add_image` |
 
-So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
+So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
 
 What the API implements, per the MCP authorization spec:
 
-- Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and `/mcp/read-only`), pointed to by the `WWW-Authenticate` header of a 401
+- Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and `/mcp/read-only`, `/mcp/site`), pointed to by the `WWW-Authenticate` header of a 401
 - Authorization Server Metadata (RFC 8414) at `/.well-known/oauth-authorization-server`
 - Client ID Metadata Documents, and dynamic client registration (RFC 7591) at `/oauth/register`
 - Authorization code with PKCE (S256 only) at `/oauth/authorize` and `/oauth/token`, refresh tokens that rotate, and revocation (RFC 7009) at `/oauth/revoke`

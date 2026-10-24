@@ -62,7 +62,8 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
       return handler.fetch(c.req.raw, { authInfo: { ...auth, extra: caller } });
     }
 
-    const basic = /^Basic\s+(\S+)$/i.exec(header);
+    // /mcp/site is only for one website's owner, who signs in with the website; an API key uses /mcp.
+    const basic = path === '/mcp/site' ? null : /^Basic\s+(\S+)$/i.exec(header);
     if (basic) {
       const decoded = Buffer.from(basic[1]!, 'base64').toString('utf8');
       const colon = decoded.indexOf(':');
@@ -77,8 +78,9 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
 
     // No (valid) credentials: point OAuth clients at the sign-in (RFC 9728), and offer Basic too.
     const scope = scopesFor(path).join(' ');
-    return c.json({ error: 'invalid_token', error_description: 'Sign in with OAuth, or with your API key and secret (Basic auth)' }, 401, {
-      'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scope}", Basic realm="waas-mcp"`,
+    const site = path === '/mcp/site';
+    return c.json({ error: 'invalid_token', error_description: site ? 'Sign in with your website' : 'Sign in with OAuth, or with your API key and secret (Basic auth)' }, 401, {
+      'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scope}"${site ? '' : ', Basic realm="waas-mcp"'}`,
     });
   };
 
