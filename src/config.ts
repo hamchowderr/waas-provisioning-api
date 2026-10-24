@@ -1,4 +1,5 @@
 import { loadAuthConfig, type AuthConfig } from './auth.ts';
+import { loadCrmConfig, type CrmConfig } from './crm.ts';
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
 import { loadDomainConnectConfig, type DomainConnectConfig } from './domainconnect.ts';
 import { isUuid } from './http.ts';
@@ -79,6 +80,10 @@ export interface Config {
    * comma-separated. Empty: applications only show on the dashboard.
    */
   applicationNotify?: string[];
+  /**
+   * The CRM told when an application is approved (src/crm.ts): CRM_URL and CRM_SECRET. Unset: off.
+   */
+  crm?: CrmConfig;
   /**
    * Who is emailed when a store or version job fails its last retry (src/jobalerts.ts):
    * JOB_ALERT_EMAILS, comma-separated, or the APPLICATION_NOTIFY_EMAILS people when unset.
@@ -216,6 +221,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dashboardHost: loadDashboardHost(env),
     storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
+    crm: loadCrmConfig(env),
     jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     resellerInvoices: loadResellerInvoiceConfig(env),
   };

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createApp } from '../src/app.ts';
 import { APPLICATIONS_PER_HOUR } from '../src/applications.ts';
 import { createAuth, type AuthConfig } from '../src/auth.ts';
+import { loadCrmConfig } from '../src/crm.ts';
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
@@ -24,6 +25,9 @@ ajv.addSchema({ components: adminSpec.components }, 'admin');
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
 const sent: { to: string; subject: string; text: string }[] = [];
+const CRM = { url: 'https://shop.platform.example/wp-json/anypress/v1/offering', secret: 'test-crm-secret' };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const told: { secret: string | null; body: any }[] = [];
 
 /** Calls the API; a 2xx JSON answer must match the admin spec. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,6 +67,7 @@ beforeAll(async () => {
   t = await setup();
   t.deps.config.auth = AUTH;
   t.deps.config.applicationNotify = ['owner@platform.example'];
+  t.deps.config.crm = CRM;
   t.deps.auth = createAuth(t.pool, AUTH);
   app = createApp(t.deps);
 
@@ -80,6 +85,10 @@ beforeAll(async () => {
   const realFetch = globalThis.fetch;
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
+    if (url === CRM.url) {
+      told.push({ secret: new Headers(init!.headers).get('x-crm-secret'), body: JSON.parse(String(init!.body)) });
+      return new Response('{"ok":true}', { status: 200 });
+    }
     if (!url.startsWith('https://api.tosend.com/')) return realFetch(input, init);
     const body = JSON.parse(String(init!.body));
     sent.push({ to: body.to[0].email, subject: body.subject, text: body.text });
@@ -89,6 +98,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   sent.splice(0);
+  told.splice(0);
 });
 afterAll(async () => {
   vi.unstubAllGlobals();
@@ -164,6 +174,12 @@ describe('reviewing', () => {
     expect((await call('POST', `/admin/applications/${id}/decline`)).status).toBe(409);
     expect((await call('GET', `/admin/applications/${id}`)).json).toMatchObject({ productId, resellerId: null, status: 'approved', dateDecided: expect.any(String) });
     expect(res.json.resellerId).toBeNull();
+    expect(told).toEqual([
+      {
+        secret: CRM.secret,
+        body: { email: 'ada@agency.example', name: 'Ada Lovelace', business: 'Analytical Agency', offering: 'Seller', stage: 'Active' },
+      },
+    ]);
   });
 
   it('builds the ready-made storefront the applicant asked for', async () => {
@@ -216,6 +232,27 @@ describe('reviewing', () => {
     expect(own.invitations ?? []).toEqual([]);
     expect(sent.at(-1)).toMatchObject({ to: 'hedy@partners.example', text: expect.stringContaining(`/invite/${res.json.invitation.id}`) });
     expect((await call('GET', `/admin/applications/${id}`)).json).toMatchObject({ productId, resellerId });
+    expect(told.map((x) => x.body)).toEqual([expect.objectContaining({ email: 'hedy@partners.example', offering: 'Reseller', stage: 'Active' })]);
+  });
+
+  it('keeps the approval when the CRM is down', async () => {
+    const applied = await apply(form({ email: 'barbara@down.example', business: 'Liskov Sites' }));
+    const saved = t.deps.config.crm;
+    t.deps.config.crm = { url: 'http://127.0.0.1:9/offering', secret: 'x' };
+    try {
+      const res = await call('POST', `/admin/applications/${applied.json.id}/approve`, {});
+      expect(res.status).toBe(200);
+      expect(res.json.application.status).toBe('approved');
+    } finally {
+      t.deps.config.crm = saved;
+    }
+  });
+
+  it('reads CRM_URL and CRM_SECRET together', () => {
+    expect(loadCrmConfig({})).toBeUndefined();
+    expect(loadCrmConfig({ CRM_URL: 'https://shop.example/x', CRM_SECRET: 's' })).toEqual({ url: 'https://shop.example/x', secret: 's' });
+    expect(() => loadCrmConfig({ CRM_URL: 'https://shop.example/x' })).toThrow(/both/);
+    expect(() => loadCrmConfig({ CRM_URL: 'shop.example', CRM_SECRET: 's' })).toThrow(/http/);
   });
 
   it('defaults a reseller approval to 3 stores across 3 storefronts', async () => {

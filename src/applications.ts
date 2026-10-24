@@ -9,6 +9,7 @@ import {
   sendApplicationReceived,
   type AuthMail,
 } from './authmail.ts';
+import { tellCrm } from './crm.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { publicBase } from './oauth.ts';
@@ -21,7 +22,8 @@ import { domainInUse } from './tenants.ts';
  * Approving makes the seller's product with a store limit, invites the applicant as its owner (they
  * sign in to the dashboard from the email), and builds its ready-made storefront when they asked
  * for one. Approving as a reseller (docs/resellers.md) makes a reseller account with that product
- * inside it instead, and invites the applicant to the reseller's team. Declining only emails them.
+ * inside it instead, and invites the applicant to the reseller's team. Either way the CRM, when set,
+ * is told (src/crm.ts), which starts the welcome emails. Declining only emails them.
  */
 
 export const EXPECTED_SITES = ['1-2', '3-9', '10-24', '25+'] as const;
@@ -275,6 +277,11 @@ export function adminApplicationRoutes(deps: Deps) {
         }),
       config.auth?.mail,
     );
+    await tellCrm(config.crm, asReseller ? 'Reseller' : 'Seller', 'Active', {
+      email: application.email,
+      name: application.name,
+      business: application.business,
+    });
     return c.json({
       application: { ...application, productId: product.id, resellerId },
       productId: product.id,
