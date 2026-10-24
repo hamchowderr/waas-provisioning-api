@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-anypress",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "n8n nodes for AnyPress: create, get, suspend, resume and delete WordPress sites, and start a workflow when a site is ready",
 	"license": "MIT",
 	"homepage": "https://anypress.io/automate",

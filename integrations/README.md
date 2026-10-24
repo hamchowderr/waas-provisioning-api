@@ -38,7 +38,7 @@ Each one is released by pushing a tag. The workflows check the tag matches the v
 
 | Tag | Workflow | Needs, once |
 |---|---|---|
-| `n8n-v0.1.0` | [`release-n8n.yml`](../.github/workflows/release-n8n.yml) | npm Trusted Publishing for `n8n-nodes-anypress` with this repository and `release-n8n.yml` (as for the SDK in [docs/publishing.md](../docs/publishing.md)). Then submit the package on the [n8n Creator Portal](https://creators.n8n.io/nodes) for verification |
+| `n8n-v0.1.1` | [`release-n8n.yml`](../.github/workflows/release-n8n.yml) | npm Trusted Publishing for `n8n-nodes-anypress` with this repository and `release-n8n.yml` (as for the SDK in [docs/publishing.md](../docs/publishing.md)). Then submit the package on the [n8n Creator Portal](https://creators.n8n.io/nodes) for verification |
 | `zapier-v1.0.0` | [`release-zapier.yml`](../.github/workflows/release-zapier.yml) | The app registered on Zapier's developer platform (its number goes in the repository variable `ZAPIER_APP_ID`) and a deploy key in the secret `ZAPIER_DEPLOY_KEY`. Making it public is a request on the developer platform once it has users |
 | `make-v1.0.0` | [`release-make.yml`](../.github/workflows/release-make.yml) | A Make API token with `sdk-apps:read` and `sdk-apps:write` in the secret `MAKE_API_TOKEN`, and the variables `MAKE_ZONE` (such as `us1.make.com`) and `MAKE_APP_ID`. The first run creates the app. Making it public is a review request to Make |
 
