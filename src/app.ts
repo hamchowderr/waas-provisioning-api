@@ -11,6 +11,7 @@ import type { DomainConnectNet } from './domainconnect.ts';
 import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
 import { authenticateKey } from './keys.ts';
+import type { CpuWatch } from './cpuwatch.ts';
 import { checkHealth } from './health.ts';
 import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
@@ -43,6 +44,8 @@ export interface Deps {
   boss: PgBoss;
   provisioner: Provisioner;
   secrets: Secrets;
+  /** The server CPU watch for /health (src/cpuwatch.ts); absent when off. */
+  cpuWatch?: CpuWatch;
   /** Plugin releases (waas-hw4); absent when RELEASES_S3_BUCKET is not set. */
   releases?: ReleaseStore;
   /** DNS and HTTP for Domain Connect lookups; tests replace it. */
@@ -77,7 +80,7 @@ export function createApp(deps: Deps) {
   // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
   // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
   app.get('/health', async (c) => {
-    const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup, !!deps.config.restoreTest);
+    const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup, !!deps.config.restoreTest, deps.cpuWatch);
     return c.json(health, health.ok ? 200 : 503);
   });
 

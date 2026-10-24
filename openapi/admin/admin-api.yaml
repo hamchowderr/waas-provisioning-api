@@ -2415,7 +2415,7 @@ components:
       properties:
         health:
           type: object
-          required: [ok, database, queue, dbBackup, jobs, restoreTest]
+          required: [ok, database, queue, dbBackup, jobs, restoreTest, cpu]
           additionalProperties: false
           properties:
             ok: { type: boolean }
@@ -2444,6 +2444,21 @@ components:
                 ok: { type: boolean }
                 status: { type: string, enum: ['off', never, running, passed, failed] }
                 lastPassedAt: { type: string, format: date-time, nullable: true }
+            cpu:
+              type: object
+              description: >-
+                The whole server's CPU over the last hour, from /proc/stat: busy and steal are shares of all
+                cores, 0 to 1 (null until two samples are in). ok is false when busy passed CPU_WATCH_BUSY or
+                steal passed CPU_WATCH_STEAL over a full window. status is 'off' with CPU_WATCH=off. Never
+                affects health.ok.
+              required: [ok]
+              additionalProperties: false
+              properties:
+                ok: { type: boolean }
+                status: { type: string, enum: ['off'] }
+                busy: { type: number, nullable: true }
+                steal: { type: number, nullable: true }
+                minutes: { type: integer }
         tenants:
           type: object
           additionalProperties: false

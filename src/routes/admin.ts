@@ -354,7 +354,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     const own = scopedProduct(c);
     const scope = own ?? uuidQuery(c, 'productId') ?? null;
     const [health, tenants, versions, backups, jobs, suspended, products] = await Promise.all([
-      checkHealth(pool, boss, !!deps.config.dbBackup, !!deps.config.restoreTest),
+      checkHealth(pool, boss, !!deps.config.dbBackup, !!deps.config.restoreTest, deps.cpuWatch),
       byStatus('tenants', scope),
       byStatus('versions', scope),
       byStatus('tenant_backups', scope),
