@@ -461,7 +461,8 @@ export class CoolifyProvisioner implements Provisioner {
 
   async stopVersion({ versionId }: { versionId: string }) {
     const service = await this.findService(VERSIONS_ENV, versionName(versionId));
-    if (service) await this.coolify.stopService(service.uuid);
+    // Already stopped: no Coolify job, as daily maintenance asks for every built version.
+    if (service && !service.status?.startsWith('exited')) await this.coolify.stopService(service.uuid);
   }
 
   // Snapshots

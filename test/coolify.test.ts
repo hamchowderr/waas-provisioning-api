@@ -73,7 +73,8 @@ class FakeCloud {
       return json(201, { uuid: `env-${body.name}` });
     }
     if (path === '/services' && method === 'GET') {
-      return json(200, [...this.services.values()].map(({ compose: _c, envs: _e, urls: _u, ...s }) => s));
+      // Coolify's list carries each Service's overall status, as GET /services/:uuid carries each container's.
+      return json(200, [...this.services.values()].map(({ compose: _c, envs: _e, urls: _u, ...s }) => ({ ...s, status: s.started ? 'running:healthy' : 'exited' })));
     }
     if (path === '/services' && method === 'POST') {
       const uuid = `svc-${++this.seq}`;
@@ -774,6 +775,9 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.calls).toContain(`POST /services/${version.uuid}/stop`);
     expect(version.started).toBe(0);
     await p.stopVersion({ versionId: 'gone' });
+    expect(cloud.calls.filter((c) => c.endsWith('/stop'))).toHaveLength(1);
+    // Already stopped: nothing queued in Coolify, so daily maintenance can ask for every built version.
+    await p.stopVersion({ versionId: 'v2' });
     expect(cloud.calls.filter((c) => c.endsWith('/stop'))).toHaveLength(1);
   });
 
