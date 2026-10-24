@@ -34,7 +34,7 @@ npx vitest run test/integrations.test.ts
 
 ## Publishing
 
-Each one is released by pushing a tag. The workflows check the tag matches the version.
+Each one is released by pushing a tag, or by running its workflow by hand on `main` (Actions, Run workflow), which releases the version in `package.json`. On a tag, the workflows check it matches the version.
 
 | Tag | Workflow | Needs, once |
 |---|---|---|
