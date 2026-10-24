@@ -3,7 +3,8 @@
 //
 //   MAKE_API_TOKEN  a Make API token with the sdk-apps:read and sdk-apps:write scopes
 //   MAKE_ZONE       the Make zone the account is in, such as us1.make.com or eu2.make.com
-//   MAKE_APP_ID     the app's ID in Make. Created the first time when it doesn't exist yet
+//   MAKE_APP_ID     the app's name in Make, or the start of it: Make adds a suffix when it creates
+//                   the app (anypress becomes anypress-ab12cd). Created the first time
 //
 // Components are matched by name (modules) or by label (the connection and the webhook, whose
 // names Make picks), so running it again updates the same app.
@@ -37,10 +38,13 @@ async function putCode(url, file) {
   console.log(`  ${file}`);
 }
 
-// The app itself.
-if (!(await call('GET', `${api}/${appId}/${version}`))) {
+// The app itself. Make adds a suffix to new app names (anypress becomes anypress-ab12cd), and
+// answers 403 rather than 404 for a name the token can't see, so find it among the token's own apps.
+const ownApps = (await call('GET', api)).apps ?? [];
+let found = ownApps.find((a) => a.name === appId || a.name.startsWith(`${appId}-`));
+if (!found) {
   console.log(`Creating app ${appId}`);
-  await call('POST', api, {
+  const created = await call('POST', api, {
     name: appId,
     label: 'AnyPress',
     version,
@@ -49,16 +53,19 @@ if (!(await call('GET', `${api}/${appId}/${version}`))) {
     language: 'en',
     audience: 'global',
   });
+  found = created.app ?? created;
 }
+const appName = found.name;
+console.log(`App ${appName}`);
 const general = { base: 'base', common: 'common', readme: 'readme', groups: 'groups' };
-for (const [code, path] of Object.entries(general)) await putCode(`${api}/${appId}/${version}/${path}`, app.generalCodeFiles[code]);
+for (const [code, path] of Object.entries(general)) await putCode(`${api}/${appName}/${version}/${path}`, app.generalCodeFiles[code]);
 
 // The connection.
 const connectionNames = {};
-const connections = (await call('GET', `${api}/${appId}/connections`)).appConnections ?? [];
+const connections = (await call('GET', `${api}/${appName}/connections`)).appConnections ?? [];
 for (const [localId, meta] of Object.entries(app.components.connection)) {
   let name = connections.find((c) => c.label === meta.label)?.name;
-  if (!name) name = (await call('POST', `${api}/${appId}/connections`, { label: meta.label, type: meta.connectionType })).appConnection.name;
+  if (!name) name = (await call('POST', `${api}/${appName}/connections`, { label: meta.label, type: meta.connectionType })).appConnection.name;
   connectionNames[localId] = name;
   console.log(`Connection ${localId} = ${name}`);
   await putCode(`${api}/connections/${name}/api`, meta.codeFiles.communication);
@@ -67,11 +74,11 @@ for (const [localId, meta] of Object.entries(app.components.connection)) {
 
 // The webhook.
 const webhookNames = {};
-const webhooks = (await call('GET', `${api}/${appId}/webhooks`)).appWebhooks ?? [];
+const webhooks = (await call('GET', `${api}/${appName}/webhooks`)).appWebhooks ?? [];
 for (const [localId, meta] of Object.entries(app.components.webhook)) {
   let name = webhooks.find((w) => w.label === meta.label)?.name;
   const connection = connectionNames[meta.connection] ?? null;
-  if (!name) name = (await call('POST', `${api}/${appId}/webhooks`, { label: meta.label, type: meta.webhookType, connection })).appWebhook.name;
+  if (!name) name = (await call('POST', `${api}/${appName}/webhooks`, { label: meta.label, type: meta.webhookType, connection })).appWebhook.name;
   webhookNames[localId] = name;
   console.log(`Webhook ${localId} = ${name}`);
   await call('PATCH', `${api}/webhooks/${name}`, { label: meta.label, connection, altConnection: null });
@@ -86,7 +93,7 @@ for (const [localId, meta] of Object.entries(app.components.webhook)) {
 
 // The modules, named as in makecomapp.json.
 for (const [name, meta] of Object.entries(app.components.module)) {
-  const url = `${api}/${appId}/${version}/modules/${name}`;
+  const url = `${api}/${appName}/${version}/modules/${name}`;
   const metadata = {
     label: meta.label,
     description: meta.description,
@@ -98,7 +105,7 @@ for (const [name, meta] of Object.entries(app.components.module)) {
   };
   if (!(await call('GET', url))) {
     console.log(`Creating module ${name}`);
-    await call('POST', `${api}/${appId}/${version}/modules`, { name, moduleInitMode: 'blank', ...metadata });
+    await call('POST', `${api}/${appName}/${version}/modules`, { name, moduleInitMode: 'blank', ...metadata });
   }
   console.log(`Module ${name}`);
   await call('PATCH', url, metadata);
@@ -111,4 +118,4 @@ for (const [name, meta] of Object.entries(app.components.module)) {
   await putCode(`${url}/scope`, files.scope);
 }
 
-console.log(`Deployed ${appId} to ${zone}`);
+console.log(`Deployed ${appName} to ${zone}`);
