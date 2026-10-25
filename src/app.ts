@@ -10,6 +10,7 @@ import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
 import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
+import { APP_PATHS, highLevelRoutes } from './highlevel.ts';
 import { authenticateKey } from './keys.ts';
 import type { CpuWatch } from './cpuwatch.ts';
 import { checkHealth } from './health.ts';
@@ -144,7 +145,10 @@ export function createApp(deps: Deps) {
       return next();
     }
     const match = /^Basic\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
-    const decoded = match ? Buffer.from(match[1]!, 'base64').toString('utf8') : '';
+    let decoded = match ? Buffer.from(match[1]!, 'base64').toString('utf8') : '';
+    // The HighLevel app (src/highlevel.ts) sends the key and secret its install was given as headers.
+    const appKey = c.req.header('X-AnyPress-Key')?.trim();
+    if (!match && appKey && APP_PATHS.test(c.req.path)) decoded = `${appKey}:${c.req.header('X-AnyPress-Secret')?.trim() ?? ''}`;
     const colon = decoded.indexOf(':');
     const key = colon > 0 ? decoded.slice(0, colon) : '';
     // The key is an id, kept in the request log even when the secret is wrong; anything else typed
@@ -160,7 +164,8 @@ export function createApp(deps: Deps) {
     // A partner key (docs/resellers.md): the productId query says which of the reseller's storefronts
     // the call is for, and every route below reads it as usual. The partner-only routes need none.
     c.set('resellerId', caller.resellerId!);
-    if (PARTNER_ONLY.test(c.req.path)) return next();
+    // The HighLevel app's calls name their storefront themselves.
+    if (PARTNER_ONLY.test(c.req.path) || APP_PATHS.test(c.req.path)) return next();
     const productId = c.req.query('productId');
     // Templates and plugin choices made with a partner key are the reseller's, shared by all its storefronts: no productId needed.
     if (!productId && SHARED_TEMPLATES.test(c.req.path)) return next();
@@ -187,6 +192,8 @@ export function createApp(deps: Deps) {
   app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
   app.route('/v1', partnerRoutes(deps));
+  // The AnyPress app for HighLevel: its actions, trigger and install (src/highlevel.ts).
+  highLevelRoutes(app, deps);
 
   // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
   oauthRoutes(app, deps);
