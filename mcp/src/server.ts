@@ -21,6 +21,8 @@ export interface WaasMcpOptions {
   store?: TenantRef;
   /** How often get_stores' wait action polls (tests shorten it). */
   pollIntervalMs?: number;
+  /** Logos AI apps show for this server, e.g. [{ src: 'https://…/icon.png', mimeType: 'image/png' }]. */
+  icons?: { src: string; mimeType?: string; sizes?: string[] }[];
 }
 
 const ref = {
@@ -107,7 +109,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   const withheld = AREAS.filter((area) => !may(area, 'write')).map((area) => `${may(area, 'read') ? 'change' : 'see or change'} ${AREA_LABELS[area].name.toLowerCase()}`);
   const skill = loadSkills()[0]?.uri;
   const server = new McpServer(
-    { name: 'waas-provisioning', version: '0.1.0' },
+    { name: 'waas-provisioning', title: 'AnyPress', version: '0.1.0', websiteUrl: 'https://anypress.io', ...(options.icons ? { icons: options.icons } : {}) },
     {
       instructions:
         'Manages WordPress stores on the WaaS provisioning API. A store is a "tenant"; pick one by externalId (your own id) or tenantId. ' +
