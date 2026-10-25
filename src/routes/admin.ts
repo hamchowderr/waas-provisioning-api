@@ -8,7 +8,7 @@ import type { AppEnv, Deps } from '../app.ts';
 import { adminClientRoutes } from '../clients.ts';
 import type { Config } from '../config.ts';
 import { withTransaction, type Client, type Pool } from '../db.ts';
-import { HttpError, badRequest } from '../errors.ts';
+import { HttpError, badRequest, conflict } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
@@ -296,6 +296,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   };
   app.post('/products', adminOnly);
   app.put('/products/:productId', adminOnly);
+  app.delete('/products/:productId', adminOnly);
   app.post('/products/:productId/storefront', adminOnly);
   app.use('/db-backups', adminOnly);
   app.use('/plugins', adminOnly);
@@ -790,6 +791,19 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
     }
     return c.json((await products(productId))[0]);
+  });
+
+  // Removes a product that has nothing left: no stores and no ready-made storefront. Its keys, versions,
+  // templates and settings go with it. The product that hosts ready-made storefronts can't be removed.
+  app.delete('/products/:productId', async (c) => {
+    const productId = await product(c);
+    if (productId === config.storefrontProductId) throw conflict('This product hosts the ready-made storefronts and cannot be deleted');
+    if ((await pool.query('SELECT 1 FROM tenants WHERE product_id = $1 LIMIT 1', [productId])).rowCount) {
+      throw conflict('Delete its stores first');
+    }
+    if (await getStorefront(deps, productId)) throw conflict('Delete its ready-made storefront first');
+    await pool.query('DELETE FROM products WHERE id = $1', [productId]);
+    return c.body(null, 204);
   });
 
   // A new product (a seller's storefront) with its first API key. The secret is in this response

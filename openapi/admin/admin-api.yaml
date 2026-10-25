@@ -240,6 +240,17 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteProduct
+      summary: Delete a product with no stores
+      description: >-
+        Removes the product with its keys, versions, templates and settings. Answers 409 while it has
+        stores or a ready-made storefront, and for the product that hosts the ready-made storefronts.
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/products/{productId}/organization:
     parameters:
       - $ref: '#/components/parameters/productId'
