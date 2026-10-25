@@ -484,6 +484,14 @@ describe('OAuth for /mcp', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'x', version: '1' } } }),
     });
     expect(response.status).toBe(200);
+    // AI apps show the AnyPress logo for the connector.
+    const init = await response.text();
+    const { serverInfo } = JSON.parse(init.includes('data:') ? init.split('data:').pop()! : init).result;
+    expect(serverInfo).toMatchObject({ title: 'AnyPress', icons: [{ src: `${BASE}/icon.png`, mimeType: 'image/png' }, { src: `${BASE}/icon.svg` }] });
+    const icon = await app.request('/favicon.ico');
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get('content-type')).toBe('image/png');
+    expect([...new Uint8Array(await icon.arrayBuffer()).slice(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
     const listed = await app.request('/mcp', {
       method: 'POST',
       headers: { Authorization: basic(key, secret), 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },

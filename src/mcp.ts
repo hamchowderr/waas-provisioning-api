@@ -10,6 +10,7 @@ import { cors } from 'hono/cors';
 import { WaasClient } from 'waas-provisioning-sdk';
 import { createWaasMcpServer } from '../mcp/src/server.ts';
 import type { AppEnv, Deps } from './app.ts';
+import { mcpIcons } from './icon.ts';
 import { authenticate } from './keys.ts';
 import { MCP_PATHS, protectedResourceMetadataUrl, publicBase, scopesFor, verifyAccessToken, type TokenOwner } from './oauth.ts';
 
@@ -35,7 +36,8 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
           return app.request(`${url.pathname}${url.search}`, init, { internalAuth });
         }) as typeof fetch,
       });
-      return createWaasMcpServer(client, { readOnly, scopes, store: tenantId ? { tenantId } : undefined });
+      const icons = deps.config.publicUrl ? mcpIcons(deps.config.publicUrl) : undefined;
+      return createWaasMcpServer(client, { readOnly, scopes, store: tenantId ? { tenantId } : undefined, icons });
     },
     { onerror: (error) => console.error('mcp:', error.message) },
   );

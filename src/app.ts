@@ -13,6 +13,7 @@ import { isUuid } from './http.ts';
 import { authenticateKey } from './keys.ts';
 import type { CpuWatch } from './cpuwatch.ts';
 import { checkHealth } from './health.ts';
+import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
@@ -79,6 +80,8 @@ export function createApp(deps: Deps) {
   // For uptime monitoring; outside /v1 and unauthenticated. 503 when Postgres or
   // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
   // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
+  iconRoutes(app);
+
   app.get('/health', async (c) => {
     const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup, !!deps.config.restoreTest, deps.cpuWatch);
     return c.json(health, health.ok ? 200 : 503);
