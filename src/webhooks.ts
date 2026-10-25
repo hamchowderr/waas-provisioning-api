@@ -8,6 +8,7 @@ import type { Client, Pool } from './db.ts';
 import { badRequest, HttpError } from './errors.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import type { Secrets } from './secrets.ts';
+import { loadHighLevelConfig, triggerBody, triggerHeaders, type HighLevelConfig } from './highlevel.ts';
 import { TENANT_SELECT, toTenant } from './tenants.ts';
 import { toVersion } from './routes/versions.ts';
 
@@ -56,13 +57,15 @@ export interface WebhookConfig {
   allowPrivate: boolean;
   /** Days events and deliveries are kept (WEBHOOK_LOG_DAYS, default 30). */
   logDays: number;
+  /** The AnyPress app for HighLevel (src/highlevel.ts), whose triggers are endpoints too. Unset: its triggers get no token. */
+  highlevel?: HighLevelConfig;
 }
 
 export function loadWebhookConfig(env: NodeJS.ProcessEnv): WebhookConfig {
   const raw = env.WEBHOOK_LOG_DAYS;
   const logDays = raw === undefined || raw === '' ? 30 : Number(raw);
   if (!Number.isInteger(logDays) || logDays < 1) throw new Error('WEBHOOK_LOG_DAYS must be a whole number of days, at least 1');
-  return { allowPrivate: env.WEBHOOK_ALLOW_PRIVATE?.trim().toLowerCase() === 'true', logDays };
+  return { allowPrivate: env.WEBHOOK_ALLOW_PRIVATE?.trim().toLowerCase() === 'true', logDays, highlevel: loadHighLevelConfig(env) };
 }
 
 const clip = (value: string | null | undefined) => (value ? value.slice(0, MAX_TEXT) : null);
@@ -360,7 +363,7 @@ export async function pruneWebhookLog(pool: Pool, days: number): Promise<number>
 /** One attempt at a delivery. Throws when it should be tried again. */
 export async function deliver(pool: Pool, secrets: Secrets, config: WebhookConfig, deliveryId: string, lastAttempt: boolean): Promise<void> {
   const { rows } = await pool.query(
-    `SELECT d.id, d.status, e.id AS event_id, e.body, e.at, w.url, w.secret, w.enabled
+    `SELECT d.id, d.status, e.id AS event_id, e.body, e.at, w.url, w.secret, w.enabled, w.kind, w.highlevel_location_id, w.highlevel_company_id
        FROM webhook_deliveries d JOIN webhook_events e ON e.id = d.event_id JOIN webhook_endpoints w ON w.id = d.endpoint_id
       WHERE d.id = $1`,
     [deliveryId],
@@ -369,6 +372,9 @@ export async function deliver(pool: Pool, secrets: Secrets, config: WebhookConfi
   if (!row || row.status !== 'pending') return; // pruned, the endpoint deleted, or already settled
   const timestamp = Math.floor(Date.now() / 1000);
   const secret = secrets.decrypt(row.secret);
+  // A HighLevel workflow trigger reads flat fields, and takes the sub-account's token (src/highlevel.ts).
+  const highlevel = row.kind === 'highlevel';
+  const body = highlevel ? triggerBody(row.body, row.event_id) : row.body;
   const result = await post(
     row.url,
     {
@@ -376,9 +382,10 @@ export async function deliver(pool: Pool, secrets: Secrets, config: WebhookConfi
       'User-Agent': 'WaaS-Webhooks/1.0',
       'webhook-id': row.event_id,
       'webhook-timestamp': String(timestamp),
-      'webhook-signature': sign(secret, row.event_id, timestamp, row.body),
+      'webhook-signature': sign(secret, row.event_id, timestamp, body),
+      ...(highlevel ? await triggerHeaders(pool, secrets, config, row.url, row.highlevel_location_id, row.highlevel_company_id) : {}),
     },
-    row.body,
+    body,
     config.allowPrivate,
   );
   const ok = result.status !== null && result.status >= 200 && result.status < 300;
@@ -509,7 +516,7 @@ export function webhookService(pool: Pool, boss: PgBoss, secrets: Secrets, confi
       const description = checkDescription(input.description);
       const enabled = checkEnabled(input.enabled) ?? true;
       const secret = generateSecret();
-      const { rows: count } = await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM webhook_endpoints WHERE product_id = $1', [productId]);
+      const { rows: count } = await pool.query<{ n: number }>("SELECT count(*)::int AS n FROM webhook_endpoints WHERE product_id = $1 AND kind = 'webhook'", [productId]);
       if (count[0]!.n >= MAX_ENDPOINTS) throw badRequest(`A storefront can have at most ${MAX_ENDPOINTS} webhook endpoints`);
       const { rows } = await pool.query(
         `INSERT INTO webhook_endpoints (product_id, url, description, event_types, secret, enabled, api_key_id)

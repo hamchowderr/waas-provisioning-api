@@ -7,8 +7,9 @@ No-code apps for the API, so a form, a payment or a CRM step can create a site a
 | [`n8n/`](n8n/) | n8n | Community node package: an **AnyPress** node and an **AnyPress Trigger** | `n8n-nodes-anypress` on npm, then n8n's verified list |
 | [`zapier/`](zapier/) | Zapier | Zapier Platform CLI app | The AnyPress app on Zapier |
 | [`make/`](make/) | Make | Custom app in the Make Apps local project format (`makecomapp.json`) | The AnyPress app on Make |
+| [`highlevel/`](highlevel/) | HighLevel | Marketplace app: workflow actions and a trigger, served by the API itself (`src/highlevel.ts`) | The AnyPress app in HighLevel's Marketplace |
 
-All three have the same steps:
+n8n, Make and Zapier have the same steps (HighLevel's are the same, through its own routes):
 
 - **Create a site** (`POST /v1/tenants`), **get** it (`GET /v1/tenants`), **suspend**, **resume** and **delete** it, by the caller's own reference (`externalId`) or the site's id.
 - **Site events**: a trigger that registers a webhook (`POST /v1/webhooks`) when the flow is turned on and removes it when it's turned off. Each event is one item with the site and its `url`.
