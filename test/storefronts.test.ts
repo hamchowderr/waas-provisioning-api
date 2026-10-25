@@ -93,3 +93,21 @@ describe('ready-made storefronts', () => {
     expect((await t.call('GET', `/admin/products/${sellerId}/storefront`, { auth: null })).status).toBe(403);
   });
 });
+
+describe('deleting a storefront', () => {
+  const remove = (productId: string, auth = ADMIN) => t.call('DELETE', `/admin/products/${productId}`, { auth });
+
+  it('refuses while it has a ready-made storefront or stores, and never the storefront host', async () => {
+    expect((await remove(sellerId)).status).toBe(409);
+    expect((await remove(storefrontProductId)).status).toBe(409);
+  });
+
+  it('removes an empty one with its keys, for the platform admin only', async () => {
+    const empty = await newProduct('Empty test storefront');
+    expect((await remove(empty.id, empty.auth)).status).toBe(403);
+    expect((await remove(empty.id)).status).toBe(204);
+    expect((await t.pool.query('SELECT 1 FROM products WHERE id = $1', [empty.id])).rowCount).toBe(0);
+    expect((await t.pool.query('SELECT 1 FROM api_keys WHERE product_id = $1', [empty.id])).rowCount).toBe(0);
+    expect((await remove(empty.id)).status).toBe(404);
+  });
+});
