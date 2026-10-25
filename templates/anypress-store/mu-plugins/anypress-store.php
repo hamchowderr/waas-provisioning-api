@@ -277,7 +277,7 @@ function anypress_is_bookings_site(array $active): bool
  * portal) carry `_anypress_needs`: they go back to draft while their plugin is off and come back when it's on, so
  * menus and the home page never show an empty shop. With the shop hidden, the home page shows the latest posts.
  * Bookings sites have FluentCart only to take payment for bookings, so they get its checkout, receipt and account
- * pages but not the Shop page. Runs only when the set of active plugins changes.
+ * pages but not the Shop or Cart page. Runs only when the set of active plugins changes.
  */
 add_action('init', function () {
     if (defined('WP_CLI') && WP_CLI) {
@@ -298,7 +298,7 @@ add_action('init', function () {
     ]);
     foreach ($pages as $page) {
         $on = in_array(get_post_meta($page->ID, '_anypress_needs', true), $active, true)
-            && !($page->post_name === 'shop' && anypress_is_bookings_site($active));
+            && !(in_array($page->post_name, ['shop', 'cart'], true) && anypress_is_bookings_site($active));
         if (!$on && $page->post_status === 'publish') {
             update_post_meta($page->ID, '_anypress_hidden', 1);
             wp_update_post(['ID' => $page->ID, 'post_status' => 'draft']);
