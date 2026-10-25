@@ -216,8 +216,9 @@ paths:
       - $ref: '#/components/parameters/productId'
     put:
       operationId: adminUpdateProduct
-      summary: A product's settings (maxTenants)
+      summary: A product's settings (name, maxTenants)
       description: >-
+        Send either or both; fields left out stay. name renames the product (1 to 100 characters).
         maxTenants is the most tenants the product may have (null: no limit). At the limit,
         createTenant and restoreTenant answer 400. Lowering it below the current count deletes
         nothing; it only stops new tenants.
@@ -227,8 +228,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [maxTenants]
-              properties: { maxTenants: { type: integer, minimum: 0, nullable: true } }
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                maxTenants: { type: integer, minimum: 0, nullable: true }
       responses:
         '200':
           description: The product

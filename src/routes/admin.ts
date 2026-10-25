@@ -771,16 +771,24 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   app.get('/products', async (c) => c.json(await products(scopedProduct(c))));
 
-  // The product's settings. Only maxTenants for now: the most tenants it may have, or null for no
-  // limit. Lowering it below the current count deletes nothing; it only stops new ones.
+  // The product's settings, each optional: its name, and maxTenants, the most tenants it may have, or
+  // null for no limit. Lowering maxTenants below the current count deletes nothing; it only stops new ones.
   app.put('/products/:productId', async (c) => {
     const productId = await product(c);
-    const body = (await readJson(c)) as { maxTenants?: unknown };
-    const max = body?.maxTenants;
-    if (max !== null && !(typeof max === 'number' && Number.isInteger(max) && max >= 0 && max <= 100000)) {
-      throw badRequest('maxTenants must be a whole number, 0 or more, or null for no limit');
+    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown };
+    if (body?.name === undefined && body?.maxTenants === undefined) throw badRequest('Send name, maxTenants or both');
+    if (body.name !== undefined) {
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name || name.length > 100) throw badRequest('name must be text, at most 100 characters');
+      await pool.query('UPDATE products SET name = $2 WHERE id = $1', [productId, name]);
     }
-    await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
+    if (body.maxTenants !== undefined) {
+      const max = body.maxTenants;
+      if (max !== null && !(typeof max === 'number' && Number.isInteger(max) && max >= 0 && max <= 100000)) {
+        throw badRequest('maxTenants must be a whole number, 0 or more, or null for no limit');
+      }
+      await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
+    }
     return c.json((await products(productId))[0]);
   });
 
