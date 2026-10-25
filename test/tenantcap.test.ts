@@ -126,6 +126,16 @@ describe('tenant cap', () => {
     expect((await setCap('not-a-uuid', 3)).status).toBe(404);
     expect((await setCap(t.productId, 3, t.auth)).status).toBe(403);
   });
+
+  it('renames the product and keeps its limit', async () => {
+    await setCap(t.productId, 7);
+    const rename = (name: unknown) => t.call('PUT', `/admin/products/${t.productId}`, { body: { name }, auth: ADMIN });
+    const res = await rename('  Test storefront - FluentCart ');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ name: 'Test storefront - FluentCart', maxTenants: 7 });
+    for (const bad of ['', '   ', 'x'.repeat(101), 42, null]) expect((await rename(bad)).status, String(bad)).toBe(400);
+    await setCap(t.productId, null);
+  });
 });
 
 describe('the migration that caps the test storefronts', () => {
