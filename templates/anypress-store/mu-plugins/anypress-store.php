@@ -265,12 +265,19 @@ add_action('init', function () {
     delete_option('anypress_owner_lock');
 }, 9999);
 
+/** Bookings sites: FluentBooking on and FluentCommunity off (Everything has both). They have FluentCart for paid bookings. */
+function anypress_is_bookings_site(array $active): bool
+{
+    return in_array('fluent-booking/fluent-booking.php', $active, true) && !in_array('fluent-community/fluent-community.php', $active, true);
+}
+
 /*
  * Site types. Each store's plan role (roles.json) switches the template's plugins on or off, and WaaS Client does
  * that on `init`. Pages that only work with one plugin (FluentCart's shop, cart and checkout, Fluent Support's
  * portal) carry `_anypress_needs`: they go back to draft while their plugin is off and come back when it's on, so
  * menus and the home page never show an empty shop. With the shop hidden, the home page shows the latest posts.
- * Runs only when the set of active plugins changes.
+ * Bookings sites have FluentCart only to take payment for bookings, so they get its checkout, receipt and account
+ * pages but not the Shop page. Runs only when the set of active plugins changes.
  */
 add_action('init', function () {
     if (defined('WP_CLI') && WP_CLI) {
@@ -290,7 +297,8 @@ add_action('init', function () {
         'suppress_filters' => true,
     ]);
     foreach ($pages as $page) {
-        $on = in_array(get_post_meta($page->ID, '_anypress_needs', true), $active, true);
+        $on = in_array(get_post_meta($page->ID, '_anypress_needs', true), $active, true)
+            && !($page->post_name === 'shop' && anypress_is_bookings_site($active));
         if (!$on && $page->post_status === 'publish') {
             update_post_meta($page->ID, '_anypress_hidden', 1);
             wp_update_post(['ID' => $page->ID, 'post_status' => 'draft']);
