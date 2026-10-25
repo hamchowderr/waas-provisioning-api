@@ -32,15 +32,17 @@ A storefront's own key works on that storefront. A partner key works on every st
 
 ## Actions
 
+Action and trigger keys start with `anypress_`: HighLevel keys are unique across its whole Marketplace. The API doesn't read them.
+
 Each is an API action: `POST` to the URL with the headers above. HighLevel sends `{"data": {...fields}, "extras": {"locationId", "contactId", "workflowId"}, "meta": {...}}`. Each answers the site as flat fields, so paste the sample below as the action's Response Data and pick the outputs from it.
 
 | Action key | Name | URL | Fields (key, required) |
 |---|---|---|---|
-| `create_site` | Create site | `API/v1/apps/actions/create-site` | `name` (yes): Site name, up to 30 characters. `externalId`: Your reference; empty uses the contact's id, so a workflow that runs twice for a contact makes one site. `email`: Client email, which makes their WordPress login. `username`, `role` (administrator, editor, author, contributor), `size` (small, medium, large), `groupName`: starting site group, `customDomainName`, `storefront` |
-| `get_site` | Get site | `API/v1/apps/actions/get-site` | `externalId` or `siteId`, `storefront` |
-| `suspend_site` | Suspend site | `API/v1/apps/actions/suspend-site` | `externalId` or `siteId`, `storefront` |
-| `resume_site` | Resume site | `API/v1/apps/actions/resume-site` | `externalId` or `siteId`, `storefront` |
-| `delete_site` | Delete site | `API/v1/apps/actions/delete-site` | `externalId` or `siteId`, `storefront`. Answers the site as it was, with `deleted: true` |
+| `anypress_create_site` | Create site | `API/v1/apps/actions/create-site` | `name` (yes): Site name, up to 30 characters. `externalId`: Your reference; empty uses the contact's id, so a workflow that runs twice for a contact makes one site. `email`: Client email, which makes their WordPress login. `username`, `role` (administrator, editor, author, contributor), `size` (small, medium, large), `groupName`: starting site group, `customDomainName`, `storefront` |
+| `anypress_get_site` | Get site | `API/v1/apps/actions/get-site` | `externalId` or `siteId`, `storefront` |
+| `anypress_suspend_site` | Suspend site | `API/v1/apps/actions/suspend-site` | `externalId` or `siteId`, `storefront` |
+| `anypress_resume_site` | Resume site | `API/v1/apps/actions/resume-site` | `externalId` or `siteId`, `storefront` |
+| `anypress_delete_site` | Delete site | `API/v1/apps/actions/delete-site` | `externalId` or `siteId`, `storefront`. Answers the site as it was, with `deleted: true` |
 
 `storefront` is a Select loaded from an External API: `GET API/v1/apps/storefronts` with the headers above answers `{"options": [{"label", "value"}]}`.
 
@@ -66,7 +68,7 @@ A new site answers `Pending` and is ready a few minutes later: start the welcome
 
 | Setting | Value |
 |---|---|
-| Key | `site_event` |
+| Key | `anypress_site_event` |
 | Name | Site event |
 | Subscription URL | `API/v1/apps/triggers`, with the headers above |
 | Filter | `event`, Select, constants: Site ready `tenant.ready`, Site failed `tenant.failed`, Site suspended `tenant.suspended`, Site resumed `tenant.resumed`, Site deleted `tenant.deleted`, Domains changed `tenant.domains_changed`, Backup completed `tenant.backup_completed`, Backup failed `tenant.backup_failed` |
