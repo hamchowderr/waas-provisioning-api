@@ -16,6 +16,7 @@
         "title": "Bookings",
         "plugins": [
             "fluent-booking/fluent-booking.php",
+            "fluent-cart/fluent-cart.php",
             "fluent-support/fluent-support.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",

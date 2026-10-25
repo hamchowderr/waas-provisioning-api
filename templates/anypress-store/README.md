@@ -43,7 +43,7 @@ A new store also gets real pages made from them, once, on its first web request 
 email and the site type has switched its plugins: published, in the main menu, with Ollie's no-title page template.
 Website: Home, Services, About and Contact, with Home as the home page. Bookings: the same with the bookings home page.
 Community and courses: Home, About and Contact (it has FluentCart too, to sell courses, but gets the community home
-page). Online store and everything: the store home page as Home, with Shop moving to `/shop/`, and About and Contact
+page). Bookings has FluentCart too, for paid bookings, but keeps the bookings home page and hides the Shop page. Online store and everything: the store home page as Home, with Shop moving to `/shop/`, and About and Contact
 after Shop in the menu. A store that already has pages of its own gets none.
 
 Until a store publishes its first product, FluentCart's product lists (the Shop page and the store home page) show
@@ -102,7 +102,7 @@ store's plugins to that role's list:
 | Role | Site type | Plugins on |
 |---|---|---|
 | `website` | Website | FluentCRM, Fluent Forms, FluentSnippets, Rank Math, WP Fusion Lite, AutomatorWP, FluentAuth, FluentToolkit |
-| `bookings` | Bookings | Website's, plus FluentBooking and Fluent Support |
+| `bookings` | Bookings | Website's, plus FluentBooking, FluentCart (to take payment for bookings, with no Shop page) and Fluent Support |
 | `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
