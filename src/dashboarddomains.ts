@@ -10,8 +10,7 @@ import { VercelError, type DashboardHost, type DnsRecord, type HostDomainState }
  * Sellers' own dashboard addresses (docs/branding.md): a storefront's team signs in to the dashboard
  * at dashboard.theirbusiness.com instead of the platform's address. Each one is added to whatever
  * serves the dashboard (config.dashboardHost, Vercel today), which serves it and gets its certificate
- * once the domain's DNS points there. Signed-in sellers and resellers set their own; clients' storefronts
- * are the platform admin's to set.
+ * once the domain's DNS points there. Signed-in sellers and resellers set their own.
  */
 
 export type DashboardDomainStatus = 'pending' | 'active' | 'removing';
@@ -119,11 +118,9 @@ export function dashboardDomainRoutes(deps: Deps) {
     const id = c.req.param('productId')!;
     const scope = scopedProduct(c);
     const { rows } = isUuid(id) && (!scope || scope === id)
-      ? await pool.query('SELECT p.id, EXISTS (SELECT 1 FROM clients cl WHERE cl.product_id = p.id) AS client FROM products p WHERE p.id = $1', [id])
+      ? await pool.query('SELECT id FROM products WHERE id = $1', [id])
       : { rows: [] };
     if (!rows[0]) throw new HttpError(404, `Product ${id} not found`);
-    // Own dashboard addresses come with an approved seller or reseller account (the owner's call, 2026-10-22).
-    if (scope && rows[0].client && c.req.method !== 'GET') throw new HttpError(403, 'Ask us to set up your own dashboard address.');
     return id;
   }
 
