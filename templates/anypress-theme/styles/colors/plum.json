@@ -1,0 +1,67 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Plum",
+	"slug": "plum",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#6b2d6b",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#f3e6f2",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#eeb0bf",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#4a1626",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#1d1420",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#e0d8e2",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#ffffff",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#574d5a",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#f7f3f7",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#e8e0e9",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#3e3341",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	}
+}

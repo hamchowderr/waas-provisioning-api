@@ -3,7 +3,7 @@ Contributors: anypress
 Requires at least: 7.1
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -12,6 +12,10 @@ A block theme built to be edited by people and by AI agents.
 == Description ==
 
 Every colour, font size, space, radius and shadow is a named token in theme.json, so a page changes with the site's palette and fonts instead of keeping old values. Sections take their colours from section styles (Tint, Brand soft, Brand, Dark, Second brand, Card). Every pattern says what it is for, which helps both the pattern inserter and AI agents pick the right one.
+
+Style variations: six colour palettes (Forest, Plum, Ocean, Charcoal and gold, Rose, Night) and four font pairings (Warm serif, Editorial, Sturdy, Friendly), in Appearance > Editor > Styles. Every palette keeps text at WCAG AA contrast or better in every section style.
+
+Starter pages: home pages for trades and local services, food and drink, and classes and memberships, plus About and Contact pages. They appear when a new page is created.
 
 == Copyright ==
 

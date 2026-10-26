@@ -1,0 +1,67 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Night",
+	"slug": "night",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#8fb3ff",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#1c2740",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#f0b93a",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#2b1f04",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#eceef2",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#2a2e37",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#111318",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#a9afbb",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#1a1d23",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#2c3039",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#c9cdd6",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	}
+}
