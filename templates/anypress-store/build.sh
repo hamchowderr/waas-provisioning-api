@@ -30,7 +30,7 @@ fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
 VENDORED="
-fluent-toolkit 2.1.3 e501b6f0abf9bf5db30c4f60b31702b3ffda217de0c85db408ff4ce210f51123
+fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
 THEME=ollie
 THEME_VERSION=${THEME_VERSION:-1.6.5}

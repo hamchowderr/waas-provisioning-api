@@ -24,7 +24,7 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 | FluentAuth | `fluent-security` | 3.1.0 |
 | FluentCommunity | `fluent-community` | 2.12.0 |
 
-Plus FluentToolkit 2.1.3 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
+Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
 
