@@ -1,0 +1,80 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"slug": "section-brand",
+	"title": "Brand",
+	"blockTypes": [
+		"core/group",
+		"core/columns",
+		"core/column"
+	],
+	"styles": {
+		"color": {
+			"background": "var:preset|color|primary",
+			"text": "var:preset|color|base"
+		},
+		"elements": {
+			"heading": {
+				"color": {
+					"text": "currentColor"
+				}
+			},
+			"link": {
+				"color": {
+					"text": "currentColor"
+				},
+				":hover": {
+					"color": {
+						"text": "var:preset|color|primary-accent"
+					}
+				}
+			},
+			"button": {
+				"color": {
+					"background": "var:preset|color|base",
+					"text": "var:preset|color|primary"
+				},
+				":hover": {
+					"color": {
+						"background": "color-mix(in srgb, var(--wp--preset--color--base) 85%, var(--wp--preset--color--primary))",
+						"text": "var:preset|color|primary"
+					}
+				},
+				":focus-visible": {
+					"outline": {
+						"color": "var:preset|color|base",
+						"style": "solid",
+						"width": "var(--wp--custom--focus--width)",
+						"offset": "var(--wp--custom--focus--offset)"
+					}
+				}
+			},
+			"caption": {
+				"color": {
+					"text": "var:preset|color|primary-accent"
+				}
+			}
+		},
+		"blocks": {
+			"core/separator": {
+				"color": {
+					"text": "var:preset|color|primary-accent"
+				}
+			},
+			"core/quote": {
+				"border": {
+					"left": {
+						"color": "currentColor"
+					}
+				}
+			},
+			"core/details": {
+				"border": {
+					"bottom": {
+						"color": "var:preset|color|primary-accent"
+					}
+				}
+			}
+		}
+	}
+}
