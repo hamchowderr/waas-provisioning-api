@@ -152,7 +152,7 @@ Stores are copies of a template version. Three templates ship in `templates/`, e
 | Template | What it is |
 |---|---|
 | [`starter-fluentcart`](../templates/starter-fluentcart/README.md) | The smallest store: WordPress, WaaS Client, FluentCart, Twenty Twenty-Five |
-| [`anypress-store`](../templates/anypress-store/README.md) | The full store AnyPress sells: the Fluent plugins, SEO and automation on the Ollie theme, with one role per site type (website, bookings, store, community and courses, everything) in `roles.json` |
+| [`anypress-store`](../templates/anypress-store/README.md) | The full store AnyPress sells: the Fluent plugins, SEO and automation on the AnyPress theme, with one role per site type (website, bookings, store, community and courses, everything) in `roles.json` |
 | [`seller-storefront`](../templates/seller-storefront/README.md) | Not a store: the ready-made storefront (section 6) |
 
 `publish.sh` needs `WAAS_API_URL` (your API's address) and a product key and secret (`WAAS_KEY`, `WAAS_SECRET`). You can also upload an archive from the dashboard's **Versions & templates** page. Make one version **production**: new stores use it.

@@ -26,7 +26,7 @@ Run what CI runs before pushing: `npm ci`, `npm run typecheck`, `npm run sdk:che
 ## Building for WordPress
 
 - Use the WordPress skills in `.claude/skills/` (list in its README): `wp-block-themes` and `wp-patterns` for the theme, starter pages and presets, `wp-wpcli-and-ops` for build scripts, `wp-playground` and `blueprint` for trying a template, `wp-performance` for store speed.
-- Stores run WordPress 7.1 on PHP 8.3, each with its own WordPress and MariaDB containers. The theme is **Ollie**, the only one installed. Build pages and starter patterns from Ollie's own patterns and its `theme.json` colour, font and spacing slugs, not fixed colours or pixel sizes, so owners can restyle them in the Site Editor and agents can edit them through the site tools. Customer stores are edited in WordPress, never headless.
+- Stores run WordPress 7.1 on PHP 8.3, each with its own WordPress and MariaDB containers. New stores get the **AnyPress theme** (`templates/anypress-theme`), the only one installed; stores made before it run Ollie. Build pages and starter patterns from the theme's own sections (AnyPress Blocks and the kits) and its `theme.json` colour, font and spacing slugs, not fixed colours or pixel sizes, so owners can restyle them in the Site Editor and agents can edit them through the site tools. Customer stores are edited in WordPress, never headless.
 - Code in `mu-plugins/` runs on every request of every store, and stores share one server: keep it cheap, and do one-time work once (behind an option flag), not on each page load.
 
 ## Rules for every change

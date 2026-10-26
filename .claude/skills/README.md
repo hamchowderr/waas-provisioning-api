@@ -13,7 +13,7 @@ taken at commit `eff37854`. They teach coding agents WordPress's own conventions
 | `wp-abilities-api` | Registering abilities (`wp_register_ability`) and their REST exposure |
 | `wp-abilities-audit` | Auditing a plugin's REST surface for abilities to add |
 | `wp-abilities-verify` | Checking abilities against their annotations, permissions and schemas |
-| `wp-block-themes` | Block themes: `theme.json`, templates, template parts, style variations (Ollie is one) |
+| `wp-block-themes` | Block themes: `theme.json`, templates, template parts, style variations (the AnyPress theme is one) |
 | `wp-patterns` | Block patterns and starter pages |
 | `wp-block-development` | Custom blocks: `block.json`, rendering, deprecations |
 | `wp-interactivity-api` | Front-end behaviour with `data-wp-*` directives |

@@ -551,7 +551,7 @@ paths:
                   method: POST
                   path: /pages/12/sections
                   body:
-                    pattern: ollie/hero-light
+                    pattern: anypress/hero-statement
                     position: 0
       responses:
         '200':

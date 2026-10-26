@@ -6,7 +6,7 @@
 //
 // What it checks:
 //   - the theme activates as a block theme and WordPress reads its presets and section styles
-//   - every AnyPress pattern parses into valid blocks (the editor's own validation, run here with @wordpress/blocks)
+//   - every AnyPress pattern, and the store template's starter pages, parses into valid blocks (the editor's own validation, run here with @wordpress/blocks)
 //   - patterns use theme tokens only: no hex colours and no pixel sizes in block attributes
 //   - every pattern has a description and keywords (the site tools search on them)
 //   - every colour palette passes WCAG AA contrast (4.5:1) in every section style (contrast.mjs)
@@ -36,6 +36,8 @@ const { registerCoreBlocks } = require('@wordpress/block-library');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const THEME = resolve(HERE, '../anypress-theme');
+// The store template's starter pages are built from the theme's sections, so they are checked with it.
+const STARTERS = resolve(HERE, '../anypress-store/mu-plugins/anypress-patterns.php');
 const WP = process.env.PLAYGROUND_WP || '7.1.3';
 const PHP = process.env.PLAYGROUND_PHP || '8.3';
 const PORT = Number(process.env.PLAYGROUND_PORT || 9410);
@@ -60,7 +62,10 @@ const cli = await runCLI({
             { step: 'setSiteOptions', options: { blogname: 'Springfield Roofing', blogdescription: 'Family-run roofers since 2001' } },
         ],
     },
-    mount: [{ hostPath: THEME, vfsPath: '/wordpress/wp-content/themes/anypress' }],
+    mount: [
+        { hostPath: THEME, vfsPath: '/wordpress/wp-content/themes/anypress' },
+        { hostPath: STARTERS, vfsPath: '/wordpress/wp-content/mu-plugins/anypress-patterns.php' },
+    ],
     verbosity: 'quiet',
 });
 const base = cli.serverUrl.replace(/\/$/, '');
@@ -111,6 +116,7 @@ contrast.forEach(fail);
 // 2. Patterns: metadata, valid blocks, tokens only.
 console.log('Patterns');
 const patterns = await php(`
+    anypress_register_patterns();
     $out = [];
     foreach (WP_Block_Patterns_Registry::get_instance()->get_all_registered() as $p) {
         if (str_starts_with($p['name'], 'anypress/')) $out[] = $p;
@@ -167,6 +173,7 @@ const html = await (await fetch(`${base}/?page_id=${page.id}`)).text();
 /is-style-section-[a-z-]+[^{]*\{[^}]*background-color/.test(html) ? pass('section style CSS generated for the sections used') : fail('section style CSS missing');
 html.includes('fonts/figtree.woff2') ? pass('self-hosted fonts load') : fail('font files not referenced');
 const starterPages = await php(`
+    anypress_register_patterns();
     $out = [];
     foreach (WP_Block_Patterns_Registry::get_instance()->get_all_registered() as $p) {
         if (!in_array('anypress/pages', $p['categories'] ?? [], true)) continue;

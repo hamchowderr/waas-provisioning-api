@@ -6,7 +6,7 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 | | |
 |---|---|
 | WordPress | 7.1.3 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
-| Theme | [Ollie](https://wordpress.org/themes/ollie/) 1.6.5, a free block theme with a library of ready-made sections; the only theme installed |
+| Theme | The AnyPress theme ([`templates/anypress-theme`](../anypress-theme/)), a block theme with 13 kits (a style and sections for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
 | Plugins | WaaS Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`) and these free wordpress.org plugins, all active: |
 
 | Plugin | Slug | Version |
@@ -28,19 +28,20 @@ Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one 
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
 
-Ollie's header lists every page when the site has no menu, and its footer is the theme's own demo (sample links, social
-icons, a download pitch), so [`presets.php`](presets.php) adds a Main menu (Shop, Cart, Account, Support; links to pages a
-site type hides show nothing) and a plain footer (site title and the same menu). Owners change both in Appearance → Editor.
+Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
+Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
+change it in Appearance → Editor.
 
 Starter pages (`mu-plugins/anypress-patterns.php`): whole-page patterns under "Starter pages" when a page is created, and
-for the AnyPress connector's agents (`find_patterns`, category `anypress/pages`). Home pages for a website, an online store,
-bookings, and community and courses (each only when its plugin is on), plus About, Services and Contact. They use Ollie's
-own section layouts with the store's name and plain placeholder text, the Fluent Forms contact form, FluentCart's product
-list and, once the owner has made one, the FluentBooking calendar. Ollie's patterns that advertise the theme itself
-(Download page, Theme Details) are hidden.
+for the AnyPress connector's agents (`find_patterns`, category `anypress/pages`, next to the theme's own kit pages).
+Home pages for a website, an online store, bookings, and community and courses (each only when its plugin is on), plus
+About, Services and Contact. They use the theme's section layouts (a words-only hero on the brand colour, since a new
+store has no photos yet, a features grid, questions, a dark call to action) with the store's name and plain placeholder
+text, the Fluent Forms contact form, FluentCart's product list and, once the owner has made one, the FluentBooking
+calendar.
 
 A new store also gets real pages made from them, once, on its first web request after the platform has set the owner's
-email and the site type has switched its plugins: published, in the main menu, with Ollie's no-title page template.
+email and the site type has switched its plugins: published, in the main menu, with the theme's no-title page template.
 Website: Home, Services, About and Contact, with Home as the home page. Bookings: the same with the bookings home page.
 Community and courses: Home, About and Contact (it has FluentCart too, to sell courses, but gets the community home
 page). Bookings has FluentCart too, for paid bookings, but keeps the bookings home page and hides the Shop and Cart pages. Online store and everything: the store home page as Home, with Shop moving to `/shop/`, and About and Contact
@@ -71,7 +72,7 @@ a random password nobody keeps.
   subscription form adds people to Newsletter after they confirm (double opt-in).
 - FluentAffiliate: FluentCart integration on, so store orders count as referrals.
 - Fluent Support: FluentBooking links in tickets. AutomatorWP: logs cleared after 30 days, no Pro suggestions.
-- Theme: the Main menu and the plain footer above.
+- Theme: the Main menu above.
 - Starter pages (`mu-plugins/anypress-patterns.php`); the build checks they register.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
   login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
