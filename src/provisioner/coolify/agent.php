@@ -217,6 +217,38 @@ function adopt_prefix(?string $from): string
 }
 
 /** An added plugin's main file, as WordPress names it in active_plugins ("slug/file.php"): the PHP file with a Plugin Name header. */
+/**
+ * After a store's themes are replaced with its version's (a move to a version on another theme), keeps the
+ * site on a theme that exists: the version's own theme (AnyPress when it ships it), with the owner's colours,
+ * fonts and spacing (their global styles, which WordPress saves per theme) copied over from the old one.
+ * A store whose theme is still there is left alone. Returns the active theme.
+ */
+function keep_theme(): string
+{
+    $out = wpMayFail('eval', <<<'PHP'
+        $old = get_option('stylesheet');
+        if (wp_get_theme($old)->exists()) { echo $old; return; }
+        $themes = array_keys(wp_get_themes());
+        $new = in_array('anypress', $themes, true) ? 'anypress' : ($themes[0] ?? '');
+        if ($new === '') { echo $old; return; }
+        $styles = fn (string $theme) => get_posts([
+            'post_type' => 'wp_global_styles', 'post_status' => 'publish', 'numberposts' => 1,
+            'name' => 'wp-global-styles-' . urlencode($theme),
+        ]);
+        $mine = $styles($old);
+        if ($mine && !$styles($new)) {
+            $id = wp_insert_post([
+                'post_type' => 'wp_global_styles', 'post_status' => 'publish', 'post_title' => 'Custom Styles',
+                'post_name' => 'wp-global-styles-' . urlencode($new), 'post_content' => wp_slash($mine[0]->post_content),
+            ]);
+            if ($id) wp_set_object_terms($id, $new, 'wp_theme');
+        }
+        switch_theme($new);
+        echo $new;
+        PHP);
+    return $out ?? '';
+}
+
 function plugin_main_file(string $slug): ?string
 {
     $files = glob(CONTENT . "/plugins/$slug/*.php") ?: [];
@@ -1210,7 +1242,7 @@ switch ($op) {
             if (!is_dir("$tmp/x/wp-content/$dir")) continue;
             run('rm -rf ' . CONTENT . "/$dir && cp -a " . escapeshellarg("$tmp/x/wp-content/$dir") . ' ' . CONTENT . "/$dir");
         }
-        done();
+        done(['theme' => keep_theme()]);
     }
 
     case 'usage': {
