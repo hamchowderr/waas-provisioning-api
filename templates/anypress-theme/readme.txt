@@ -3,7 +3,7 @@ Contributors: anypress
 Requires at least: 7.1
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.4.0
+Stable tag: 0.4.1
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -35,7 +35,7 @@ Kits: thirteen sets designed for one kind of business each. A kit is a style var
 
 Apply the kit's style in Appearance > Editor > Styles, then start a page from the kit's home page. The kit's sections are in the inserter under "Kit: ...".
 
-Everyday sections: pros and cons, a product box, a notice band, on-this-page links, an email signup band, an author box, a contact section ready for a form, a features grid without icons, a logo row, a numbers band, a social follow band and two footers (columns of links, and one line).
+AnyPress Blocks: 32 shared sections any site can use, whatever its kit, in eight groups in the inserter (Heroes, About, Services and prices, Proof, Calls to action, Contact, Blog, Footers). They take the site's colours and fonts, so they match the kit in use.
 
 Post outlines: starting structures for a how-to guide, a list post and a product review, in the inserter under "Post outlines" when writing a post.
 

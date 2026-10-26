@@ -3,7 +3,7 @@
  * Title: Team: photos, names and roles
  * Slug: anypress/team
  * Description: The people behind the business in a row, each with a photo, name and role. Use on About pages or for clinics, salons and agencies where customers choose who they see.
- * Categories: team, about
+ * Categories: anypress/blocks-about, team, about
  * Keywords: team, staff, people, who we are
  * Viewport Width: 1400
  */

@@ -3,7 +3,7 @@
  * Title: On this page: links to each section
  * Slug: anypress/table-of-contents
  * Description: A short list of links to the sections further down a long page, in a tint box. Use on guides, policies and long service pages; give each linked heading a matching HTML anchor.
- * Categories: text
+ * Categories: anypress/blocks-blog, text
  * Keywords: table of contents, contents, on this page, jump links, navigation
  * Viewport Width: 1400
  */

@@ -3,7 +3,7 @@
  * Title: Signup: join the email list
  * Slug: anypress/newsletter-signup
  * Description: A band asking visitors to join the email list: a heading, what they will get and how often, and a button. Put the store's signup form in place of the button when one exists.
- * Categories: call-to-action
+ * Categories: anypress/blocks-calls-to-action, call-to-action
  * Keywords: newsletter, signup, email list, subscribe, mailing list
  * Viewport Width: 1400
  */

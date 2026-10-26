@@ -3,7 +3,7 @@
  * Title: Statement: one big sentence
  * Slug: anypress/text-statement
  * Description: One large sentence on the tint colour that says what the business stands for. Use between busier sections to give the page a pause; keep it under thirty words.
- * Categories: text, about
+ * Categories: anypress/blocks-about, text, about
  * Keywords: statement, mission, quote, values, intro
  * Viewport Width: 1400
  */

@@ -3,7 +3,7 @@
  * Title: Hero: words and photo side by side
  * Slug: anypress/hero-split
  * Description: Opening section with a headline that says what the business does, one short sentence, a main button and a photo beside it. Use as the first section of a home page when the owner has a strong photo.
- * Categories: anypress-heroes, banner
+ * Categories: anypress/blocks-heroes, banner
  * Keywords: hero, header, intro, headline, photo, call to action
  * Viewport Width: 1400
  */

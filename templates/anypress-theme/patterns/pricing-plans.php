@@ -3,7 +3,7 @@
  * Title: Prices: three plans side by side
  * Slug: anypress/pricing-plans
  * Description: Three plans or packages in columns with name, price, what is included and a button; the middle one stands out on the brand colour. Use for memberships, packages or service tiers with fixed prices.
- * Categories: call-to-action, services
+ * Categories: anypress/blocks-services, call-to-action, services
  * Keywords: pricing, plans, packages, membership, prices
  * Viewport Width: 1400
  */

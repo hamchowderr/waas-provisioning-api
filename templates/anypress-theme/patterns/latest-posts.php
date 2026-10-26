@@ -3,7 +3,7 @@
  * Title: News: latest three posts
  * Slug: anypress/latest-posts
  * Description: A heading and the three newest blog posts with image, title and date. Use on home pages of businesses that post news, offers or events.
- * Categories: posts
+ * Categories: anypress/blocks-blog, posts
  * Keywords: blog, news, posts, updates, articles
  * Viewport Width: 1400
  */

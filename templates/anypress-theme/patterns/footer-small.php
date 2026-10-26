@@ -3,7 +3,7 @@
  * Title: Footer: one line
  * Slug: anypress/footer-small
  * Description: A small one-line footer: the site name on the left and a few links on the right. Use for small sites and landing pages.
- * Categories: footer
+ * Categories: anypress/blocks-footers, footer
  * Keywords: footer, small footer, simple, one line
  * Viewport Width: 1400
  * Block Types: core/template-part/footer

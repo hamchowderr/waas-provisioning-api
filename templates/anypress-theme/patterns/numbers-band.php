@@ -3,7 +3,7 @@
  * Title: Numbers: four figures in a row
  * Slug: anypress/numbers-band
  * Description: Four large figures in a row with a short label under each, such as years in business, jobs done, reviews and response time. Use as proof; only use real, current numbers.
- * Categories: anypress-proof
+ * Categories: anypress/blocks-proof
  * Keywords: numbers, statistics, stats, figures, counter, proof
  * Viewport Width: 1400
  */

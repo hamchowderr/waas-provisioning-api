@@ -3,7 +3,7 @@
  * Title: Contact: details beside a message box
  * Slug: anypress/contact-form-section
  * Description: A contact section in two columns: how to reach the business on the left (phone, email, address, hours) and a box on the right for sending a message. Put the site's contact form block in the right-hand box in place of the button when a form exists.
- * Categories: anypress-details, call-to-action
+ * Categories: anypress/blocks-contact, call-to-action
  * Keywords: contact, contact form, get in touch, message, enquiry
  * Viewport Width: 1400
  */

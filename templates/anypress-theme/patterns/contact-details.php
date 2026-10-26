@@ -3,7 +3,7 @@
  * Title: Contact details: hours, address and phone
  * Slug: anypress/contact-details
  * Description: Three columns with opening hours, the address and ways to get in touch, on the tint section style. Use on contact pages and near the bottom of home pages. Replace every detail with the owner's real ones.
- * Categories: contact, anypress-details
+ * Categories: anypress/blocks-contact, contact
  * Keywords: contact, opening hours, address, phone, email, location
  * Viewport Width: 1400
  */

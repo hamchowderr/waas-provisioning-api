@@ -3,7 +3,7 @@
  * Title: Features: six points in a grid, no icons
  * Slug: anypress/features-text
  * Description: Six short points in a three-column grid, each with a thin rule, a heading and one sentence. Use for features, benefits or reasons to choose the business, where icons would add nothing.
- * Categories: features, services
+ * Categories: anypress/blocks-services, features, services
  * Keywords: features, benefits, reasons, why us, grid
  * Viewport Width: 1400
  */

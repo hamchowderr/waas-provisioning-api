@@ -3,7 +3,7 @@
  * Title: Hero: big statement on brand colour
  * Slug: anypress/hero-statement
  * Description: Opening section without a photo: one large headline on the brand colour, a sentence and a button. Use when the business has no good photo yet, or when the words are the strongest thing.
- * Categories: anypress-heroes, banner
+ * Categories: anypress/blocks-heroes, banner
  * Keywords: hero, statement, headline, brand colour, no image
  * Viewport Width: 1400
  */

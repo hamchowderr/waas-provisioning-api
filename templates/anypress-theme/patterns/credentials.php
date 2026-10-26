@@ -3,7 +3,7 @@
  * Title: Proof: credentials in a row
  * Slug: anypress/credentials
  * Description: Three short facts that build trust, such as licences, years in business and guarantees. Use under a hero or near a price list. Only state facts the owner has confirmed.
- * Categories: anypress-proof
+ * Categories: anypress/blocks-proof
  * Keywords: credentials, trust, licensed, insured, guarantee, proof
  * Viewport Width: 1400
  */

@@ -3,7 +3,7 @@
  * Title: Services with prices, as a list
  * Slug: anypress/services-list
  * Description: A heading and services in rows, each with a name, one line about it and a price on the right, separated by thin lines. Use for salons, trades, clinics and anyone with a price list; easier to scan than cards.
- * Categories: services, anypress-details
+ * Categories: anypress/blocks-services, services
  * Keywords: services, prices, price list, menu, treatments
  * Viewport Width: 1400
  */

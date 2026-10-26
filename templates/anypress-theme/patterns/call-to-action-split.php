@@ -3,7 +3,7 @@
  * Title: Call to action: two choices on second brand colour
  * Slug: anypress/call-to-action-split
  * Description: A band in the second brand colour with a short headline on the left and two buttons on the right. Use mid-page to offer the two main ways to act, such as booking online or calling.
- * Categories: call-to-action
+ * Categories: anypress/blocks-calls-to-action, call-to-action
  * Keywords: call to action, cta, book, call, band
  * Viewport Width: 1400
  */

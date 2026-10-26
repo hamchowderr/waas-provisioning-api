@@ -3,7 +3,7 @@
  * Title: Questions and answers
  * Slug: anypress/faq
  * Description: A heading and questions that open to show their answers. Use for the questions customers really ask (prices, areas served, how booking works). Each answer stays short.
- * Categories: text, anypress-details
+ * Categories: anypress/blocks-contact, text
  * Keywords: faq, questions, answers, help
  * Viewport Width: 1400
  */

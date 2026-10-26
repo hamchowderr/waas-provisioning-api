@@ -3,7 +3,7 @@
  * Title: Follow us: social links on a band
  * Slug: anypress/social-follow
  * Description: A band asking visitors to follow the business on social media, with one line about what they post and the social icons. Use near the end of a page; link only the accounts the business keeps up.
- * Categories: call-to-action, text
+ * Categories: anypress/blocks-calls-to-action, call-to-action, text
  * Keywords: social media, follow, instagram, facebook, tiktok, social links
  * Viewport Width: 1400
  */

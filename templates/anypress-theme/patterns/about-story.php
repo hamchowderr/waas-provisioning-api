@@ -3,7 +3,7 @@
  * Title: About: photo and story side by side
  * Slug: anypress/about-story
  * Description: A photo beside a short story of the business: who runs it, since when and what they care about. Use on About pages or below the hero on a home page. Keep it to two short paragraphs in the owner's own words.
- * Categories: about
+ * Categories: anypress/blocks-about, about
  * Keywords: about, story, owner, history, who we are
  * Viewport Width: 1400
  */

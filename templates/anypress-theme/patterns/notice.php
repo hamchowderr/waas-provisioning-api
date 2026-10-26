@@ -3,7 +3,7 @@
  * Title: Notice: one short message on a band
  * Slug: anypress/notice
  * Description: A short band with one message in bold and a link, such as holiday hours, a delivery cut-off or an announcement. Use at the top of a page and take it down when it no longer applies.
- * Categories: text, call-to-action
+ * Categories: anypress/blocks-calls-to-action, text, call-to-action
  * Keywords: notice, alert, announcement, holiday hours, banner, message
  * Viewport Width: 1400
  */
