@@ -1,0 +1,120 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Byline (blog and magazine)",
+	"slug": "kit-byline",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#a91f1b",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#f5dcd9",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#1d2b3a",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#f3efe6",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#1a1a1a",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#dad6cc",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#faf8f3",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#57534c",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#efebe1",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#ddd7ca",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#2e2e2e",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	},
+	"styles": {
+		"typography": {
+			"fontFamily": "var:preset|font-family|literata"
+		},
+		"elements": {
+			"heading": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|literata",
+					"fontWeight": "800",
+					"letterSpacing": "-0.02em",
+					"lineHeight": "1.05"
+				}
+			},
+			"button": {
+				"border": {
+					"radius": "0"
+				},
+				"typography": {
+					"fontWeight": "700",
+					"fontSize": "var:preset|font-size|small",
+					"fontFamily": "var:preset|font-family|system-sans",
+					"textTransform": "uppercase",
+					"letterSpacing": "0.06em"
+				}
+			}
+		},
+		"blocks": {
+			"core/site-title": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|literata",
+					"fontWeight": "800",
+					"letterSpacing": "-0.02em"
+				}
+			},
+			"core/image": {
+				"border": {
+					"radius": "0"
+				}
+			},
+			"core/quote": {
+				"border": {
+					"left": {
+						"width": "0"
+					}
+				},
+				"spacing": {
+					"padding": {
+						"left": "0"
+					}
+				}
+			}
+		}
+	}
+}

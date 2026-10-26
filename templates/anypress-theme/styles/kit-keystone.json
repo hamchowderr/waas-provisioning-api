@@ -1,0 +1,117 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Keystone (real estate)",
+	"slug": "kit-keystone",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#24453a",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#dbe6df",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#c9a66b",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#22190b",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#18201c",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#d6dbd6",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#f6f4ef",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#4d5852",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#ebe8df",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#d9d5ca",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#2c3a33",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	},
+	"styles": {
+		"typography": {
+			"fontFamily": "var:preset|font-family|manrope"
+		},
+		"elements": {
+			"heading": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|gloock",
+					"fontWeight": "400",
+					"letterSpacing": "-0.01em",
+					"lineHeight": "1.05"
+				}
+			},
+			"button": {
+				"border": {
+					"radius": "var:preset|border-radius|xs"
+				},
+				"typography": {
+					"fontWeight": "600",
+					"fontSize": "var:preset|font-size|base",
+					"fontFamily": "var:preset|font-family|manrope"
+				}
+			}
+		},
+		"blocks": {
+			"core/site-title": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|gloock",
+					"fontWeight": "400"
+				}
+			},
+			"core/image": {
+				"border": {
+					"radius": "0"
+				}
+			},
+			"core/quote": {
+				"border": {
+					"left": {
+						"width": "0"
+					}
+				},
+				"spacing": {
+					"padding": {
+						"left": "0"
+					}
+				}
+			}
+		}
+	}
+}
