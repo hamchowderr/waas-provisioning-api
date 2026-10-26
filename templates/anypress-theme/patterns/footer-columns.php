@@ -3,7 +3,7 @@
  * Title: Footer: columns of links
  * Slug: anypress/footer-columns
  * Description: A full footer on the dark style: the site name, a sentence and social links in the first column, then columns of links (pages, help, visit), and a small line at the bottom. Use as the site footer for sites with more than a few pages.
- * Categories: footer
+ * Categories: anypress/blocks-footers, footer
  * Keywords: footer, links, columns, sitemap, social
  * Viewport Width: 1400
  * Block Types: core/template-part/footer

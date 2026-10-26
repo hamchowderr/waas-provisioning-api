@@ -3,7 +3,7 @@
  * Title: One customer review, large
  * Slug: anypress/testimonial-single
  * Description: A single customer review shown large with the customer's name and town. Use one real review instead of a slider of many; leave the section out if the owner has no reviews yet.
- * Categories: testimonials, anypress-proof
+ * Categories: anypress/blocks-proof, testimonials
  * Keywords: testimonial, review, quote, customer, proof
  * Viewport Width: 1400
  */

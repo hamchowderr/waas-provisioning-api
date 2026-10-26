@@ -3,7 +3,7 @@
  * Title: Reviews: three short ones in cards
  * Slug: anypress/reviews-three
  * Description: Three short customer reviews side by side in cards, each with the customer's name and town. Use when the owner has several real reviews; no sliders, and never invent reviews.
- * Categories: testimonials, anypress-proof
+ * Categories: anypress/blocks-proof, testimonials
  * Keywords: reviews, testimonials, customers, quotes, proof
  * Viewport Width: 1400
  */

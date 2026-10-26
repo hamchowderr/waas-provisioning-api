@@ -3,7 +3,7 @@
  * Title: How it works, in three steps
  * Slug: anypress/steps
  * Description: Three numbered steps that explain how working with the business goes, from first contact to the finished job. Use only for a real sequence (booking, quoting, ordering); the numbers mean order.
- * Categories: text, anypress-details
+ * Categories: anypress/blocks-services, text
  * Keywords: how it works, steps, process, booking, ordering
  * Viewport Width: 1400
  */

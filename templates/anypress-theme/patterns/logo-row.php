@@ -3,7 +3,7 @@
  * Title: Logos: a row of client or partner names
  * Slug: anypress/logo-row
  * Description: A short line and a row of client, partner or press names. Shows names as text until logo images are added; replace each name with an image block of the logo, all the same height.
- * Categories: anypress-proof
+ * Categories: anypress/blocks-proof
  * Keywords: logos, clients, partners, as seen in, press, trusted by
  * Viewport Width: 1400
  */

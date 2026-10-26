@@ -3,7 +3,7 @@
  * Title: Call to action on a dark band
  * Slug: anypress/call-to-action-dark
  * Description: A short closing section on the dark section style with one sentence and one button. Use once, near the end of a page, to repeat the main action.
- * Categories: call-to-action
+ * Categories: anypress/blocks-calls-to-action, call-to-action
  * Keywords: call to action, cta, closing, contact, book, buy
  * Viewport Width: 1400
  */

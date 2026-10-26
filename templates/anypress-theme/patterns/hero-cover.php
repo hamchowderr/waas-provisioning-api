@@ -3,7 +3,7 @@
  * Title: Hero: full-width photo with words over it
  * Slug: anypress/hero-cover
  * Description: Opening section with a full-width photo darkened by the text colour, a headline, one sentence and one button in the lower left. Use when the owner has a wide, atmospheric photo (a salon, a restaurant room, a finished job).
- * Categories: anypress-heroes, banner
+ * Categories: anypress/blocks-heroes, banner
  * Keywords: hero, cover, full width, photo, background image
  * Viewport Width: 1400
  */

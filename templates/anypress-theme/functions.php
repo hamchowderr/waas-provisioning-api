@@ -18,9 +18,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function anypress_register_pattern_categories() {
 	$categories = array(
-		'anypress-heroes'   => array( __( 'Heroes', 'anypress' ), __( 'Opening sections that say what the business does and give one main action.', 'anypress' ) ),
-		'anypress-proof'    => array( __( 'Proof', 'anypress' ), __( 'Reviews, results, logos and credentials that make visitors trust the business.', 'anypress' ) ),
-		'anypress-details'  => array( __( 'Business details', 'anypress' ), __( 'Opening hours, location, areas served and contact details.', 'anypress' ) ),
+		// AnyPress Blocks: the shared sections any site can use, whatever its kit. They take the site's colours and fonts.
+		'anypress/blocks-heroes'          => array( __( 'AnyPress Blocks: Heroes', 'anypress' ), __( 'Opening sections that say what the business does and give one main action.', 'anypress' ) ),
+		'anypress/blocks-about'           => array( __( 'AnyPress Blocks: About', 'anypress' ), __( 'The story, the team, a statement and photos of the work.', 'anypress' ) ),
+		'anypress/blocks-services'        => array( __( 'AnyPress Blocks: Services and prices', 'anypress' ), __( 'Services, menus, features, steps, plans and products.', 'anypress' ) ),
+		'anypress/blocks-proof'           => array( __( 'AnyPress Blocks: Proof', 'anypress' ), __( 'Reviews, credentials, logos and numbers that make visitors trust the business.', 'anypress' ) ),
+		'anypress/blocks-calls-to-action' => array( __( 'AnyPress Blocks: Calls to action', 'anypress' ), __( 'Bands that ask visitors to do one thing: call, book, sign up, follow.', 'anypress' ) ),
+		'anypress/blocks-contact'         => array( __( 'AnyPress Blocks: Contact', 'anypress' ), __( 'Contact details, a contact section ready for a form, and questions and answers.', 'anypress' ) ),
+		'anypress/blocks-blog'            => array( __( 'AnyPress Blocks: Blog', 'anypress' ), __( 'Latest posts, an author box, pros and cons, and on-this-page links.', 'anypress' ) ),
+		'anypress/blocks-footers'         => array( __( 'AnyPress Blocks: Footers', 'anypress' ), __( 'Site footers: columns of links, or one line.', 'anypress' ) ),
 		// The same category the store template's starter pages use, so the site tools find both.
 		'anypress/pages'    => array( __( 'Starter pages', 'anypress' ), __( 'Whole pages to start from, for this kind of website.', 'anypress' ) ),
 		// Kits: sections designed together for one kind of business, each with its own style variation.

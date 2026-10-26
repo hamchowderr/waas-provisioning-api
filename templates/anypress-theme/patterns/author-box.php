@@ -3,7 +3,7 @@
  * Title: Author box: who wrote this
  * Slug: anypress/author-box
  * Description: A box at the end of a post with the writer's photo, name, a two-line bio and where to follow them. Use at the end of blog posts and guides; it builds trust in the advice.
- * Categories: text, posts
+ * Categories: anypress/blocks-blog, text, posts
  * Keywords: author, author box, bio, writer, about the author
  * Viewport Width: 1400
  */

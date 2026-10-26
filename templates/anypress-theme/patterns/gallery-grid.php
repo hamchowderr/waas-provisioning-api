@@ -3,7 +3,7 @@
  * Title: Gallery: grid of photos
  * Slug: anypress/gallery-grid
  * Description: A heading and six square photos in a grid that drops to two columns on phones. Use to show finished work, dishes, rooms or products; replace every photo with the owner's own.
- * Categories: gallery, media
+ * Categories: anypress/blocks-about, gallery, media
  * Keywords: gallery, photos, portfolio, our work, images
  * Viewport Width: 1400
  */

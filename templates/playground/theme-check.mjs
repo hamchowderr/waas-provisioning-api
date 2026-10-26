@@ -55,7 +55,7 @@ const cli = await runCLI({
         // Auto-login redirects cookie-less requests forever, so only when serving.
         login: SERVE,
         steps: [
-            { step: 'defineWpConfigConsts', consts: { WP_DEBUG: true, WP_DEBUG_LOG: '/tmp/debug.log', WP_DEBUG_DISPLAY: false } },
+            { step: 'defineWpConfigConsts', consts: { WP_DEBUG: true, WP_DEBUG_LOG: '/tmp/debug.log', WP_DEBUG_DISPLAY: false, AUTOMATIC_UPDATER_DISABLED: true } },
             { step: 'activateTheme', themeFolderName: 'anypress' },
             { step: 'setSiteOptions', options: { blogname: 'Springfield Roofing', blogdescription: 'Family-run roofers since 2001' } },
         ],

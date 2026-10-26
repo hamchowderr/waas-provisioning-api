@@ -3,7 +3,7 @@
  * Title: Product box: photo, price and reasons to buy
  * Slug: anypress/product-box
  * Description: One product in a box: photo, name, a sentence, three reasons to buy, the price and a button. Use in reviews and guides to recommend a product, or to feature one item on a page.
- * Categories: call-to-action, services
+ * Categories: anypress/blocks-services, call-to-action, services
  * Keywords: product, product box, recommendation, review, buy, affiliate, featured
  * Viewport Width: 1400
  */

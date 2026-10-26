@@ -3,7 +3,7 @@
  * Title: Menu: dishes and prices in two columns
  * Slug: anypress/menu
  * Description: A menu or price list in two columns, each item with a name, price and one line of description. Use for restaurants, cafés, bakeries and salons with many items; split long menus into one section per course.
- * Categories: services, anypress-details
+ * Categories: anypress/blocks-services, services
  * Keywords: menu, food, dishes, price list, drinks
  * Viewport Width: 1400
  */

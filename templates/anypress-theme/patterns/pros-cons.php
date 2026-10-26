@@ -3,7 +3,7 @@
  * Title: Pros and cons, side by side
  * Slug: anypress/pros-cons
  * Description: Two lists side by side: what is good about something and what is not, on two tint colours. Use in reviews, comparisons and buying guides; keep each point to one line.
- * Categories: text, anypress-details
+ * Categories: anypress/blocks-blog, text
  * Keywords: pros and cons, comparison, review, good, bad, buying guide
  * Viewport Width: 1400
  */
