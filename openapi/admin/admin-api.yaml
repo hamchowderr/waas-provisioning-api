@@ -2036,6 +2036,113 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /account/reseller:
+    get:
+      operationId: accountReseller
+      summary: The signed-in reseller team's own account
+      description: >-
+        For a member of a reseller's team, acting for one of its storefronts (session only, with
+        X-Session-Auth: 1). The same as adminGetReseller without stripeCustomerId. Anyone else gets 404.
+      responses:
+        '200':
+          description: The reseller
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reseller' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /account/reseller/bill:
+    get:
+      operationId: accountResellerBill
+      summary: The reseller team's bill for a month (as adminResellerBill)
+      parameters:
+        - { name: month, in: query, description: 'YYYY-MM; default last month', schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+      responses:
+        '200':
+          description: The bill
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResellerBill' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /account/reseller/invoices:
+    get:
+      operationId: accountResellerInvoices
+      summary: The reseller team's Stripe invoices (as adminResellerInvoices)
+      responses:
+        '200':
+          description: Its invoices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResellerInvoices' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /account/reseller/keys:
+    get:
+      operationId: accountListPartnerKeys
+      summary: The reseller team's partner keys (as adminListPartnerKeys)
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: accountCreatePartnerKey
+      summary: Create a partner key; owners and admins only (as adminCreatePartnerKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/CreateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/NewApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /account/reseller/keys/{keyId}/rotate:
+    parameters:
+      - { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: accountRotatePartnerKey
+      summary: Replace a partner key; owners and admins only (as adminRotatePartnerKey)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '../api-keys.yaml#/components/schemas/RotateApiKey' }
+      responses:
+        '201':
+          description: The new key with its secret, shown this once, and the key it replaces
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/RotatedApiKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /account/reseller/keys/{keyId}:
+    parameters:
+      - { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: accountRevokePartnerKey
+      summary: Revoke a partner key now; owners and admins only
+      responses:
+        '200':
+          description: The revoked key
+          content:
+            application/json:
+              schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     adminToken: { type: http, scheme: bearer }

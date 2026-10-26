@@ -140,6 +140,8 @@ People at the reseller sign in to the dashboard like any customer. A reseller ha
 | `PATCH /admin/resellers/{id}/members/{memberId}` `{"role": "admin"}` | Changes someone's role. The last owner stays (409) |
 | `DELETE /admin/resellers/{id}/members/{memberId}` | Removes someone. Their account stays; it no longer reaches the storefronts |
 
+The team also sees its own account in the dashboard, at `/account/reseller` (session only, like the rest of `/account`): the account itself, `GET /bill?month=YYYY-MM`, `GET /invoices`, and its partner keys (`GET`/`POST /keys`, `POST /keys/{keyId}/rotate`, `DELETE /keys/{keyId}`). Members may look; owners and admins manage the keys. A storefront's own team gets 404 there.
+
 Only the platform admin manages the reseller's team. A storefront's own team is separate and works as before; someone on both gets the higher of the two roles on that storefront.
 
 A signed-in person with several storefronts picks one in the dashboard's switcher, which sends its id in the `X-Product-Id` header. `GET /account` lists one membership per storefront (`resellerId` is set on those that come from a reseller's team), and `/v1` and `/account/*` act on the picked one. Without the header, or when it names none of theirs, the first storefront of the organization picked in the session is used, or the only one. An AI app connected by a reseller's team member works on the storefront they picked, and stops once they leave the team.

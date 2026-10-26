@@ -557,6 +557,35 @@ describe("a reseller's team (docs/resellers.md)", () => {
     expect((await asUser(both.cookie, 'POST', '/v1/keys', { label: 'x' }, picking(second))).status).toBe(403);
   });
 
+  it('sees its own bill, invoices and partner keys at /account/reseller', async () => {
+    const mine = await asUser(partner.cookie, 'GET', '/account/reseller', undefined, picking(first));
+    expect(mine.status).toBe(200);
+    const reseller = await mine.json();
+    expect(reseller).toMatchObject({ id: resellerId, name: 'Team Partners' });
+    expect(reseller).not.toHaveProperty('stripeCustomerId');
+    expect(await (await asUser(partner.cookie, 'GET', '/account/reseller/bill', undefined, picking(first))).json()).toMatchObject({ resellerId });
+    expect((await asUser(partner.cookie, 'GET', '/account/reseller/invoices', undefined, picking(first))).status).toBe(200);
+    const key = await asUser(partner.cookie, 'POST', '/account/reseller/keys', { label: 'Partner app' }, picking(first));
+    expect(key.status).toBe(201);
+    const { id: keyId } = (await key.json()) as { id: string };
+    const keys = (await (await asUser(partner.cookie, 'GET', '/account/reseller/keys', undefined, picking(second))).json()) as { id: string }[];
+    expect(keys.map((k) => k.id)).toEqual([keyId]);
+
+    // A member of the reseller's team may look but not change keys; a storefront's own team isn't the reseller.
+    const viewer = await signedIn('viewer@partner.example');
+    const invited = await admin('POST', `/resellers/${resellerId}/invitations`, { email: 'viewer@partner.example', role: 'member' });
+    expect((await accept(viewer.cookie, ((await invited.json()) as { id: string }).id)).status).toBe(200);
+    expect((await asUser(viewer.cookie, 'GET', '/account/reseller/keys', undefined, picking(second))).status).toBe(200);
+    expect((await asUser(viewer.cookie, 'DELETE', `/account/reseller/keys/${keyId}`, undefined, picking(second))).status).toBe(403);
+    const own = await signedIn('own@alpha.example');
+    expect((await accept(own.cookie, (await invite(first, 'own@alpha.example', 'owner')).id)).status).toBe(200);
+    expect((await asUser(own.cookie, 'GET', '/account/reseller', undefined, picking(first))).status).toBe(404);
+    // Only from the dashboard's server, with X-Session-Auth.
+    const plain = await app.request('/account/reseller', { headers: { Cookie: partner.cookie } });
+    expect(plain.status).toBe(403);
+    expect((await asUser(partner.cookie, 'DELETE', `/account/reseller/keys/${keyId}`, undefined, picking(first))).status).toBe(200);
+  });
+
   it('follows the storefront when it moves out, and the person when they leave', async () => {
     expect((await admin('DELETE', `/resellers/${resellerId}/products/${second}`)).status).toBe(200);
     let me = await (await asUser(partner.cookie, 'GET', '/account')).json();

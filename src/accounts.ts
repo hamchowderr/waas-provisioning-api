@@ -9,6 +9,7 @@ import { brandedMail, effectiveBrand } from './branding.ts';
 import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.ts';
 import { connectRoutes, publicBase } from './oauth.ts';
 import { adminRoutes } from './routes/admin.ts';
+import { accountResellerRoutes } from './resellers.ts';
 
 /**
  * Customer accounts (docs/accounts.md): people who sign in (src/auth.ts) and belong to a product's
@@ -146,6 +147,15 @@ export function accountRoutes(deps: Deps) {
     await next();
   });
   app.route('/', connectRoutes(deps, (c) => sessionCaller(deps, c.req.raw.headers)));
+
+  // A reseller team's own bill, invoices and partner keys (src/resellers.ts).
+  const sessionOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
+    if (c.req.header(SESSION_HEADER) !== '1') return forbidden(c, 'Sign in first');
+    await next();
+  };
+  app.use('/reseller', sessionOnly);
+  app.use('/reseller/*', sessionOnly);
+  app.route('/reseller', accountResellerRoutes(deps, (c) => sessionCaller(deps, c.req.raw.headers)));
 
   // Overview, stores, backups, jobs, request log, versions, templates, API keys and webhooks.
   app.route('/', adminRoutes(deps, { session: true }));

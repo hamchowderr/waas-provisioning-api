@@ -278,6 +278,66 @@ export function monthRange(month: string): { from: Date; to: Date } {
   return { from: new Date(Date.UTC(year, m - 1, 1)), to: new Date(Date.UTC(year, m, 1)) };
 }
 
+/** Who is signed in to /account: the reseller their active storefront's team belongs to, and their role there. */
+type ResellerCaller = { active: { resellerId: string | null; role: string } | null } | null;
+
+/**
+ * /account/reseller: a reseller team's own account, for the dashboard's Reseller page. Its bill, its invoices
+ * and its partner keys, the same as the platform admin's /admin/resellers/:id routes. Anyone else (a
+ * storefront's own team, or nobody) gets 404. Members may look; owners and admins manage partner keys.
+ */
+export function accountResellerRoutes(deps: Deps, caller: (c: Context) => Promise<ResellerCaller>) {
+  const { pool } = deps;
+  const app = new Hono<AppEnv>();
+
+  async function mine(c: Context, change = false) {
+    const active = (await caller(c))?.active;
+    const found = active?.resellerId ? (await loadResellers(pool, active.resellerId))[0] : undefined;
+    if (!found) throw notFound('Not found');
+    if (change && !active!.role.split(',').some((r) => r.trim() === 'owner' || r.trim() === 'admin')) {
+      throw new HttpError(403, 'Members can only look. Ask an owner or admin to make this change.');
+    }
+    return found;
+  }
+
+  // The admin's own billing settings stay on the admin side.
+  app.get('/', async (c) => {
+    const { stripeCustomerId: _, ...reseller } = await mine(c);
+    return c.json(reseller);
+  });
+  app.get('/bill', async (c) => {
+    const reseller = await mine(c);
+    const now = new Date();
+    const { month, from, to } = monthQuery(c, now);
+    if (from > now) throw badRequest('That month has not started yet');
+    return c.json(await resellerBill(pool, reseller, month, from, to, now));
+  });
+  app.get('/invoices', async (c) => {
+    const reseller = await mine(c);
+    const invoicing = deps.config.resellerInvoices;
+    if (invoicing) await refreshResellerInvoices(pool, invoicing.stripe, reseller.id);
+    return c.json({ enabled: Boolean(invoicing), invoices: await listResellerInvoices(pool, reseller.id) });
+  });
+  app.get('/keys', async (c) => c.json(await listApiKeys(pool, { resellerId: (await mine(c)).id })));
+  app.post('/keys', async (c) => {
+    const { id } = await mine(c, true);
+    const body = (await readJson(c)) as { label?: unknown };
+    const key = await addApiKey(pool, { resellerId: id }, parseLabel(body?.label));
+    c.header('Cache-Control', 'no-store');
+    return c.json(key, 201);
+  });
+  app.post('/keys/:keyId/rotate', async (c) => {
+    const { id } = await mine(c, true);
+    const body = (await readJson(c)) as { graceHours?: unknown };
+    const result = await rotateApiKey(pool, { resellerId: id }, c.req.param('keyId')!, parseGraceHours(body?.graceHours));
+    c.header('Cache-Control', 'no-store');
+    return c.json(result, 201);
+  });
+  app.delete('/keys/:keyId', async (c) => c.json(await revokeApiKey(pool, { resellerId: (await mine(c, true)).id }, c.req.param('keyId')!)));
+
+  return app;
+}
+
 export function adminResellerRoutes(deps: Deps) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
