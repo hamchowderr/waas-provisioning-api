@@ -4,7 +4,6 @@ import { createAuth } from './auth.ts';
 import { loadConfig } from './config.ts';
 import { createPool, migrate } from './db.ts';
 import { backupCipherKey, DbBackups, pgDump, startDbBackups } from './dbbackup.ts';
-import { withClientSites } from './clients.ts';
 import { withFailureAlerts } from './jobalerts.ts';
 import { createJobHandlers } from './jobs.ts';
 import { startMailCounts } from './mailcount.ts';
@@ -37,13 +36,9 @@ const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
 const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
-// A client's site is made once their storefront's version has built (src/clients.ts).
 // A job that fails its last retry is emailed to the admins (src/jobalerts.ts).
 const handlers = withFailureAlerts(
-  withClientSites(
-    withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost), pool, boss, webhooks),
-    { config, pool, boss, secrets, provisioner },
-  ),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost), pool, boss, webhooks),
   pool,
   { mail: config.auth?.mail, to: config.jobAlerts, dashboardUrl: config.auth?.url },
 );

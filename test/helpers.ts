@@ -3,7 +3,6 @@ import type { PgBoss } from 'pg-boss';
 import { createApp, type Deps } from '../src/app.ts';
 import type { Config } from '../src/config.ts';
 import { createPool, migrate, type Pool } from '../src/db.ts';
-import { withClientSites } from '../src/clients.ts';
 import { createJobHandlers } from '../src/jobs.ts';
 import { createApiKey } from '../src/keys.ts';
 import { FakeProvisioner } from '../src/provisioner/fake.ts';
@@ -51,7 +50,7 @@ export async function setup(): Promise<TestContext> {
   const webhooks: WebhookConfig = { allowPrivate: true, logDays: 30 };
   config.webhooks = webhooks;
   const jobs = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, 30, config, () => config.dashboardHost), pool, boss, webhooks);
-  await startWorker(boss, withClientSites(jobs, { config, pool, boss, secrets, provisioner }), 0.5);
+  await startWorker(boss, jobs, 0.5);
   await startWebhookWorker(boss, pool, secrets, webhooks, { retryDelaySeconds: 1, retryLimit: 2, pollingIntervalSeconds: 0.5 });
   const deps: Deps = { config, pool, boss, provisioner, secrets };
   const app = createApp(deps);

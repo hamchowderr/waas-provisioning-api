@@ -86,7 +86,7 @@ class FakeHost implements DashboardHost {
 }
 
 let host: FakeHost;
-let client: string;
+let other: string;
 
 beforeAll(async () => {
   t = await setup();
@@ -95,8 +95,7 @@ beforeAll(async () => {
   t.deps.config.auth = AUTH;
   t.deps.auth = auth;
   app = createApp(t.deps);
-  client = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Client storefront') RETURNING id")).rows[0]!.id;
-  await t.pool.query("INSERT INTO clients (product_id, email, site_name) VALUES ($1, 'client@example.com', 'Client')", [client]);
+  other = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Other storefront') RETURNING id")).rows[0]!.id;
 });
 
 beforeEach(async () => {
@@ -155,15 +154,13 @@ describe('dashboard addresses (admin)', () => {
 });
 
 describe('dashboard addresses (signed in)', () => {
-  it("lets a seller's owner set theirs, members only look, and clients ask us", async () => {
+  it("lets a seller's owner set theirs, members only look, and no one reach another storefront's", async () => {
     const owner = await signedIn('owner@seller.example', t.productId, 'owner');
     expect((await asUser(owner, 'PUT', `/account${path()}`, { domain: 'dashboard.seller.example' })).status).toBe(200);
     const member = await signedIn('member@seller.example', t.productId, 'member');
     expect((await asUser(member, 'GET', `/account${path()}`)).status).toBe(200);
     expect((await asUser(member, 'DELETE', `/account${path()}`)).status).toBe(403);
-    const clientOwner = await signedIn('owner@client.example', client, 'owner');
-    expect((await asUser(clientOwner, 'PUT', `/account${path(client)}`, { domain: 'dashboard.client.example' })).status).toBe(403);
-    expect((await asUser(owner, 'GET', `/account${path(client)}`)).status).toBe(404);
+    expect((await asUser(owner, 'GET', `/account${path(other)}`)).status).toBe(404);
   });
 });
 
