@@ -14,17 +14,17 @@ WP_VERSION=${WP_VERSION:-7.1.3}
 WP_SHA256=${WP_SHA256:-eb58a90ed55147f90f7bd55d0d3334960a69b7e8a4cc142c8ddfea8965218227}
 # wordpress.org plugins: slug version sha256. All installed and active (roles.json switches them per plan).
 PLUGINS="
-fluent-cart 1.9.0 0de495740dcdd2e3a2585c2658e5a74c89d98528b24e2c47011294f3cb1b3829
+fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
 fluent-crm 3.2.6 ae51abf11c083cdab113b19161a9a4a09f47b794b620ec27aa798f066c80b6a4
-fluentform 6.2.15 fb689be752ba7d3b18b7cd7ae6d6c6f9d180621c64ef52937501ad19ddae9b80
+fluentform 6.2.16 9ec4fce3857a0c069dcb392f6e0e9bd1a5a1231d94a49a76d9768a40e973a7fd
 fluent-booking 2.5.0 1443134ef2f1ae24c17435bab81d6a15ba10136c15095c90e2d07de15f1c0eb0
-fluent-support 2.4.5 c695347f5f9df5417971ce2321453079093a48567be8cb61f7427e60f0109399
+fluent-support 2.4.7 606b04ca47e8dfddcd241136953ed426fa7e60dcad03b3b1504285fda7be3e10
 fluent-affiliate 1.6.5 da885534b9ddfeb24c966ae09191065cbd950195ee3b7238de88ac4c04ab3820
-easy-code-manager 10.56 9a5e416defc7392d7eda39c8991dd9af612bbf963ac12dbe2cb4728ab424ed40
+easy-code-manager 10.58 39bfd2fe29b099147949086c42dfe715cedd4ddce3631c9ef33165470ed25667
 seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb9686fa8aa290
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
-automatorwp 6.0.4 d6fbd08df660df019fd79ce8c7f00612fd571168f763fab8fa38094fec0b7579
-fluent-security 3.0.5 304c0c61ef704a16534133211fbd2be820040606b6c0ea6a4d0b28942c697b11
+automatorwp 6.0.5 541d640bdf4b6f602123e0f1f26a5041f950a13d338f08ca0b665a9a1617144b
+fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
 fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).

@@ -11,17 +11,17 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 
 | Plugin | Slug | Version |
 |---|---|---|
-| FluentCart | `fluent-cart` | 1.9.0 |
+| FluentCart | `fluent-cart` | 2.2.0 |
 | FluentCRM | `fluent-crm` | 3.2.6 |
-| Fluent Forms | `fluentform` | 6.2.15 |
+| Fluent Forms | `fluentform` | 6.2.16 |
 | FluentBooking | `fluent-booking` | 2.5.0 |
-| Fluent Support | `fluent-support` | 2.4.5 |
+| Fluent Support | `fluent-support` | 2.4.7 |
 | FluentAffiliate | `fluent-affiliate` | 1.6.5 |
-| FluentSnippets | `easy-code-manager` | 10.56 |
+| FluentSnippets | `easy-code-manager` | 10.58 |
 | Rank Math SEO | `seo-by-rank-math` | 1.0.280 |
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
-| AutomatorWP | `automatorwp` | 6.0.4 |
-| FluentAuth | `fluent-security` | 3.0.5 |
+| AutomatorWP | `automatorwp` | 6.0.5 |
+| FluentAuth | `fluent-security` | 3.1.0 |
 | FluentCommunity | `fluent-community` | 2.12.0 |
 
 Plus FluentToolkit 2.1.3 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
