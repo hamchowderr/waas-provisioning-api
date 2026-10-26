@@ -299,6 +299,15 @@
 						"min": "2.75rem",
 						"max": "5.5rem"
 					}
+				},
+				{
+					"name": "Poster",
+					"slug": "poster",
+					"size": "9rem",
+					"fluid": {
+						"min": "3.5rem",
+						"max": "9rem"
+					}
 				}
 			],
 			"fontFamilies": [
@@ -430,6 +439,86 @@
 					"name": "Monospace",
 					"slug": "monospace",
 					"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+				},
+				{
+					"name": "Big Shoulders",
+					"slug": "big-shoulders",
+					"fontFamily": "\"Big Shoulders\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Big Shoulders",
+							"fontStyle": "normal",
+							"fontWeight": "500 900",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/bigshoulders.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Public Sans",
+					"slug": "public-sans",
+					"fontFamily": "\"Public Sans\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Public Sans",
+							"fontStyle": "normal",
+							"fontWeight": "100 900",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/publicsans.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Young Serif",
+					"slug": "young-serif",
+					"fontFamily": "\"Young Serif\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Young Serif",
+							"fontStyle": "normal",
+							"fontWeight": "400",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/youngserif.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Source Serif 4",
+					"slug": "source-serif",
+					"fontFamily": "\"Source Serif 4\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Source Serif 4",
+							"fontStyle": "normal",
+							"fontWeight": "300 700",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/sourceserif4.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Libre Franklin",
+					"slug": "libre-franklin",
+					"fontFamily": "\"Libre Franklin\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Libre Franklin",
+							"fontStyle": "normal",
+							"fontWeight": "100 900",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/librefranklin.woff2"
+							]
+						}
+					]
 				}
 			],
 			"dropCap": false,

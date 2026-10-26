@@ -2,7 +2,7 @@
 /**
  * AnyPress theme setup.
  *
- * Presentation only: pattern categories and two block styles. Everything a store does
+ * Presentation only: pattern categories and a few block styles. Everything a store does
  * (bindings, abilities, site tools) lives in the WaaS Client plugin.
  *
  * @package AnyPress
@@ -23,6 +23,11 @@ function anypress_register_pattern_categories() {
 		'anypress-details'  => array( __( 'Business details', 'anypress' ), __( 'Opening hours, location, areas served and contact details.', 'anypress' ) ),
 		// The same category the store template's starter pages use, so the site tools find both.
 		'anypress/pages'    => array( __( 'Starter pages', 'anypress' ), __( 'Whole pages to start from, for this kind of website.', 'anypress' ) ),
+		// Kits: sections designed together for one kind of business, each with its own style variation.
+		'anypress/kit-home-services' => array( __( 'Kit: Home services (Ridge)', 'anypress' ), __( 'Sections for trades and home services. They look as designed with the Ridge style.', 'anypress' ) ),
+		'anypress/kit-food'          => array( __( 'Kit: Food and drink (Hearth)', 'anypress' ), __( 'Sections for cafés, bakeries and restaurants. They look as designed with the Hearth style.', 'anypress' ) ),
+		'anypress/kit-wellness'      => array( __( 'Kit: Wellness (Still)', 'anypress' ), __( 'Sections for spas, therapists and studios. They look as designed with the Still style.', 'anypress' ) ),
+		'anypress/kit-professional'  => array( __( 'Kit: Professional services (Ledger)', 'anypress' ), __( 'Sections for accountants, lawyers, consultants and agencies. They look as designed with the Ledger style.', 'anypress' ) ),
 	);
 	foreach ( $categories as $slug => $category ) {
 		if ( WP_Block_Pattern_Categories_Registry::get_instance()->is_registered( $slug ) ) {
@@ -51,6 +56,26 @@ function anypress_register_block_styles() {
 			'inline_style' => '.wp-block-cover.is-style-blur-image-less img.wp-block-cover__image-background{filter:blur(6px);transform:scale(1.04)}',
 		)
 	);
+
+	// A list without bullets, for lists set large (towns served, opening times).
+	register_block_style(
+		'core/list',
+		array(
+			'name'         => 'no-bullets',
+			'label'        => __( 'No bullets', 'anypress' ),
+			'inline_style' => '.wp-block-list.is-style-no-bullets{list-style:none;padding-inline-start:0}',
+		)
+	);
+
+	// A menu line: the first block (the dish), a dotted line, then the last block (the price).
+	register_block_style(
+		'core/group',
+		array(
+			'name'         => 'menu-leader',
+			'label'        => __( 'Menu line', 'anypress' ),
+			'inline_style' => '.wp-block-group.is-style-menu-leader{align-items:baseline}.wp-block-group.is-style-menu-leader>*{margin-block:0}.wp-block-group.is-style-menu-leader>:first-child{display:flex;flex:1 1 auto;align-items:baseline;gap:.4em}.wp-block-group.is-style-menu-leader>:first-child::after{content:"";flex:1 1 auto;min-width:1.5em;border-bottom:.12em dotted currentColor;opacity:.5}',
+		)
+	);
 }
 add_action( 'init', 'anypress_register_block_styles' );
 
@@ -74,6 +99,7 @@ add_action( 'after_setup_theme', 'anypress_setup' );
 function anypress_enqueue_styles() {
 	wp_register_style( 'anypress', false, array(), wp_get_theme()->get( 'Version' ) );
 	wp_enqueue_style( 'anypress' );
-	wp_add_inline_style( 'anypress', '.wp-site-blocks>footer{margin-block-start:0}' );
+	// A photo alone in a column fills the column's height, so it meets the panel beside it.
+	wp_add_inline_style( 'anypress', '.wp-site-blocks>footer{margin-block-start:0}.wp-block-column>.wp-block-cover:only-child{height:100%}' );
 }
 add_action( 'wp_enqueue_scripts', 'anypress_enqueue_styles' );

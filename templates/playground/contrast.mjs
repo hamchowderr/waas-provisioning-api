@@ -1,4 +1,4 @@
-// Colour contrast for the AnyPress theme: every palette (theme.json and styles/colors/*.json) against
+// Colour contrast for the AnyPress theme: every palette (theme.json, styles/colors/*.json and the kits in styles/*.json) against
 // every section style, using the WCAG 2.2 formula. Text needs 4.5:1 (AA for normal-size text).
 //
 //   node contrast.mjs        # prints a table, exit 1 on a failure
@@ -60,9 +60,12 @@ export function palettes() {
     const toMap = (list) => Object.fromEntries(list.map((c) => [c.slug, c.color]));
     const theme = json(resolve(THEME, 'theme.json'));
     const out = [['Default', toMap(theme.settings.color.palette)]];
-    for (const file of dir(resolve(THEME, 'styles/colors'))) {
-        const v = json(resolve(THEME, 'styles/colors', file));
-        out.push([v.title, toMap(v.settings.color.palette)]);
+    // Colour variations, and full variations (the kits) that bring their own palette.
+    for (const folder of ['styles/colors', 'styles']) {
+        for (const file of dir(resolve(THEME, folder))) {
+            const v = json(resolve(THEME, folder, file));
+            if (v.settings?.color?.palette) out.push([v.title, toMap(v.settings.color.palette)]);
+        }
     }
     return out;
 }
