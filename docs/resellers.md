@@ -140,7 +140,7 @@ People at the reseller sign in to the dashboard like any customer. A reseller ha
 | `PATCH /admin/resellers/{id}/members/{memberId}` `{"role": "admin"}` | Changes someone's role. The last owner stays (409) |
 | `DELETE /admin/resellers/{id}/members/{memberId}` | Removes someone. Their account stays; it no longer reaches the storefronts |
 
-The team also sees its own account in the dashboard, at `/account/reseller` (session only, like the rest of `/account`): the account itself, `GET /bill?month=YYYY-MM`, `GET /invoices`, and its partner keys (`GET`/`POST /keys`, `POST /keys/{keyId}/rotate`, `DELETE /keys/{keyId}`). Members may look; owners and admins manage the keys. A storefront's own team gets 404 there.
+The team also sees its own account in the dashboard, at `/account/reseller` (session only, like the rest of `/account`): the account itself, `GET /bill?month=YYYY-MM`, `GET /invoices`, and its partner keys (`GET`/`POST /keys`, `POST /keys/{keyId}/rotate`, `DELETE /keys/{keyId}`). Members may look; owners and admins manage the keys. A storefront's own team gets 404 there. `GET /account/tenants?across=reseller` lists the stores of every storefront in the account at once.
 
 Only the platform admin manages the reseller's team. A storefront's own team is separate and works as before; someone on both gets the higher of the two roles on that storefront.
 
