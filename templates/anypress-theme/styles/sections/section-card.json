@@ -1,0 +1,94 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"slug": "section-card",
+	"title": "Card",
+	"blockTypes": [
+		"core/group",
+		"core/columns",
+		"core/column"
+	],
+	"styles": {
+		"color": {
+			"background": "var:preset|color|base",
+			"text": "var:preset|color|main"
+		},
+		"elements": {
+			"heading": {
+				"color": {
+					"text": "currentColor"
+				}
+			},
+			"link": {
+				"color": {
+					"text": "currentColor"
+				},
+				":hover": {
+					"color": {
+						"text": "var:preset|color|primary"
+					}
+				}
+			},
+			"button": {
+				"color": {
+					"background": "var:preset|color|primary",
+					"text": "var:preset|color|base"
+				},
+				":hover": {
+					"color": {
+						"background": "color-mix(in srgb, var(--wp--preset--color--primary) 85%, var(--wp--preset--color--base))",
+						"text": "var:preset|color|base"
+					}
+				},
+				":focus-visible": {
+					"outline": {
+						"color": "var:preset|color|main",
+						"style": "solid",
+						"width": "var(--wp--custom--focus--width)",
+						"offset": "var(--wp--custom--focus--offset)"
+					}
+				}
+			},
+			"caption": {
+				"color": {
+					"text": "var:preset|color|secondary"
+				}
+			}
+		},
+		"blocks": {
+			"core/separator": {
+				"color": {
+					"text": "var:preset|color|border-light"
+				}
+			},
+			"core/quote": {
+				"border": {
+					"left": {
+						"color": "currentColor"
+					}
+				}
+			},
+			"core/details": {
+				"border": {
+					"bottom": {
+						"color": "var:preset|color|border-light"
+					}
+				}
+			}
+		},
+		"border": {
+			"color": "var:preset|color|border-light",
+			"width": "1px",
+			"style": "solid",
+			"radius": "var:preset|border-radius|md"
+		},
+		"spacing": {
+			"padding": {
+				"top": "var:preset|spacing|medium",
+				"bottom": "var:preset|spacing|medium",
+				"left": "var:preset|spacing|medium",
+				"right": "var:preset|spacing|medium"
+			}
+		}
+	}
+}

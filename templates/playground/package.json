@@ -1,0 +1,20 @@
+{
+  "name": "anypress-templates-playground",
+  "private": true,
+  "type": "module",
+  "description": "Checks the AnyPress theme on WordPress Playground: theme loads, patterns are valid blocks and use only theme tokens, pages render on phone and desktop.",
+  "engines": {
+    "node": ">=24.18"
+  },
+  "scripts": {
+    "theme": "node theme-check.mjs",
+    "serve": "node theme-check.mjs --serve"
+  },
+  "dependencies": {
+    "@wordpress/block-library": "12.0.0",
+    "@wordpress/blocks": "17.0.0",
+    "@wp-playground/cli": "3.1.59",
+    "global-jsdom": "30.0.0",
+    "jsdom": "30.1.3"
+  }
+}
