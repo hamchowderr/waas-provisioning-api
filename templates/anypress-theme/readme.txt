@@ -35,7 +35,7 @@ Kits: thirteen sets designed for one kind of business each. A kit is a style var
 
 Apply the kit's style in Appearance > Editor > Styles, then start a page from the kit's home page. The kit's sections are in the inserter under "Kit: ...".
 
-AnyPress Blocks: 33 shared sections any site can use, whatever its kit, in eight groups in the inserter (Heroes, About, Services and prices, Proof, Calls to action, Contact, Blog, Footers). They take the site's colours and fonts, so they match the kit in use.
+AnyPress Blocks: 32 shared sections any site can use, whatever its kit, in eight groups in the inserter (Heroes, About, Services and prices, Proof, Calls to action, Contact, Blog, Footers). They take the site's colours and fonts, so they match the kit in use.
 
 Post outlines: starting structures for a how-to guide, a list post and a product review, in the inserter under "Post outlines" when writing a post.
 
