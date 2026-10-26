@@ -369,7 +369,7 @@ add_action('init', function () {
 
 function anypress_make_starter_pages(string $email): void
 {
-    $author = (int) (get_user_by('email', $email)?->ID ?: (get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID'])[0] ?? 0));
+    $author = (int) ((get_user_by('email', $email) ?: null)?->ID ?: (get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID'])[0] ?? 0));
     $pages = anypress_site_type_pages((array) get_option('active_plugins', []));
     $starters = anypress_starter_pages();
     // The patterns' blocks carry inline styles; on a request with no signed-in admin, kses would strip them.

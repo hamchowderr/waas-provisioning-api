@@ -99,10 +99,11 @@ add_action('init', function () {
         return;
     }
     if ($seen === false) {
-        // Install dates drive review and upgrade notices; the template's would show them on day one.
-        foreach (['rank_math_install_date', 'automatorwp_install_date'] as $option) {
-            update_option($option, time());
-        }
+        // Install dates drive review and upgrade notices; the template's would show them on day one. Each in the
+        // plugin's own format: AutomatorWP parses its date with new DateTime(), which throws on a bare timestamp
+        // (on every wp-admin page, whenever its review notice isn't hidden).
+        update_option('rank_math_install_date', time());
+        update_option('automatorwp_install_date', date('Y-m-d H:i:s'));
     }
     // Rank Math's sitemap and FluentCart's product links are rewrite rules built for the old address.
     flush_rewrite_rules(false);
