@@ -1,153 +1,136 @@
 <?php
 /*
  * Plugin Name: AnyPress starter pages
- * Description: Whole-page patterns for each site type (home, about, contact, services), built from the theme's own sections with the store's name in them. They show under "Starter pages" when a page is created, the AnyPress connector's agents find them with find_patterns, and a new store gets real pages made from them for its site type. Also hides the theme's own promotion patterns. Part of the store template.
+ * Description: Whole-page patterns for each site type (home, about, contact, services), built from the AnyPress theme's sections with the store's name in them. They show under "Starter pages" when a page is created, the AnyPress connector's agents find them with find_patterns, and a new store gets real pages made from them for its site type. Part of the store template.
  */
 
-/** Ollie's patterns that advertise the theme itself rather than the store. */
-const ANYPRESS_HIDDEN_PATTERNS = ['ollie/page-download', 'ollie/details-card', 'ollie/text-and-details-card'];
-
-/** Starts and ends an Ollie full-width section; $background is a palette slug, $anchor an id to link to. */
-function anypress_section(string $name, string $inner, string $background = '', string $text = '', string $anchor = ''): string
+/**
+ * A full-width section as the AnyPress theme builds them. $style is one of the theme's section styles (tint,
+ * brand-soft, brand, dark, second-brand) or '' for the page colour; $width the content width; $anchor an id to link to.
+ */
+function anypress_section(string $name, string $inner, string $style = '', string $width = '80rem', string $anchor = ''): string
 {
-    $attrs = [
-        'metadata' => ['name' => $name],
-        'align' => 'full',
-        'style' => ['spacing' => [
-            'padding' => ['top' => 'var:preset|spacing|xx-large', 'bottom' => 'var:preset|spacing|xx-large', 'left' => 'var:preset|spacing|medium', 'right' => 'var:preset|spacing|medium'],
-            'margin' => ['top' => '0', 'bottom' => '0'],
-            'blockGap' => 'var:preset|spacing|large',
-        ]],
-    ];
-    $classes = ['wp-block-group', 'alignfull'];
-    if ($text !== '') {
-        $attrs['textColor'] = $text;
-        $classes[] = "has-$text-color";
-    }
-    if ($background !== '') {
-        $attrs['backgroundColor'] = $background;
-    }
-    if ($text !== '') {
-        $classes[] = 'has-text-color';
-    }
-    if ($background !== '') {
-        array_splice($classes, $text !== '' ? 3 : 2, 0, ["has-$background-background-color"]);
-        $classes[] = 'has-background';
-    }
+    $attrs = ['tagName' => 'section', 'metadata' => ['name' => $name], 'align' => 'full'];
     if ($anchor !== '') {
         $attrs['anchor'] = $anchor;
     }
-    $attrs['layout'] = ['type' => 'constrained'];
+    if ($style !== '') {
+        $attrs['className'] = "is-style-section-$style";
+    }
+    $attrs['style'] = ['spacing' => [
+        'padding' => ['top' => 'var:preset|spacing|xx-large', 'bottom' => 'var:preset|spacing|xx-large'],
+        'margin' => ['top' => '0', 'bottom' => '0'],
+    ]];
+    $attrs['layout'] = ['type' => 'constrained', 'contentSize' => $width];
 
     return '<!-- wp:group ' . wp_json_encode($attrs, JSON_UNESCAPED_SLASHES) . ' -->'
-        . '<div' . ($anchor !== '' ? ' id="' . esc_attr($anchor) . '"' : '') . ' class="' . implode(' ', $classes) . '" style="margin-top:0;margin-bottom:0;padding-top:var(--wp--preset--spacing--xx-large);padding-right:var(--wp--preset--spacing--medium);padding-bottom:var(--wp--preset--spacing--xx-large);padding-left:var(--wp--preset--spacing--medium)">'
-        . $inner . '</div><!-- /wp:group -->';
+        . '<section' . ($anchor !== '' ? ' id="' . esc_attr($anchor) . '"' : '') . ' class="wp-block-group alignfull' . ($style !== '' ? " is-style-section-$style" : '') . '" style="margin-top:0;margin-bottom:0;padding-top:var(--wp--preset--spacing--xx-large);padding-bottom:var(--wp--preset--spacing--xx-large)">'
+        . $inner . '</section><!-- /wp:group -->';
 }
 
-/** Buttons: [label, url] pairs; the first is the main one. */
-function anypress_buttons(array $buttons): string
+/** Buttons: [label, url] pairs; the first is the main one, the rest outlined. */
+function anypress_buttons(array $buttons, bool $center = false): string
 {
-    $html = '<!-- wp:buttons {"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"flex","justifyContent":"center"}} --><div class="wp-block-buttons">';
+    $html = '<!-- wp:buttons {"layout":{"type":"flex"' . ($center ? ',"justifyContent":"center"' : '') . '}} --><div class="wp-block-buttons">';
     foreach (array_values($buttons) as $i => [$label, $url]) {
         $html .= $i === 0
             ? '<!-- wp:button --><div class="wp-block-button">'
-            : '<!-- wp:button {"className":"is-style-secondary-button"} --><div class="wp-block-button is-style-secondary-button">';
+            : '<!-- wp:button {"className":"is-style-outline"} --><div class="wp-block-button is-style-outline">';
         $html .= '<a class="wp-block-button__link wp-element-button" href="' . esc_url($url) . '">' . esc_html($label) . '</a></div><!-- /wp:button -->';
     }
 
     return $html . '</div><!-- /wp:buttons -->';
 }
 
-/** A small line above a heading. */
-function anypress_kicker(string $text): string
+/** A section heading, with an optional line under it in the secondary colour. */
+function anypress_titles(string $title, string $text = '', bool $center = false): string
 {
-    return '<!-- wp:paragraph {"align":"center","style":{"typography":{"fontStyle":"normal","fontWeight":"500"}},"textColor":"primary","fontSize":"small"} -->'
-        . '<p class="has-text-align-center has-primary-color has-text-color has-small-font-size" style="font-style:normal;font-weight:500">' . esc_html($text) . '</p><!-- /wp:paragraph -->';
+    $align = $center ? '"textAlign":"center",' : '';
+    $class = $center ? ' has-text-align-center' : '';
+
+    return '<!-- wp:heading {' . $align . '"fontSize":"xx-large"} --><h2 class="wp-block-heading' . $class . ' has-xx-large-font-size">' . esc_html($title) . '</h2><!-- /wp:heading -->'
+        . ($text !== '' ? '<!-- wp:paragraph {' . ($center ? '"align":"center",' : '') . '"textColor":"secondary","fontSize":"medium"} --><p class="' . ($center ? 'has-text-align-center ' : '') . 'has-secondary-color has-text-color has-medium-font-size">' . esc_html($text) . '</p><!-- /wp:paragraph -->' : '');
 }
 
-/** Ollie's Hero Light, without its screenshot. */
-function anypress_hero(string $kicker, string $title, string $text, array $buttons): string
+/** The theme's "Hero: big statement on brand colour": a new store has no photos yet, so its opening is words only. */
+function anypress_hero(string $title, string $text, array $buttons): string
 {
-    return '<!-- wp:cover {"dimRatio":90,"overlayColor":"base","isUserOverlayColor":true,"isDark":false,"metadata":{"name":"Hero"},"align":"full","className":"is-style-blur-image-less","style":{"spacing":{"margin":{"top":"0","bottom":"0"},"padding":{"top":"0","right":"0","bottom":"0","left":"0"}}}} -->'
-        . '<div class="wp-block-cover alignfull is-light is-style-blur-image-less" style="margin-top:0;margin-bottom:0;padding-top:0;padding-right:0;padding-bottom:0;padding-left:0"><span aria-hidden="true" class="wp-block-cover__background has-base-background-color has-background-dim-90 has-background-dim"></span><div class="wp-block-cover__inner-container">'
-        . '<!-- wp:group {"metadata":{"name":"Hero Wrap"},"align":"full","style":{"spacing":{"margin":{"top":"0px","bottom":"0px"},"padding":{"top":"var:preset|spacing|xx-large","bottom":"var:preset|spacing|xx-large","right":"var:preset|spacing|medium","left":"var:preset|spacing|medium"},"blockGap":"var:preset|spacing|medium"}},"textColor":"main","layout":{"inherit":true,"type":"constrained"}} -->'
-        . '<div class="wp-block-group alignfull has-main-color has-text-color" style="margin-top:0px;margin-bottom:0px;padding-top:var(--wp--preset--spacing--xx-large);padding-right:var(--wp--preset--spacing--medium);padding-bottom:var(--wp--preset--spacing--xx-large);padding-left:var(--wp--preset--spacing--medium)">'
-        . anypress_kicker($kicker)
-        . '<!-- wp:heading {"textAlign":"center","level":1,"className":"has-secondary-font-family","style":{"typography":{"fontSize":"4rem"}}} -->'
-        . '<h1 class="wp-block-heading has-text-align-center has-secondary-font-family" style="font-size:4rem">' . esc_html($title) . '</h1><!-- /wp:heading -->'
-        . '<!-- wp:paragraph {"align":"center","textColor":"secondary"} --><p class="has-text-align-center has-secondary-color has-text-color">' . esc_html($text) . '</p><!-- /wp:paragraph -->'
+    return anypress_section(
+        'Hero',
+        '<!-- wp:group {"style":{"spacing":{"blockGap":"var:preset|spacing|medium"}},"layout":{"type":"default"}} --><div class="wp-block-group">'
+        . '<!-- wp:heading {"level":1,"fontSize":"xxx-large"} --><h1 class="wp-block-heading has-xxx-large-font-size">' . esc_html($title) . '</h1><!-- /wp:heading -->'
+        . '<!-- wp:paragraph {"fontSize":"medium"} --><p class="has-medium-font-size">' . esc_html($text) . '</p><!-- /wp:paragraph -->'
         . anypress_buttons($buttons)
-        . '</div><!-- /wp:group --></div></div><!-- /wp:cover -->';
+        . '</div><!-- /wp:group -->',
+        'brand',
+        '60rem'
+    );
 }
 
-/** A centred heading with a paragraph under it. */
-function anypress_titles(string $kicker, string $title, string $text = ''): string
+/** The theme's "Features" grid: [title, text] points, each under a thin rule, three to a row. */
+function anypress_features(string $title, array $items, string $style = ''): string
 {
-    return '<!-- wp:group {"metadata":{"name":"Titles"},"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"constrained"}} --><div class="wp-block-group">'
-        . anypress_kicker($kicker)
-        . '<!-- wp:heading {"textAlign":"center"} --><h2 class="wp-block-heading has-text-align-center">' . esc_html($title) . '</h2><!-- /wp:heading -->'
-        . ($text !== '' ? '<!-- wp:paragraph {"align":"center","textColor":"secondary"} --><p class="has-text-align-center has-secondary-color has-text-color">' . esc_html($text) . '</p><!-- /wp:paragraph -->' : '')
-        . '</div><!-- /wp:group -->';
-}
-
-/** Ollie's Features With Emojis: [emoji, title, text] items in a grid. */
-function anypress_features(string $kicker, string $title, array $items): string
-{
-    $grid = '<!-- wp:group {"align":"wide","style":{"spacing":{"blockGap":"var:preset|spacing|large"}},"layout":{"type":"grid","columnCount":3,"minimumColumnWidth":"14rem"}} --><div class="wp-block-group alignwide">';
-    foreach ($items as [$emoji, $heading, $text]) {
-        $grid .= '<!-- wp:group {"metadata":{"name":"Feature"},"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"constrained"}} --><div class="wp-block-group">'
-            . '<!-- wp:paragraph {"fontSize":"large"} --><p class="has-large-font-size">' . esc_html($emoji) . '</p><!-- /wp:paragraph -->'
-            . '<!-- wp:heading {"level":3} --><h3 class="wp-block-heading">' . esc_html($heading) . '</h3><!-- /wp:heading -->'
+    $grid = '<!-- wp:group {"align":"wide","style":{"spacing":{"blockGap":"var:preset|spacing|x-large"}},"layout":{"type":"grid","columnCount":3,"minimumColumnWidth":"15rem"}} --><div class="wp-block-group alignwide">';
+    foreach ($items as [$heading, $text]) {
+        $grid .= '<!-- wp:group {"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"default"}} --><div class="wp-block-group">'
+            . '<!-- wp:separator {"className":"is-style-wide"} --><hr class="wp-block-separator has-alpha-channel-opacity is-style-wide"/><!-- /wp:separator -->'
+            . '<!-- wp:heading {"level":3,"fontSize":"medium"} --><h3 class="wp-block-heading has-medium-font-size">' . esc_html($heading) . '</h3><!-- /wp:heading -->'
             . '<!-- wp:paragraph {"textColor":"secondary"} --><p class="has-secondary-color has-text-color">' . esc_html($text) . '</p><!-- /wp:paragraph -->'
             . '</div><!-- /wp:group -->';
     }
     $grid .= '</div><!-- /wp:group -->';
 
-    return anypress_section('Features', anypress_titles($kicker, $title) . $grid);
+    return anypress_section('Features', anypress_titles($title) . $grid, $style);
 }
 
-/** Questions and answers that open on click. */
+/** The theme's "Questions and answers": questions that open on click. */
 function anypress_faq(string $title, array $items): string
 {
-    $list = '<!-- wp:group {"metadata":{"name":"Questions"},"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"constrained"}} --><div class="wp-block-group">';
+    $list = '';
     foreach ($items as [$question, $answer]) {
         $list .= '<!-- wp:details --><details class="wp-block-details"><summary>' . esc_html($question) . '</summary>'
-            . '<!-- wp:paragraph {"placeholder":"Type / to add a hidden block"} --><p>' . esc_html($answer) . '</p><!-- /wp:paragraph --></details><!-- /wp:details -->';
+            . '<!-- wp:paragraph --><p>' . esc_html($answer) . '</p><!-- /wp:paragraph --></details><!-- /wp:details -->';
     }
-    $list .= '</div><!-- /wp:group -->';
 
-    return anypress_section('FAQ', anypress_titles(__('Questions', 'anypress'), $title) . $list, 'tertiary');
+    return anypress_section('Questions', '<!-- wp:heading --><h2 class="wp-block-heading">' . esc_html($title) . '</h2><!-- /wp:heading -->' . $list, '', '44rem');
 }
 
-/** Ollie's Text Call To Action Buttons. */
-function anypress_call_to_action(string $kicker, string $title, string $text, array $buttons): string
+/** The theme's "Call to action on a dark band". */
+function anypress_call_to_action(string $title, string $text, array $buttons): string
 {
-    return anypress_section('Call To Action', anypress_titles($kicker, $title, $text) . anypress_buttons($buttons), 'tertiary');
+    return anypress_section(
+        'Call to action',
+        '<!-- wp:group {"style":{"spacing":{"blockGap":"var:preset|spacing|medium"}},"layout":{"type":"default"}} --><div class="wp-block-group">'
+        . anypress_titles($title, '', true)
+        . ($text !== '' ? '<!-- wp:paragraph {"align":"center","fontSize":"medium"} --><p class="has-text-align-center has-medium-font-size">' . esc_html($text) . '</p><!-- /wp:paragraph -->' : '')
+        . anypress_buttons($buttons, true)
+        . '</div><!-- /wp:group -->',
+        'dark',
+        '44rem'
+    );
 }
 
 /** A heading over a plugin's shortcode (a product list, a booking calendar, a form). */
-function anypress_embed(string $kicker, string $title, string $shortcode, string $anchor = ''): string
+function anypress_embed(string $title, string $shortcode, string $anchor = '', string $style = ''): string
 {
-    return anypress_section('Embed', anypress_titles($kicker, $title) . '<!-- wp:shortcode -->' . $shortcode . '<!-- /wp:shortcode -->', '', '', $anchor);
+    return anypress_section('Embed', anypress_titles($title) . '<!-- wp:shortcode -->' . $shortcode . '<!-- /wp:shortcode -->', $style, '80rem', $anchor);
 }
 
 /** Paragraphs of text under a heading, for an About page. */
-function anypress_story(string $kicker, string $title, array $paragraphs): string
+function anypress_story(string $title, array $paragraphs): string
 {
-    $text = '<!-- wp:group {"metadata":{"name":"Text"},"layout":{"type":"constrained","contentSize":"640px"}} --><div class="wp-block-group">';
+    $text = '';
     foreach ($paragraphs as $paragraph) {
-        $text .= '<!-- wp:paragraph --><p>' . esc_html($paragraph) . '</p><!-- /wp:paragraph -->';
+        $text .= '<!-- wp:paragraph {"fontSize":"medium"} --><p class="has-medium-font-size">' . esc_html($paragraph) . '</p><!-- /wp:paragraph -->';
     }
-    $text .= '</div><!-- /wp:group -->';
 
-    return anypress_section('Story', anypress_titles($kicker, $title) . $text);
+    return anypress_section('Story', '<!-- wp:heading {"level":1,"fontSize":"xxx-large"} --><h1 class="wp-block-heading has-xxx-large-font-size">' . esc_html($title) . '</h1><!-- /wp:heading -->' . $text, '', '44rem');
 }
 
 /** The page patterns, by slug: title, keywords, the plugin it needs (or ''), and a function giving its blocks. */
 function anypress_starter_pages(): array
 {
     $name = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES) ?: __('Your business', 'anypress');
-    $url = fn (string $path) => home_url($path);
     $page = function (string $slug, string $fallback) {
         $found = get_page_by_path($slug);
 
@@ -155,25 +138,26 @@ function anypress_starter_pages(): array
     };
     $contact = fn () => $page('contact', '/contact/');
     $about = [__('About us', 'anypress'), $page('about', '/about/')];
+    $three = fn (string $text) => [
+        [__('First service', 'anypress'), $text],
+        [__('Second service', 'anypress'), $text],
+        [__('Third service', 'anypress'), $text],
+    ];
 
     return [
         'anypress/home-website' => [__('Home: website', 'anypress'), 'home, homepage, front page, landing', '', fn () =>
-            anypress_hero(__('Welcome', 'anypress'), $name, __('Say in a sentence or two what you do and who it is for.', 'anypress'), [[__('Get in touch', 'anypress'), $contact()], $about])
-            . anypress_features(__('What we do', 'anypress'), __('How we can help', 'anypress'), [
-                ['✨', __('First service', 'anypress'), __('What it is, who it is for, and what they get from it.', 'anypress')],
-                ['🤝', __('Second service', 'anypress'), __('What it is, who it is for, and what they get from it.', 'anypress')],
-                ['🚀', __('Third service', 'anypress'), __('What it is, who it is for, and what they get from it.', 'anypress')],
-            ])
-            . anypress_call_to_action(__('Get started', 'anypress'), __('Ready when you are', 'anypress'), __('Tell us what you need and we will get back to you.', 'anypress'), [[__('Contact us', 'anypress'), $contact()]]),
+            anypress_hero($name, __('Say in a sentence or two what you do and who it is for.', 'anypress'), [[__('Get in touch', 'anypress'), $contact()], $about])
+            . anypress_features(__('How we can help', 'anypress'), $three(__('What it is, who it is for, and what they get from it.', 'anypress')))
+            . anypress_call_to_action(__('Ready when you are', 'anypress'), __('Tell us what you need and we will get back to you.', 'anypress'), [[__('Contact us', 'anypress'), $contact()]]),
         ],
         'anypress/home-store' => [__('Home: online store', 'anypress'), 'home, homepage, shop, store, products', 'fluent-cart/fluent-cart.php', fn () =>
-            anypress_hero(__('New in', 'anypress'), $name, __('Say in a sentence what you sell and why people love it.', 'anypress'), [[__('Shop now', 'anypress'), $page('shop', '/shop/')], $about])
-            . anypress_embed(__('Shop', 'anypress'), __('Our products', 'anypress'), '[fluent_cart_products per_page="6" paginator="numbers"]')
-            . anypress_features(__('Why shop with us', 'anypress'), __('Good to know', 'anypress'), [
-                ['📦', __('Shipping', 'anypress'), __('Where you ship to and how long it takes.', 'anypress')],
-                ['🔒', __('Secure checkout', 'anypress'), __('Pay safely by card. Your details are never stored on this site.', 'anypress')],
-                ['↩️', __('Returns', 'anypress'), __('How returns and refunds work.', 'anypress')],
-            ])
+            anypress_hero($name, __('Say in a sentence what you sell and why people love it.', 'anypress'), [[__('Shop now', 'anypress'), $page('shop', '/shop/')], $about])
+            . anypress_embed(__('Our products', 'anypress'), '[fluent_cart_products per_page="6" paginator="numbers"]')
+            . anypress_features(__('Good to know', 'anypress'), [
+                [__('Shipping', 'anypress'), __('Where you ship to and how long it takes.', 'anypress')],
+                [__('Secure checkout', 'anypress'), __('Pay safely by card. Your details are never stored on this site.', 'anypress')],
+                [__('Returns', 'anypress'), __('How returns and refunds work.', 'anypress')],
+            ], 'tint')
             . anypress_faq(__('Before you order', 'anypress'), [
                 [__('How long does delivery take?', 'anypress'), __('Say how long orders take to arrive.', 'anypress')],
                 [__('Can I return an order?', 'anypress'), __('Explain your returns policy.', 'anypress')],
@@ -181,12 +165,8 @@ function anypress_starter_pages(): array
             ]),
         ],
         'anypress/home-bookings' => [__('Home: bookings', 'anypress'), 'home, homepage, bookings, appointments, services', 'fluent-booking/fluent-booking.php', fn () =>
-            anypress_hero(__('Book online', 'anypress'), $name, __('Say what you offer, and that booking takes a minute.', 'anypress'), [[__('Book now', 'anypress'), '#book'], [__('Our services', 'anypress'), $page('services', '/services/')]])
-            . anypress_features(__('Services', 'anypress'), __('What you can book', 'anypress'), [
-                ['🗓️', __('First service', 'anypress'), __('What it is, how long it takes and what it costs.', 'anypress')],
-                ['💬', __('Second service', 'anypress'), __('What it is, how long it takes and what it costs.', 'anypress')],
-                ['⭐', __('Third service', 'anypress'), __('What it is, how long it takes and what it costs.', 'anypress')],
-            ])
+            anypress_hero($name, __('Say what you offer, and that booking takes a minute.', 'anypress'), [[__('Book now', 'anypress'), '#book'], [__('Our services', 'anypress'), $page('services', '/services/')]])
+            . anypress_features(__('What you can book', 'anypress'), $three(__('What it is, how long it takes and what it costs.', 'anypress')))
             . anypress_booking()
             . anypress_faq(__('Before you book', 'anypress'), [
                 [__('Can I change or cancel a booking?', 'anypress'), __('Explain how much notice you need.', 'anypress')],
@@ -194,41 +174,37 @@ function anypress_starter_pages(): array
             ]),
         ],
         'anypress/home-community' => [__('Home: community and courses', 'anypress'), 'home, homepage, community, courses, members, membership', 'fluent-community/fluent-community.php', fn () =>
-            anypress_hero(__('Join us', 'anypress'), $name, __('Say who the community is for and what members learn or get.', 'anypress'), [[__('Join the community', 'anypress'), anypress_portal_url()], $about])
-            . anypress_features(__('Inside', 'anypress'), __('What members get', 'anypress'), [
-                ['🎓', __('Courses', 'anypress'), __('What the courses teach, and at what pace.', 'anypress')],
-                ['💬', __('Discussions', 'anypress'), __('Ask questions and share wins with people on the same path.', 'anypress')],
-                ['📅', __('Events', 'anypress'), __('Live sessions, calls or meetups members can join.', 'anypress')],
+            anypress_hero($name, __('Say who the community is for and what members learn or get.', 'anypress'), [[__('Join the community', 'anypress'), anypress_portal_url()], $about])
+            . anypress_features(__('What members get', 'anypress'), [
+                [__('Courses', 'anypress'), __('What the courses teach, and at what pace.', 'anypress')],
+                [__('Discussions', 'anypress'), __('Ask questions and share wins with people on the same path.', 'anypress')],
+                [__('Events', 'anypress'), __('Live sessions, calls or meetups members can join.', 'anypress')],
             ])
-            . anypress_call_to_action(__('Get started', 'anypress'), __('Come and join us', 'anypress'), __('Sign up in a minute and start today.', 'anypress'), [[__('Join the community', 'anypress'), anypress_portal_url()]]),
+            . anypress_call_to_action(__('Come and join us', 'anypress'), __('Sign up in a minute and start today.', 'anypress'), [[__('Join the community', 'anypress'), anypress_portal_url()]]),
         ],
         'anypress/services' => [__('Services', 'anypress'), 'services, prices, pricing, treatments, menu', '', fn () =>
-            anypress_hero(__('Services', 'anypress'), __('What we offer', 'anypress'), __('A short line on how you work with people.', 'anypress'), [[__('Get in touch', 'anypress'), $contact()]])
-            . anypress_features(__('Prices', 'anypress'), __('Services and prices', 'anypress'), [
-                ['1️⃣', __('First service', 'anypress'), __('What is included, how long it takes and the price.', 'anypress')],
-                ['2️⃣', __('Second service', 'anypress'), __('What is included, how long it takes and the price.', 'anypress')],
-                ['3️⃣', __('Third service', 'anypress'), __('What is included, how long it takes and the price.', 'anypress')],
-            ])
-            . anypress_call_to_action(__('Next step', 'anypress'), __('Not sure which one is right?', 'anypress'), __('Ask us and we will help you choose.', 'anypress'), [[__('Contact us', 'anypress'), $contact()]]),
+            anypress_hero(__('What we offer', 'anypress'), __('A short line on how you work with people.', 'anypress'), [[__('Get in touch', 'anypress'), $contact()]])
+            . anypress_features(__('Services and prices', 'anypress'), $three(__('What is included, how long it takes and the price.', 'anypress')))
+            . anypress_call_to_action(__('Not sure which one is right?', 'anypress'), __('Ask us and we will help you choose.', 'anypress'), [[__('Contact us', 'anypress'), $contact()]]),
         ],
         'anypress/about' => [__('About', 'anypress'), 'about, story, team, values', '', fn () =>
-            anypress_story(__('About us', 'anypress'), sprintf(__('The story of %s', 'anypress'), $name), [
+            anypress_story(sprintf(__('The story of %s', 'anypress'), $name), [
                 __('How it started, and why.', 'anypress'),
                 __('Who you work with today, and what you care about getting right for them.', 'anypress'),
             ])
-            . anypress_features(__('Values', 'anypress'), __('What we stand for', 'anypress'), [
-                ['💡', __('First value', 'anypress'), __('What it means for the people you serve.', 'anypress')],
-                ['🌱', __('Second value', 'anypress'), __('What it means for the people you serve.', 'anypress')],
-                ['❤️', __('Third value', 'anypress'), __('What it means for the people you serve.', 'anypress')],
-            ])
-            . anypress_call_to_action(__('Say hello', 'anypress'), __('We would love to hear from you', 'anypress'), '', [[__('Contact us', 'anypress'), $contact()]]),
+            . anypress_features(__('What we stand for', 'anypress'), [
+                [__('First value', 'anypress'), __('What it means for the people you serve.', 'anypress')],
+                [__('Second value', 'anypress'), __('What it means for the people you serve.', 'anypress')],
+                [__('Third value', 'anypress'), __('What it means for the people you serve.', 'anypress')],
+            ], 'tint')
+            . anypress_call_to_action(__('We would love to hear from you', 'anypress'), '', [[__('Contact us', 'anypress'), $contact()]]),
         ],
         'anypress/contact' => [__('Contact', 'anypress'), 'contact, form, email, phone, address, location', '', fn () =>
-            anypress_features(__('Contact', 'anypress'), __('Get in touch', 'anypress'), [
-                ['✉️', __('Email', 'anypress'), (string) get_option('admin_email')],
-                ['📞', __('Phone', 'anypress'), __('Your phone number, and when you answer.', 'anypress')],
-                ['📍', __('Visit', 'anypress'), __('Your address, or the area you serve.', 'anypress')],
-            ])
+            anypress_features(__('Get in touch', 'anypress'), [
+                [__('Email', 'anypress'), (string) get_option('admin_email')],
+                [__('Phone', 'anypress'), __('Your phone number, and when you answer.', 'anypress')],
+                [__('Visit', 'anypress'), __('Your address, or the area you serve.', 'anypress')],
+            ], 'tint')
             . anypress_contact_form(),
         ],
     ];
@@ -241,8 +217,8 @@ function anypress_booking(): string
     $calendar = (int) $wpdb->get_var("SELECT id FROM {$wpdb->prefix}fcal_calendars WHERE status = 'active' ORDER BY id LIMIT 1");
 
     return $calendar
-        ? anypress_embed(__('Book', 'anypress'), __('Pick a time', 'anypress'), '[fluent_booking_calendar calendar_id="' . $calendar . '"]', 'book')
-        : anypress_section('Booking', anypress_titles(__('Book', 'anypress'), __('Pick a time', 'anypress'), __('Online booking opens here soon.', 'anypress')), '', '', 'book');
+        ? anypress_embed(__('Pick a time', 'anypress'), '[fluent_booking_calendar calendar_id="' . $calendar . '"]', 'book')
+        : anypress_section('Booking', anypress_titles(__('Pick a time', 'anypress'), __('Online booking opens here soon.', 'anypress')), '', '80rem', 'book');
 }
 
 /** Fluent Forms' contact form, when it is on. */
@@ -253,7 +229,7 @@ function anypress_contact_form(): string
     }
     $form = (int) (wpFluent()->table('fluentform_forms')->where('title', 'Contact Form Demo')->value('id') ?: 0);
 
-    return $form ? anypress_embed(__('Message', 'anypress'), __('Send us a message', 'anypress'), '[fluentform id="' . $form . '"]') : '';
+    return $form ? anypress_embed(__('Send us a message', 'anypress'), '[fluentform id="' . $form . '"]') : '';
 }
 
 function anypress_portal_url(): string
@@ -272,11 +248,6 @@ function anypress_register_patterns(): void
         return;
     }
     $done = true;
-    foreach (ANYPRESS_HIDDEN_PATTERNS as $pattern) {
-        if (WP_Block_Patterns_Registry::get_instance()->is_registered($pattern)) {
-            unregister_block_pattern($pattern);
-        }
-    }
     register_block_pattern_category('anypress/pages', ['label' => __('Starter pages', 'anypress'), 'description' => __('Whole pages to start from, for this kind of website.', 'anypress')]);
     $active = (array) get_option('active_plugins', []);
     foreach (anypress_starter_pages() as $slug => [$title, $keywords, $needs, $content]) {
@@ -285,6 +256,8 @@ function anypress_register_patterns(): void
         }
         register_block_pattern($slug, [
             'title' => $title,
+            /* translators: %s: the starter page's title, such as "Home: website". */
+            'description' => sprintf(__('%s starter page with the store\'s name in it, built from the theme\'s sections. Rewrite every placeholder line for the business.', 'anypress'), $title),
             'categories' => ['anypress/pages'],
             'keywords' => array_map('trim', explode(',', $keywords)),
             'postTypes' => ['page'],

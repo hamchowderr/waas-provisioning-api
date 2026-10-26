@@ -508,7 +508,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     return answer.body;
   };
   const blocks = z.string().describe('WordPress block markup (<!-- wp:paragraph --><p>…</p><!-- /wp:paragraph -->). Use the theme’s colour, font-size and spacing slugs from site_styles, not raw values.');
-  const pattern = z.string().describe('A pattern name from site_patterns, e.g. ollie/hero-light');
+  const pattern = z.string().describe('A pattern name from site_patterns, e.g. anypress/hero-statement');
   const pageId = z.number().int().positive().describe('The page id, from site_pages list');
 
   tool(

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the "AnyPress store" base snapshot: WordPress with the WaaS Client plugin, the Fluent suite,
-# Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and Ollie (block theme),
+# Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and the AnyPress block theme (templates/anypress-theme),
 # packaged as the provisioner restores it (see README).
 #
 #   templates/anypress-store/build.sh <path to a waas-plugins checkout>
@@ -32,9 +32,10 @@ fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
-THEME=ollie
-THEME_VERSION=${THEME_VERSION:-1.6.5}
-THEME_SHA256=${THEME_SHA256:-66a050e5225ba3a43806a148adc3079c366b46cfc8396c8a6e44742f8958ddc7}
+# The AnyPress block theme, from this repository (its version is in its style.css).
+THEME=anypress
+THEME_DIR=$(cd "$(dirname "$0")/../anypress-theme" && pwd)
+THEME_VERSION=$(sed -n 's/^Version: *//p' "$THEME_DIR/style.css" | head -1)
 PHP_VERSION=${PHP_VERSION:-8.3}
 
 # The build site's address. The provisioner rewrites it to each store's domain (wp search-replace),
@@ -81,14 +82,13 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     echo "$sha  $HERE/plugins/$slug-$version.zip" | sha256sum -c --quiet || { echo "checksum mismatch: plugins/$slug-$version.zip" >&2; exit 1; }
 done <<<"$VENDORED"
-fetch "https://downloads.wordpress.org/theme/$THEME.$THEME_VERSION.zip" "$THEME_SHA256" "$WORK/downloads/$THEME.zip"
 
 echo "== WordPress $WP_VERSION"
 unzip -q "$WORK/downloads/wordpress.zip" -d "$WORK"
 cp -a "$WORK/wordpress/." "$SITE/" && rm -rf "$WORK/wordpress"
 # Only what the template ships: no bundled plugins, no other themes.
 rm -rf "$SITE/wp-content/plugins/akismet" "$SITE/wp-content/plugins/hello.php" "$SITE/wp-content/themes/"*
-unzip -q "$WORK/downloads/$THEME.zip" -d "$SITE/wp-content/themes"
+cp -a "$THEME_DIR" "$SITE/wp-content/themes/$THEME"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$WORK/downloads/$slug.$version.zip" -d "$SITE/wp-content/plugins"
@@ -172,8 +172,9 @@ wp transient delete --all
 wp cache flush 2>/dev/null || true
 
 echo "== Check"
-# Starter pages (mu-plugins/anypress-patterns.php) register, and the theme's own promotion patterns are hidden.
-[ "$(wp eval 'anypress_register_patterns(); $r = WP_Block_Patterns_Registry::get_instance(); echo count(array_filter($r->get_all_registered(), fn($p) => str_starts_with($p["name"], "anypress/"))) >= 4 && !$r->is_registered("ollie/page-download") ? "ok" : "missing";')" = ok ] || { echo "starter pages missing"; exit 1; }
+# Starter pages (mu-plugins/anypress-patterns.php) and the theme's AnyPress Blocks register.
+[ "$(wp eval 'anypress_register_patterns(); $r = WP_Block_Patterns_Registry::get_instance(); echo $r->is_registered("anypress/home-website") && $r->is_registered("anypress/hero-statement") ? "ok" : "missing";')" = ok ] || { echo "starter pages or theme sections missing"; exit 1; }
+[ "$(wp theme list --status=active --field=name)" = "$THEME" ] || { echo "theme $THEME not active" >&2; exit 1; }
 wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
 EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
@@ -184,7 +185,6 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
 # first match, and with pipefail the cut-off wp counts as a failure.
 grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
 [ "$(wp post list --post_type=page --meta_key=_anypress_needs --format=count)" -ge 7 ] || { echo "pages missing their site-type marker" >&2; exit 1; }
-[ "$(wp post list --post_type=wp_template_part --name=footer --format=count)" = 1 ] || { echo "store footer missing (the theme's demo footer would show)" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
 
