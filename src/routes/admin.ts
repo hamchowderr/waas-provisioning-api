@@ -381,14 +381,18 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.get('/tenants', async (c) => {
     const { page: pageNumber, pageSize, offset } = page(c);
     const q = c.req.query('q')?.trim();
+    // ?across=reseller: a reseller's team sees the stores of every storefront in its account at once.
+    const resellerId = session && c.req.query('across') === 'reseller' ? (c.get('sessionCaller')?.active?.resellerId ?? null) : null;
     const params = [
-      scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null,
+      resellerId ? null : (scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null),
       statusQuery(c) ?? null,
       booleanQuery(c, 'suspended') ?? null,
       uuidQuery(c, 'versionId') ?? null,
       q ? `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null,
+      resellerId,
     ];
     const where = `($1::uuid IS NULL OR t.product_id = $1) AND ($2::int IS NULL OR t.status = $2)
+      AND ($6::uuid IS NULL OR t.product_id IN (SELECT id FROM products WHERE reseller_id = $6))
       AND ($3::boolean IS NULL OR t.is_suspended = $3) AND ($4::uuid IS NULL OR t.version_id = $4)
       AND ($5::text IS NULL OR t.external_id ILIKE $5 OR t.name ILIKE $5
            OR EXISTS (SELECT 1 FROM tenant_domains d WHERE d.tenant_id = t.id AND d.domain_name ILIKE $5))`;

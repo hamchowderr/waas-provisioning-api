@@ -648,6 +648,10 @@ paths:
           in: query
           description: 'Matches external id, name or any domain (case-insensitive substring).'
           schema: { type: string }
+        - name: across
+          in: query
+          description: 'Only at /account/tenants: `reseller` lists the stores of every storefront in the signed-in reseller team''s account, ignoring the picked storefront. Ignored for anyone else.'
+          schema: { type: string, enum: [reseller] }
         - $ref: '#/components/parameters/page'
         - $ref: '#/components/parameters/pageSize'
       responses:

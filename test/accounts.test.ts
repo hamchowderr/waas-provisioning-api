@@ -586,6 +586,23 @@ describe("a reseller's team (docs/resellers.md)", () => {
     expect((await asUser(partner.cookie, 'DELETE', `/account/reseller/keys/${keyId}`, undefined, picking(first))).status).toBe(200);
   });
 
+  it('lists the stores of every storefront in the account at once with ?across=reseller', async () => {
+    const keyFor = async (productId: string) => {
+      const key = await createApiKey(t.pool, productId);
+      return basic(key.key, key.secret);
+    };
+    const alpha = await storeFor(await keyFor(first), 'Alpha store');
+    const beta = await storeFor(await keyFor(second), 'Beta store');
+    const ids = async (cookie: string, path: string) =>
+      ((await (await asUser(cookie, 'GET', path, undefined, picking(first))).json()) as { items: { id: string }[] }).items.map((i) => i.id).sort();
+    expect(await ids(partner.cookie, '/account/tenants')).toEqual([alpha.id]);
+    expect(await ids(partner.cookie, '/account/tenants?across=reseller')).toEqual([alpha.id, beta.id].sort());
+    // A storefront's own team, not the reseller's, keeps to its storefront.
+    const own = await signedIn('own2@alpha.example');
+    expect((await accept(own.cookie, (await invite(first, 'own2@alpha.example', 'owner')).id)).status).toBe(200);
+    expect(await ids(own.cookie, '/account/tenants?across=reseller')).toEqual([alpha.id]);
+  });
+
   it('follows the storefront when it moves out, and the person when they leave', async () => {
     expect((await admin('DELETE', `/resellers/${resellerId}/products/${second}`)).status).toBe(200);
     let me = await (await asUser(partner.cookie, 'GET', '/account')).json();
