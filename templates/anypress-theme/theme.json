@@ -519,6 +519,177 @@
 							]
 						}
 					]
+				},
+				{
+					"name": "Instrument Serif",
+					"slug": "instrument-serif",
+					"fontFamily": "\"Instrument Serif\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Instrument Serif",
+							"fontStyle": "normal",
+							"fontWeight": "400",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/instrumentserif.woff2"
+							]
+						},
+						{
+							"fontFamily": "Instrument Serif",
+							"fontStyle": "italic",
+							"fontWeight": "400",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/instrumentserif-italic.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Instrument Sans",
+					"slug": "instrument-sans",
+					"fontFamily": "\"Instrument Sans\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Instrument Sans",
+							"fontStyle": "normal",
+							"fontWeight": "400 700",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/instrumentsans.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Bodoni Moda",
+					"slug": "bodoni-moda",
+					"fontFamily": "\"Bodoni Moda\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Bodoni Moda",
+							"fontStyle": "normal",
+							"fontWeight": "400 900",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/bodonimoda.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Jost",
+					"slug": "jost",
+					"fontFamily": "\"Jost\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Jost",
+							"fontStyle": "normal",
+							"fontWeight": "300 700",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/jost.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Crimson Pro",
+					"slug": "crimson-pro",
+					"fontFamily": "\"Crimson Pro\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Crimson Pro",
+							"fontStyle": "normal",
+							"fontWeight": "300 800",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/crimsonpro.woff2"
+							]
+						},
+						{
+							"fontFamily": "Crimson Pro",
+							"fontStyle": "italic",
+							"fontWeight": "300 800",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/crimsonpro-italic.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Gloock",
+					"slug": "gloock",
+					"fontFamily": "\"Gloock\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Gloock",
+							"fontStyle": "normal",
+							"fontWeight": "400",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/gloock.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Manrope",
+					"slug": "manrope",
+					"fontFamily": "\"Manrope\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Manrope",
+							"fontStyle": "normal",
+							"fontWeight": "200 800",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/manrope.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Schibsted Grotesk",
+					"slug": "schibsted-grotesk",
+					"fontFamily": "\"Schibsted Grotesk\", ui-sans-serif, system-ui, sans-serif",
+					"fontFace": [
+						{
+							"fontFamily": "Schibsted Grotesk",
+							"fontStyle": "normal",
+							"fontWeight": "400 900",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/schibstedgrotesk.woff2"
+							]
+						}
+					]
+				},
+				{
+					"name": "Literata",
+					"slug": "literata",
+					"fontFamily": "\"Literata\", ui-serif, Georgia, serif",
+					"fontFace": [
+						{
+							"fontFamily": "Literata",
+							"fontStyle": "normal",
+							"fontWeight": "300 800",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/literata.woff2"
+							]
+						},
+						{
+							"fontFamily": "Literata",
+							"fontStyle": "italic",
+							"fontWeight": "300 800",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./assets/fonts/literata-italic.woff2"
+							]
+						}
+					]
 				}
 			],
 			"dropCap": false,

@@ -147,7 +147,8 @@ for (const p of patterns) {
     const attrs = [...p.content.matchAll(/<!-- wp:\S+ (\{.*?\}) \/?-->/g)].map((m) => m[1]).join(' ');
     if (/#[0-9a-fA-F]{3,8}\b/.test(attrs)) problems.push('hex colour in block attributes');
     if (/"\d+(\.\d+)?px"/.test(attrs)) problems.push('pixel size in block attributes');
-    if (!blocks.some((b) => b.attributes?.metadata?.name)) problems.push('top-level block has no name');
+    // Post outlines are a post's own text, so they aren't wrapped in a named section.
+    if (!p.categories?.includes('anypress/posts') && !blocks.some((b) => b.attributes?.metadata?.name)) problems.push('top-level block has no name');
     problems.length ? fail(`${p.name}: ${problems.join('; ')}`) : pass(`${p.name}: ${blocks.length} blocks, valid, tokens only`);
 }
 
@@ -187,8 +188,11 @@ try {
     for (const [name, width] of [['desktop', 1400], ['phone', 390]]) {
         const tab = await browser.newPage({ viewport: { width, height: 900 } });
         await tab.goto(`${base}/?page_id=${page.id}`, { waitUntil: 'networkidle' });
-        const overflow = await tab.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-        overflow ? fail(`${name}: page scrolls sideways`) : pass(`${name}: no sideways scroll`);
+        // The innermost elements that stick out past the right edge, to say which section is too wide.
+        const overflow = await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1 ? null : [...document.querySelectorAll('body *')]
+            .filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1 && ![...el.children].some((c) => c.getBoundingClientRect().right > window.innerWidth + 1))
+            .slice(0, 5).map((el) => `${el.closest('[class*="wp-block-group"][class*="alignfull"]')?.className.match(/is-style-[\w-]+/)?.[0] ?? ''} <${el.tagName.toLowerCase()}> "${el.textContent.trim().slice(0, 40)}"`));
+        overflow ? fail(`${name}: page scrolls sideways: ${overflow.join(' | ')}`) : pass(`${name}: no sideways scroll`);
         await tab.screenshot({ path: resolve(SHOTS, `all-sections-${name}.png`), fullPage: true });
         await tab.close();
     }

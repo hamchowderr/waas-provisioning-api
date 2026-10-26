@@ -1,0 +1,122 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Rep (gym and classes)",
+	"slug": "kit-rep",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#b81f17",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#f6e0dc",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#d4ff3a",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#111111",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#0e0e0e",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#d9d9d4",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#f2f2ef",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#4a4a48",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#e6e6e1",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#d4d4ce",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#2a2a2a",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	},
+	"styles": {
+		"typography": {
+			"fontFamily": "var:preset|font-family|figtree"
+		},
+		"elements": {
+			"heading": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|archivo",
+					"fontWeight": "900",
+					"letterSpacing": "-0.01em",
+					"lineHeight": "0.92",
+					"textTransform": "uppercase",
+					"fontStyle": "italic"
+				}
+			},
+			"button": {
+				"border": {
+					"radius": "0"
+				},
+				"typography": {
+					"fontWeight": "800",
+					"fontSize": "var:preset|font-size|base",
+					"fontFamily": "var:preset|font-family|archivo",
+					"textTransform": "uppercase",
+					"letterSpacing": "0.02em"
+				}
+			}
+		},
+		"blocks": {
+			"core/site-title": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|archivo",
+					"fontWeight": "900",
+					"textTransform": "uppercase"
+				}
+			},
+			"core/image": {
+				"border": {
+					"radius": "0"
+				}
+			},
+			"core/quote": {
+				"border": {
+					"left": {
+						"width": "0"
+					}
+				},
+				"spacing": {
+					"padding": {
+						"left": "0"
+					}
+				}
+			}
+		}
+	}
+}

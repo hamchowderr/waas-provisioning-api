@@ -28,6 +28,17 @@ function anypress_register_pattern_categories() {
 		'anypress/kit-food'          => array( __( 'Kit: Food and drink (Hearth)', 'anypress' ), __( 'Sections for cafés, bakeries and restaurants. They look as designed with the Hearth style.', 'anypress' ) ),
 		'anypress/kit-wellness'      => array( __( 'Kit: Wellness (Still)', 'anypress' ), __( 'Sections for spas, therapists and studios. They look as designed with the Still style.', 'anypress' ) ),
 		'anypress/kit-professional'  => array( __( 'Kit: Professional services (Ledger)', 'anypress' ), __( 'Sections for accountants, lawyers, consultants and agencies. They look as designed with the Ledger style.', 'anypress' ) ),
+		'anypress/kit-shop'          => array( __( 'Kit: Online shop (Parcel)', 'anypress' ), __( 'Sections for online shops and makers. They look as designed with the Parcel style.', 'anypress' ) ),
+		'anypress/kit-courses'       => array( __( 'Kit: Courses and community (Chapter)', 'anypress' ), __( 'Sections for online courses, coaching and memberships. They look as designed with the Chapter style.', 'anypress' ) ),
+		'anypress/kit-salon'         => array( __( 'Kit: Salon and beauty (Gloss)', 'anypress' ), __( 'Sections for hair salons, barbers and beauty studios. They look as designed with the Gloss style.', 'anypress' ) ),
+		'anypress/kit-community'     => array( __( 'Kit: Associations, chambers and churches (Commons)', 'anypress' ), __( 'Sections for chambers of commerce, associations, clubs, nonprofits and churches. They look as designed with the Commons style.', 'anypress' ) ),
+		'anypress/kit-fitness'       => array( __( 'Kit: Gym and classes (Rep)', 'anypress' ), __( 'Sections for gyms, boxing clubs and fitness studios. They look as designed with the Rep style.', 'anypress' ) ),
+		'anypress/kit-portfolio'     => array( __( 'Kit: Creative portfolio (Frame)', 'anypress' ), __( 'Sections for photographers, designers, illustrators and architects. They look as designed with the Frame style.', 'anypress' ) ),
+		'anypress/kit-real-estate'   => array( __( 'Kit: Real estate (Keystone)', 'anypress' ), __( 'Sections for estate agents, realtors and property managers. They look as designed with the Keystone style.', 'anypress' ) ),
+		'anypress/kit-software'      => array( __( 'Kit: Startup and software (Launch)', 'anypress' ), __( 'Sections for software products, apps and startups. They look as designed with the Launch style.', 'anypress' ) ),
+		'anypress/kit-magazine'      => array( __( 'Kit: Blog and magazine (Byline)', 'anypress' ), __( 'Sections for blogs, magazines, newsletters and writers. They look as designed with the Byline style.', 'anypress' ) ),
+		// Starting structures for blog posts (how-to, list, review).
+		'anypress/posts'             => array( __( 'Post outlines', 'anypress' ), __( 'Starting structures for common kinds of blog post.', 'anypress' ) ),
 	);
 	foreach ( $categories as $slug => $category ) {
 		if ( WP_Block_Pattern_Categories_Registry::get_instance()->is_registered( $slug ) ) {
@@ -100,6 +111,7 @@ function anypress_enqueue_styles() {
 	wp_register_style( 'anypress', false, array(), wp_get_theme()->get( 'Version' ) );
 	wp_enqueue_style( 'anypress' );
 	// A photo alone in a column fills the column's height, so it meets the panel beside it.
-	wp_add_inline_style( 'anypress', '.wp-site-blocks>footer{margin-block-start:0}.wp-block-column>.wp-block-cover:only-child{height:100%}' );
+	// Long links (an email address set huge) wrap instead of pushing the page sideways on phones, and wide tables scroll inside their box.
+	wp_add_inline_style( 'anypress', '.wp-site-blocks>footer{margin-block-start:0}.wp-block-column>.wp-block-cover:only-child{height:100%}:where(p,h1,h2,h3,h4) a{overflow-wrap:anywhere}.wp-block-table{overflow-x:auto}' );
 }
 add_action( 'wp_enqueue_scripts', 'anypress_enqueue_styles' );

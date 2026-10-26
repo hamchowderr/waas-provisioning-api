@@ -1,0 +1,118 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Parcel (online shop)",
+	"slug": "kit-parcel",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#9a3b1b",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#f0dccf",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#2f4a3a",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#eef0e6",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#1f1a17",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#ddd5cb",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#f5f0e8",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#5c524a",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#ebe3d7",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#d8cdbf",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#3a322c",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	},
+	"styles": {
+		"typography": {
+			"fontFamily": "var:preset|font-family|instrument-sans"
+		},
+		"elements": {
+			"heading": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|instrument-serif",
+					"fontWeight": "400",
+					"letterSpacing": "-0.01em",
+					"lineHeight": "1"
+				}
+			},
+			"button": {
+				"border": {
+					"radius": "0"
+				},
+				"typography": {
+					"fontWeight": "600",
+					"fontSize": "var:preset|font-size|base",
+					"fontFamily": "var:preset|font-family|instrument-sans"
+				}
+			}
+		},
+		"blocks": {
+			"core/site-title": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|instrument-serif",
+					"fontWeight": "400",
+					"letterSpacing": "-0.01em"
+				}
+			},
+			"core/image": {
+				"border": {
+					"radius": "0"
+				}
+			},
+			"core/quote": {
+				"border": {
+					"left": {
+						"width": "0"
+					}
+				},
+				"spacing": {
+					"padding": {
+						"left": "0"
+					}
+				}
+			}
+		}
+	}
+}
