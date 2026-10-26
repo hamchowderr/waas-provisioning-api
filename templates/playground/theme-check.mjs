@@ -9,6 +9,8 @@
 //   - every AnyPress pattern parses into valid blocks (the editor's own validation, run here with @wordpress/blocks)
 //   - patterns use theme tokens only: no hex colours and no pixel sizes in block attributes
 //   - every pattern has a description and keywords (the site tools search on them)
+//   - every colour palette passes WCAG AA contrast (4.5:1) in every section style (contrast.mjs)
+//   - WordPress lists the colour and typography style variations
 //   - a page with every pattern renders without PHP errors; screenshots at phone and desktop width
 //
 // Environment: PLAYGROUND_WP, PLAYGROUND_PHP (default 7.1.3 and 8.3, what stores run), PLAYGROUND_PORT (9410),
@@ -20,6 +22,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCLI } from '@wp-playground/cli';
+import { checkContrast } from './contrast.mjs';
 
 // Browser APIs the block library touches when it loads.
 globalThis.matchMedia ??= () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
@@ -85,6 +88,7 @@ const info = await php(`
         'viewport' => $s['viewport'] ?? null,
         'sections' => array_values(array_map(fn($v) => $v['slug'], $sections)),
         'radiusVar' => str_contains($css, '--wp--preset--border-radius--sm'),
+        'variations' => array_map(fn($v) => $v['title'], WP_Theme_JSON_Resolver::get_style_variations()),
     ]);`);
 info.active === 'anypress' && info.block ? pass(`${info.name} is the active block theme`) : fail(`theme not active: ${JSON.stringify(info)}`);
 for (const slug of ['base', 'main', 'primary', 'secondary', 'tertiary', 'border-light']) {
@@ -98,6 +102,11 @@ info.custom === false ? pass('custom colours off: blocks can only use the palett
 info.viewport ? pass(`viewport breakpoints ${JSON.stringify(info.viewport)}`) : fail('settings.viewport not read');
 info.sections.length >= 6 ? pass(`section styles: ${info.sections.join(', ')}`) : fail(`section styles: ${info.sections.join(', ')}`);
 info.radiusVar ? pass('radius presets in the stylesheet') : fail('radius presets missing from the stylesheet');
+info.variations.length >= 10 ? pass(`style variations: ${info.variations.join(', ')}`) : fail(`style variations: ${info.variations.join(', ')}`);
+
+console.log('Contrast');
+const contrast = checkContrast(pass);
+contrast.forEach(fail);
 
 // 2. Patterns: metadata, valid blocks, tokens only.
 console.log('Patterns');
@@ -108,6 +117,14 @@ const patterns = await php(`
     }
     echo json_encode($out);`);
 patterns.length ? pass(`${patterns.length} AnyPress patterns registered`) : fail('no AnyPress patterns registered');
+const isStarter = (p) => p.categories?.includes('anypress/pages');
+const starters = patterns.filter(isStarter);
+starters.length ? pass(`${starters.length} starter pages: ${starters.map((p) => p.name).join(', ')}`) : fail('no starter pages');
+for (const p of starters) {
+    // WordPress swaps each core/pattern block for that pattern's blocks when it hands the pattern out.
+    if (p.content.includes('<!-- wp:pattern ')) fail(`${p.name}: a section it uses is missing`);
+    if (!p.blockTypes?.includes('core/post-content') || !p.postTypes?.includes('page')) fail(`${p.name}: not offered when a page is created`);
+}
 registerCoreBlocks();
 const walk = (blocks, out = []) => { for (const b of blocks) { out.push(b); walk(b.innerBlocks, out); } return out; };
 const silence = console.error, warn = console.warn, info2 = console.info;
@@ -139,7 +156,7 @@ console.log('Rendering');
 const page = await php(`
     $content = '';
     foreach (WP_Block_Patterns_Registry::get_instance()->get_all_registered() as $p) {
-        if (str_starts_with($p['name'], 'anypress/')) $content .= $p['content'] . "\n\n";
+        if (str_starts_with($p['name'], 'anypress/') && !in_array('anypress/pages', $p['categories'] ?? [], true)) $content .= $p['content'] . "\n\n";
     }
     $id = wp_insert_post(['post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'All sections', 'post_name' => 'all-sections', 'post_content' => $content]);
     update_post_meta($id, '_wp_page_template', 'page-no-title');
@@ -148,6 +165,17 @@ const html = await (await fetch(`${base}/?page_id=${page.id}`)).text();
 /Fatal error|Warning:|Notice:|Deprecated:/.test(html) ? fail('PHP error on the rendered page') : pass('page renders without PHP errors');
 /is-style-section-[a-z-]+[^{]*\{[^}]*background-color/.test(html) ? pass('section style CSS generated for the sections used') : fail('section style CSS missing');
 html.includes('fonts/figtree.woff2') ? pass('self-hosted fonts load') : fail('font files not referenced');
+const starterPages = await php(`
+    $out = [];
+    foreach (WP_Block_Patterns_Registry::get_instance()->get_all_registered() as $p) {
+        if (!in_array('anypress/pages', $p['categories'] ?? [], true)) continue;
+        $out[$p['name']] = wp_insert_post(['post_type' => 'page', 'post_status' => 'publish', 'post_title' => $p['title'], 'post_content' => $p['content']]);
+    }
+    echo json_encode($out);`);
+for (const [name, id] of Object.entries(starterPages)) {
+    const body = await (await fetch(`${base}/?page_id=${id}`)).text();
+    /Fatal error|Warning:|Notice:|Deprecated:/.test(body) ? fail(`${name}: PHP error when rendered`) : pass(`${name}: renders as a page`);
+}
 const log = await php(`echo json_encode(file_exists('/tmp/debug.log') ? file_get_contents('/tmp/debug.log') : '');`);
 log.trim() ? fail(`debug.log:\n${log.slice(0, 2000)}`) : pass('debug.log is empty');
 

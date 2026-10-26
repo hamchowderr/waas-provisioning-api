@@ -21,8 +21,13 @@ function anypress_register_pattern_categories() {
 		'anypress-heroes'   => array( __( 'Heroes', 'anypress' ), __( 'Opening sections that say what the business does and give one main action.', 'anypress' ) ),
 		'anypress-proof'    => array( __( 'Proof', 'anypress' ), __( 'Reviews, results, logos and credentials that make visitors trust the business.', 'anypress' ) ),
 		'anypress-details'  => array( __( 'Business details', 'anypress' ), __( 'Opening hours, location, areas served and contact details.', 'anypress' ) ),
+		// The same category the store template's starter pages use, so the site tools find both.
+		'anypress/pages'    => array( __( 'Starter pages', 'anypress' ), __( 'Whole pages to start from, for this kind of website.', 'anypress' ) ),
 	);
 	foreach ( $categories as $slug => $category ) {
+		if ( WP_Block_Pattern_Categories_Registry::get_instance()->is_registered( $slug ) ) {
+			continue;
+		}
 		register_block_pattern_category(
 			$slug,
 			array(

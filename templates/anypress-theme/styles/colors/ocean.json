@@ -1,0 +1,67 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Ocean",
+	"slug": "ocean",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#0b636b",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#def1f2",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#f4876a",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#3f1508",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#112326",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#d4e0e1",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#ffffff",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#48595c",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#f2f7f7",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#dbe6e7",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#2f4245",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	}
+}

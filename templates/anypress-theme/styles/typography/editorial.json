@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Editorial",
+	"slug": "editorial",
+	"styles": {
+		"typography": {
+			"fontFamily": "var:preset|font-family|newsreader"
+		},
+		"elements": {
+			"heading": {
+				"typography": {
+					"fontFamily": "var:preset|font-family|newsreader",
+					"fontWeight": "500",
+					"letterSpacing": "-0.01em"
+				}
+			}
+		}
+	}
+}

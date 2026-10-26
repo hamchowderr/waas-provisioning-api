@@ -1,0 +1,67 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"title": "Charcoal and gold",
+	"slug": "charcoal-gold",
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"color": "#6e5212",
+					"name": "Brand",
+					"slug": "primary"
+				},
+				{
+					"color": "#f5eedc",
+					"name": "Brand soft",
+					"slug": "primary-accent"
+				},
+				{
+					"color": "#d8b25a",
+					"name": "Second brand",
+					"slug": "primary-alt"
+				},
+				{
+					"color": "#2a1f05",
+					"name": "Second brand deep",
+					"slug": "primary-alt-accent"
+				},
+				{
+					"color": "#1c1c1c",
+					"name": "Text",
+					"slug": "main"
+				},
+				{
+					"color": "#dddad3",
+					"name": "Text soft",
+					"slug": "main-accent"
+				},
+				{
+					"color": "#fbfaf7",
+					"name": "Background",
+					"slug": "base"
+				},
+				{
+					"color": "#55524b",
+					"name": "Muted text",
+					"slug": "secondary"
+				},
+				{
+					"color": "#f3f1ec",
+					"name": "Tint",
+					"slug": "tertiary"
+				},
+				{
+					"color": "#e4e0d6",
+					"name": "Border",
+					"slug": "border-light"
+				},
+				{
+					"color": "#3b3934",
+					"name": "Border on dark",
+					"slug": "border-dark"
+				}
+			]
+		}
+	}
+}
