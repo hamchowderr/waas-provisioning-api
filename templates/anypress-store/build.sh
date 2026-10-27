@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the "AnyPress store" base snapshot: WordPress with the WaaS Client plugin, the Fluent suite,
-# Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and the AnyPress block theme (templates/anypress-theme),
+# Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and the AnyPress block theme (a pinned release, theme.sh),
 # packaged as the provisioner restores it (see README).
 #
 #   templates/anypress-store/build.sh <path to a waas-plugins checkout>
@@ -32,10 +32,10 @@ fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
-# The AnyPress block theme, from this repository (its version is in its style.css).
+# The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
-THEME_DIR=$(cd "$(dirname "$0")/../anypress-theme" && pwd)
-THEME_VERSION=$(sed -n 's/^Version: *//p' "$THEME_DIR/style.css" | head -1)
+# shellcheck source=theme.sh
+. "$(dirname "$0")/theme.sh"
 PHP_VERSION=${PHP_VERSION:-8.3}
 
 # The build site's address. The provisioner rewrites it to each store's domain (wp search-replace),
@@ -78,6 +78,7 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     fetch "https://downloads.wordpress.org/plugin/$slug.$version.zip" "$sha" "$WORK/downloads/$slug.$version.zip"
 done <<<"$PLUGINS"
+anypress_theme_fetch "$WORK/downloads"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     echo "$sha  $HERE/plugins/$slug-$version.zip" | sha256sum -c --quiet || { echo "checksum mismatch: plugins/$slug-$version.zip" >&2; exit 1; }
@@ -88,7 +89,7 @@ unzip -q "$WORK/downloads/wordpress.zip" -d "$WORK"
 cp -a "$WORK/wordpress/." "$SITE/" && rm -rf "$WORK/wordpress"
 # Only what the template ships: no bundled plugins, no other themes.
 rm -rf "$SITE/wp-content/plugins/akismet" "$SITE/wp-content/plugins/hello.php" "$SITE/wp-content/themes/"*
-cp -a "$THEME_DIR" "$SITE/wp-content/themes/$THEME"
+cp -a "$WORK/downloads/anypress" "$SITE/wp-content/themes/$THEME"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$WORK/downloads/$slug.$version.zip" -d "$SITE/wp-content/plugins"
