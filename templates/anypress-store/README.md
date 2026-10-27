@@ -6,7 +6,7 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 | | |
 |---|---|
 | WordPress | 7.1.3 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
-| Theme | The AnyPress theme ([`templates/anypress-theme`](../anypress-theme/)), a block theme with 13 kits (a style and sections for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
+| Theme | The [AnyPress theme](https://github.com/hamchowderr/anypress-theme) (a release pinned by version and checksum in [`theme.sh`](theme.sh)), a block theme with 13 kits (a style and sections for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
 | Plugins | WaaS Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`) and these free wordpress.org plugins, all active: |
 
 | Plugin | Slug | Version |
@@ -38,7 +38,8 @@ Home pages for a website, an online store, bookings, and community and courses (
 About, Services and Contact. They use the theme's section layouts (a words-only hero on the brand colour, since a new
 store has no photos yet, a features grid, questions, a dark call to action) with the store's name and plain placeholder
 text, the Fluent Forms contact form, FluentCart's product list and, once the owner has made one, the FluentBooking
-calendar.
+calendar. `theme.sh check` runs the theme's own Playground check (from the pinned release) with these starter pages
+added: every page must parse into valid blocks, use the theme's tokens only and render without errors.
 
 A new store also gets real pages made from them, once, on its first web request after the platform has set the owner's
 email and the site type has switched its plugins: published, in the main menu, with the theme's no-title page template.
