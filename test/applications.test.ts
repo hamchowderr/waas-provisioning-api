@@ -170,6 +170,8 @@ describe('reviewing', () => {
         text: expect.stringContaining(`${AUTH.url}/invite/${res.json.invitation.id}`),
       },
     ]);
+    // The one email at approval says what the account does; the CRM's welcome series starts days later.
+    expect(sent[0]?.text).toContain('open your free storefront');
     expect((await call('POST', `/admin/applications/${id}/approve`, {})).status).toBe(409);
     expect((await call('POST', `/admin/applications/${id}/decline`)).status).toBe(409);
     expect((await call('GET', `/admin/applications/${id}`)).json).toMatchObject({ productId, resellerId: null, status: 'approved', dateDecided: expect.any(String) });

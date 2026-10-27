@@ -69,17 +69,28 @@ export async function sendApplicationNotice(mail: AuthMail, to: string, app: App
   await send(mail, to, `New seller application: ${app.business}`, html, `${lead}\n\nReview it: ${app.url}`, 'application notice', fetchFn);
 }
 
-/** To the applicant: approved. They sign in at `url` (their owner invitation) with this address. */
-export async function sendApplicationApproved(mail: AuthMail, to: string, app: ApplicationMail & { url: string; days: number; storefront: string | null }, fetchFn: typeof fetch = fetch): Promise<void> {
+/**
+ * To the applicant: approved. They sign in at `url` (their owner invitation) with this address. This is their one
+ * welcome email at approval: the CRM's welcome series (src/crm.ts) starts days later, so it says what the account does.
+ */
+export async function sendApplicationApproved(
+  mail: AuthMail,
+  to: string,
+  app: ApplicationMail & { url: string; days: number; storefront: string | null; reseller?: boolean },
+  fetchFn: typeof fetch = fetch,
+): Promise<void> {
   const lead = `Hi ${app.name}, your application to sell websites with ${mail.brand} is approved.`;
   const how = `Open the link and sign in with this email address (${to}) to set up ${app.business}. The link lasts ${app.days} days.`;
+  const what = app.reseller
+    ? 'Your reseller account runs several storefronts, each with its own brand and prices, from one sign-in. You get one bill each month for all your websites at your wholesale price, and partner keys for the API are on your reseller page.'
+    : 'From your dashboard you can open your free storefront (the shop your customers buy from), set your own prices and see every website you sell.';
   const storefront = app.storefront
     ? `We're also building your storefront at https://${app.storefront}. It's usually ready within a few minutes; sign in to it with "Lost your password?" on its login page.`
     : null;
   const html =
-    `<p>${escape(lead)}</p><p><a href="${escape(app.url)}">Sign in to ${escape(mail.brand)}</a></p><p style="color:#666">${escape(how)}</p>` +
+    `<p>${escape(lead)}</p><p>${escape(what)}</p><p><a href="${escape(app.url)}">Sign in to ${escape(mail.brand)}</a></p><p style="color:#666">${escape(how)}</p>` +
     (storefront ? `<p>${escape(storefront)}</p>` : '');
-  const text = `${lead}\n\n${app.url}\n\n${how}${storefront ? `\n\n${storefront}` : ''}`;
+  const text = `${lead}\n\n${what}\n\n${app.url}\n\n${how}${storefront ? `\n\n${storefront}` : ''}`;
   await send(mail, to, `Your ${mail.brand} application is approved`, html, text, 'approval email', fetchFn);
 }
 

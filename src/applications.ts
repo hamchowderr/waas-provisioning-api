@@ -274,6 +274,7 @@ export function adminApplicationRoutes(deps: Deps) {
           url,
           days: INVITATION_DAYS,
           storefront: storefront?.domainName ?? null,
+          reseller: asReseller,
         }),
       config.auth?.mail,
     );
