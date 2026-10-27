@@ -16,6 +16,17 @@ delete_option('fluent_cart_do_activation_redirect');
     'reminders_enabled' => 'yes',
     'monthly_renewal_reminders_enabled' => 'yes',
 ]);
+// Settings → Email notifications: one email per moment. WaaS Host's own emails already cover a cancelled plan
+// ("stays online until"), websites aren't shipped, and the store-managed renewal emails (renewal invoice, upcoming
+// charge, charge failed, overdue reminders) repeat the card-renewal ones a storefront sends (waas-api-mi4).
+foreach (['order_shipped_customer', 'order_delivered_customer', 'subscription_canceled_customer', 'renewal_created_customer',
+    'renewal_created_admin', 'system_upcoming_charge_customer', 'system_charge_failed_customer', 'renewal_reminder_due_customer',
+    'renewal_overdue_first_customer', 'renewal_overdue_followup_customer', 'renewal_overdue_final_customer'] as $name) {
+    \FluentCart\App\Services\Email\EmailNotifications::updateNotification(
+        $name,
+        array_merge(\FluentCart\App\Services\Email\EmailNotifications::getNotificationConfig($name), ['active' => 'no'])
+    );
+}
 // Settings → Checkout fields: a terms checkbox buyers must tick.
 $fields = \FluentCart\App\Services\Renderer\CheckoutFieldsSchema::getFieldsSettings();
 $fields['agree_terms'] = ['enabled' => 'yes', 'required' => 'yes', 'text' => 'I agree to the terms and conditions.'];
