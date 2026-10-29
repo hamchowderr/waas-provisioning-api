@@ -8,8 +8,8 @@
 #
 # build.sh sources this file for THEME_VERSION and anypress_theme_fetch.
 THEME_REPO=hamchowderr/anypress-theme
-THEME_VERSION=${THEME_VERSION:-0.4.2}
-THEME_SHA256=${THEME_SHA256:-4feda12ce6ba1b6fb0fc17cbd5a18872160b0178d3ec479fab048bb8ec4b49fa}
+THEME_VERSION=${THEME_VERSION:-0.4.3}
+THEME_SHA256=${THEME_SHA256:-7e7c60959541b4d7c9e9ba890d19e112980dfa5c27cf033ba3aac71ec6464bce}
 
 anypress_theme_fetch() { # <dir>: download (or reuse), verify and unpack the theme zip into <dir>/anypress
     local dest=$1 zip
