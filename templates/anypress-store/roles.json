@@ -9,7 +9,8 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
-            "fluent-toolkit/fluent-toolkit.php"
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
         ]
     },
     "bookings": {
@@ -25,7 +26,8 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
-            "fluent-toolkit/fluent-toolkit.php"
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
         ]
     },
     "online-store": {
@@ -41,7 +43,8 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
-            "fluent-toolkit/fluent-toolkit.php"
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
         ]
     },
     "community": {
@@ -56,7 +59,8 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
-            "fluent-toolkit/fluent-toolkit.php"
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
         ]
     },
     "everything": {
@@ -74,7 +78,8 @@
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
             "fluent-community/fluent-community.php",
-            "fluent-toolkit/fluent-toolkit.php"
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
         ]
     },
     "store": {
@@ -92,7 +97,8 @@
             "automatorwp/automatorwp.php",
             "fluent-security/fluent-security.php",
             "fluent-community/fluent-community.php",
-            "fluent-toolkit/fluent-toolkit.php"
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
         ]
     }
 }

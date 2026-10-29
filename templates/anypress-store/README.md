@@ -28,6 +28,10 @@ Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one 
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
 
+And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
+for signups, offers and booking forms. A release is pinned by version and checksum in [`build.sh`](build.sh)
+(`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
+
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
 change it in Appearance → Editor.
