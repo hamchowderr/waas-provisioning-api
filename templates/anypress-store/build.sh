@@ -32,6 +32,10 @@ fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
+# AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
+# and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.1.0}
+BLOCKS_SHA256=${BLOCKS_SHA256:-7b44e51e077ecff55b4e3d6d581a13184cf37cbe1c4b6880a713d935bf4a98be}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh
@@ -79,6 +83,7 @@ while read -r slug version sha; do
     fetch "https://downloads.wordpress.org/plugin/$slug.$version.zip" "$sha" "$WORK/downloads/$slug.$version.zip"
 done <<<"$PLUGINS"
 anypress_theme_fetch "$WORK/downloads"
+fetch "https://github.com/hamchowderr/anypress-blocks/releases/download/v$BLOCKS_VERSION/anypress-blocks.zip" "$BLOCKS_SHA256" "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     echo "$sha  $HERE/plugins/$slug-$version.zip" | sha256sum -c --quiet || { echo "checksum mismatch: plugins/$slug-$version.zip" >&2; exit 1; }
@@ -98,7 +103,8 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$HERE/plugins/$slug-$version.zip" -d "$SITE/wp-content/plugins"
 done <<<"$VENDORED"
-SLUGS=$(awk 'NF {print $1}' <<<"$PLUGINS$VENDORED" | sort | tr '\n' ' ')
+unzip -q "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip" -d "$SITE/wp-content/plugins"
+SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | sort | tr '\n' ' ')
 
 echo "== WaaS Client from $PLUGINS_REPO"
 # Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
@@ -199,7 +205,7 @@ done
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED") \
+PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {
