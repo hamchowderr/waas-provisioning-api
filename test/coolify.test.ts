@@ -814,6 +814,39 @@ describe('CoolifyProvisioner', () => {
     expect(String(premium!.url)).toMatch(/^https:\/\/s3\.test\/waas-stores\/plugins\/uploads\/up-1\.zip\?.*X-Amz-Signature=/);
   });
 
+  it('builds a site moved in from its upload: restore as an import, database upgrade, configure without options, then a check', async () => {
+    cloud.objects.set(`imports/${STORE_ID}`, new Uint8Array([31, 139]));
+    const agent = cloud.agent;
+    cloud.agent = (op, args, service) =>
+      op === 'check-site' ? { status: 'success', message: 'WAAS_RESULT {"ok":false,"home":500,"login":200,"loaded":true,"fatal":"x"}' } : agent(op, args, service);
+    const built = await p.createStore({ ...storeInput, snapshotId: null, ownCode: true, hold: true, holdAllow: ['owner@example.com'] });
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'update-db', 'configure', 'check-site']);
+    expect(cloud.agentOps[1]!.args).toMatchObject({ import: true, home: 'https://shop.example.com' });
+    expect(cloud.agentOps[1]!.args).not.toHaveProperty('hold');
+    // The moved site keeps its own options; its owner still gets its email while it is held.
+    expect(cloud.agentOps[3]!.args).toMatchObject({ options: {}, holdAllow: ['owner@example.com'] });
+    expect(built).toEqual({ check: { ok: false, home: 500, login: 200, loaded: true, fatal: 'x' } });
+  });
+
+  it('still builds a site moved in when its check cannot run, and says so', async () => {
+    cloud.objects.set(`imports/${STORE_ID}`, new Uint8Array([31, 139]));
+    const agent = cloud.agent;
+    cloud.agent = (op, args, service) => (op === 'check-site' ? { status: 'failed', message: 'WAAS_ERROR unknown operation check-site' } : agent(op, args, service));
+    const built = await p.createStore({ ...storeInput, snapshotId: null, ownCode: true });
+    expect(built).toMatchObject({ check: { ok: false, error: expect.stringContaining('check-site') } });
+  });
+
+  it('holds a store restored after deletion that was held, and makes a held store live through the agent', async () => {
+    cloud.objects.set('backups/b-1.zip', new Uint8Array([80, 75, 5, 6]));
+    const { snapshotId: _s, user: _u, ...store } = storeInput;
+    await p.restoreDeletedStore({ ...store, backupId: 'b-1', ownCode: true, hold: true, holdAllow: [] });
+    expect(cloud.agentOps.find((o) => o.op === 'restore')!.args).toMatchObject({ hold: true });
+    expect(cloud.agentOps.find((o) => o.op === 'configure')!.args).toMatchObject({ options: storeInput.wpOptions, holdAllow: [] });
+    cloud.agentOps = [];
+    await p.goLive({ storeId: STORE_ID });
+    expect(cloud.agentOps).toEqual([expect.objectContaining({ op: 'go-live', args: {} })]);
+  });
+
   it('fails a create when the snapshot archive is missing, before creating anything', async () => {
     await expect(p.createStore({ ...storeInput, snapshotId: 'missing' })).rejects.toThrow(/No archive at snapshots\/missing\.zip/);
     expect(cloud.calls).not.toContain('POST /services');

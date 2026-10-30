@@ -87,6 +87,7 @@ export const SITE_EVENTS: INodePropertyOptions[] = [
 	{ name: 'Version Changed', value: 'tenant.version_changed', description: 'It moved to another version' },
 	{ name: 'Site Suspended', value: 'tenant.suspended', description: 'Taken offline' },
 	{ name: 'Site Resumed', value: 'tenant.resumed', description: 'Back online' },
+	{ name: 'Moved-In Site Live', value: 'tenant.live', description: 'A site moved in went live: its hold ended' },
 	{ name: 'Site Deleted', value: 'tenant.deleted', description: 'The site is gone' },
 	{ name: 'Site Restored', value: 'tenant.restored', description: 'A deleted site is back from its backup' },
 	{ name: 'Site Rolled Back', value: 'tenant.rolled_back', description: 'A live site went back to one of its backups' },

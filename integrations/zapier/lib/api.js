@@ -92,6 +92,7 @@ const SITE_EVENTS = {
   'tenant.version_changed': 'Version changed',
   'tenant.suspended': 'Site suspended',
   'tenant.resumed': 'Site resumed',
+  'tenant.live': 'Moved-in site live',
   'tenant.deleted': 'Site deleted',
   'tenant.restored': 'Site restored',
   'tenant.rolled_back': 'Site rolled back',

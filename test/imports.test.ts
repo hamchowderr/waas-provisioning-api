@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { importCode, maxImportBytes, purgeExpiredImports, tokenFromCode } from '../src/imports.ts';
+import { importCode, importFailureReason, importWarnings, maxImportBytes, purgeExpiredImports, tokenFromCode } from '../src/imports.ts';
 import { Status } from '../src/status.ts';
 import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
@@ -105,6 +105,7 @@ describe('moving a site in', () => {
       status: 'done',
       store: { name: 'Moved in', size: 'small', domain: body.baseDomain },
       url: `https://${body.baseDomain}`,
+      onHold: true,
     });
   });
 
@@ -181,6 +182,127 @@ describe('moving a site in', () => {
   });
 });
 
+describe('a site moved in is held until it goes live', () => {
+  it('is on hold once built, with the owner\'s team allowed email, and goes live once', async () => {
+    const body = await moveIn();
+    expect(await tenant(body.id)).toMatchObject({ statusCode: Status.Done, onHold: true });
+    expect(t.provisioner.stores.get(body.id)).toMatchObject({ held: true, hold: true, holdAllow: expect.any(Array) });
+    const { rows } = await t.pool.query('SELECT on_hold, date_held FROM tenants WHERE id = $1', [body.id]);
+    expect(rows[0]).toMatchObject({ on_hold: true, date_held: expect.any(Date) });
+
+    const res = await t.call('POST', `/v1/tenants/go-live?tenantId=${body.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ tenantId: body.id, externalId: body.externalId, backupId: null });
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect(await tenant(body.id)).toMatchObject({ onHold: false });
+    expect(t.provisioner.stores.get(body.id)?.held).toBe(false);
+    expect((await plugin('status', { code: body.importCode })).body).toMatchObject({ status: 'done', onHold: false });
+
+    // Again: nothing to do, no job.
+    const jobs = async () => (await t.pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE data->>'type' = 'tenant.go-live' AND data->>'tenantId' = $1", [body.id])).rows[0].n;
+    expect(await jobs()).toBe(1);
+    expect((await t.call('POST', `/v1/tenants/go-live?tenantId=${body.id}`)).status).toBe(200);
+    expect(await jobs()).toBe(1);
+  });
+
+  it('can be made live from the dashboard, which shows the hold', async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const body = await moveIn();
+    const before = (await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: ADMIN })).json()) as Record<string, any>;
+    expect(before).toMatchObject({ onHold: true, dateHeld: expect.any(String) });
+    expect((await t.call('POST', `/admin/tenants/${body.id}/go-live`, { auth: ADMIN })).status).toBe(200);
+    await waitFor(async () => (await tenant(body.id))?.onHold === false && (await tenant(body.id))?.statusCode === Status.Done);
+    const after = (await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: ADMIN })).json()) as Record<string, any>;
+    expect(after).toMatchObject({ onHold: false, dateHeld: null });
+  });
+
+  it('is refused for a store still waiting for its site; ordinary stores are never on hold', async () => {
+    const { body } = await createImport();
+    expect((await t.call('POST', `/v1/tenants/go-live?tenantId=${body.id}`)).status).toBe(409);
+    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Ordinary held?' } });
+    const { id } = (await res.json()) as { id: string };
+    await waitFor(async () => (await tenant(id))?.statusCode === Status.Done);
+    expect(await tenant(id)).toMatchObject({ onHold: false });
+    expect(t.provisioner.stores.get(id)?.held).toBe(false);
+  });
+
+  it("writes none of the create call's options over the moved site's own", async () => {
+    const { body } = await createImport({ wpOptions: { blogname: 'From the shop' } });
+    t.provisioner.imports.set(body.id, 1024);
+    await plugin('start', { code: body.importCode });
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect(t.provisioner.stores.get(body.id)?.wpOptions).toEqual({});
+    const { rows } = await t.pool.query('SELECT wp_options FROM tenants WHERE id = $1', [body.id]);
+    expect(rows[0].wp_options).toEqual({});
+  });
+});
+
+describe('how a move went', () => {
+  it('warns about another PHP, a newer WordPress, and a failing check, to the plugin and the dashboard', async () => {
+    t.provisioner.importCheck = { ok: false, home: 500, login: 200, loaded: false, fatal: 'Uncaught Error: Call to undefined function x() in wp-content/plugins/x/x.php:3' };
+    try {
+      const { body } = await createImport();
+      t.provisioner.imports.set(body.id, 1024);
+      await plugin('start', { code: body.importCode, source: { phpVersion: '7.4.33', wordPressVersion: '6.9.1' } });
+      await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+      const status = (await plugin('status', { code: body.importCode })).body as { warnings: string[] };
+      expect(status.warnings).toEqual([
+        'The old site ran PHP 7.4 and this store runs PHP 8.3. Check that its plugins and theme work.',
+        "The old site ran WordPress 6.9.1, newer than this store's 6.8. Plugins that need the newer WordPress may not work until the store moves to a version with it.",
+        'After the move the home page answered 500 and the login page 200, and PHP stopped with: Uncaught Error: Call to undefined function x() in wp-content/plugins/x/x.php:3. Fix or switch off the plugin or theme at fault.',
+      ]);
+      const detail = (await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as Record<string, any>;
+      expect(detail.moveIn).toMatchObject({ check: { ok: false, home: 500 }, warnings: status.warnings });
+      expect(detail.moveIn).not.toHaveProperty('reason');
+    } finally {
+      t.provisioner.importCheck = { ok: true, home: 200, login: 200, loaded: true, fatal: null };
+    }
+  });
+
+  it('has no warnings when the old site matches the store and serves', async () => {
+    const { body } = await createImport();
+    t.provisioner.imports.set(body.id, 1024);
+    await plugin('start', { code: body.importCode, source: { phpVersion: '8.3.6', wordPressVersion: '6.8.1' } });
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect((await plugin('status', { code: body.importCode })).body).not.toHaveProperty('warnings');
+  });
+
+  it('says why a move failed, in words the owner can act on', async () => {
+    const { body } = await createImport();
+    t.provisioner.imports.set(body.id, 1024);
+    t.provisioner.failNext('createStore', 10);
+    try {
+      await plugin('start', { code: body.importCode });
+      await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Failed, 30_000);
+    } finally {
+      t.provisioner.failNext('createStore', 0);
+    }
+    const status = (await plugin('status', { code: body.importCode })).body;
+    expect(status).toMatchObject({ status: 'failed', reason: expect.stringMatching(/could not be finished/) });
+    const detail = (await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as Record<string, any>;
+    expect(detail.moveIn.reason).toBe(status.reason);
+  }, 60_000);
+
+  it('maps the agent errors to reasons, and nothing else reaches the owner', () => {
+    expect(importFailureReason('Store agent restore failed (failed): the export must hold database.sql and wp-content')).toMatch(/missing its database or its files/);
+    expect(importFailureReason('Store agent restore failed (failed): multisite networks cannot be moved in yet')).toMatch(/Multisite/);
+    expect(importFailureReason('Store agent restore failed (failed): the database export has both wp_posts and wpx_posts')).toMatch(/collide/);
+    expect(importFailureReason('Store agent restore failed (failed): tar exited 2: gzip: stdin: unexpected end of file')).toMatch(/could not be read/);
+    expect(importFailureReason("Store agent restore failed (failed): wp db exited 1: ERROR 1273 (HY000) at line 40: Unknown collation: 'x'")).toMatch(
+      /database could not be imported/,
+    );
+    expect(importFailureReason('Store agent restore failed (failed): /var/www/html/secret path')).toBe("The move could not be finished. Contact support with the store's address.");
+  });
+
+  it('compares versions as far as the store names them', () => {
+    expect(importWarnings({ phpVersion: '8.3.6', wordPressVersion: '6.8.3' }, { wordPressVersion: '6.8', phpVersion: '8.3' })).toEqual([]);
+    expect(importWarnings({ phpVersion: '8.2.1', wordPressVersion: '6.7' }, { wordPressVersion: '6.8', phpVersion: '8.3' })).toHaveLength(1);
+    expect(importWarnings(null, { wordPressVersion: '6.8', phpVersion: '8.3' }, { ok: false, error: 'boom /var/www' })).toEqual([
+      'The site could not be checked after the move. Open it and its admin to see that it works.',
+    ]);
+  });
+});
+
 describe('stores that keep their own code', () => {
   it('keep it when moved to another version, rolled back, and restored after deletion', async () => {
     const body = await moveIn();
@@ -201,9 +323,11 @@ describe('stores that keep their own code', () => {
     await t.call('POST', `/v1/tenants/restore?tenantId=${body.id}`, { body: {} });
     await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
 
-    expect(await tenant(body.id)).toMatchObject({ keepsOwnCode: true });
+    expect(await tenant(body.id)).toMatchObject({ keepsOwnCode: true, onHold: true });
     expect(t.provisioner.stores.get(body.id)?.ownCode).toBe(true);
     expect(t.provisioner.codeReplaced).not.toContain(body.id);
+    // Still on hold: it comes back held, as it was deleted.
+    expect(t.provisioner.stores.get(body.id)?.held).toBe(true);
   });
 
   it('while ordinary stores get their version code each time', async () => {

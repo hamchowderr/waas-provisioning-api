@@ -199,6 +199,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/go-live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a moved-in site live
+         * @description Added for AnyPress.
+         *
+         *     A site moved in (`uploadCustomSnapshot`) is on hold once it is built (`onHold` true): its scheduled jobs (WP-cron, Action Scheduler) don't run, it sends email only to its administration address and its owner's account, holding the rest, and it asks search engines not to index it. This makes it live: its jobs start, it emails everyone and may be indexed. Call it when the owner says the site is ready, usually once its domain points at the store. No body.
+         *
+         *     The tenant shows `statusCode` 0 (Pending) until the store is live, then 1 (Done), and `onHold` false. Idempotent: a tenant that is not on hold returns 200 and changes nothing.
+         */
+        post: operations["goLiveTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -705,7 +729,7 @@ export interface paths {
         put?: never;
         /**
          * Import status
-         * @description How the move is going: `waiting` for the upload, `moving`, `done` (with the site's `url`) or `failed`.
+         * @description How the move is going: `waiting` for the upload, `moving`, `done` (with the site's `url` and `onHold`) or `failed` (with a `reason`). `warnings` lists what to check after the move, when there is anything.
          */
         post: operations["getImportStatus"];
         delete?: never;
@@ -1505,6 +1529,11 @@ export interface components {
             readonly keepsOwnCode?: boolean;
             /** @description Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise. */
             readonly waitingForSite?: boolean;
+            /**
+             * @description Added for AnyPress. True while a site moved in is held after its move: no scheduled jobs, email only to its owner, not indexed, until Make a moved-in site live (`POST /v1/tenants/go-live`). Must be a JSON boolean.
+             * @example false
+             */
+            readonly onHold?: boolean;
         };
         ImportCodeParams: {
             /**
@@ -1566,6 +1595,20 @@ export interface components {
              * @example https://old-site.anypress.site
              */
             url?: string;
+            /** @description Once it is done, whether the site is still on hold (no scheduled jobs, email only to its owner, not indexed) until its owner makes it live in AnyPress */
+            onHold?: boolean;
+            /**
+             * @description Once it failed, why, in words the site's owner can act on
+             * @example The export is missing its database or its files. Run the export again on the old site.
+             */
+            reason?: string;
+            /**
+             * @description What the owner should check once the site is moved: another PHP version, a newer WordPress than the store's, or a check after the move that found the home or login page failing (with the first PHP error). Absent when there are none.
+             * @example [
+             *       "The old site ran PHP 7.4 and this store runs PHP 8.3. Check that its plugins and theme work."
+             *     ]
+             */
+            warnings?: string[];
         };
         GetVersionQueryResult: {
             /**
@@ -2372,6 +2415,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    goLiveTenant: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The store going live was scheduled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantLifecycleCommandResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The tenant is still waiting for its site */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

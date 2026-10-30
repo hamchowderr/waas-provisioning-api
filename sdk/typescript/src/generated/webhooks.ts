@@ -146,7 +146,7 @@ export interface components {
             message: string;
         };
         /** @enum {string} */
-        WebhookEventType: "tenant.ready" | "tenant.updated" | "tenant.version_changed" | "tenant.domains_changed" | "tenant.suspended" | "tenant.resumed" | "tenant.deleted" | "tenant.restored" | "tenant.rolled_back" | "tenant.backup_completed" | "tenant.backup_failed" | "tenant.failed" | "version.ready" | "version.deleted" | "version.failed" | "webhook.test";
+        WebhookEventType: "tenant.ready" | "tenant.updated" | "tenant.version_changed" | "tenant.domains_changed" | "tenant.suspended" | "tenant.resumed" | "tenant.live" | "tenant.deleted" | "tenant.restored" | "tenant.rolled_back" | "tenant.backup_completed" | "tenant.backup_failed" | "tenant.failed" | "version.ready" | "version.deleted" | "version.failed" | "webhook.test";
         WebhookEndpointParams: {
             /**
              * Format: uri
@@ -243,6 +243,8 @@ export interface components {
                     /** @enum {string} */
                     size?: "small" | "medium" | "large";
                     isSuspended?: boolean;
+                    /** @description A site moved in that has not gone live yet */
+                    onHold?: boolean;
                 };
                 /** @description The version, shaped as an item of GET /v1/versions (version.* events). */
                 version?: {
@@ -259,7 +261,7 @@ export interface components {
                  * @description What failed (tenant.failed, version.failed).
                  * @enum {string}
                  */
-                action?: "create" | "update" | "change_version" | "change_domains" | "delete" | "suspend" | "resume" | "restore" | "roll_back";
+                action?: "create" | "update" | "change_version" | "change_domains" | "delete" | "suspend" | "resume" | "go_live" | "restore" | "roll_back";
                 /**
                  * Format: uuid
                  * @description The backup (tenant.backup_completed

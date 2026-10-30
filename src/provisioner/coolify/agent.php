@@ -19,6 +19,12 @@ const FLAG = CONTENT . '/.waas-suspended';
  * store, which are not configured. Kept out of archives; a restore leaves it as it was.
  */
 const CRON_FLAG = CONTENT . '/.waas-cron';
+/**
+ * A site moved in from another host is held until its owner says it is live (the go-live operation): no cron, no
+ * email to anyone but the owner, not indexed (mu-plugins/waas-hold.php). `restore` with `import` sets it; `configure`
+ * leaves the cron flag off while it is there. Kept out of archives; a restore of a held store keeps it held.
+ */
+const HOLD_FLAG = CONTENT . '/.waas-hold';
 /** The page a suspended store shows. Rendered on suspend; kept out of snapshots, so it never spreads to other stores. */
 const PAGE = CONTENT . '/waas-unavailable.html';
 const DEFAULT_BRAND = ['name' => 'AnyPress'];
@@ -108,14 +114,14 @@ function extract_archive(string $file, string $dir): void
     }
 }
 
-/** Adds a directory to a zip under $prefix, skipping caches and the suspension and cron flags. */
+/** Adds a directory to a zip under $prefix, skipping caches and the suspension, cron and hold flags. */
 function zip_dir(ZipArchive $zip, string $dir, string $prefix): void
 {
     if (!is_dir($dir)) return;
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     foreach ($it as $path => $info) {
         $rel = substr($path, strlen($dir) + 1);
-        if ($rel === '.waas-suspended' || $rel === '.waas-cron' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
+        if ($rel === '.waas-suspended' || $rel === '.waas-cron' || $rel === '.waas-hold' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
         if ($info->isDir()) $zip->addEmptyDir("$prefix/$rel");
         elseif ($info->isFile()) $zip->addFile($path, "$prefix/$rel");
     }
@@ -144,22 +150,80 @@ function set_home(string $home): void
 }
 
 /**
+ * The search-replace pairs that move `$old` (an address with its scheme, any port and path) to `$new`: over http and
+ * https, for the www or bare twin of its host too when `$twins`, each as written, JSON-escaped (`https:\/\/old.com`,
+ * as page builders and block attributes keep them) and URL-encoded (`https%3A%2F%2Fold.com`). A path is replaced
+ * with it: https://old.com/blog becomes the new home, which has none.
+ */
+function url_pairs(string $old, string $new, bool $twins = true): array
+{
+    $p = parse_url(trim($old));
+    $host = strtolower((string) ($p['host'] ?? ''));
+    if ($host === '') return [];
+    $port = isset($p['port']) ? ':' . $p['port'] : '';
+    $path = rtrim((string) ($p['path'] ?? ''), '/');
+    $hosts = [$host];
+    // Not for addresses (localhost, an IP) that have no www form.
+    if ($twins && strpos($host, '.') !== false && !filter_var($host, FILTER_VALIDATE_IP)) {
+        $hosts[] = strpos($host, 'www.') === 0 ? substr($host, 4) : "www.$host";
+    }
+    $new = rtrim($new, '/');
+    $pairs = [];
+    foreach ($hosts as $h) {
+        foreach (['https://', 'http://'] as $scheme) {
+            $from = $scheme . $h . $port . $path;
+            if ($from === $new) continue;
+            $pairs[$from] = $new;
+            $pairs[str_replace('/', '\/', $from)] = str_replace('/', '\/', $new);
+            $pairs[rawurlencode($from)] = rawurlencode($new);
+        }
+    }
+    return $pairs;
+}
+
+/**
+ * Moves the addresses of a site moved in from `$oldHome` (and `$oldSiteurl` when WordPress lived elsewhere, and a
+ * custom content address such as Bedrock's /app) to the store's `$home`, then sets home and siteurl. GUIDs keep the
+ * old address, as WordPress wants.
+ */
+function set_import_home(string $oldHome, ?string $oldSiteurl, ?string $contentUrl, string $home): void
+{
+    $home = rtrim($home, '/');
+    $pairs = url_pairs($oldHome, $home);
+    if ($oldSiteurl && rtrim($oldSiteurl, '/') !== rtrim($oldHome, '/')) $pairs += url_pairs($oldSiteurl, $home);
+    if ($contentUrl && rtrim($contentUrl, '/') !== rtrim($oldHome, '/') . '/wp-content') $pairs += url_pairs($contentUrl, "$home/wp-content");
+    // Longest first: a path or content address goes before the bare host it starts with.
+    uksort($pairs, fn ($a, $b) => strlen($b) <=> strlen($a) ?: strcmp($a, $b));
+    foreach ($pairs as $from => $to) {
+        wp('search-replace', $from, $to, '--all-tables-with-prefix', '--skip-columns=guid', '--quiet');
+    }
+    wp('option', 'update', 'home', $home);
+    wp('option', 'update', 'siteurl', $home);
+}
+
+/**
  * What a site moved in from another host must not bring along: the old host's must-use plugins and
- * drop-ins (they expect that host's servers and caches), caches, and other backup plugins' archives.
+ * drop-ins (they expect that host's servers and caches), caches, other backup plugins' archives, and
+ * page builders' CSS files, which have the old address baked in and are written again when missing.
  * Our own must-use plugins are installed again afterwards (install_guard).
  */
 const IMPORT_DROP = [
     'object-cache.php', 'advanced-cache.php', 'db.php', 'wp-cache-config.php', 'cache', 'upgrade', 'upgrade-temp-backup',
     'ai1wm-backups', 'updraft', 'backups-dup-lite', 'backups-dup-pro', 'wpvividbackups', 'backup-db', 'plugins/anypress-export',
+    'uploads/elementor/css', 'uploads/bb-plugin/cache', 'uploads/oxygen/css', 'uploads/bricks/css',
 ];
 const IMPORT_DROP_MU = [
     // WP Engine
     'mu-plugin.php', 'wpengine-common', 'wpe-wp-sign-on-plugin', 'wpe-wp-sign-on-plugin.php', 'wpengine-security-auditor.php',
     'slt-force-strong-passwords.php', 'force-strong-passwords', 'stop-long-comments.php', 'wpe-cache-plugin', 'wpe-cache-plugin.php',
     'wpe-elasticpress-autosuggest-logger', 'wpe-elasticpress-autosuggest-logger.php', 'wpe-update-source-selector', 'wpe-update-source-selector.php',
-    // Kinsta, GoDaddy, Pantheon, WordPress.com and Pressable, Bluehost
+    // Kinsta, GoDaddy, Pantheon, WordPress.com and Pressable, Bluehost, Nexcess
     'kinsta-mu-plugins', 'kinsta-mu-plugins.php', 'gd-system-plugin', 'gd-system-plugin.php', 'pantheon', 'pantheon.php', 'pantheon-mu-plugin',
-    'wpcomsh', 'wpcomsh-loader.php', 'endurance-page-cache.php', 'endurance-browser-cache.php', 'sso.php',
+    'wpcomsh', 'wpcomsh-loader.php', 'endurance-page-cache.php', 'endurance-browser-cache.php', 'nexcess-mapps', 'nexcess-mapps.php',
+];
+/** Must-use plugins with a common name, dropped only when their header shows they are the host's: name => pattern. */
+const IMPORT_DROP_MU_IF = [
+    'sso.php' => '/endurance|bluehost|newfold|hostgator/i',
 ];
 
 /** Removes from wp-content what a site moved in must not bring along (IMPORT_DROP). Returns what it removed. */
@@ -172,9 +236,44 @@ function clean_import(): array
     foreach (IMPORT_DROP_MU as $name) {
         if (file_exists(CONTENT . "/mu-plugins/$name")) $removed[] = "mu-plugins/$name";
     }
+    foreach (IMPORT_DROP_MU_IF as $name => $pattern) {
+        $file = CONTENT . "/mu-plugins/$name";
+        if (is_file($file) && preg_match($pattern, (string) file_get_contents($file, false, null, 0, 8192))) $removed[] = "mu-plugins/$name";
+    }
     foreach ($removed as $rel) run('rm -rf ' . escapeshellarg(CONTENT . "/$rel"));
     return $removed;
 }
+
+/**
+ * Settings of a site moved in that point outside the store, cleared once its database is in: an upload folder
+ * (`upload_path`) outside the store's files and an upload address (`upload_url_path`) on another host, which would
+ * send new uploads, and their links, nowhere; and Elementor's cached CSS, which has the old address in it and is
+ * written again when missing. Returns what it cleared.
+ */
+function clean_import_db(string $prefix, string $home): array
+{
+    $cleared = [];
+    $path = (string) wpMayFail('option', 'get', 'upload_path');
+    if ($path !== '' && ((substr($path, 0, 1) === '/' && strpos(rtrim($path, '/') . '/', ROOT . '/') !== 0) || strpos($path, '..') !== false)) {
+        wp('option', 'delete', 'upload_path');
+        $cleared[] = 'upload_path';
+    }
+    $url = (string) wpMayFail('option', 'get', 'upload_url_path');
+    if ($url !== '' && strtolower((string) parse_url($url, PHP_URL_HOST)) !== strtolower((string) parse_url($home, PHP_URL_HOST))) {
+        wp('option', 'delete', 'upload_url_path');
+        $cleared[] = 'upload_url_path';
+    }
+    if (wpMayFail('db', 'query', "DELETE FROM `{$prefix}postmeta` WHERE meta_key = '_elementor_css'") !== null) $cleared[] = '_elementor_css';
+    wpMayFail('option', 'delete', '_elementor_global_css');
+    return $cleared;
+}
+
+/**
+ * The user meta keys WordPress itself names after the table prefix, after the prefix: roles and levels, the
+ * screen settings and preferences of each user. A plugin's own keys that happen to start with the prefix
+ * (`site_` and site_icon, `wp` and wpforms_*) are not renamed.
+ */
+const PREFIXED_USERMETA = ['capabilities', 'user_level', 'user-settings', 'user-settings-time', 'dashboard_quick_press_last_post_id', 'persisted_preferences', 'media_library_mode'];
 
 /**
  * Gives a database moved in from another host the store's table prefix. `$from` is the prefix the
@@ -208,11 +307,13 @@ function adopt_prefix(?string $from): string
         $renames[] = "`$t` TO `$new`";
     }
     wp('db', 'query', 'RENAME TABLE ' . implode(', ', $renames));
-    // WordPress keys roles and each user's capabilities by the prefix.
-    $like = str_replace('_', '\\_', $from) . '%';
+    // WordPress keys roles and each user's capabilities by the prefix; only those keys are renamed.
     $from_at = strlen($from) + 1;
-    wp('db', 'query', "UPDATE `{$to}options` SET option_name = CONCAT('$to', SUBSTRING(option_name, $from_at)) WHERE option_name LIKE '$like'");
-    wp('db', 'query', "UPDATE `{$to}usermeta` SET meta_key = CONCAT('$to', SUBSTRING(meta_key, $from_at)) WHERE meta_key LIKE '$like'");
+    $like = str_replace('_', '\\_', $from) . '%';
+    wp('db', 'query', "UPDATE `{$to}options` SET option_name = '{$to}user_roles' WHERE option_name = '{$from}user_roles'");
+    $keys = implode(', ', array_map(fn ($k) => "'$from$k'", PREFIXED_USERMETA));
+    wp('db', 'query', "UPDATE `{$to}usermeta` SET meta_key = CONCAT('$to', SUBSTRING(meta_key, $from_at))
+        WHERE meta_key IN ($keys) OR (meta_key LIKE '$like' AND SUBSTRING(meta_key, $from_at) REGEXP '^[a-z0-9_-]+_per_page$')");
     return $from;
 }
 
@@ -336,6 +437,95 @@ if ($waas_home !== '' && $waas_host !== '' && $waas_host !== $waas_home) {
     exit;
 }
 PHP);
+    file_put_contents(CONTENT . '/mu-plugins/waas-hold.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: WaaS store hold
+ * Description: Holds a site moved in until its owner makes it live: no email to customers, no background jobs, not indexed. Managed by the WaaS provisioner; edits are overwritten.
+ */
+/*
+ * Only while wp-content/.waas-hold exists: from the move until the owner presses Go live in AnyPress (the agent's
+ * go-live operation removes it). The moved site's cron is off then too (the agent runs none without .waas-cron).
+ */
+if (!file_exists(WP_CONTENT_DIR . '/.waas-hold')) return;
+
+/** Who may still get email while the site is held: its administration address and the owner's (waas_hold_allow). */
+function waas_hold_allowed(): array
+{
+    $allow = [strtolower(trim((string) get_option('admin_email')))];
+    $extra = get_option('waas_hold_allow');
+    if (is_string($extra)) $extra = json_decode($extra, true);
+    foreach ((array) $extra as $email) {
+        if (is_string($email)) $allow[] = strtolower(trim($email));
+    }
+    return array_values(array_filter(array_unique($allow), fn ($e) => strpos($e, '@') !== false));
+}
+
+/** Every address in a list of recipients: a string or an array, with or without names ("Ann <ann@example.com>"). */
+function waas_hold_addresses($list): array
+{
+    $text = is_array($list) ? implode(',', array_map('strval', $list)) : (string) $list;
+    preg_match_all('/[^\s<>,;"\']+@[^\s<>,;"\']+/', $text, $m);
+    return array_map('strtolower', $m[0]);
+}
+
+/** ann@example.com as a***@example.com: enough to tell who a held email was for, without keeping the address. */
+function waas_hold_redact(string $email): string
+{
+    [$name, $domain] = array_pad(explode('@', $email, 2), 2, '');
+    return substr($name, 0, 1) . '***@' . $domain;
+}
+
+// Email goes only to the allowed addresses, every recipient (To, Cc, Bcc) of it. The rest is held: not sent, counted,
+// and the last 20 kept (subject and redacted recipients) for the owner to see. Core and FluentSMTP both ask
+// pre_wp_mail first, so this comes before any mailer, the plugins' API mailers included.
+add_filter('pre_wp_mail', function ($return, $atts) {
+    if ($return !== null) return $return;
+    $to = waas_hold_addresses($atts['to'] ?? []);
+    $headers = $atts['headers'] ?? [];
+    $lines = is_array($headers) ? $headers : preg_split('/\r?\n/', (string) $headers);
+    foreach ($lines as $line) {
+        if (preg_match('/^\s*(cc|bcc)\s*:(.*)$/i', (string) $line, $m)) $to = array_merge($to, waas_hold_addresses($m[2]));
+    }
+    $allowed = waas_hold_allowed();
+    if ($to && !array_diff($to, $allowed)) return null;
+    $held = get_option('waas_hold_mail');
+    $held = is_array($held) ? $held : [];
+    $recent = (array) ($held['recent'] ?? []);
+    array_unshift($recent, [
+        'at' => gmdate('c'),
+        'subject' => function_exists('mb_substr') ? mb_substr((string) ($atts['subject'] ?? ''), 0, 120) : substr((string) ($atts['subject'] ?? ''), 0, 120),
+        'to' => implode(', ', array_map('waas_hold_redact', array_slice(array_unique($to), 0, 5))),
+    ]);
+    update_option('waas_hold_mail', ['count' => (int) ($held['count'] ?? 0) + 1, 'recent' => array_slice($recent, 0, 20)], false);
+    return true;
+}, -9999, 2);
+
+// Background jobs that run without cron: Action Scheduler's runner on admin page loads, and FluentCRM's email queue.
+add_filter('action_scheduler_allow_async_request_runner', '__return_false', PHP_INT_MAX);
+add_filter('fluent_crm/disable_email_processing', '__return_true', PHP_INT_MAX);
+
+// Not indexed: the moved site answers at a new address while the old one still runs.
+add_filter('wp_robots', function ($robots) {
+    unset($robots['index'], $robots['follow'], $robots['max-image-preview']);
+    return ['noindex' => true, 'nofollow' => true] + (array) $robots;
+}, PHP_INT_MAX);
+add_action('send_headers', function () {
+    header('X-Robots-Tag: noindex, nofollow');
+});
+add_filter('robots_txt', function () {
+    return "User-agent: *\nDisallow: /\n";
+}, PHP_INT_MAX);
+
+add_action('admin_notices', function () {
+    if (!current_user_can('manage_options')) return;
+    $held = get_option('waas_hold_mail');
+    $count = is_array($held) ? (int) ($held['count'] ?? 0) : 0;
+    $text = 'This site is on hold until you press Go live in AnyPress: its scheduled tasks are paused, email goes only to you and the site\'s administration address, and search engines are asked not to index it.';
+    if ($count) $text .= sprintf(' %d email%s to others %s held and not sent.', $count, $count === 1 ? '' : 's', $count === 1 ? 'was' : 'were');
+    printf('<div class="notice notice-warning"><p>%s</p></div>', esc_html($text));
+});
+PHP) !== false || fail('cannot write the hold mu-plugin');
     file_put_contents(CONTENT . '/mu-plugins/waas-mail.php', <<<'PHP'
 <?php
 /*
@@ -888,7 +1078,8 @@ $waas_cacheable = ($waas_method === 'GET' || $waas_method === 'HEAD')
     && preg_match('#^/[^?]*$#', $waas_uri)
     && !preg_match('#^/(wp-admin|wp-json|wp-content|wp-includes)(/|$)|\.php$#', $waas_uri)
     && preg_match('/^[a-z0-9.-]+$/', $waas_host)
-    && !file_exists(WP_CONTENT_DIR . '/.waas-suspended');
+    && !file_exists(WP_CONTENT_DIR . '/.waas-suspended')
+    && !file_exists(WP_CONTENT_DIR . '/.waas-hold');
 // Any cookie but a few analytics ones means a visitor WordPress may treat differently: logged in, a cart, a
 // password-protected post, a saved comment name. They always get WordPress.
 foreach (array_keys($_COOKIE) as $waas_cookie) {
@@ -1047,7 +1238,8 @@ switch ($op) {
     case 'restore': {
         // A snapshot, base snapshot, backup or uploaded archive: database.sql and wp-content. `import`:
         // a site moved in from another host (the AnyPress Export plugin's archive, with a waas.json
-        // describing it), cleaned up on the way in.
+        // describing it), cleaned up on the way in and held until it goes live (HOLD_FLAG). `hold`: hold
+        // the store after the restore too (a held store restored after deletion). A held store stays held.
         $import = !empty($args['import']);
         $tmp = tempDir();
         curlTransfer($args['url'], "$tmp/archive", false);
@@ -1055,40 +1247,74 @@ switch ($op) {
         extract_archive("$tmp/archive", "$tmp/x");
         $suspended = file_exists(FLAG);
         $cron = file_exists(CRON_FLAG);
+        $hold = $import || !empty($args['hold']) || file_exists(HOLD_FLAG);
         $page = is_file(PAGE) ? file_get_contents(PAGE) : null;
         $content = find_content("$tmp/x");
         $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
         if ($import && (!$content || !$sql)) fail('the export must hold database.sql and wp-content');
         $info = $import && is_file("$tmp/x/waas.json") ? json_decode((string) file_get_contents("$tmp/x/waas.json"), true) : null;
+        $info = is_array($info) ? $info : [];
         $result = [];
         if ($content) {
             run('rm -rf ' . CONTENT . '/* ' . CONTENT . '/.[!.]*', true);
             run('cp -a ' . escapeshellarg($content) . '/. ' . CONTENT . '/');
-            if ($import) $result['removed'] = clean_import();
+            if ($import) {
+                $result['removed'] = clean_import();
+                // What the site keeps, for support to see.
+                $result['muPlugins'] = array_values(array_map('basename', glob(CONTENT . '/mu-plugins/*') ?: []));
+            }
         }
+        $oldSiteurl = null;
         if ($sql) {
             wpMayFail('db', 'clean', '--yes');
-            wp('db', 'import', $sql);
             if ($import) {
-                $result['tablePrefix'] = adopt_prefix(is_array($info) && is_string($info['tablePrefix'] ?? null) ? $info['tablePrefix'] : null);
+                // Not `wp db import`: it runs the file with SOURCE, and the client then goes on past a statement that
+                // fails (a duplicate key, an unknown collation) and exits 0, so a site would arrive with tables or rows
+                // missing. Fed on stdin, the client stops at the first error and the move fails, saying where.
+                $out = run('(printf "SET autocommit=0; SET unique_checks=0; SET foreign_key_checks=0;\\n"; cat ' . escapeshellarg($sql) . '; printf "\\nCOMMIT;\\n")'
+                    . ' | wp --path=' . ROOT . ' --skip-plugins --skip-themes db query 2>&1; echo "::$?"', true);
+                [$text, $code] = array_pad(explode('::', $out, 2), 2, '1');
+                if (trim($code) !== '0') fail('the database could not be imported: ' . substr(trim(preg_replace('/^.*Deprecated program name.*$/m', '', $text)), -400));
+            } else {
+                wp('db', 'import', $sql);
+            }
+            if ($import) {
+                $result['tablePrefix'] = adopt_prefix(is_string($info['tablePrefix'] ?? null) ? $info['tablePrefix'] : null);
                 $result['previousHome'] = wpMayFail('option', 'get', 'home');
+                $oldSiteurl = wpMayFail('option', 'get', 'siteurl');
             }
         } elseif (wpMayFail('core', 'is-installed') === null) {
             wp('core', 'install', '--url=' . $args['home'], '--title=' . ($args['title'] ?? 'Store'), '--admin_user=waas-admin',
                 '--admin_email=' . ($args['adminEmail'] ?? 'admin@example.invalid'), '--admin_password=' . bin2hex(random_bytes(24)), '--skip-email');
         }
-        set_home($args['home']);
+        if ($import && $result['previousHome']) {
+            set_import_home($result['previousHome'], $oldSiteurl, is_string($info['contentUrl'] ?? null) ? $info['contentUrl'] : null, $args['home']);
+            $result['cleared'] = clean_import_db(wp('config', 'get', 'table_prefix'), $args['home']);
+        } else {
+            set_home($args['home']);
+        }
         if ($suspended) touch(FLAG); else @unlink(FLAG);
-        if ($cron) touch(CRON_FLAG); else @unlink(CRON_FLAG);
+        if ($hold) {
+            touch(HOLD_FLAG) || fail('cannot write the hold flag');
+            @unlink(CRON_FLAG);
+        } else {
+            @unlink(HOLD_FLAG);
+            if ($cron) touch(CRON_FLAG); else @unlink(CRON_FLAG);
+        }
         if ($page !== null) file_put_contents(PAGE, $page);
         install_guard();
-        done(['database' => $sql !== null, 'content' => $content !== null] + $result);
+        done(['database' => $sql !== null, 'content' => $content !== null, 'held' => $hold] + $result);
     }
 
     case 'configure': {
         install_guard();
         if (!empty($args['home'])) set_home($args['home']);
         foreach ($args['options'] ?? [] as $name => $value) wp('option', 'update', (string) $name, (string) $value);
+        // Who still gets email while the store is held (mu-plugins/waas-hold.php), besides its administration address.
+        if (isset($args['holdAllow']) && is_array($args['holdAllow'])) {
+            $allow = array_values(array_filter(array_map('strval', $args['holdAllow']), fn ($e) => filter_var($e, FILTER_VALIDATE_EMAIL)));
+            wp('option', 'update', 'waas_hold_allow', json_encode($allow), '--format=json', '--autoload=no');
+        }
         $user = $args['user'] ?? null;
         $created = false;
         if ($user && wpMayFail('user', 'get', $user['email'], '--field=ID') === null) {
@@ -1097,8 +1323,47 @@ switch ($op) {
             wp('user', 'create', $user['name'], $user['email'], '--role=' . $user['role'], '--porcelain', ...$extra);
             $created = true;
         }
+        // A held store's cron starts when it goes live (go-live), not now.
+        $held = file_exists(HOLD_FLAG);
+        if (!$held) touch(CRON_FLAG) || fail('cannot write the cron flag');
+        done(['userCreated' => $created, 'held' => $held]);
+    }
+
+    case 'go-live':
+        // The owner says the site moved in is live: its cron starts, and its email and search engines are no longer held.
+        if (file_exists(HOLD_FLAG)) unlink(HOLD_FLAG) || fail('cannot remove the hold flag');
         touch(CRON_FLAG) || fail('cannot write the cron flag');
-        done(['userCreated' => $created]);
+        install_guard();
+        done(['live' => true]);
+
+    case 'check-site': {
+        // After a site is moved in: does it serve, with its plugins and theme loaded? The home page and the login page
+        // are fetched from the WordPress container (`base`, on the store's own network) as the store's address, and
+        // WordPress is loaded once with every plugin, which shows a PHP fatal error the pages hide.
+        $home = rtrim((string) ($args['home'] ?? wpMayFail('option', 'get', 'home') ?? ''), '/');
+        $host = (string) parse_url($home, PHP_URL_HOST);
+        $base = rtrim((string) ($args['base'] ?? 'http://wordpress'), '/');
+        $strip = fn (string $s) => trim(str_replace(ROOT . '/', '', preg_replace('/\s+/', ' ', strip_tags($s))));
+        $fatal = null;
+        $pages = [];
+        foreach (['home' => '/', 'login' => '/wp-login.php'] as $name => $path) {
+            $ch = curl_init($base . $path);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 60,
+                // As a visitor over https; the cookie keeps the page cache out of it.
+                CURLOPT_HTTPHEADER => ["Host: $host", 'X-Forwarded-Proto: https', 'Cookie: waas_check=1'],
+            ]);
+            $body = (string) curl_exec($ch);
+            $pages[$name] = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            curl_close($ch);
+            if ($fatal === null && preg_match('/Fatal error\W*:?\s*(.{1,300}?)(<br|\n|$)/is', $body, $m)) $fatal = $strip($m[1]);
+            if ($fatal === null && stripos($body, 'critical error on this website') !== false) $fatal = 'There has been a critical error on this website.';
+        }
+        $out = run('timeout 120 wp --path=' . ROOT . ' --url=' . escapeshellarg($home) . " eval 'echo \"WAAS_LOADED\";' 2>&1; echo \"::$?\"", true);
+        $loaded = strpos($out, 'WAAS_LOADED') !== false;
+        if (preg_match('/Fatal error:\s*(.{1,300}?)(\n|$)/i', $out, $m)) $fatal = $strip($m[1]);
+        $ok = $loaded && $fatal === null && $pages['home'] >= 200 && $pages['home'] < 500 && $pages['login'] >= 200 && $pages['login'] < 500;
+        done(['ok' => $ok, 'home' => $pages['home'], 'login' => $pages['login'], 'loaded' => $loaded, 'fatal' => $fatal]);
     }
 
     case 'snapshot': {

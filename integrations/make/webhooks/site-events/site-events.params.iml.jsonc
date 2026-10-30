@@ -38,6 +38,10 @@
                 "value": "tenant.resumed"
             },
             {
+                "label": "Moved-in site live",
+                "value": "tenant.live"
+            },
+            {
                 "label": "Site deleted",
                 "value": "tenant.deleted"
             },
