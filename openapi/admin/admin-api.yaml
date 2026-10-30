@@ -866,6 +866,7 @@ paths:
               properties:
                 name: { type: string, maxLength: 100 }
                 ownerEmail: { type: string, format: email, description: "The store owner's email: their login (an administrator) and the store's own address" }
+                notifyOwner: { type: boolean, description: 'Email the owner once the store is ready, with a link to set their password. Off unless true.' }
                 size: { type: string, enum: [small, medium, large] }
                 customDomainName: { type: string, description: 'Its own address; default <label>.<platform domain>' }
       responses:

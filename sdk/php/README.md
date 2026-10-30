@@ -100,7 +100,7 @@ Writes return as soon as the work is queued; call `waitForTenant` or use webhook
 |---|---|---|
 | Stores | `listTenants(?array $ref = null)` | Your stores, or just the one `$ref` picks (an empty list when there is none) |
 | | `getTenant(array $ref)` | One store, or `null` |
-| | `createTenant(array $params)` | Queues a new store. `name` is required; also `externalId`, `customDomainName`, `groupName`, `versionId`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, `wordPressUserPassword`, `wpOptions`, `phpConstants` |
+| | `createTenant(array $params)` | Queues a new store. `name` is required; also `externalId`, `customDomainName`, `groupName`, `versionId`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, `wordPressUserPassword`, `wpOptions`, `phpConstants`, `notifyOwner` (true emails the owner a link to set their password once the store is ready) |
 | | `updateTenant(array $ref, array $params)` | Sets `wpOptions` and `phpConstants` |
 | | `deleteTenant(array $ref)` | Queues the deletion. Backups are kept, so `restoreTenant` can bring it back |
 | | `moveTenantToVersion(array $ref, string $targetVersionId)` | Moves the store to another version |

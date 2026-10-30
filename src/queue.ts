@@ -21,6 +21,8 @@ export type JobData =
       tenantId: string;
       /** The store's first WordPress user. The password is encrypted (src/secrets.ts). */
       user?: { name: string; email: string; role: string; encryptedPassword?: string };
+      /** Email the user that their website is ready, with a link to set their password, once it is built. */
+      notifyOwner?: boolean;
     }
   /** `size`: the store's size changed; the job applies the size on record. */
   | { type: 'tenant.update'; tenantId: string; wpOptions?: Record<string, string>; phpConstantNames?: string[]; size?: Size }

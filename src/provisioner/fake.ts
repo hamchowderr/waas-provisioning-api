@@ -273,6 +273,13 @@ export class FakeProvisioner implements Provisioner {
     this.store(storeId).held = false;
   }
 
+  async passwordLink({ storeId, email }: { storeId: string; email: string }) {
+    this.check('passwordLink');
+    const store = this.store(storeId);
+    if (store.user?.email !== email) throw new Error(`FakeProvisioner: store ${storeId} has no user ${email}`);
+    return `https://${store.mainDomain}/wp-login.php?action=rp&key=fake-key&login=${encodeURIComponent(store.user.name)}`;
+  }
+
   async deleteStore({ storeId }: { storeId: string }) {
     this.check('deleteStore');
     this.stores.delete(storeId);

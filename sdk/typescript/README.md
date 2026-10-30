@@ -95,7 +95,7 @@ Each method returns the API's JSON answer, typed. Writes return as soon as the w
 |---|---|---|
 | `tenants` | `list(ref?)` | Your stores, or just the one `ref` picks (an empty list when there is none) |
 | | `get(ref)` | One store, or `null` |
-| | `create(params)` | Queues a new store. `name` is required; also `externalId`, `customDomainName`, `groupName`, `versionId`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, `wordPressUserPassword`, `wpOptions`, `phpConstants` |
+| | `create(params)` | Queues a new store. `name` is required; also `externalId`, `customDomainName`, `groupName`, `versionId`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, `wordPressUserPassword`, `wpOptions`, `phpConstants`, `notifyOwner` (true emails the owner a link to set their password once the store is ready) |
 | | `update(ref, { wpOptions, phpConstants })` | Sets WordPress options and PHP constants |
 | | `delete(ref)` | Queues the deletion. Backups are kept, so `restore` can bring it back |
 | | `moveToVersion(ref, versionId)` | Moves the store to another version |

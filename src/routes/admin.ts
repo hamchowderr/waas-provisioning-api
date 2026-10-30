@@ -524,6 +524,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       wordPressUserName: ownerEmail,
       wordPressUserEmail: ownerEmail,
       wordPressUserRole: 'administrator',
+      ...(body.notifyOwner === true && { notifyOwner: true }),
       ...(typeof body.size === 'string' && { size: body.size }),
       ...(typeof body.customDomainName === 'string' && body.customDomainName.trim() && { customDomainName: body.customDomainName.trim() }),
     } as Parameters<typeof createTenant>[2];

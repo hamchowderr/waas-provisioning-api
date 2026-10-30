@@ -185,6 +185,12 @@ export interface Provisioner {
    */
   goLive(input: { storeId: string }): Promise<void>;
 
+  /**
+   * A one-time link for the store's user with this email to set their password (WordPress's reset link), for the
+   * email that tells a store's owner their website is ready.
+   */
+  passwordLink(input: { storeId: string; email: string }): Promise<string>;
+
   deleteStore(input: { storeId: string }): Promise<void>;
 
   /**

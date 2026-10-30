@@ -859,6 +859,13 @@ export class CoolifyProvisioner implements Provisioner {
     await this.exec(store.uuid, 'go-live', {});
   }
 
+  async passwordLink({ storeId, email }: { storeId: string; email: string }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const { url } = await this.exec(store.uuid, 'password-link', { email });
+    if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error(`Store ${storeId}: no password link`);
+    return url;
+  }
+
   async deleteStore({ storeId }: { storeId: string }) {
     // The store's own relay key goes first: once the Service is gone, so is the record of its id.
     const store = this.config.mailKeys && (await this.findService(STORES_ENV, storeName(storeId)));

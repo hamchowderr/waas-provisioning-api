@@ -74,6 +74,37 @@ export async function sendInvitation(mail: AuthMail, to: string, invite: Invitat
   await send(mail, to, `Join ${where}`, html, text, 'invitation email', fetchFn);
 }
 
+/** What the email to a new store's owner says (POST /v1/tenants with notifyOwner). */
+export interface WebsiteReadyMail {
+  /** The website's name. */
+  site: string;
+  /** Its address. */
+  url: string;
+  /** The WordPress username they sign in with. */
+  username: string;
+  /** WordPress's one-time link to set their password. */
+  passwordLink: string;
+}
+
+/**
+ * To a new store's owner, only when whoever made the store asked for it (notifyOwner): their website is ready, and
+ * a link to set their password. Sent in the storefront's brand (src/jobs.ts).
+ */
+export async function sendWebsiteReady(mail: AuthMail, to: string, site: WebsiteReadyMail, fetchFn: typeof fetch = fetch): Promise<void> {
+  const address = site.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const lead = `Your website ${site.site} is ready at ${address}.`;
+  const how = `Set your password to sign in to it. Your username is ${site.username}.`;
+  const note = `The link works once, within a day. After that, use "Lost your password?" on ${address}/wp-login.php to get a new one.`;
+  const text = `${lead}\n\n${how}\n\n${site.passwordLink}\n\n${note}`;
+  const html = layout(mail, {
+    title: `${site.site} is ready`,
+    lines: [lead, how],
+    button: { label: 'Set your password', url: site.passwordLink },
+    note,
+  });
+  await send(mail, to, `Your website ${site.site} is ready`, html, text, 'website ready email', fetchFn);
+}
+
 /** What a seller application email needs to say. */
 export interface ApplicationMail {
   name: string;
