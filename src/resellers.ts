@@ -7,9 +7,7 @@ import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rota
 import { SIZES, type Size } from './plans.ts';
 import { enqueue } from './queue.ts';
 import { invoiceReseller, lastMonth, listResellerInvoices, refreshResellerInvoices } from './resellerinvoices.ts';
-import { publicBase } from './oauth.ts';
 import { versionService } from './routes/versions.ts';
-import { createStorefront, type NewStorefront } from './storefronts.ts';
 
 /**
  * Reseller accounts (docs/resellers.md): a partner that sells stores from one or more storefronts
@@ -301,39 +299,26 @@ export async function insertResellerProduct(pool: Pool, resellerId: string, name
 
 /**
  * "Add storefront": a new storefront in the reseller, made by its team on the dashboard or by the platform
- * admin. `startFrom` copies another storefront's production version and template, so the new one can make
- * stores as soon as that has built; a reseller's team may only start from one of its own storefronts.
- * `storefront` also builds a ready-made shop site for it (src/storefronts.ts); a site that can't be built
- * leaves the storefront standing and answers storefrontError.
+ * admin. It starts ready: `startFrom` names a storefront whose production version and template it copies, so
+ * it can make stores as soon as that has built. A reseller's team may only start from one of its own.
  */
 async function addStorefront(deps: Deps, c: Context<AppEnv>, resellerId: string, ownOnly: boolean) {
   const { pool } = deps;
-  const body = ((await readJson(c)) ?? {}) as { name?: unknown; startFrom?: unknown; storefront?: unknown };
+  const body = ((await readJson(c)) ?? {}) as { name?: unknown; startFrom?: unknown };
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
-  const startFrom = body.startFrom ?? null;
-  if (startFrom !== null && !(typeof startFrom === 'string' && isUuid(startFrom))) throw badRequest('startFrom must be a storefront id, or null');
-  if (startFrom && ownOnly) {
+  const startFrom = body.startFrom;
+  if (!(typeof startFrom === 'string' && isUuid(startFrom))) throw badRequest('startFrom must be a storefront id');
+  if (ownOnly) {
     const { rowCount } = await pool.query('SELECT 1 FROM products WHERE id = $1 AND reseller_id = $2', [startFrom, resellerId]);
     if (!rowCount) throw badRequest('startFrom must be one of your storefronts');
   }
-  if (body.storefront !== undefined && body.storefront !== null && typeof body.storefront !== 'object') throw badRequest('storefront must be an object, or null');
-  const site = (body.storefront ?? null) as NewStorefront | null;
   const versions = versionService(deps);
   // Checked before anything is made, so a storefront with nothing to start from isn't left behind.
-  const source = startFrom ? await versions.productionSource(startFrom) : null;
+  const source = await versions.productionSource(startFrom);
   const productId = await insertResellerProduct(pool, resellerId, name);
-  if (source) await versions.copyProduction(productId, source);
-  let storefront = null;
-  let storefrontError: string | null = null;
-  if (site) {
-    try {
-      storefront = await createStorefront(deps, productId, { ...site, name: site.name ?? name }, publicBase(c, deps.config.publicUrl));
-    } catch (err) {
-      storefrontError = (err as Error).message;
-    }
-  }
-  return { product: { id: productId, name }, storefront, storefrontError };
+  await versions.copyProduction(productId, source);
+  return { id: productId, name };
 }
 
 /** Who is signed in to /account: the reseller their active storefront's team belongs to, and their role there. */
