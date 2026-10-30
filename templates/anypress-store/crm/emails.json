@@ -1,0 +1,295 @@
+[
+ {
+  "title": "Nurture: Just starting out",
+  "trigger": "manual",
+  "note": "Started by the AnyPress CRM plugin when someone who picked \"Just starting out\" on the contact form confirms they want email. Rename the answer on the contact form and this automation together.",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Thanks for getting in touch",
+    "preheader": "Here is what to expect from us.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You told us you are just starting out. Good timing: the first steps are the ones that matter most, and they are simpler than they look.</p><p>Over the next couple of weeks we will send you a few short emails with ideas that help. You can stop them at any time with the link at the bottom.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 4,
+    "subject": "An example you might like",
+    "preheader": "How someone like you got started.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Most people we work with started where you are now: an idea, not much time and a lot of questions. The ones who got going fastest picked one small thing to do first and did it well.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 9,
+    "subject": "A short guide to your next step",
+    "preheader": "One thing to do this week.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Write down the one result you want in the next month. Keep it small and specific. Then look at what we offer with that one result in mind.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 16,
+    "subject": "Can we help?",
+    "preheader": "Tell us what you need.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like to talk about what you need, we would be glad to help. Tell us a little about it and we will get back to you.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Get in touch</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Nurture: Already in business",
+  "trigger": "manual",
+  "note": "Started by the AnyPress CRM plugin when someone who picked \"Already in business\" on the contact form confirms they want email. Rename the answer on the contact form and this automation together.",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Thanks for getting in touch",
+    "preheader": "Here is what to expect from us.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You told us you are already in business. We will keep this practical: short ideas you can use straight away.</p><p>Over the next couple of weeks we will send you a few short emails with ideas that help. You can stop them at any time with the link at the bottom.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 4,
+    "subject": "An example you might like",
+    "preheader": "How someone like you got started.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Businesses like yours usually come to us to save time or to reach more of the right customers. The quickest wins tend to come from fixing the one thing that slows you down most.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 9,
+    "subject": "A short guide to your next step",
+    "preheader": "One thing to do this week.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Pick the task that takes you the most time each week. Ask yourself whether it needs to be you doing it. That is often where we can help.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 16,
+    "subject": "Can we help?",
+    "preheader": "Tell us what you need.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like to talk about what you need, we would be glad to help. Tell us a little about it and we will get back to you.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Get in touch</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Welcome: Subscription",
+  "trigger": "manual",
+  "note": "Started when a subscription starts (the contact gets \"Subscription: Active\").",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Welcome, here is how to get started",
+    "preheader": "Three things to do first.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Thanks for subscribing. Your subscription is active and your receipt is on its way separately.</p><p>To get the most out of it, sign in to your account, check your details and save the page for later.</p><p><a href=\"{{wp.url}}/account/\"><strong>Go to my account</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 7,
+    "subject": "How is it going so far?",
+    "preheader": "A quick check-in.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You have had your subscription for a week. Is everything working as you expected? If anything is unclear, tell us and we will sort it out.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 31,
+    "subject": "Know someone who would like this?",
+    "preheader": "Share it with a friend.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We hope the first month has gone well. If you know someone who would like this too, we would be grateful if you passed it on. Most of our new customers come from people like you.</p><p><a href=\"{{wp.url}}\"><strong>Share our website</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Welcome: Bookings",
+  "trigger": "manual",
+  "note": "Started when someone books (the contact gets \"Bookings: Active\"). Your booking confirmation and reminders still come from FluentBooking.",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Looking forward to seeing you",
+    "preheader": "A few things before your booking.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Thanks for booking with us. Your confirmation has the date, time and place. If you need to change it, use the link in that email.</p><p>If there is anything we should know beforehand, tell us and we will be ready.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Welcome: Community",
+  "trigger": "manual",
+  "note": "Started when someone joins a space (the contact gets \"Community: Active\").",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Welcome to the community",
+    "preheader": "Start here.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Glad you joined. The best first step is to say hello: tell people who you are and what brought you here.</p><p><a href=\"{{wp.url}}/portal/\"><strong>Open the community</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 7,
+    "subject": "Have you found your way around?",
+    "preheader": "Three things members like most.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>After a week, most members have found the spaces they care about. Turn on notifications for those, so you see new posts.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 31,
+    "subject": "Invite someone you know",
+    "preheader": "The community is better with friends.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If someone you know would enjoy this community, invite them along. They can join from the link below.</p><p><a href=\"{{wp.url}}/portal/\"><strong>Share the community</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Welcome: Course",
+  "trigger": "manual",
+  "note": "Started when someone enrols in a course (the contact gets \"Course: Active\").",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Your course is ready",
+    "preheader": "Start with the first lesson.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You are enrolled. The easiest way to finish a course is to start the first lesson today, even if it is only ten minutes.</p><p><a href=\"{{wp.url}}/portal/\"><strong>Start the first lesson</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 7,
+    "subject": "Keep going",
+    "preheader": "A small step this week.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>A week in. Set a regular time for your lessons, even twenty minutes twice a week. Little and often works better than one long session.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 31,
+    "subject": "Know someone who would like this course?",
+    "preheader": "Pass it on.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you are enjoying the course, tell a friend or colleague who might like it too.</p><p><a href=\"{{wp.url}}\"><strong>Share the course</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Welcome: Affiliate",
+  "trigger": "manual",
+  "note": "Started when an affiliate is approved (the contact gets \"Affiliate: Active\"). Before publishing, point the first email's button at the page with your affiliate dashboard (FluentAffiliate's portal block).",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "You are approved: here is your link",
+    "preheader": "Start sharing.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Welcome to our affiliate programme. Your personal link and your earnings are in your affiliate dashboard.</p><p>The people who do best share it where their audience already is: a short post, an email or a link on their own website.</p><p><a href=\"{{wp.url}}\"><strong>Open my affiliate dashboard</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 14,
+    "subject": "An easy way to share",
+    "preheader": "One idea for this week.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>The simplest thing that works: tell people how you use what we sell and why you like it, in your own words, with your link.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Thank you: Shop",
+  "trigger": "manual",
+  "note": "Started when an order is paid that has no subscription in it (the contact gets \"Shop: Past\").",
+  "emails": [
+   {
+    "day": 3,
+    "subject": "How is your order?",
+    "preheader": "We would love to know.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Thanks again for your order. We hope it arrived safely and is everything you hoped for. If anything is not right, tell us and we will put it right.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 31,
+    "subject": "Would you recommend us?",
+    "preheader": "Tell a friend, or tell us.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We hope you are happy with your order. If you are, the best thanks is to tell a friend about us. If you are not, we would rather hear it from you first.</p><p><a href=\"{{wp.url}}\"><strong>Visit the shop</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Win-back: Subscription",
+  "trigger": "manual",
+  "note": "Started when the last subscription ends (the contact gets \"Subscription: Past\"). The coupon COMEBACK20 (FluentCart > Coupons) gives 20% off the first payment, once per customer, 100 uses.",
+  "emails": [
+   {
+    "day": 2,
+    "subject": "Can we ask one quick question?",
+    "preheader": "What made you stop?",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We noticed your subscription has ended. Could you tell us why? One line is enough, and it really helps us improve.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Tell us why</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 30,
+    "subject": "Come back for 20% off",
+    "preheader": "Use code COMEBACK20 at checkout.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We would love to have you back. Use the code <strong>COMEBACK20</strong> at checkout for 20% off your first payment.</p><p><a href=\"{{wp.url}}\"><strong>Start again</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Win-back: Bookings",
+  "trigger": "manual",
+  "note": "Started when a booking is completed (the contact gets \"Bookings: Past\").",
+  "emails": [
+   {
+    "day": 2,
+    "subject": "How did it go?",
+    "preheader": "Tell us in one line.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Thanks for coming. How did it go? If you have a moment, tell us what you thought. It helps us, and it helps other people decide.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 30,
+    "subject": "Time for your next visit?",
+    "preheader": "Book a time that suits you.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>It has been a month since your last booking. When you are ready for the next one, pick a time that suits you.</p><p><a href=\"{{wp.url}}\"><strong>Book again</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Win-back: Community",
+  "trigger": "manual",
+  "note": "Started when someone leaves their last space (the contact gets \"Community: Past\").",
+  "emails": [
+   {
+    "day": 2,
+    "subject": "Sorry to see you go",
+    "preheader": "Can we ask why?",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We noticed you left the community. Was something missing? Tell us in a line, and we will do better.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Tell us why</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 30,
+    "subject": "The door is open",
+    "preheader": "Come back any time.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>A lot has happened in the community since you left. You are welcome back any time.</p><p><a href=\"{{wp.url}}/portal/\"><strong>Open the community</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Win-back: Course",
+  "trigger": "manual",
+  "note": "Started when someone leaves their last course (the contact gets \"Course: Past\").",
+  "emails": [
+   {
+    "day": 2,
+    "subject": "Can we ask one quick question?",
+    "preheader": "What would have helped?",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We noticed you left the course. Was it the timing, the content or something else? One line helps us make it better.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Tell us why</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Abandoned checkout",
+  "trigger": "fc_ab_cart_simulation_fluent_cart",
+  "note": "Someone started a checkout and left. FluentCRM starts this 30 minutes after they leave (Settings > Abandoned Cart) and stops it as soon as they buy. Publishing it also starts tagging these people \"Shop: Interested\".",
+  "emails": [
+   {
+    "day": 0,
+    "subject": "You left something at checkout",
+    "preheader": "Your choice is saved.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You started a checkout with us but didn't finish. Your choice is saved:</p>{{ab_cart_fluent_cart.cart_items_table}}<p><a href=\"##ab_cart_fluent_cart.recovery_url##\"><strong>Finish checking out</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 1,
+    "subject": "Any questions before you order?",
+    "preheader": "We are happy to help.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If something made you stop, tell us what it was. A question about the price, the details or how it works is often quick to answer.</p><p><a href=\"##ab_cart_fluent_cart.recovery_url##\"><strong>Go back to your checkout</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 3,
+    "subject": "Last reminder about your order",
+    "preheader": "We will stop here.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>This is our last note about your checkout. It is still saved if you would like to finish it.</p><p><a href=\"##ab_cart_fluent_cart.recovery_url##\"><strong>Finish checking out</strong></a></p><p>If now isn't the right time, no problem.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ],
+  "settings": {
+   "priority": 10
+  },
+  "conditions": {
+   "cart_conditions": [
+    []
+   ],
+   "active_once": "no",
+   "require_subscribed": "no"
+  }
+ }
+]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentCRM, FluentAuth,
+# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentCRM, Fluent Forms, FluentAuth,
 # FluentKit, WP Fusion Lite, AnyPress Blocks and the AnyPress theme, packaged as the provisioner restores it (see README). A storefront made from it
 # is connected to the API when it is created: the API writes its key, secret and address into wp-config
 # (POST /admin/products/{productId}/storefront).
@@ -20,6 +20,7 @@ WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f9
 PLUGINS="
 fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
 fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63e
+fluentform 6.2.16 9ec4fce3857a0c069dcb392f6e0e9bd1a5a1231d94a49a76d9768a40e973a7fd
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
 "
@@ -97,9 +98,10 @@ while read -r slug version sha; do
 done <<<"$VENDORED"
 unzip -q "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip" -d "$SITE/wp-content/plugins"
 SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | sort | tr '\n' ' ')
-# Settings kept in code (WP Fusion out of staging mode, buyers into FluentCRM): mu-plugins/seller-storefront.php.
+# Settings kept in code (WP Fusion out of staging mode, the owner's details): mu-plugins/seller-storefront.php. The CRM
+# lifecycle (Website: Interested / Active / Past, the draft emails, the weekly numbers) is the store template's plugin.
 mkdir -p "$SITE/wp-content/mu-plugins"
-cp "$HERE/mu-plugins/seller-storefront.php" "$SITE/wp-content/mu-plugins/"
+cp "$HERE/mu-plugins/seller-storefront.php" "$HERE/../anypress-store/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
 
 echo "== WaaS Host $HOST_VERSION from $PLUGINS_REPO"
 # The release build: production dependencies only, the version stamped, one waas-host/ folder.
@@ -156,6 +158,10 @@ cp "$HERE/presets.php" "$SITE/presets.php"
 cp "$HERE/../anypress-store/mu-plugins/anypress-patterns.php" "$SITE/anypress-patterns.php"
 wp eval-file /var/www/html/presets.php --user=waas-admin
 rm "$SITE/presets.php" "$SITE/anypress-patterns.php"
+# The CRM, as on stores (../anypress-store/crm/setup.php) with this template's emails (crm-emails.json).
+mkdir -p "$SITE/crm" && cp "$HERE/../anypress-store/crm/setup.php" "$SITE/crm/" && cp "$HERE/crm-emails.json" "$SITE/crm/emails.json"
+wp eval-file /var/www/html/crm/setup.php --user=waas-admin
+rm -r "$SITE/crm"
 wp rewrite flush
 wp transient delete --all
 wp cache flush 2>/dev/null || true
@@ -169,7 +175,11 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-host | sort | tr '\n' ' ')
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ "$(wp post get "$(wp option get page_on_front)" --field=post_name)" = home ] || { echo "Home is not the front page" >&2; exit 1; }
 [ "$(wp theme list --status=active --field=name)" = "$THEME" ] || { echo "theme $THEME not active" >&2; exit 1; }
-[ "$(wp eval 'echo implode(",", \FluentCrm\App\Models\Tag::orderBy("title")->pluck("title")->toArray());')" = "Website: Active,Website: Past" ] || { echo "FluentCRM tags missing" >&2; exit 1; }
+[ "$(wp eval 'echo implode(",", \FluentCrm\App\Models\Tag::orderBy("title")->pluck("title")->toArray());')" = "Website: Active,Website: Interested,Website: Past" ] || { echo "FluentCRM tags missing" >&2; exit 1; }
+[ "$(wp eval 'echo \FluentCrm\App\Models\Funnel::where("status", "draft")->count(), " ", \FluentCrm\App\Models\Funnel::where("status", "published")->count();')" = "$(jq length "$HERE/crm-emails.json") 0" ] || { echo "CRM automations missing or published" >&2; exit 1; }
+[ "$(wp eval '$f = wpFluent()->table("fluentform_forms")->find((int) get_option("anypress_crm_contact_form")); echo $f && str_contains($f->form_fields, "\"customer_group\"") ? "ok" : "bad";')" = ok ] || { echo "contact form questions missing" >&2; exit 1; }
+[ "$(wp eval '$c = get_option("_fc_ab_cart_settings"); echo ($c["enabled"] ?? "") === "yes" && \FluentCart\App\Models\Coupon::where("code", "COMEBACK20")->exists() ? "ok" : "bad";')" = ok ] || { echo "abandoned checkout or coupon missing" >&2; exit 1; }
+[ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,how-it-works,questions,contact,plans --format=count)" = 6 ] || { echo "storefront pages missing" >&2; exit 1; }
 [ "$(wp eval 'echo var_export(WPF_STAGING_MODE, true), " ", wpf_get_option("crm"), wpf_get_option("connection_configured") ? " connected" : "";')" = "false fluentcrm connected" ] || { echo "WP Fusion must ship connected to FluentCRM and out of staging mode" >&2; exit 1; }
 # Nothing that connects the storefront may ship: each one gets its own when it is created.
 for OPTION in wpcs_credentials_api_key_setting wpcs_credentials_api_secret_setting wpcs_credentials_api_base_url_setting; do

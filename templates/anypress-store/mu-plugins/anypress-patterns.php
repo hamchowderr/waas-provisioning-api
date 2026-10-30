@@ -229,7 +229,9 @@ function anypress_contact_form(): string
     if (!function_exists('wpFluent')) {
         return '';
     }
-    $form = (int) (wpFluent()->table('fluentform_forms')->where('title', 'Contact Form Demo')->value('id') ?: 0);
+    // The form the CRM plugin reads (crm/setup.php names it), else Fluent Forms' own demo form on older stores.
+    $form = (int) get_option('anypress_crm_contact_form')
+        ?: (int) (wpFluent()->table('fluentform_forms')->where('title', 'Contact Form Demo')->value('id') ?: 0);
 
     return $form ? anypress_embed(__('Send us a message', 'anypress'), '[fluentform id="' . $form . '"]') : '';
 }
