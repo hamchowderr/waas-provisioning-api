@@ -34,6 +34,8 @@ interface Connection {
   mcp: MCPClient;
   tools: Record<string, { execute?: (input: unknown, context: unknown) => Promise<unknown> }>;
   resource: string;
+  /** The website's address, as the API answered it. */
+  url: string;
   checked: number;
 }
 
@@ -87,7 +89,7 @@ export function createServer(deps: ServerDeps) {
       const info = toolAnswer(await tools.get_site?.execute?.({}, {})) as { url?: string } | undefined;
       if (!info?.url) throw new Error('The website did not answer.');
       // One website, one memory: the address the API answered for this token, never one the browser sends.
-      const connection = { mcp, tools, resource: `site:${new URL(info.url).host}`, checked: Date.now() };
+      const connection = { mcp, tools, resource: `site:${new URL(info.url).host}`, url: info.url, checked: Date.now() };
       if (known) await known.mcp.disconnect().catch(() => {});
       connections.set(key, connection);
       byResource.set(connection.resource, key);
@@ -156,8 +158,12 @@ export function createServer(deps: ServerDeps) {
     const requestContext = new RequestContext();
     requestContext.set(MASTRA_RESOURCE_ID_KEY, connection.resource);
     c.set('requestContext' as never, requestContext as never);
+    c.set('siteUrl' as never, connection.url as never);
     await next();
   });
+
+  // The signed-in website's address. The panel beside the page editor only talks to an editor there.
+  app.get('/agent-controller/site', (c) => c.json({ url: c.get('siteUrl' as never) as string }));
 
   // Goals, observational memory, schedules, workspace and browser are Chat Kit features the
   // assistant doesn't use; only the chat, its threads and its approvals are served.

@@ -12,6 +12,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { readConnectorsOff } from '../lib/connectors-off';
 import { isTimeZone } from '../lib/time-zone';
+import { readEditor } from '../../editor';
 
 /** The media types a composer attachment may have: images, PDFs and plain text. */
 export const ATTACHMENT_MEDIA_TYPES = [
@@ -121,6 +122,8 @@ export const streamBodySchema = z
     // Connectors the person turned off for this chat (lib/connectors-off.ts). Odd entries
     // are dropped, never a reason to refuse the turn.
     connectorsOff: z.unknown().optional().transform(readConnectorsOff),
+    // What the page editor beside the chat has open (src/editor.ts). An odd one reads as absent.
+    editor: z.unknown().optional().transform(readEditor),
     // The composer's attachments (FileUIPart), `url` already converted to a data URL
     // by the client at submit time.
     files: absent(z.array(attachment).max(MAX_ATTACHMENTS)),

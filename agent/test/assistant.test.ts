@@ -54,7 +54,7 @@ describe('website assistant', () => {
     expect(first?.path).toBe('/v1/messages');
     const offered = (first?.body as { tools?: { function: { name: string } }[] }).tools?.map((tool) => tool.function.name).sort();
     expect(offered).toEqual([
-      'add_image', 'ask_user', 'get_site', 'header_footer', 'header_footer_change', 'page_section', 'site_menus', 'site_menus_change',
+      'add_image', 'ask_user', 'editor_change', 'get_site', 'header_footer', 'header_footer_change', 'page_section', 'site_menus', 'site_menus_change',
       'site_pages', 'site_pages_change', 'site_patterns', 'site_styles', 'site_styles_change',
     ]);
   });
@@ -133,5 +133,58 @@ describe('website assistant', () => {
     expect(theirs.threads.map((t) => t.id)).not.toContain(thread);
     expect((await h.get(`/agent-controller/threads/${thread}/messages`, b!)).status).toBe(404);
     expect((await h.post('/agent-controller/stream', b!, { text: 'hi', threadId: thread })).status).toBe(404);
+  });
+
+  it('tells the panel beside the page editor which website it is signed in to', async () => {
+    const [a] = h.stores;
+    const answer = await h.get('/agent-controller/site', a!);
+    expect(await answer.json()).toEqual({ url: `https://${a!.domain}/` });
+    expect((await h.get('/agent-controller/site', null)).status).toBe(401);
+  });
+
+  it('changes the block selected in the open editor at once, and never the website itself', async () => {
+    const [a] = h.stores;
+    const editor = {
+      screen: 'post',
+      postType: 'page',
+      postId: 2,
+      title: 'Home',
+      blocks: [
+        { clientId: 'hero-1', name: 'core/group', markup: '<!-- wp:group --><div class="wp-block-group"><!-- wp:heading --><h2>Fresh bread</h2><!-- /wp:heading --></div><!-- /wp:group -->' },
+        { clientId: 'about-2', name: 'core/paragraph', markup: '<!-- wp:paragraph --><p>About us</p><!-- /wp:paragraph -->' },
+      ],
+      selected: { clientId: 'hero-1', name: 'core/group', markup: '' },
+    };
+    const content = '<!-- wp:group --><div class="wp-block-group"><!-- wp:heading --><h2>Bread baked at dawn</h2><!-- /wp:heading --></div><!-- /wp:group -->';
+    h.script('Make this heading warmer', 'editor_change', { action: 'replace', clientId: 'hero-1', content }, 'Done. Press Save to keep it.');
+    const turn = h.send(a!, { text: 'Make this heading warmer', editor });
+    expect(await turn.text()).toBe('Done. Press Save to keep it.');
+    // No approval card: the owner keeps it by saving.
+    expect(turn.gates()).toEqual([]);
+    const end = turn.events.find((event) => event.type === 'tool_end') as { result?: { editor?: unknown }; isError?: boolean } | undefined;
+    expect(end?.isError).toBe(false);
+    expect(end?.result?.editor).toEqual({ action: 'replace', clientId: 'hero-1', content });
+    expect(writes()).toEqual([]);
+    // The model was shown the open editor, with the selected block.
+    const system = JSON.stringify(h.llm.getRequests()[0]?.body);
+    expect(system).toContain('The owner is in the editor, on the page \\"Home\\" (id 2)');
+    expect(system).toContain('selected the block hero-1');
+    expect(system).toContain('About us');
+  });
+
+  it('refuses a block the open editor doesn’t have, and any editor change with no editor open', async () => {
+    const [a] = h.stores;
+    const editor = { screen: 'post', postType: 'page', postId: 2, title: 'Home', blocks: [{ clientId: 'hero-1', name: 'core/group', markup: '' }] };
+    h.script('Remove the footer block', 'editor_change', { action: 'remove', clientId: 'nope-9' }, 'I could not find it.');
+    const turn = h.send(a!, { text: 'Remove the footer block', editor });
+    await turn.done;
+    expect((turn.events.find((event) => event.type === 'tool_end') as { isError?: boolean } | undefined)?.isError).toBe(true);
+
+    h.script('Remove the hero', 'editor_change', { action: 'remove', clientId: 'hero-1' }, 'Open the editor first.');
+    const plain = h.send(a!, { text: 'Remove the hero' });
+    await plain.done;
+    expect((plain.events.find((event) => event.type === 'tool_end') as { isError?: boolean } | undefined)?.isError).toBe(true);
+    expect(JSON.stringify(h.llm.getRequests().at(-1)?.body)).not.toContain('The open editor');
+    expect(writes()).toEqual([]);
   });
 });

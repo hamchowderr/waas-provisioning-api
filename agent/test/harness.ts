@@ -28,7 +28,7 @@ export interface Harness {
   /** POST `path` as `store`'s owner (or signed out). */
   post(path: string, store: Store | null, body: unknown): Promise<Response>;
   /** GET `path` as `store`'s owner. */
-  get(path: string, store: Store): Promise<Response>;
+  get(path: string, store: Store | null): Promise<Response>;
   /** Starts a message on /agent-controller/stream and reads its events as they come. */
   send(store: Store, body: Record<string, unknown>): Turn;
   /** The model calls `tool` once for `message`, then answers `reply` after seeing the result. */
@@ -88,7 +88,7 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
   const auth = (store: Store | null): Record<string, string> => (store ? { authorization: `Bearer ${store.token}` } : {});
   const post = async (path: string, store: Store | null, body: unknown) =>
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', ...auth(store) }, body: JSON.stringify(body) });
-  const get = async (path: string, store: Store) => app.request(path, { headers: auth(store) });
+  const get = async (path: string, store: Store | null) => app.request(path, { headers: auth(store) });
 
   return {
     t,

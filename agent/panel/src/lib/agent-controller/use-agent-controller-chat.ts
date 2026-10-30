@@ -73,7 +73,7 @@ function startRun(running: { current: AbortController | null }): AbortController
 }
 
 /** A tool call the agent finished: which tool, and whether it reported an error. */
-export type AgentControllerToolEnd = { toolName: string; toolCallId: string; isError: boolean };
+export type AgentControllerToolEnd = { toolName: string; toolCallId: string; isError: boolean; result?: unknown };
 
 export type UseAgentControllerChatOptions = {
   /** The stream route. Default `/api/agent-controller/stream`. */
@@ -226,7 +226,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
       const toolName =
         (typeof event.toolName === 'string' && event.toolName) || toolNames.current.get(id) || '';
       toolNames.current.delete(id);
-      onToolEndRef.current?.({ toolName, toolCallId: id, isError: event.isError === true });
+      onToolEndRef.current?.({ toolName, toolCallId: id, isError: event.isError === true, result: event.result });
     }
     setTranscript((s) => reduceAgentControllerEvent(s, event));
   }, []);

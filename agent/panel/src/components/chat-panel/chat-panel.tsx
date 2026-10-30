@@ -68,6 +68,8 @@ export type ChatPanelProps = {
   approvalViews?: ApprovalViews;
   /** What each tool's step is called in the conversation, per tool name. Others show the tool's name. */
   toolTitles?: Record<string, string>;
+  /** Host fields sent with every turn and answer, read at send time (useAgentControllerChat's `extra`). */
+  extra?: () => Record<string, unknown> | undefined;
 };
 
 /**
@@ -96,8 +98,9 @@ export function ChatPanel({
   onNavigate,
   approvalViews,
   toolTitles,
+  extra,
 }: ChatPanelProps) {
-  const controller = useAgentControllerChat({ onToolEnd });
+  const controller = useAgentControllerChat({ onToolEnd, extra });
   const { transcript, status, sendMessage, answerQuestion, pendingSuspension } = controller;
   const { threads } = useThreads({ refreshSignal: controller.refreshSignal });
   // Archived chats stay out of the menu, as they do in the full shell's sidebar.

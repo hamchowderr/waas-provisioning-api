@@ -1,4 +1,4 @@
-import { createHash, createHmac, hkdfSync, randomBytes } from 'node:crypto';
+import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /**
  * Site editing (docs/site-editing.md): the API calls a store's WaaS Client site routes
@@ -74,6 +74,22 @@ export function signSiteRequest(key: string, method: string, route: string, body
   const n = randomBytes(16).toString('hex');
   const payload = [t, n, method.toUpperCase(), route, createHash('sha256').update(body).digest('hex')].join('\n');
   return `t=${t},n=${n},s=${createHmac('sha256', key).update(payload).digest('hex')}`;
+}
+
+/**
+ * Whether `header` is a current signature of this request by `key`, in signSiteRequest's form: the
+ * other way round, for requests a store signs to the API (the page editor's assistant, src/oauth.ts).
+ */
+export function verifySiteRequest(key: string, header: string | undefined, method: string, route: string, body: string, now = Date.now()): boolean {
+  if (!header) return false;
+  const parts = Object.fromEntries(header.split(',').map((pair) => pair.trim().split('=', 2) as [string, string]));
+  const { t, n, s } = parts as Record<string, string | undefined>;
+  if (!t || !/^\d{1,12}$/.test(t) || !n || !/^[0-9a-f]{32}$/.test(n) || !s || !/^[0-9a-f]{64}$/.test(s)) return false;
+  if (Math.abs(Math.floor(now / 1000) - Number(t)) > 300) return false;
+  const payload = [t, n, method.toUpperCase(), route, createHash('sha256').update(body).digest('hex')].join('\n');
+  const expected = Buffer.from(createHmac('sha256', key).update(payload).digest('hex'));
+  const given = Buffer.from(s);
+  return expected.length === given.length && timingSafeEqual(expected, given);
 }
 
 export type SiteMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

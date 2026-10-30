@@ -8,12 +8,12 @@ import { Button } from '@/components/ui/button';
 /** The server sends a plain sentence with each change that waits (e.g. "Publish page 14"). */
 const summary = ({ preview }: { preview?: unknown }) => (preview as { summary?: string } | undefined)?.summary;
 const CHANGES = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change'];
-const approvalViews: ApprovalViews = Object.fromEntries(
+export const approvalViews: ApprovalViews = Object.fromEntries(
   CHANGES.map((tool) => [tool, (approval) => (summary(approval) ? { title: `${summary(approval)}?` } : null)]),
 );
 
 /** The steps the owner sees in the conversation, in plain words. */
-const toolTitles: Record<string, string> = {
+export const toolTitles: Record<string, string> = {
   get_site: 'Reading your website',
   site_pages: 'Pages',
   site_patterns: 'Section designs',

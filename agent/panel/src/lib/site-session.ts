@@ -92,9 +92,9 @@ async function pendingSignIn(back: string) {
  * challenge, for a code. No list of shops: only a storefront holding its API key can make a handoff.
  * Returns where to send the owner (/callback), or an error.
  */
-export async function startShopSignIn(handoff: string): Promise<{ next: string } | { error: string }> {
+export async function startShopSignIn(handoff: string, back = '/'): Promise<{ next: string } | { error: string }> {
   if (!handoff) return { error: 'This link is missing its sign-in. Open the assistant again from your account.' };
-  const pending = await pendingSignIn('/');
+  const pending = await pendingSignIn(back);
   const response = await fetch(`${API_URL}/oauth/site/handoff`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

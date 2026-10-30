@@ -14,6 +14,7 @@ import { RequestContext } from '@mastra/core/request-context';
 import { registerApiRoute } from '@mastra/core/server';
 import { CONNECTORS_OFF_KEY, readConnectorsOff } from '../lib/connectors-off';
 import { TIME_ZONE_KEY } from '../lib/time-zone';
+import { EDITOR_KEY, type EditorView, readEditor } from '../../editor';
 import { resourceIdOf } from './resource';
 import { sessionEventStream } from './session-sse';
 import { streamBodyLimit, streamBodySchema, timeZone } from './stream-body';
@@ -83,6 +84,12 @@ export function approvalDecorator(
   };
 }
 
+/** The page editor's view, on a resumed turn too, so editor_change still knows what is open. */
+function withEditor(requestContext: RequestContext, editor: EditorView | undefined): RequestContext {
+  if (editor) requestContext.set(EDITOR_KEY, editor);
+  return requestContext;
+}
+
 export const createControllerRoutes = (deps: ChatServerDeps) => [
   // Agent Controller endpoint: POST /agent-controller/stream → SSE of AgentControllerEvents.
   // Body: { text: string, threadId?: string }. The AgentController wraps the same
@@ -100,13 +107,14 @@ export const createControllerRoutes = (deps: ChatServerDeps) => [
       if (!parsed.success) {
         return c.json({ error: parsed.error.issues[0]?.message ?? 'invalid body' }, 400);
       }
-      const { text, threadId, model, mode, webSearch, files, timeZone, connectorsOff } =
+      const { text, threadId, model, mode, webSearch, files, timeZone, connectorsOff, editor } =
         parsed.data;
       // Route the composer's "Search" toggle through the request context (not the
       // user message) so the agent's dynamic instructions flip into browse-the-web
       // mode — driving the workspace browser the Browser panel screencasts.
       // The browser's time zone rides the same way, for today's date (lib/turn-context.ts).
       const requestContext = turnRequestContext({ webSearch, timeZone, connectorsOff });
+      if (editor) requestContext.set(EDITOR_KEY, editor);
       // Map the composer's attachments onto sendMessage's file shape ({ data, ... }).
       // `createMessageInput` accepts a data URL as `data` for both text and binary parts.
       const messageFiles = files?.length
@@ -236,6 +244,7 @@ export const createControllerRoutes = (deps: ChatServerDeps) => [
         timeZone?: string;
         threadId?: string;
         connectorsOff?: unknown;
+        editor?: unknown;
       }>();
       const { answer, plan, toolCallId } = body;
       let resumeData: string | string[] | { action: 'approved' | 'rejected'; feedback?: string };
@@ -269,10 +278,13 @@ export const createControllerRoutes = (deps: ChatServerDeps) => [
             ...(toolCallId ? { toolCallId } : {}),
             // The resumed run reads today's date in the user's zone too, and keeps the
             // connectors turned off for this chat off.
-            requestContext: turnRequestContext({
-              timeZone: timeZone.parse(body.timeZone),
-              connectorsOff: readConnectorsOff(body.connectorsOff),
-            }),
+            requestContext: withEditor(
+              turnRequestContext({
+                timeZone: timeZone.parse(body.timeZone),
+                connectorsOff: readConnectorsOff(body.connectorsOff),
+              }),
+              readEditor(body.editor),
+            ),
           }),
       });
     },
