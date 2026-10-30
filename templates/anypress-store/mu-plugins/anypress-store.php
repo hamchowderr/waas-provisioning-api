@@ -321,3 +321,20 @@ add_action('init', function () {
     }
     update_option('anypress_site_type_plugins', $seen, true);
 }, 9999);
+
+/*
+ * FluentCart's emails open with its store logo. Keep it the site's own logo (Site Editor or Customizer), so receipts
+ * carry the owner's brand; with no logo they show the store name. Runs only when the logo changes.
+ */
+function anypress_sync_fluentcart_logo(): void {
+    if (!class_exists('\FluentCart\Api\StoreSettings')) {
+        return;
+    }
+    $id = (int) (get_option('site_logo') ?: get_theme_mod('custom_logo'));
+    $url = $id ? (string) wp_get_attachment_image_url($id, 'medium') : '';
+    (new \FluentCart\Api\StoreSettings())->save(['store_logo' => ['id' => $id ?: '', 'url' => $url]]);
+}
+add_action('update_option_site_logo', 'anypress_sync_fluentcart_logo');
+add_action('add_option_site_logo', 'anypress_sync_fluentcart_logo');
+add_action('delete_option_site_logo', 'anypress_sync_fluentcart_logo');
+add_action('customize_save_after', 'anypress_sync_fluentcart_logo');

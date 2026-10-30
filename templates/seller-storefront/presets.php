@@ -16,6 +16,12 @@ delete_option('fluent_cart_do_activation_redirect');
     'reminders_enabled' => 'yes',
     'monthly_renewal_reminders_enabled' => 'yes',
 ]);
+// Settings → Email notifications → Settings: a footer that tells customers how to reach the owner (replies go to the
+// site's sending address; waas-mail sets that). The store logo at the top of each email follows the site logo
+// (WaaS Host), so emails carry the owner's brand and nothing of AnyPress.
+\FluentCart\App\Services\Email\EmailNotifications::updateSettings([
+    'email_footer' => '<p>Questions? Just reply to this email.</p>',
+]);
 // Settings → Email notifications: one email per moment. WaaS Host's own emails already cover a cancelled plan
 // ("stays online until"), websites aren't shipped, and the store-managed renewal emails (renewal invoice, upcoming
 // charge, charge failed, overdue reminders) repeat the card-renewal ones a storefront sends (waas-api-mi4).
