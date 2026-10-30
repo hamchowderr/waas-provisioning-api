@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { resolve4 } from 'node:dns/promises';
 import type { Deps } from './app.ts';
 import { badRequest, conflict } from './errors.ts';
 import { addApiKey, revokeApiKey } from './keys.ts';
@@ -31,6 +32,20 @@ const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 export const STOREFRONT_KEY_LABEL = 'Ready-made storefront';
 
 const externalId = (productId: string) => `storefront-${productId}`;
+
+/** Looks up the stores' address; tests swap it. */
+export const storefrontDns: { resolve4(name: string): Promise<string[]> } = { resolve4: (name) => resolve4(name) };
+
+/**
+ * The DNS records WaaS Host shows a storefront's customers for their own domain: an A record to the store server and,
+ * for www and other subdomains, a CNAME to a name under the stores' wildcard. Empty when the server's address can't be
+ * looked up; the storefront then asks customers to contact it, as before.
+ */
+async function customDomainRecords(storesDomain: string): Promise<Record<string, string>> {
+  const host = `www.${storesDomain}`;
+  const ips = await storefrontDns.resolve4(host).catch(() => [] as string[]);
+  return ips.length ? { waas_dns_a_records: ips.join(','), waas_dns_cname_target: host } : {};
+}
 
 /** The product's ready-made storefront, or null. */
 export async function getStorefront({ config, pool }: Pick<Deps, 'config' | 'pool'>, productId: string) {
@@ -75,6 +90,8 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         // Its customers' websites are named <name>.<platform domain>, like the platform's own.
         // waas_root_domain for WaaS Host 2.3.0 and later; the old name for storefront templates with an older one.
         ...(config.platformDomain ? { waas_root_domain: config.platformDomain, wpcs_host_settings_root_domain: config.platformDomain } : {}),
+        // Custom domains point where the stores' own names do, like the platform's own storefront.
+        ...(await customDomainRecords(config.storesDomain)),
       },
       phpConstants: {
         WAAS_API_BASE_URL: { value: apiUrl },

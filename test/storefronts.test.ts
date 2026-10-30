@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiKey } from '../src/keys.ts';
 import { Status } from '../src/status.ts';
-import { STOREFRONT_KEY_LABEL } from '../src/storefronts.ts';
+import { STOREFRONT_KEY_LABEL, storefrontDns } from '../src/storefronts.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
 let t: TestContext;
@@ -46,6 +46,8 @@ describe('ready-made storefronts', () => {
 
   it('builds one, connected with a new key of the product', async () => {
     t.deps.config.storefrontProductId = storefrontProductId;
+    const lookups: string[] = [];
+    storefrontDns.resolve4 = async (name: string) => (lookups.push(name), ['203.0.113.10']);
     const res = await build(sellerId, { name: 'Example Agency', email: 'Owner@Agency.example', subdomain: 'example-agency' });
     expect(res.status).toBe(201);
     const storefront = (await res.json()) as any;
@@ -54,7 +56,17 @@ describe('ready-made storefronts', () => {
 
     const store = t.provisioner.stores.get(storefront.id)!;
     expect(store.user).toMatchObject({ email: 'owner@agency.example', role: 'administrator' });
-    expect(store.wpOptions).toEqual({ blogname: 'Example Agency', admin_email: 'owner@agency.example', waas_root_domain: 'waas.example', wpcs_host_settings_root_domain: 'waas.example' });
+    // Its customers' own domains point where the stores' names do.
+    const storesHost = `www.${t.deps.config.storesDomain}`;
+    expect(lookups).toEqual([storesHost]);
+    expect(store.wpOptions).toEqual({
+      blogname: 'Example Agency',
+      admin_email: 'owner@agency.example',
+      waas_root_domain: 'waas.example',
+      wpcs_host_settings_root_domain: 'waas.example',
+      waas_dns_a_records: '203.0.113.10',
+      waas_dns_cname_target: storesHost,
+    });
     const constants = store.phpConstants;
     expect(constants.WAAS_API_BASE_URL).toEqual({ value: 'http://localhost', isPrivate: false });
     expect(constants.WAAS_API_KEY!.isPrivate).toBe(true);

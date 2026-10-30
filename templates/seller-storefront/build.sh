@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentAuth and
+# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentAuth, FluentKit and
 # Twenty Twenty-Five, packaged as the provisioner restores it (see README). A storefront made from it
 # is connected to the API when it is created: the API writes its key, secret and address into wp-config
 # (POST /admin/products/{productId}/storefront).
@@ -18,8 +18,13 @@ WP_VERSION=${WP_VERSION:-7.1.4}
 WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f938c5f87}
 # wordpress.org plugins: slug version sha256. All installed and active.
 PLUGINS="
-fluent-cart 1.9.0 0de495740dcdd2e3a2585c2658e5a74c89d98528b24e2c47011294f3cb1b3829
-fluent-security 3.0.5 304c0c61ef704a16534133211fbd2be820040606b6c0ea6a4d0b28942c697b11
+fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
+fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
+"
+# Plugins that aren't on wordpress.org: slug version sha256, the zip shared with the store template
+# (../anypress-store/plugins/<slug>-<version>.zip). FluentKit puts the Fluent plugins and AnyPress in one dashboard.
+VENDORED="
+fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
 THEME=twentytwentyfive
 THEME_VERSION=${THEME_VERSION:-1.5}
@@ -78,7 +83,13 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$WORK/downloads/$slug.$version.zip" -d "$SITE/wp-content/plugins"
 done <<<"$PLUGINS"
-SLUGS=$(awk 'NF {print $1}' <<<"$PLUGINS" | sort | tr '\n' ' ')
+while read -r slug version sha; do
+    [ -n "$slug" ] || continue
+    ZIP=$HERE/../anypress-store/plugins/$slug-$version.zip
+    echo "$sha  $ZIP" | sha256sum -c --quiet || { echo "checksum mismatch: $ZIP" >&2; exit 1; }
+    unzip -q "$ZIP" -d "$SITE/wp-content/plugins"
+done <<<"$VENDORED"
+SLUGS=$(awk 'NF {print $1}' <<<"$PLUGINS$VENDORED" | sort | tr '\n' ' ')
 
 echo "== WaaS Host $HOST_VERSION from $PLUGINS_REPO"
 # The release build: production dependencies only, the version stamped, one waas-host/ folder.
@@ -155,7 +166,7 @@ wp db export /var/www/html/database.sql --add-drop-table --quiet
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS") \
+PLUGINS_JSON=$( (echo "waas-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

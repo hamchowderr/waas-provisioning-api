@@ -8,13 +8,13 @@ who doesn't bring a WordPress site of their own. The API builds one with
 |---|---|
 | WordPress | 7.1.4 for the build; storefronts run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Theme | Twenty Twenty-Five 1.5, the only theme installed |
-| Plugins | WaaS Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-host` with its release script, at the version given to `build.sh`), FluentCart 1.9.0 and FluentAuth 3.0.5 (free, wordpress.org). All active |
+| Plugins | WaaS Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-host` with its release script, at the version given to `build.sh`), FluentCart 2.2.0 and FluentAuth 3.1.0 (free, wordpress.org), and FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`). All active |
 | Pages | FluentCart's own: Shop (the home page), Cart, Checkout, Receipt, Review Your Order, Account |
 | Settings | Permalinks `/%postname%/`, timezone UTC, comments and pingbacks closed, registration off, **search engines discouraged** until launch |
 | Users | `waas-admin` with a random password nobody keeps. The owner's administrator account is made when the storefront is created |
 
 [`presets.php`](presets.php) runs once on the build: FluentCart's first activation marked done, the cart icon in the
-menu, renewal reminders, a terms checkbox at checkout, and FluentAuth's first-run defaults with XML-RPC off.
+menu, renewal reminders, a terms checkbox at checkout, FluentAuth's first-run defaults with XML-RPC off, and FluentKit's one dashboard (merged menus, app headers hidden).
 
 ## How a storefront is connected
 
