@@ -1612,6 +1612,30 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}/products:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminCreateResellerProduct
+      summary: Makes a new storefront inside the reseller
+      description: >-
+        The reseller's own Add storefront (accountCreateResellerProduct), for the platform admin: within its
+        maxProducts (400 at the limit), with no store limit of its own and no API key (the reseller's team and
+        partner keys reach it at once). startFrom may be any storefront here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddStorefront' }
+      responses:
+        '201':
+          description: The storefront made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddedStorefront' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/resellers/{id}/products/{productId}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2038,6 +2062,28 @@ paths:
               schema: { $ref: '#/components/schemas/ResellerInvoices' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /account/reseller/products:
+    post:
+      operationId: accountCreateResellerProduct
+      summary: Add storefront; owners and admins only
+      description: >-
+        One more storefront in the reseller team's account, for another brand, within its maxProducts (400 at
+        the limit). Everyone on the team reaches it at once. startFrom must be one of the account's own
+        storefronts. Anyone who isn't on a reseller's team gets 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddStorefront' }
+      responses:
+        '201':
+          description: The storefront made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddedStorefront' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /account/reseller/keys:
     get:
       operationId: accountListPartnerKeys
@@ -2333,6 +2379,42 @@ components:
             small: { type: integer, minimum: 0, maximum: 1000000 }
             medium: { type: integer, minimum: 0, maximum: 1000000 }
             large: { type: integer, minimum: 0, maximum: 1000000 }
+    AddStorefront:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: The storefront's name, usually the brand it sells under }
+        startFrom:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            A storefront whose production version and template the new one copies, so it can make stores as soon
+            as that has built (400 when it has no ready production version). Without it, the new one starts empty.
+        storefront:
+          type: object
+          nullable: true
+          description: Also build it a ready-made shop site, as adminCreateStorefront does. name defaults to the storefront's.
+          required: [email]
+          properties:
+            name: { type: string, maxLength: 100 }
+            email: { type: string, format: email }
+            subdomain: { type: string, pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' }
+    AddedStorefront:
+      type: object
+      required: [product, storefront, storefrontError]
+      properties:
+        product:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        storefront:
+          type: object
+          nullable: true
+          description: The shop site being built (a store, as GET /v1/tenants answers one), or null
+        storefrontError: { type: string, nullable: true, description: Why the shop site wasn't built; the storefront stands }
     Reseller:
       type: object
       additionalProperties: false

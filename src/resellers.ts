@@ -7,6 +7,9 @@ import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rota
 import { SIZES, type Size } from './plans.ts';
 import { enqueue } from './queue.ts';
 import { invoiceReseller, lastMonth, listResellerInvoices, refreshResellerInvoices } from './resellerinvoices.ts';
+import { publicBase } from './oauth.ts';
+import { versionService } from './routes/versions.ts';
+import { createStorefront, type NewStorefront } from './storefronts.ts';
 
 /**
  * Reseller accounts (docs/resellers.md): a partner that sells stores from one or more storefronts
@@ -278,6 +281,61 @@ export function monthRange(month: string): { from: Date; to: Date } {
   return { from: new Date(Date.UTC(year, m - 1, 1)), to: new Date(Date.UTC(year, m, 1)) };
 }
 
+/**
+ * Makes a storefront in the reseller, within its max_products (the reseller row is locked first, so two
+ * at once can't both pass the limit). It has no store limit of its own: the reseller's applies. Answers its id.
+ */
+export async function insertResellerProduct(pool: Pool, resellerId: string, name: string): Promise<string> {
+  return withTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ max_products: number | null }>('SELECT max_products FROM resellers WHERE id = $1 FOR UPDATE', [resellerId]);
+    if (!rows[0]) throw notFound(`Reseller ${resellerId} not found`);
+    const max = rows[0].max_products;
+    if (max !== null) {
+      const { rows: count } = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM products WHERE reseller_id = $1', [resellerId]);
+      if (count[0]!.n >= max) throw badRequest(`This account has reached its limit of ${max} storefront${max === 1 ? '' : 's'}`);
+    }
+    const { rows: made } = await client.query<{ id: string }>('INSERT INTO products (name, reseller_id) VALUES ($1, $2) RETURNING id', [name, resellerId]);
+    return made[0]!.id;
+  });
+}
+
+/**
+ * "Add storefront": a new storefront in the reseller, made by its team on the dashboard or by the platform
+ * admin. `startFrom` copies another storefront's production version and template, so the new one can make
+ * stores as soon as that has built; a reseller's team may only start from one of its own storefronts.
+ * `storefront` also builds a ready-made shop site for it (src/storefronts.ts); a site that can't be built
+ * leaves the storefront standing and answers storefrontError.
+ */
+async function addStorefront(deps: Deps, c: Context<AppEnv>, resellerId: string, ownOnly: boolean) {
+  const { pool } = deps;
+  const body = ((await readJson(c)) ?? {}) as { name?: unknown; startFrom?: unknown; storefront?: unknown };
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
+  const startFrom = body.startFrom ?? null;
+  if (startFrom !== null && !(typeof startFrom === 'string' && isUuid(startFrom))) throw badRequest('startFrom must be a storefront id, or null');
+  if (startFrom && ownOnly) {
+    const { rowCount } = await pool.query('SELECT 1 FROM products WHERE id = $1 AND reseller_id = $2', [startFrom, resellerId]);
+    if (!rowCount) throw badRequest('startFrom must be one of your storefronts');
+  }
+  if (body.storefront !== undefined && body.storefront !== null && typeof body.storefront !== 'object') throw badRequest('storefront must be an object, or null');
+  const site = (body.storefront ?? null) as NewStorefront | null;
+  const versions = versionService(deps);
+  // Checked before anything is made, so a storefront with nothing to start from isn't left behind.
+  const source = startFrom ? await versions.productionSource(startFrom) : null;
+  const productId = await insertResellerProduct(pool, resellerId, name);
+  if (source) await versions.copyProduction(productId, source);
+  let storefront = null;
+  let storefrontError: string | null = null;
+  if (site) {
+    try {
+      storefront = await createStorefront(deps, productId, { ...site, name: site.name ?? name }, publicBase(c, deps.config.publicUrl));
+    } catch (err) {
+      storefrontError = (err as Error).message;
+    }
+  }
+  return { product: { id: productId, name }, storefront, storefrontError };
+}
+
 /** Who is signed in to /account: the reseller their active storefront's team belongs to, and their role there. */
 type ResellerCaller = { active: { resellerId: string | null; role: string } | null } | null;
 
@@ -318,6 +376,8 @@ export function accountResellerRoutes(deps: Deps, caller: (c: Context) => Promis
     if (invoicing) await refreshResellerInvoices(pool, invoicing.stripe, reseller.id);
     return c.json({ enabled: Boolean(invoicing), invoices: await listResellerInvoices(pool, reseller.id) });
   });
+  // Add storefront: one more storefront in the account, within its storefront limit.
+  app.post('/products', async (c) => c.json(await addStorefront(deps, c, (await mine(c, true)).id, true), 201));
   app.get('/keys', async (c) => c.json(await listApiKeys(pool, { resellerId: (await mine(c)).id })));
   app.post('/keys', async (c) => {
     const { id } = await mine(c, true);
@@ -417,6 +477,9 @@ export function adminResellerRoutes(deps: Deps) {
     });
     return c.json(reseller);
   });
+
+  // A new storefront made inside the reseller (the reseller's own Add storefront, for the platform admin).
+  app.post('/:id/products', async (c) => c.json(await addStorefront(deps, c, (await find(c)).id, false), 201));
 
   app.put('/:id/products/:productId', async (c) => {
     const { id } = await find(c);
