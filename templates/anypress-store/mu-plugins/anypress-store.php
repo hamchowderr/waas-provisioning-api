@@ -241,8 +241,10 @@ add_action('init', function () {
             wp_fusion()->settings->set_multiple([
                 'crm' => 'fluentcrm',
                 'connection_configured' => true,
-                // New users become FluentCRM contacts, and profile changes follow them.
+                // New users become FluentCRM contacts, "transactional" (an account isn't a newsletter sign-up), and
+                // profile changes follow them.
                 'create_users' => true,
+                'default_status' => 'transactional',
                 'push' => true,
                 'contact_fields' => $fields,
             ]);

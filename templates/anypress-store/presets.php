@@ -94,18 +94,11 @@ $fields = \FluentCart\App\Services\Renderer\CheckoutFieldsSchema::getFieldsSetti
 $fields['agree_terms'] = ['enabled' => 'yes', 'required' => 'yes', 'text' => 'I agree to the terms and conditions.'];
 fluent_cart_update_option('_fc_checkout_fields', $fields);
 
-// FluentCRM. Its setup wizard can send the owner's details to the vendor; the lists and tags it would ask
-// for are made here.
+// FluentCRM. Its setup wizard can send the owner's details to the vendor; what it would ask for is made here.
 fluentcrm_update_option('fluentcrm_setup_wizard_ran', 'yes');
 fluentcrm_update_option('_fluentcrm_share_essential', 'no');
-$lists = [];
-foreach (['Newsletter', 'Customers'] as $title) {
-    $list = \FluentCrm\App\Models\Lists::firstOrCreate(['slug' => sanitize_title($title)], ['title' => $title]);
-    $lists[$title] = $list->id;
-}
-foreach (['Customer', 'Lead', 'Subscriber'] as $title) {
-    \FluentCrm\App\Models\Tag::firstOrCreate(['slug' => sanitize_title($title)], ['title' => $title]);
-}
+// Only the Newsletter list (lists are consent); the lifecycle tags, fields and draft automations come from crm/setup.php.
+$lists = ['Newsletter' => \FluentCrm\App\Models\Lists::firstOrCreate(['slug' => 'newsletter'], ['title' => 'Newsletter'])->id];
 // Settings → SmartCodes & Integrations: an unticked newsletter box at FluentCart checkout (double opt-in, into
 // Newsletter), and WordPress users kept in sync as contacts, so customers who make accounts show up in the CRM.
 fluentcrm_update_option('fluent_cart_checkout_form_subscribe_settings', array_merge(

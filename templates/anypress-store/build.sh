@@ -126,7 +126,7 @@ mkdir -p "$SITE/wp-content/plugins/waas-client-data"
 cp "$HERE/roles.json" "$SITE/wp-content/plugins/waas-client-data/roles.json"
 # Template settings kept in code (see mu-plugins/anypress-store.php).
 mkdir -p "$SITE/wp-content/mu-plugins"
-cp "$HERE/mu-plugins/anypress-store.php" "$HERE/mu-plugins/anypress-patterns.php" "$SITE/wp-content/mu-plugins/"
+cp "$HERE/mu-plugins/anypress-store.php" "$HERE/mu-plugins/anypress-patterns.php" "$HERE/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
 
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE"
 
@@ -180,6 +180,11 @@ echo "== Presets"
 cp "$HERE/presets.php" "$SITE/presets.php"
 wp eval-file /var/www/html/presets.php --user=waas-admin
 rm "$SITE/presets.php"
+# The CRM: lifecycle fields, the contact form's questions, abandoned checkouts, the win-back coupon and the draft
+# automations (crm/setup.php; the tags themselves come from mu-plugins/anypress-crm-lifecycle.php).
+mkdir -p "$SITE/crm" && cp "$HERE/crm/setup.php" "$HERE/crm/emails.json" "$SITE/crm/"
+wp eval-file /var/www/html/crm/setup.php --user=waas-admin
+rm -r "$SITE/crm"
 wp rewrite flush
 wp transient delete --all
 wp cache flush 2>/dev/null || true
@@ -202,6 +207,11 @@ grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Mat
 [ "$(wp post list --post_type=wp_block --format=count)" = 3 ] || { echo "synced patterns missing" >&2; exit 1; }
 [ "$(wp eval '$p = get_posts(["post_type" => "wp_block", "title" => "Call to action"]); $b = $p ? parse_blocks($p[0]->post_content) : []; echo $p && str_contains($p[0]->post_content, "core/pattern-overrides") && $b && $b[0]["blockName"] === "core/group" ? "ok" : "bad";')" = ok ] || { echo "call to action pattern has no overrides" >&2; exit 1; }
 [ "$(wp post list --post_type=page --meta_key=_anypress_needs --format=count)" -ge 7 ] || { echo "pages missing their site-type marker" >&2; exit 1; }
+# The CRM (crm/setup.php): every automation a draft, the contact form's questions, abandoned checkouts and the coupon.
+[ "$(wp eval 'echo \FluentCrm\App\Models\Funnel::where("status", "draft")->count(), " ", \FluentCrm\App\Models\Funnel::where("status", "published")->count();')" = "$(jq length "$HERE/crm/emails.json") 0" ] || { echo "CRM automations missing or published" >&2; exit 1; }
+[ "$(wp eval 'echo \FluentCrm\App\Models\Tag::whereIn("title", ["Customer", "Lead", "Subscriber"])->count(), " ", \FluentCrm\App\Models\Lists::count();')" = "0 1" ] || { echo "old CRM tags or lists left" >&2; exit 1; }
+[ "$(wp eval '$f = wpFluent()->table("fluentform_forms")->find((int) get_option("anypress_crm_contact_form")); echo $f && str_contains($f->form_fields, "\"customer_group\"") && str_contains($f->form_fields, "\"newsletter\"") ? "ok" : "bad";')" = ok ] || { echo "contact form questions missing" >&2; exit 1; }
+[ "$(wp eval '$c = get_option("_fc_ab_cart_settings"); echo ($c["enabled"] ?? "") === "yes" && \FluentCart\App\Models\Coupon::where("code", "COMEBACK20")->exists() ? "ok" : "bad";')" = ok ] || { echo "abandoned checkout or coupon missing" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
 

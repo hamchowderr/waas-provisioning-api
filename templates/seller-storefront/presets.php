@@ -58,12 +58,15 @@ update_option('_fluent_kit_settings', array_merge((array) get_option('_fluent_ki
     'hide_app_headers' => 'yes',
 ]));
 
-// FluentCRM. Its setup wizard can send the owner's details to the vendor; the tags it would ask for are made here.
-// Buyers are tagged by the seller-storefront.php mu-plugin ("Website: Active", then "Website: Past").
+// FluentCRM. Its setup wizard can send the owner's details to the vendor; what it would ask for is made here. A
+// storefront sells one thing, website plans, so the CRM lifecycle plugin calls every offering "Website": a visitor who
+// asks a question or leaves checkout is "Website: Interested", a buyer "Website: Active", and when their last plan ends
+// "Website: Past". The fields, the contact form's questions and the draft automations come from crm/setup.php.
+update_option('anypress_crm_offerings', ['subscription' => 'Website', 'order' => 'Website', 'enquiry' => 'Website']);
 fluentcrm_update_option('fluentcrm_setup_wizard_ran', 'yes');
 fluentcrm_update_option('_fluentcrm_share_essential', 'no');
 $newsletter = \FluentCrm\App\Models\Lists::firstOrCreate(['slug' => 'newsletter'], ['title' => 'Newsletter']);
-foreach (['Website: Active', 'Website: Past'] as $title) {
+foreach (['Website: Interested', 'Website: Active', 'Website: Past'] as $title) {
     \FluentCrm\App\Models\Tag::firstOrCreate(['slug' => sanitize_title($title)], ['title' => $title]);
 }
 // Settings → SmartCodes & Integrations: an unticked newsletter box at FluentCart checkout (double opt-in, into
@@ -102,6 +105,34 @@ update_option('_fluentcrm_compliance_settings', array_merge((array) get_option('
     'gravatar_fallback' => 'no',
 ]));
 
+// Fluent Forms. Global settings → Security: the honeypot and token checks, off by default. Its contact form (the
+// Contact page) emails the owner each message; the newsletter sign-up form it also makes isn't used here.
+$forms = get_option('_fluentform_global_form_settings', []);
+$forms['misc'] = array_merge($forms['misc'] ?? [], ['honeypotStatus' => 'yes', 'tokenBasedProtectionStatus' => 'yes']);
+update_option('_fluentform_global_form_settings', $forms);
+foreach (wpFluent()->table('fluentform_forms')->get() as $form) {
+    if ($form->title === 'Subscription Form') {
+        wpFluent()->table('fluentform_form_meta')->where('form_id', $form->id)->delete();
+        wpFluent()->table('fluentform_forms')->where('id', $form->id)->delete();
+    } elseif ($form->title === 'Contact Form Demo') {
+        wpFluent()->table('fluentform_form_meta')->where('form_id', $form->id)->where('meta_key', 'notifications')->delete();
+        wpFluent()->table('fluentform_form_meta')->insert(['form_id' => $form->id, 'meta_key' => 'notifications', 'value' => wp_json_encode([
+            'name' => 'Admin Notification Email',
+            'sendTo' => ['type' => 'email', 'email' => '{wp.admin_email}', 'field' => 'email', 'routing' => []],
+            'fromName' => '',
+            'fromEmail' => '',
+            'replyTo' => '{inputs.email}',
+            'bcc' => '',
+            'subject' => 'New message: {inputs.subject}',
+            'message' => '<p>{all_data}</p><p>Sent from: {embed_post.permalink}</p>',
+            'conditionals' => ['status' => false, 'type' => 'all', 'conditions' => []],
+            'enabled' => true,
+            'email_template' => '',
+        ])]);
+        update_option('anypress_crm_contact_form', (int) $form->id, true);
+    }
+}
+
 // WP Fusion Lite: connected to FluentCRM on this site, which is all its setup screen's Connect button does, plus the
 // default field map and the tag and list cache it loads next. Profile changes follow the contact. It doesn't make
 // contacts itself (create_users off): buyers become contacts through the mu-plugin, which keeps unsubscribes, while
@@ -126,30 +157,38 @@ wp_fusion()->settings->set_multiple([
     'crm' => 'fluentcrm',
     'connection_configured' => true,
     'push' => true,
+    // For a seller who turns "Create contacts" on: new users arrive transactional, not subscribed.
+    'default_status' => 'transactional',
     'contact_fields' => $wpfFields,
 ]);
 // Saved as an explicit 0: set_multiple() skips false values, and the settings screen shows an unsaved box as ticked.
 wp_fusion()->settings->set('create_users', 0);
 (new \WPF_FluentCRM())->sync();
 
-// AnyPress theme. A home page built from the theme's own sections (the store template's starter-page builders in
-// anypress-patterns.php, copied in for the build only), so a new storefront opens on a finished-looking page the owner
-// rewrites in the Site Editor. The plans section lists FluentCart's products: the website plans WaaS Host makes.
+// AnyPress theme. A whole website built from the theme's own sections (the store template's starter-page builders in
+// anypress-patterns.php, copied in for the build only), so a new storefront opens finished-looking and the owner
+// rewrites it in the Site Editor: Home, How it works, Plans (FluentCart's shop: the website plans WaaS Host makes),
+// About, Questions and Contact, with the contact form.
 require __DIR__ . '/anypress-patterns.php';
 $pageId = static fn(string $slug): int => (int) get_page_by_path($slug)?->ID;
 $account = get_permalink($pageId('account'));
+$url = static fn(string $slug): string => home_url("/$slug/");
 // FluentCart's shop lists the website plans, so it is called Plans.
-wp_update_post(['ID' => $pageId('shop'), 'post_title' => 'Plans']);
-kses_remove_filters();
-$home = wp_insert_post([
-    'post_type' => 'page',
-    'post_status' => 'publish',
-    'post_title' => 'Home',
-    'post_name' => 'home',
-    'comment_status' => 'closed',
-    'ping_status' => 'closed',
-    'page_template' => 'page-no-title',
-    'post_content' => anypress_hero(
+wp_update_post(['ID' => $pageId('shop'), 'post_title' => 'Plans', 'post_name' => 'plans']);
+$plans = get_permalink($pageId('plans'));
+$questions = [
+    ['Do I need to know how to build websites?', 'No. Your website comes with pages ready to edit, and you change them with simple blocks.'],
+    ['Can I use my own domain?', 'Yes. Every website starts on a free address, and you can connect your own domain from your account.'],
+    ['Can I change plans or cancel?', 'Yes. Move to another plan or cancel from your account at any time.'],
+    ['What is included?', 'Hosting, security, nightly backups and updates come with every plan.'],
+];
+$steps = [
+    ['1. Pick a plan', 'Choose the plan that fits what your business needs today.'],
+    ['2. Check out', 'Pay securely by card. You can cancel at any time.'],
+    ['3. Make it yours', 'Sign in to your new website and add your words, photos and logo.'],
+];
+$pages = [
+    'home' => ['Home', anypress_hero(
         'Your website, ready in minutes',
         'Pick a plan and your new website is ready to make your own. Hosting, security, backups and updates are included, so you can get on with your business.',
         [['See the plans', '#plans'], ['Sign in', $account]]
@@ -162,26 +201,64 @@ $home = wp_insert_post([
             ['Fast everywhere', 'Pages are built to load quickly on phones as well as computers.'],
             ['Help when you need it', 'Ask us anything about your website from your account.'],
         ])
-        . anypress_features('How it works', [
-            ['1. Pick a plan', 'Choose the plan that fits what your business needs today.'],
-            ['2. Check out', 'Pay securely by card. You can cancel at any time.'],
-            ['3. Make it yours', 'Sign in to your new website and add your words, photos and logo.'],
-        ], 'tint')
+        . anypress_features('How it works', $steps, 'tint')
         . anypress_embed('Plans', '[fluent_cart_products per_page="12" paginator="numbers"]', 'plans')
-        . anypress_faq('Questions', [
-            ['Do I need to know how to build websites?', 'No. Your website comes with pages ready to edit, and you change them with simple blocks.'],
-            ['Can I use my own domain?', 'Yes. Every website starts on a free address, and you can connect your own domain from your account.'],
-            ['Can I change plans or cancel?', 'Yes. Move to another plan or cancel from your account at any time.'],
-            ['What is included?', 'Hosting, security, nightly backups and updates come with every plan.'],
+        . anypress_faq('Questions', $questions)
+        . anypress_call_to_action('Ready to get online?', 'Your website can be ready today. Not sure which plan fits? Ask us.', [['See the plans', '#plans'], ['Ask a question', $url('contact')]])],
+    'how-it-works' => ['How it works', anypress_hero(
+        'From plan to website in minutes',
+        'No setup, no installs and nothing to look after. Pick a plan, check out and start making the website your own.',
+        [['See the plans', $plans]]
+    )
+        . anypress_features('Three steps', $steps, 'tint')
+        . anypress_features('After you check out', [
+            ['Your website is built', 'We make your website straight away and email you when it is ready, usually within a few minutes.'],
+            ['You sign in', 'One click from your account takes you into your website, signed in.'],
+            ['You make it yours', 'Change the words, photos, colours and logo. Add pages whenever you need them.'],
+            ['We look after the rest', 'Hosting, security, backups and updates keep running in the background.'],
         ])
-        . anypress_call_to_action('Ready to get online?', 'Your website can be ready today.', [['See the plans', '#plans']]),
-], true);
-kses_init();
-if (is_wp_error($home)) {
-    throw new RuntimeException($home->get_error_message());
+        . anypress_call_to_action('Ready when you are', 'Pick the plan that fits today. You can move to another one at any time.', [['See the plans', $plans]])],
+    'about' => ['About', anypress_story('About us', [
+        'Say in a sentence or two who you are and who you make websites for.',
+        'Tell visitors what you care about getting right for them, and why they can trust you with their website.',
+    ])
+        . anypress_features('What you can count on', [
+            ['A real website from day one', 'Every plan starts with finished pages, not a blank screen.'],
+            ['Straight answers', 'Clear prices, no long contracts, and a person to ask when you are stuck.'],
+            ['Looked after', 'Hosting, security, backups and updates, all included.'],
+        ], 'tint')
+        . anypress_call_to_action('We would love to hear from you', '', [['Contact us', $url('contact')]])],
+    'questions' => ['Questions', anypress_hero('Questions', 'What people ask most before they pick a plan.', [['Ask us something else', $url('contact')]])
+        . anypress_faq('Common questions', array_merge($questions, [
+        ['How long does it take?', 'Your website is usually ready a few minutes after you check out. We email you when it is.'],
+        ['Is there a contract?', 'No. Plans renew each month or year and you can cancel from your account.'],
+        ['Can I get help?', 'Yes. Ask us from your account or through the contact page.'],
+    ]))
+        . anypress_call_to_action('Still have a question?', 'Ask us and we will get back to you.', [['Contact us', $url('contact')]])],
+    'contact' => ['Contact', anypress_hero('Get in touch', 'Ask about the plans, your website or anything else. We will get back to you by email.', [['See the plans', $plans]])
+        . anypress_contact_form()],
+];
+kses_remove_filters();
+$made = [];
+foreach ($pages as $slug => [$title, $content]) {
+    $id = wp_insert_post([
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'post_title' => $title,
+        'post_name' => $slug,
+        'comment_status' => 'closed',
+        'ping_status' => 'closed',
+        'page_template' => 'page-no-title', // each page opens with its own big heading
+        'post_content' => $content,
+    ], true);
+    if (is_wp_error($id)) {
+        throw new RuntimeException($id->get_error_message());
+    }
+    $made[$slug] = $id;
 }
+kses_init();
 update_option('show_on_front', 'page');
-update_option('page_on_front', $home);
+update_option('page_on_front', $made['home']);
 // Without a menu the header's navigation lists every page (Receipt, Review Your Order...), so make one; the header and
 // footer navigation blocks use the newest menu.
 $link = static function (string $label, int $id): string {
@@ -192,7 +269,8 @@ $menu = wp_insert_post([
     'post_type' => 'wp_navigation',
     'post_status' => 'publish',
     'post_title' => 'Main menu',
-    'post_content' => $link('Plans', $pageId('shop')) . $link('Account', $pageId('account')),
+    'post_content' => $link('How it works', $made['how-it-works']) . $link('Plans', $pageId('plans')) . $link('About', $made['about'])
+        . $link('Questions', $made['questions']) . $link('Contact', $made['contact']) . $link('Account', $pageId('account')),
 ], true);
 if (is_wp_error($menu)) {
     throw new RuntimeException($menu->get_error_message());

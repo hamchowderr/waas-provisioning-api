@@ -1,0 +1,143 @@
+[
+ {
+  "title": "Nurture: Just starting out",
+  "trigger": "manual",
+  "note": "Started by the AnyPress CRM plugin when someone who picked \"Just starting out\" on the contact form confirms they want email. Rename the answer on the contact form and this automation together.",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Thanks for getting in touch",
+    "preheader": "Here is what to expect from us.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You told us you are just starting out. A website is one of the best first steps, and with us it is ready in minutes, not weeks.</p><p>Over the next couple of weeks we will send you a few short emails with ideas that help. You can stop them at any time with the link at the bottom.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 4,
+    "subject": "An example you might like",
+    "preheader": "How someone like you got started.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Most new businesses we help start with a simple site: who they are, what they offer and how to get in touch. That is enough to look professional and start getting enquiries.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 9,
+    "subject": "A short guide to your next step",
+    "preheader": "One thing to do this week.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Write three sentences: what you do, who it is for, and how people reach you. That is the heart of your home page, and you can paste it straight in.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 16,
+    "subject": "Can we help?",
+    "preheader": "Tell us what you need.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like to talk about what you need, we would be glad to help. Tell us a little about it and we will get back to you.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Get in touch</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Nurture: Already in business",
+  "trigger": "manual",
+  "note": "Started by the AnyPress CRM plugin when someone who picked \"Already in business\" on the contact form confirms they want email. Rename the answer on the contact form and this automation together.",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Thanks for getting in touch",
+    "preheader": "Here is what to expect from us.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You told us you are already in business. We will keep this practical: how a better website brings you more of the right customers.</p><p>Over the next couple of weeks we will send you a few short emails with ideas that help. You can stop them at any time with the link at the bottom.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 4,
+    "subject": "An example you might like",
+    "preheader": "How someone like you got started.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Businesses that move to us usually want two things: a site that is fast and easy to change, and fewer bills for plugins and hosting. Every plan includes hosting, the plugins and updates.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 9,
+    "subject": "A short guide to your next step",
+    "preheader": "One thing to do this week.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Look at your current website on your phone. If it is slow or hard to read, that is the first thing to fix, and the quickest win.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 16,
+    "subject": "Can we help?",
+    "preheader": "Tell us what you need.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like to talk about what you need, we would be glad to help. Tell us a little about it and we will get back to you.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Get in touch</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Welcome: Website",
+  "trigger": "manual",
+  "note": "Started when a website plan starts (the contact gets \"Website: Active\"). \"Your website is ready\" comes separately, with the sign-in link.",
+  "emails": [
+   {
+    "day": 1,
+    "subject": "Three things to do first on your website",
+    "preheader": "Your first ten minutes.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Welcome. Your website is being set up and you will get its sign-in link in a separate email.</p><p>When you are in, do these three things first: put in your business name and logo, rewrite the home page in your own words, and add your contact details.</p><p><a href=\"{{wp.url}}/account/\"><strong>Go to my account</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 7,
+    "subject": "How is your website coming along?",
+    "preheader": "A quick check-in.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You have had your website for a week. Is anything holding you up? Tell us what you are stuck on and we will help.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 31,
+    "subject": "Know a business that needs a website?",
+    "preheader": "Pass it on.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We hope your first month has gone well. If you know another business that needs a website, we would be grateful if you sent them our way.</p><p><a href=\"{{wp.url}}\"><strong>Share our website</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Win-back: Website",
+  "trigger": "manual",
+  "note": "Started when the last website plan ends (the contact gets \"Website: Past\"). The coupon COMEBACK20 (FluentCart > Coupons) gives 20% off the first payment, once per customer, 100 uses.",
+  "emails": [
+   {
+    "day": 2,
+    "subject": "Can we ask one quick question?",
+    "preheader": "What made you stop?",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We noticed your website plan has ended. Could you tell us why? One line is enough, and it really helps us improve.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Tell us why</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 30,
+    "subject": "Come back for 20% off",
+    "preheader": "Use code COMEBACK20 at checkout.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like a website again, use the code <strong>COMEBACK20</strong> at checkout for 20% off your first payment.</p><p><a href=\"{{wp.url}}/plans/\"><strong>See the plans</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ]
+ },
+ {
+  "title": "Abandoned checkout",
+  "trigger": "fc_ab_cart_simulation_fluent_cart",
+  "note": "Someone started a checkout and left. FluentCRM starts this 30 minutes after they leave (Settings > Abandoned Cart) and stops it as soon as they buy. Publishing it also starts tagging these people \"Website: Interested\".",
+  "emails": [
+   {
+    "day": 0,
+    "subject": "Your website is waiting at checkout",
+    "preheader": "Your choice is saved.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You started a checkout with us but didn't finish. Your choice is saved:</p>{{ab_cart_fluent_cart.cart_items_table}}<p><a href=\"##ab_cart_fluent_cart.recovery_url##\"><strong>Finish checking out</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 1,
+    "subject": "Any questions before you order?",
+    "preheader": "We are happy to help.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If something made you stop, tell us what it was. A question about the price, the details or how it works is often quick to answer.</p><p><a href=\"##ab_cart_fluent_cart.recovery_url##\"><strong>Go back to your checkout</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   },
+   {
+    "day": 3,
+    "subject": "Last reminder about your order",
+    "preheader": "We will stop here.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>This is our last note about your checkout. It is still saved if you would like to finish it.</p><p><a href=\"##ab_cart_fluent_cart.recovery_url##\"><strong>Finish checking out</strong></a></p><p>If now isn't the right time, no problem.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+   }
+  ],
+  "settings": {
+   "priority": 10
+  },
+  "conditions": {
+   "cart_conditions": [
+    []
+   ],
+   "active_once": "no",
+   "require_subscribed": "no"
+  }
+ }
+]

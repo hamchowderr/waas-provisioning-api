@@ -75,9 +75,9 @@ a random password nobody keeps.
 - FluentCart: first activation marked done (its first admin visit would otherwise blank the store name), terms
   checkbox at checkout, cart icon in the menu, renewal reminders on (monthly plans 7 days before each charge,
   plus the yearly and trial-end ones).
-- FluentCRM: setup wizard skipped, lists Newsletter and Customers, tags Customer, Lead and Subscriber, an unticked
-  newsletter box at checkout (double opt-in, into Newsletter), WordPress users synced as contacts, sending capped at 7
-  emails a second, IP anonymising, one-click unsubscribe, no Gravatar.
+- FluentCRM: setup wizard skipped, one list (Newsletter), an unticked newsletter box at checkout (double opt-in, into
+  Newsletter), WordPress users synced as contacts, sending capped at 7 emails a second, IP anonymising, one-click
+  unsubscribe, no Gravatar.
 - Fluent Forms: honeypot and token spam checks; the contact form emails the site's admin address; the
   subscription form adds people to Newsletter after they confirm (double opt-in).
 - FluentAffiliate: FluentCart integration on, so store orders count as referrals.
@@ -86,6 +86,38 @@ a random password nobody keeps.
 - Starter pages (`mu-plugins/anypress-patterns.php`); the build checks they register.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
   login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
+
+### CRM lifecycle
+
+Every store starts with its CRM set up ([`crm/setup.php`](crm/setup.php), run after the presets):
+
+- Tags say what a contact wants, has or had: **Offering: Interested / Active / Past**. The offerings are
+  **Enquiry** (the contact form), **Shop** (one-off orders, and abandoned checkouts), **Subscription**, **Bookings**,
+  **Community**, **Course** and **Affiliate**. Interested never sits with Active or Past of the same offering, Past
+  removes Active, and Interested goes after 120 days without a purchase. A full refund removes Active (or Shop: Past
+  when it was the only order) and sets the contact's **Refunded** field instead of adding Past.
+- Fields: **Source** (contact_form, checkout, booking), **Customer group** and **Refunded**. Lists are consent only:
+  Newsletter.
+- The contact form asks "What best describes you?" (the customer groups, Just starting out and Already in business to
+  begin with), "What can we help with?" ("A booking" shows only where FluentBooking is on) and has an unticked
+  newsletter box. Sending it makes the visitor a contact tagged Enquiry: Interested (or Bookings: Interested); they
+  join the newsletter only if they tick the box and confirm.
+- Abandoned checkout tracking for FluentCart (it tags Shop: Interested once the owner publishes the abandoned
+  checkout automation, since FluentCRM only follows a checkout when one is published), and a coupon **COMEBACK20** (20% off the first
+  payment, once per customer, 100 uses) for the win-back email.
+- Draft automations ([`crm/emails.json`](crm/emails.json)): a nurture series for each customer group, a welcome for
+  each offering, a thank-you after a one-off order, win-backs, and the abandoned checkout emails, plus a Newsletter
+  email template. Nothing sends until the owner publishes an automation in FluentCRM.
+
+[`mu-plugins/anypress-crm-lifecycle.php`](mu-plugins/anypress-crm-lifecycle.php) does the tagging from FluentCart,
+FluentBooking, FluentCommunity, FluentAffiliate and the contact form, and starts the welcome, thank-you, win-back and
+nurture automations once they are published (free FluentCRM can't start an automation from a tag; these automations sit
+on the user-registration trigger, limited to a role nobody has). New buyers are "transactional", and an unsubscribed
+contact stays unsubscribed (WP Fusion also adds new WordPress users as transactional). When WP Fusion is connected to another CRM, such as HighLevel, the same tags follow the
+contact there. Each Monday the owner gets the week's numbers by email (new contacts, groups, sources, tags added, paid
+orders, monthly revenue from live plans), with a CRM check in the first week of each month; quiet weeks send nothing,
+and setting the `anypress_crm_weekly_email` option to `no` turns it off. Owners rename an offering with the
+`anypress_crm_offerings` option.
 
 [`mu-plugins/anypress-store.php`](mu-plugins/anypress-store.php) ships in the template and keeps the rest in code:
 WP Fusion's staging-site check off (`WPF_STAGING_MODE` false; every store is a clone), vendor usage stats and
