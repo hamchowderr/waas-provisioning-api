@@ -214,7 +214,9 @@ function layout(mail: AuthMail, m: Message): string {
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">` +
     `<tr><td style="padding:0 4px 20px">${head}</td></tr>` +
     `<tr><td style="background:#ffffff;border:1px solid ${LINE};border-radius:12px;overflow:hidden">` +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:#ff7a2a;background-image:linear-gradient(90deg,#ffc75a,#ff7a2a,#ee2f5e,#d21fa4)">&nbsp;</td></tr>` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">` +
+    // The AnyPress colour strip only on AnyPress's own emails: a seller's or reseller's carry just their brand.
+    (mail.poweredBy ? '' : `<tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:#ff7a2a;background-image:linear-gradient(90deg,#ffc75a,#ff7a2a,#ee2f5e,#d21fa4)">&nbsp;</td></tr>`) +
     `<tr><td style="padding:32px 32px 16px">${body}</td></tr></table></td></tr>` +
     (foot.length ? `<tr><td style="padding:20px 4px 0;font-size:13px;line-height:20px;color:${SOFT}">${foot.join('<br>')}</td></tr>` : '') +
     `</table></td></tr></table></body></html>`
