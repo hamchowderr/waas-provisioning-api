@@ -201,6 +201,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/site/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand the store's owner to the website assistant
+         * @description Added for AnyPress.
+         *
+         *     For a storefront that has signed in the store's owner itself (its customer account page). Returns the assistant's address with a one-time handoff: send the owner's browser there and the assistant opens signed in to this one store, with no "Sign in with your website". The assistant trades the handoff at `POST /oauth/site/handoff`, with its own PKCE challenge, for a code for `site:read site:write` (resource `/mcp/site`). The handoff works once, for 2 minutes, and only for `<assistantUrl>/callback`.
+         *
+         *     The tenant must be Done and not suspended.
+         */
+        post: operations["siteHandoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/import-code": {
         parameters: {
             query?: never;
@@ -1915,6 +1939,17 @@ export interface components {
             /** @description The app's redirect address with code, state and iss */
             redirectUrl: string;
         };
+        SiteHandoffParams: {
+            /**
+             * Format: uri
+             * @description The website assistant's address (https), e.g. https://assistant.anypress.io
+             */
+            assistantUrl: string;
+        };
+        SiteHandoffResult: {
+            /** @description The assistant's /from-shop address with the one-time handoff */
+            url: string;
+        };
         SiteRequestParams: {
             /**
              * @example POST
@@ -2532,6 +2567,61 @@ export interface operations {
                 };
             };
             /** @description The app or its redirect address is not registered, or the tenant is not ready */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    siteHandoff: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SiteHandoffParams"];
+            };
+        };
+        responses: {
+            /** @description Where to send the owner's browser */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteHandoffResult"];
+                };
+            };
+            /** @description The address is not https, or the tenant is not ready */
             400: {
                 headers: {
                     [name: string]: unknown;

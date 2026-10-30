@@ -55,6 +55,8 @@ export const MCP_PATHS = ['/mcp', '/mcp/read-only', '/mcp/site'] as const;
 export const isSiteResource = (resource: string) => resource.endsWith('/mcp/site');
 
 const CODE_TTL_S = 10 * 60;
+/** How long a storefront's handoff to the website assistant stays good. */
+const HANDOFF_TTL_S = 2 * 60;
 const ACCESS_TTL_S = 60 * 60;
 const REFRESH_TTL_S = 30 * 24 * 60 * 60;
 
@@ -395,6 +397,36 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     return c.redirect(codeRedirect(row.redirect_uri, code, row.state, row.issuer), 302);
   });
 
+  // The website assistant trades a storefront's handoff (createSiteHandoff), with its own PKCE challenge,
+  // for a code for that one website. One use; the redirect must be the one the storefront named.
+  app.post('/oauth/site/handoff', async (c) => {
+    const body = (await readJson(c)) as Record<string, unknown>;
+    const text = (key: string) => (typeof body[key] === 'string' ? (body[key] as string) : '');
+    const [handoff, clientId, redirectUri, codeChallenge, state] = ['handoff', 'client_id', 'redirect_uri', 'code_challenge', 'state'].map(text);
+    if (!handoff || !clientId || !redirectUri || !codeChallenge) throw badRequest('handoff, client_id, redirect_uri and code_challenge are required');
+    const { rows } = await pool.query<{ tenant_id: string; product_id: string; redirect_uri: string }>(
+      'DELETE FROM site_handoffs WHERE handoff_hash = $1 AND expires_at > now() RETURNING tenant_id, product_id, redirect_uri',
+      [sha256(handoff)],
+    );
+    const given = rows[0];
+    if (!given) throw badRequest('This link has expired. Open the assistant again from your account.');
+    if (!sameRedirectUri(given.redirect_uri, redirectUri)) throw badRequest('redirect_uri is not the assistant this storefront named');
+    const { rows: clients } = isUuid(clientId)
+      ? await pool.query<{ redirect_uris: string[] }>('SELECT redirect_uris FROM oauth_clients WHERE id = $1', [clientId])
+      : { rows: [] };
+    if (!clients[0]?.redirect_uris.some((uri) => sameRedirectUri(uri, redirectUri))) throw badRequest('client_id is not an app registered for that redirect_uri');
+    const { rows: tenants } = await pool.query<{ status: number; is_suspended: boolean }>('SELECT status, is_suspended FROM tenants WHERE id = $1', [given.tenant_id]);
+    if (tenants[0]?.status !== Status.Done || tenants[0].is_suspended) throw badRequest('This website is not ready');
+    const issuer = base(c);
+    const code = await issueCode(
+      pool,
+      { clientId, redirectUri, codeChallenge, resource: `${issuer}/mcp/site` },
+      { productId: given.product_id, tenantId: given.tenant_id },
+      [scopeOf('site', 'read'), scopeOf('site', 'write')].join(' '),
+    );
+    return c.json({ redirectUrl: codeRedirect(redirectUri, code, state || undefined, issuer) }, 200, { 'Cache-Control': 'no-store' });
+  });
+
   app.post('/oauth/token', async (c) => {
     const form = (await readForm(c)) as Record<string, string | undefined>;
     const fail = (error: string, description: string, status: 400 | 401 = 400) =>
@@ -517,6 +549,20 @@ export async function issueCode(pool: Pool, request: CodeRequest, owner: TokenOw
 function siteWantsWrite(requested: string[], resource: string): boolean {
   if (resource.endsWith('/read-only')) return false;
   return requested.length === 0 || requested.some((s) => s.endsWith(':write'));
+}
+
+/**
+ * A storefront hands its signed-in owner to the website assistant at `assistantUrl`: a one-time
+ * handoff for this website only, which only that assistant's /callback can trade for a sign-in code.
+ */
+export async function createSiteHandoff(pool: Pool, tenant: { id: string; product_id: string }, assistantUrl: string): Promise<string> {
+  const handoff = randomToken();
+  await pool.query('DELETE FROM site_handoffs WHERE expires_at < now()');
+  await pool.query(
+    'INSERT INTO site_handoffs (handoff_hash, tenant_id, product_id, redirect_uri, expires_at) VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))',
+    [sha256(handoff), tenant.id, tenant.product_id, `${assistantUrl.replace(/\/$/, '')}/callback`, HANDOFF_TTL_S],
+  );
+  return handoff;
 }
 
 export function codeRedirect(redirectUri: string, code: string, state: string | null | undefined, issuer: string): string {

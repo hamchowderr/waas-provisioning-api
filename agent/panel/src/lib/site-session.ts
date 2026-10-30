@@ -77,34 +77,22 @@ async function pendingSignIn(back: string) {
   };
 }
 
-/** The shops allowed to sign their owners in (PANEL_SHOPS: comma-separated origins, e.g. https://shop.anypress.io). */
-function allowedShop(address: string): URL | null {
-  let url: URL;
-  try {
-    url = new URL(address);
-  } catch {
-    return null;
-  }
-  const shops = (process.env.PANEL_SHOPS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean);
-  const secure = url.protocol === 'https:' || url.hostname === 'localhost';
-  return secure && shops.includes(url.origin) ? url : null;
-}
-
 /**
- * A sign-in the owner's shop vouches for (its "Website assistant" button): the shop's address gets
- * this sign-in's client, redirect and PKCE challenge, asks the API for a code for the owner's website,
- * and sends the owner back to /callback with it. Returns where to send the owner, or null for a shop
- * that isn't allowed.
+ * A sign-in the owner's shop vouches for (its "Ask the website assistant" button): the shop got a
+ * one-time handoff for the owner's website from the API, and this trades it, with this sign-in's PKCE
+ * challenge, for a code. No list of shops: only a storefront holding its API key can make a handoff.
+ * Returns where to send the owner (/callback), or an error.
  */
-export async function startShopSignIn(shop: string): Promise<string | null> {
-  const target = allowedShop(shop);
-  if (!target) return null;
+export async function startShopSignIn(handoff: string): Promise<{ next: string } | { error: string }> {
+  if (!handoff) return { error: 'This link is missing its sign-in. Open the assistant again from your account.' };
   const pending = await pendingSignIn('/');
-  target.searchParams.set('client_id', pending.clientId);
-  target.searchParams.set('redirect_uri', pending.redirectUri);
-  target.searchParams.set('code_challenge', pending.codeChallenge);
-  target.searchParams.set('state', pending.state);
-  return target.toString();
+  const response = await fetch(`${API_URL}/oauth/site/handoff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ handoff, client_id: pending.clientId, redirect_uri: pending.redirectUri, code_challenge: pending.codeChallenge, state: pending.state }),
+  });
+  if (!response.ok) return { error: 'This link has expired. Open the assistant again from your account.' };
+  return { next: ((await response.json()) as { redirectUrl: string }).redirectUrl };
 }
 
 type Tokens = { access_token: string; refresh_token?: string; expires_in?: number };

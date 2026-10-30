@@ -252,3 +252,62 @@ describe('The storefront signs its owner in', () => {
     await client.close();
   });
 });
+
+describe('The storefront hands its owner to the website assistant', () => {
+  const ASSISTANT = 'https://assistant.example.com';
+  const handoffFor = async (query = 'externalId=bakery', assistantUrl = ASSISTANT, auth = apiAuth) =>
+    t.app.request(`/v1/tenants/site/handoff?${query}`, { method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ assistantUrl }) });
+  const trade = (body: Record<string, string>) =>
+    t.app.request('/oauth/site/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('gives the named assistant one sign-in, for this one website, with no list of storefronts', async () => {
+    const registered = await t.app.request('/oauth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Website assistant', redirect_uris: [`${ASSISTANT}/callback`] }),
+    });
+    const { client_id } = (await registered.json()) as { client_id: string };
+    const verifier = randomBytes(32).toString('base64url');
+    const code_challenge = createHash('sha256').update(verifier).digest('base64url');
+
+    expect((await handoffFor('externalId=nobody')).status).toBe(400);
+    expect((await handoffFor('externalId=bakery', 'http://assistant.example.com')).status).toBe(400);
+    expect((await handoffFor('externalId=bakery', ASSISTANT, 'Basic bm9wZTpub3Bl')).status).toBe(403);
+
+    const started = await handoffFor();
+    expect(started.status).toBe(200);
+    const url = new URL(((await started.json()) as { url: string }).url);
+    expect(`${url.origin}${url.pathname}`).toBe(`${ASSISTANT}/from-shop`);
+    const handoff = url.searchParams.get('handoff')!;
+
+    // Only the assistant the storefront named, with a registered app.
+    expect((await trade({ handoff, client_id, redirect_uri: 'https://evil.example/callback', code_challenge })).status).toBe(400);
+    // That try used the handoff up.
+    expect((await trade({ handoff, client_id, redirect_uri: `${ASSISTANT}/callback`, code_challenge })).status).toBe(400);
+
+    const fresh = new URL(((await (await handoffFor()).json()) as { url: string }).url).searchParams.get('handoff')!;
+    const answer = await trade({ handoff: fresh, client_id, redirect_uri: `${ASSISTANT}/callback`, code_challenge, state: 's1' });
+    expect(answer.status).toBe(200);
+    const target = new URL(((await answer.json()) as { redirectUrl: string }).redirectUrl);
+    expect(`${target.origin}${target.pathname}`).toBe(`${ASSISTANT}/callback`);
+    expect(target.searchParams.get('state')).toBe('s1');
+    expect((await trade({ handoff: fresh, client_id, redirect_uri: `${ASSISTANT}/callback`, code_challenge })).status).toBe(400);
+
+    const tokens = (await (
+      await t.app.request('/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code: target.searchParams.get('code')!, code_verifier: verifier, client_id, redirect_uri: `${ASSISTANT}/callback` }).toString(),
+      })
+    ).json()) as { access_token: string; scope: string };
+    expect(tokens.scope.split(' ').sort()).toEqual(['site:read', 'site:write']);
+    const client = new Client({ name: 'agent', version: '1' }, { versionNegotiation: { mode: 'auto' } });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${BASE}/mcp/site`), { fetch: appFetch, requestInit: { headers: { Authorization: `Bearer ${tokens.access_token}` } } }),
+    );
+    seen = [];
+    expect((await client.callTool({ name: 'get_site', arguments: {} })).isError).toBeFalsy();
+    expect(seen.every((address) => new URL(address).host === mainDomain)).toBe(true);
+    await client.close();
+  });
+});
