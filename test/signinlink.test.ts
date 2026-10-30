@@ -96,6 +96,9 @@ describe("sign-in on a seller's own dashboard address", () => {
     expect(sent[0]!.body.from).toEqual({ email: MAIL.from, name: 'Seller shop' });
     expect(sent[0]!.body.subject).toBe('Your Seller shop sign-in link');
     expect(sent[0]!.body.text).toMatch(/Powered by AnyPress$/);
+    expect(sent[0]!.body.html).not.toContain('linear-gradient');
+    // It comes from no-reply, so it doesn't invite a reply that nobody would read.
+    expect(sent[0]!.body.text).not.toContain('just reply');
     const verified = await app.request(link!.pathname + link!.search, { redirect: 'manual', headers: { 'X-Forwarded-Host': OWN } });
     expect(verified.status).toBe(302);
     expect(verified.headers.get('location')).toMatch(new RegExp(`^(https://${OWN.replaceAll('.', '\\.')})?/`));
@@ -165,10 +168,11 @@ describe('sign-in email settings', () => {
   it('puts the message, one button and the support address in the email', async () => {
     let body: any;
     const capture = async (_: unknown, init?: RequestInit) => ((body = JSON.parse(String(init!.body))), new Response('{}', { status: 200 }));
-    await sendSignInLink({ ...MAIL, supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' }, 'a@b.example', 'https://x.example/l?a=1&b=2', capture as typeof fetch);
+    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' }, 'a@b.example', 'https://x.example/l?a=1&b=2', capture as typeof fetch);
     expect(body.html).toContain('<img src="https://anypress.io/logo-512.png"');
     expect(/href="([^"]+)"/.exec(body.html)![1]).toBe('https://x.example/l?a=1&amp;b=2');
     expect(body.html).toContain('mailto:support@anypress.io');
+    expect(body.html).toContain('linear-gradient');
     expect(body.text).toMatch(/Questions\? Write to support@anypress\.io or just reply to this email\.$/);
   });
 
