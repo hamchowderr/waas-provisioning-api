@@ -204,7 +204,7 @@ function layout(mail: AuthMail, m: Message): string {
       ? `<div style="border-top:1px solid ${LINE};padding-top:16px">${m.note.split('\n\n').map((n) => para(n, `font-size:14px;line-height:21px;color:${SOFT}`)).join('')}</div>`
       : '');
   const foot = [
-    mail.supportEmail ? `Questions? Write to <a href="mailto:${escape(mail.supportEmail)}" style="color:${SOFT};text-decoration:underline">${escape(mail.supportEmail)}</a> or just reply to this email.` : '',
+    mail.supportEmail ? `Questions? Write to <a href="mailto:${escape(mail.supportEmail)}" style="color:${SOFT};text-decoration:underline">${escape(mail.supportEmail)}</a>${repliesReachSupport(mail) ? ' or just reply to this email' : ''}.` : '',
     mail.poweredBy ? `Powered by ${escape(mail.poweredBy)}` : '',
   ].filter(Boolean);
   return (
@@ -224,7 +224,7 @@ function layout(mail: AuthMail, m: Message): string {
 }
 
 async function send(mail: AuthMail, to: string, subject: string, html: string, text: string, what: string, fetchFn: typeof fetch) {
-  if (mail.supportEmail) text += `\n\nQuestions? Write to ${mail.supportEmail} or just reply to this email.`;
+  if (mail.supportEmail) text += `\n\nQuestions? Write to ${mail.supportEmail}${repliesReachSupport(mail) ? ' or just reply to this email' : ''}.`;
   if (mail.poweredBy) text += `\n\nPowered by ${mail.poweredBy}`;
   const res = await fetchFn(`${(mail.apiUrl ?? 'https://api.tosend.com').replace(/\/$/, '')}/v2/emails`, {
     method: 'POST',
@@ -233,6 +233,11 @@ async function send(mail: AuthMail, to: string, subject: string, html: string, t
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`toSend refused the ${what} (${res.status}): ${(await res.text()).slice(0, 300)}`);
+}
+
+/** A reply reaches the support address only when the email comes from it (toSend has no verified reply-to). */
+function repliesReachSupport(mail: AuthMail): boolean {
+  return !!mail.supportEmail && mail.from.toLowerCase() === mail.supportEmail.toLowerCase();
 }
 
 function escape(s: string): string {
