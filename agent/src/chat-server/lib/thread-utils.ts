@@ -68,48 +68,72 @@ type SuggestionsPart = {
  * A UIMessage (AI SDK v7 parts shape) for restoring a thread into the chat UI: its text,
  * plus one `data-work-thread` part per thread a `start_thread` call made in it
  * (lib/work-threads.ts), so a restored main chat still shows the thread it started where
- * it started it, and one `data-thread-suggestions` part per `suggest_threads` card. Other
- * tool calls are not restored.
+ * it started it, one `data-thread-suggestions` part per `suggest_threads` card, and one
+ * `data-tool-call` part per other finished tool call, so its step card shows again.
  */
 // biome-ignore lint/suspicious/noExplicitAny: MastraDBMessage
 export function toUIMessage(m: any): {
   id: string;
   role: 'user' | 'assistant';
-  parts: Array<{ type: 'text'; text: string } | WorkThreadPart | SuggestionsPart>;
+  parts: Array<{ type: 'text'; text: string } | WorkThreadPart | SuggestionsPart | ToolCallPart>;
 } {
+  const parts: unknown[] = Array.isArray(m?.content?.parts) ? (m.content.parts as unknown[]) : [];
+  const text = messageText(m);
+  // An assistant turn keeps its order: the steps it took (tool cards) where it took them, then
+  // what it said. Anything else is its text.
+  const ordered =
+    m?.role === 'assistant' && parts.some((p) => (p as { type?: string }).type === 'tool-invocation')
+      ? parts.flatMap((p): Array<{ type: 'text'; text: string } | WorkThreadPart | SuggestionsPart | ToolCallPart> => {
+          const part = p as { type?: string; text?: unknown };
+          if (part.type === 'text') return typeof part.text === 'string' && part.text ? [{ type: 'text', text: part.text }] : [];
+          return toolParts(p);
+        })
+      : [{ type: 'text' as const, text }, ...parts.flatMap(toolParts)];
   return {
     id: String(m?.id ?? `${m?.threadId ?? 't'}-${m?.createdAt ?? Math.random()}`),
     role: m?.role === 'assistant' ? 'assistant' : 'user',
-    parts: [{ type: 'text', text: messageText(m) }, ...threadParts(m)],
+    parts: ordered,
   };
 }
 
-/** The threads a message's `start_thread` calls made, and its `suggest_threads` cards. */
-function threadParts(
-  m: { content?: { parts?: unknown } } | undefined,
-): Array<WorkThreadPart | SuggestionsPart> {
-  const parts: unknown[] = Array.isArray(m?.content?.parts) ? (m.content.parts as unknown[]) : [];
-  return parts.flatMap((p): Array<WorkThreadPart | SuggestionsPart> => {
-    const call = (p as { type?: string; toolInvocation?: Record<string, unknown> }).toolInvocation;
-    if ((p as { type?: string }).type !== 'tool-invocation' || !call) return [];
-    if (call.toolName === SUGGEST_THREADS) {
-      // Only a card the tool accepted: a refused or unfinished call offered nothing.
-      const offered = (call.result as { suggested?: unknown } | undefined)?.suggested;
-      return call.state === 'result' && Array.isArray(offered) ? suggestionsOf(call.args) : [];
-    }
-    if (call.toolName !== START_THREAD_TOOL) return [];
-    const result = call.result as { threadId?: unknown; title?: unknown } | undefined;
-    if (typeof result?.threadId !== 'string') return [];
+/** A finished tool call, restored so its step card shows again (the client turns it back into a call and result). */
+type ToolCallPart = {
+  type: 'data-tool-call';
+  data: { id: string; name: string; args: unknown; result: unknown };
+};
+
+/** Tools whose cards have their own surfaces (the live question, the goal, the plan) and are not restored. */
+const NOT_RESTORED = new Set(['ask_user', 'setGoal', 'submit_plan']);
+
+/** One stored part's restored cards: a thread `start_thread` made, a `suggest_threads` card, or a finished step. */
+function toolParts(p: unknown): Array<WorkThreadPart | SuggestionsPart | ToolCallPart> {
+  const call = (p as { type?: string; toolInvocation?: Record<string, unknown> }).toolInvocation;
+  if ((p as { type?: string }).type !== 'tool-invocation' || !call) return [];
+  if (call.toolName === SUGGEST_THREADS) {
+    // Only a card the tool accepted: a refused or unfinished call offered nothing.
+    const offered = (call.result as { suggested?: unknown } | undefined)?.suggested;
+    return call.state === 'result' && Array.isArray(offered) ? suggestionsOf(call.args) : [];
+  }
+  if (call.toolName !== START_THREAD_TOOL) {
+    if (call.state !== 'result' || typeof call.toolName !== 'string' || NOT_RESTORED.has(call.toolName)) return [];
     return [
       {
-        type: 'data-work-thread' as const,
-        data: {
-          threadId: result.threadId,
-          title: typeof result.title === 'string' ? result.title : '',
-        },
+        type: 'data-tool-call' as const,
+        data: { id: String(call.toolCallId ?? ''), name: call.toolName, args: call.args, result: call.result },
       },
     ];
-  });
+  }
+  const result = call.result as { threadId?: unknown; title?: unknown } | undefined;
+  if (typeof result?.threadId !== 'string') return [];
+  return [
+    {
+      type: 'data-work-thread' as const,
+      data: {
+        threadId: result.threadId,
+        title: typeof result.title === 'string' ? result.title : '',
+      },
+    },
+  ];
 }
 
 /** A `suggest_threads` call's titles and reasons (the briefs stay in the agent's history). */
