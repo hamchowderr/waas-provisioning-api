@@ -9,6 +9,8 @@ import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { serve, type ServerType } from '@hono/node-server';
 import { type Browser, chromium } from 'playwright';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { signSiteRequest, siteKey, siteKeyMaster } from '../../src/sitekeys.ts';
+import { TEST_SECRETS_KEY } from '../../test/helpers.ts';
 import { startHarness, type Harness } from './harness.ts';
 
 let h: Harness;
@@ -16,6 +18,9 @@ let assistant: ServerType;
 let api: ServerType;
 let shop: Server;
 let shopUrl: string;
+// A page standing in for the store's block editor with WaaS Client's Assistant panel: the website's own address.
+let editor: Server;
+let editorUrl: string;
 let panel: ChildProcess;
 let panelUrl: string;
 let browser: Browser;
@@ -26,10 +31,38 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const path = url.pathname.replace(/^\/wp-json\/waas-client\/v1\/site/, '');
   const method = init?.method ?? 'GET';
   seen.push({ method, path, body: typeof init?.body === 'string' ? init.body : '' });
-  if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `https://${url.host}/`, theme: 'anypress' });
+  // The website's address is the stand-in editor's, so the panel beside it trusts that page.
+  if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `${editorUrl}/`, theme: 'anypress' });
   if (/^\/pages\/\d+$/.test(path)) return Response.json({ id: Number(path.split('/')[2]), status: 'publish' });
   return Response.json({ ok: true });
 }) as typeof fetch;
+
+const HERO = '<!-- wp:heading --><h2 class="wp-block-heading">Fresh bread</h2><!-- /wp:heading -->';
+const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at dawn</h2><!-- /wp:heading -->';
+
+/** The stand-in editor: the panel framed beside a page, speaking the editor's side of the messages. */
+const editorPage = () => `<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0;display:flex;height:100vh;font-family:sans-serif">
+<main style="flex:1"><h2 id="hero">Fresh bread</h2></main>
+<iframe id="panel" title="Assistant" style="width:min(380px,100vw);border:0;border-left:1px solid #ccc" src="${panelUrl}/editor"></iframe>
+<script>
+const panelOrigin = ${JSON.stringify(panelUrl)};
+const view = { screen: 'post', postType: 'page', postId: 2, title: 'Home', blocks: [{ clientId: 'hero-1', name: 'core/heading', markup: ${JSON.stringify(HERO)} }], selected: { clientId: 'hero-1', name: 'core/heading', markup: ${JSON.stringify(HERO)} } };
+window.applied = [];
+addEventListener('message', async (event) => {
+  if (event.origin !== panelOrigin || event.data?.source !== 'anypress-assistant') return;
+  const frame = document.getElementById('panel');
+  if (event.data.type === 'sign-in') {
+    const { url } = await (await fetch('/assistant-handoff', { method: 'POST' })).json();
+    frame.src = url + '&back=/editor';
+  }
+  if (event.data.type === 'ready') frame.contentWindow.postMessage({ source: 'anypress-editor', type: 'view', view }, panelOrigin);
+  if (event.data.type === 'apply') {
+    window.applied.push(event.data.change);
+    document.getElementById('hero').textContent = 'Bread baked at dawn';
+  }
+});
+</script>`;
 
 const writes = () => seen.filter((s) => s.method !== 'GET');
 
@@ -70,6 +103,23 @@ beforeAll(async () => {
   }).listen(0);
   await once(shop, 'listening');
   shopUrl = `http://localhost:${(shop.address() as AddressInfo).port}`;
+  // The store's own side: WaaS Client asks the API for a handoff, signed with the store's site key.
+  editor = createHttpServer(async (request, response) => {
+    if (request.method === 'POST' && request.url === '/assistant-handoff') {
+      const store = h.stores[0]!;
+      const body = JSON.stringify({ site: store.domain, assistantUrl: panelUrl });
+      const answer = await h.t.app.request('/oauth/site/store-handoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
+        body,
+      });
+      response.writeHead(answer.status, { 'Content-Type': 'application/json' }).end(await answer.text());
+      return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html' }).end(editorPage());
+  }).listen(0);
+  await once(editor, 'listening');
+  editorUrl = `http://localhost:${(editor.address() as AddressInfo).port}`;
   const port = await freePort();
   panelUrl = `http://localhost:${port}`;
   panel = spawn('npx', ['next', 'start', '-p', String(port)], {
@@ -92,6 +142,7 @@ afterAll(async () => {
   assistant?.close();
   api?.close();
   shop?.close();
+  editor?.close();
   await h?.close();
 });
 
@@ -193,6 +244,33 @@ describe('chat panel', () => {
     await page.screenshot({ path: 'test-results/panel-wide.png', fullPage: true });
     await page.context().close();
   }, 90_000);
+
+  for (const [label, width, height] of [['desktop', 1280, 800], ['phone', 390, 844]] as const) {
+    it(`signs in beside the editor by itself and changes the selected block there (${label})`, async () => {
+      const change = { action: 'replace', clientId: 'hero-1', content: WARMER };
+      h.script(`Make this heading warmer ${label}`, 'editor_change', change, 'Done. Press Save to keep it.');
+      const context = await browser.newContext({ viewport: { width, height } });
+      const page = await context.newPage();
+      await page.goto(editorUrl);
+      const chat = page.frameLocator('#panel');
+      const box = chat.getByRole('textbox');
+      await box.waitFor({ timeout: 30_000 });
+      await box.fill(`Make this heading warmer ${label}`);
+      await box.press('Enter');
+      await chat.getByText('Done. Press Save to keep it.').waitFor({ timeout: 30_000 });
+      // The change went to the editor, with no approval card, and never to the website itself.
+      await page.getByText('Bread baked at dawn').waitFor();
+      expect(await page.evaluate(() => (window as unknown as { applied: unknown[] }).applied)).toEqual([change]);
+      await expect(chat.getByText('Page edited').isVisible()).resolves.toBe(true);
+      expect(writes()).toEqual([]);
+      // Nothing in the panel runs past its frame.
+      const frame = await page.locator('#panel').boundingBox();
+      const input = await box.boundingBox();
+      expect(input!.x + input!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 1);
+      await page.screenshot({ path: `test-results/editor-${label}.png` });
+      await context.close();
+    }, 90_000);
+  }
 
   it('refuses a made-up or used handoff', async () => {
     const context = await browser.newContext();

@@ -10,17 +10,24 @@ Reading never waits. Adding a draft page or an image to the media library happen
 
 The site tools come in two kinds ([`src/site-tools.ts`](src/site-tools.ts)). `site_pages`, `site_styles`, `header_footer` and `site_menus` only look, and add drafts: a page they create is always a draft, whatever the model asks. Their `_change` twins, and `page_section`, make the changes, and each call waits for the owner. "Always allow" can't switch that off: the change tools are set to ask on every call, and an explicit "ask" outranks any grant.
 
+## Beside the page editor
+
+WaaS Client's **Assistant** panel in the block editor and the Site Editor frames the chat's [`/editor`](panel/src/app/editor/) page. With each message the editor sends what it has open (the page, its top-level blocks and the selected block), and the assistant changes that open page with `editor_change` ([`src/editor.ts`](src/editor.ts)): replace or remove a block, insert blocks before or after one, or replace the whole page. The change comes back to the editor, shows there at once and can be undone, and it is kept only when the owner presses Save, so it doesn't wait for an approval card. It never reaches the website by itself.
+
+The page and the editor talk with `postMessage`, and the page only listens to and writes to the address the API answers for the signed-in website (`GET /agent-controller/site`). Signed out, it asks the editor to sign it in: WaaS Client asks the API for a handoff signed with the store's own site key (`POST /oauth/site/store-handoff`, [docs/site-editing.md](../docs/site-editing.md)), so the owner never sees a sign-in.
+
 ## HTTP
 
 The assistant speaks [Mastra Chat Kit](https://github.com/hamchowderr/mastra-chat-kit)'s chat routes (Mastra's Agent Controller), streamed as server-sent events. Every route takes `Authorization: Bearer <website sign-in token>`.
 
 | Route | |
 |---|---|
-| `POST /agent-controller/stream` | `{ text, threadId? }`. Streams the reply: text, tool steps, and `tool_approval_required` for each change that waits, with a plain `preview.summary` such as "Publish page 14" |
+| `POST /agent-controller/stream` | `{ text, threadId?, editor? }`. Streams the reply: text, tool steps, and `tool_approval_required` for each change that waits, with a plain `preview.summary` such as "Publish page 14" |
 | `POST /agent-controller/approve` | `{ decision: "approve" \| "decline", toolCallId }` |
 | `POST /agent-controller/answer` | The owner's answer to a question the assistant asked |
 | `POST /agent-controller/abort` | Stops the current reply |
 | `GET /agent-controller/threads` | The website's conversations, and `/threads/<id>/messages` for one |
+| `GET /agent-controller/site` | The signed-in website's address |
 
 Conversations and waiting changes are kept per website, under the address the API answers for the token. Another website's conversation or waiting change can't be opened, answered or written to.
 

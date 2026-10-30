@@ -5,9 +5,9 @@ import { Client, StreamableHTTPClientTransport, UnauthorizedError, type OAuthCli
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StatusCode, WaasClient } from '../sdk/typescript/src/index.ts';
 import { createApiKey } from '../src/keys.ts';
-import { connectAnswerSignature, connectLinkSignature, siteKey, siteKeyMaster, type ConnectAnswer, type ConnectLink } from '../src/sitekeys.ts';
+import { connectAnswerSignature, connectLinkSignature, siteKey, siteKeyMaster, signSiteRequest, type ConnectAnswer, type ConnectLink } from '../src/sitekeys.ts';
 import { basic, setup, TEST_SECRETS_KEY, type TestContext, OWNER } from './helpers.ts';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
@@ -309,5 +309,43 @@ describe('The storefront hands its owner to the website assistant', () => {
     expect((await client.callTool({ name: 'get_site', arguments: {} })).isError).toBeFalsy();
     expect(seen.every((address) => new URL(address).host === mainDomain)).toBe(true);
     await client.close();
+  });
+});
+
+describe('The website hands its own admin to the website assistant', () => {
+  const ASSISTANT = 'https://assistant.example.com';
+  const ROUTE = '/oauth/site/store-handoff';
+  const ask = (body: Record<string, string>, key: string | null = keyOf(tenantId), now = Date.now()) => {
+    const raw = JSON.stringify(body);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (key) headers['X-Waas-Signature'] = signSiteRequest(key, 'POST', ROUTE, raw, now);
+    return t.app.request(ROUTE, { method: 'POST', headers, body: raw });
+  };
+
+  it('answers only a request signed with that website’s own key', async () => {
+    const body = { site: mainDomain, assistantUrl: ASSISTANT };
+    expect((await ask(body, null)).status).toBe(403);
+    expect((await ask(body, keyOf(randomUUID()))).status).toBe(403);
+    expect((await ask(body, keyOf(tenantId), Date.now() - 10 * 60_000)).status).toBe(403);
+    expect((await ask({ site: 'nobody.example.com', assistantUrl: ASSISTANT })).status).toBe(403);
+    expect((await ask({ site: mainDomain, assistantUrl: 'http://assistant.example.com' })).status).toBe(400);
+
+    // A body changed after signing is refused.
+    const raw = JSON.stringify(body);
+    const forged = await t.app.request(ROUTE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(keyOf(tenantId), 'POST', ROUTE, raw) },
+      body: JSON.stringify({ ...body, assistantUrl: 'https://evil.example' }),
+    });
+    expect(forged.status).toBe(403);
+
+    const answer = await ask({ site: mainDomain.toUpperCase(), assistantUrl: `${ASSISTANT}/` });
+    expect(answer.status).toBe(200);
+    const url = new URL(((await answer.json()) as { url: string }).url);
+    expect(`${url.origin}${url.pathname}`).toBe(`${ASSISTANT}/from-shop`);
+    const { rows } = await t.pool.query('SELECT tenant_id, redirect_uri FROM site_handoffs WHERE handoff_hash = $1', [
+      createHash('sha256').update(url.searchParams.get('handoff')!).digest('base64url'),
+    ]);
+    expect(rows[0]).toMatchObject({ tenant_id: tenantId, redirect_uri: `${ASSISTANT}/callback` });
   });
 });

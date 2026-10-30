@@ -6,6 +6,7 @@ import { Agent } from '@mastra/core/agent';
 import { AgentController, type Session } from '@mastra/core/agent-controller';
 import type { MastraCompositeStore } from '@mastra/core/storage';
 import { Memory } from '@mastra/memory';
+import { createEditorTools, describeEditor, EDITOR_TOOLS, editorOf } from './editor.js';
 import { CHANGE_TOOLS, type CallSite, createSiteTools, SAFE_TOOLS } from './site-tools.js';
 
 export interface AssistantConfig {
@@ -46,11 +47,15 @@ ${siteGuide()}`;
 export const ASSISTANT_ID = 'website-assistant';
 
 export function createAssistant(config: AssistantConfig) {
-  const tools = createSiteTools(config.callSite);
+  const tools = { ...createSiteTools(config.callSite), ...createEditorTools() };
   const agent = new Agent({
     id: ASSISTANT_ID,
     name: 'Website assistant',
-    instructions: INSTRUCTIONS,
+    // With the page editor beside the chat, what it has open is part of the instructions (editor.ts).
+    instructions: ({ requestContext }) => {
+      const view = editorOf(requestContext);
+      return view ? `${INSTRUCTIONS}\n\n${describeEditor(view)}` : INSTRUCTIONS;
+    },
     model: { id: `anthropic/${config.model}` as `anthropic/${string}`, apiKey: config.anthropicApiKey },
     tools,
     defaultOptions: { maxSteps: config.maxSteps ?? 12 },
@@ -61,7 +66,7 @@ export function createAssistant(config: AssistantConfig) {
     storage: config.storage,
     memory: new Memory({ storage: config.storage, options: { lastMessages: 20 } }),
     defaultModeId: 'chat',
-    modes: [{ id: 'chat', name: 'Chat', description: 'Change the website in plain words.', availableTools: [...SAFE_TOOLS, ...CHANGE_TOOLS, 'ask_user'] }],
+    modes: [{ id: 'chat', name: 'Chat', description: 'Change the website in plain words.', availableTools: [...SAFE_TOOLS, ...EDITOR_TOOLS, ...CHANGE_TOOLS, 'ask_user'] }],
     // Only ask_user: no plans, task lists or subagents, which could reach tools the owner never saw.
     disableBuiltinTools: ['submit_plan', 'task_write', 'task_update', 'task_complete', 'task_check', 'subagent'],
     // No categories, so "always allow" can never cover more than the one call it answers.
@@ -78,7 +83,8 @@ export function createAssistant(config: AssistantConfig) {
         await (ready ??= controller.init());
         // One session per website: its id is the website's resource id.
         const created = await controller.createSession({ resourceId, id: resourceId });
-        for (const tool of SAFE_TOOLS) await created.permissions.setForTool({ toolName: tool, policy: 'allow' });
+        // The editor's changes wait for the owner's Save instead.
+        for (const tool of [...SAFE_TOOLS, ...EDITOR_TOOLS]) await created.permissions.setForTool({ toolName: tool, policy: 'allow' });
         // An explicit "ask" outranks any grant, so a change always waits.
         for (const tool of CHANGE_TOOLS) await created.permissions.setForTool({ toolName: tool, policy: 'ask' });
         return created;

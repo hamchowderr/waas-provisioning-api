@@ -21,7 +21,7 @@ import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { publicFetch } from './publicfetch.ts';
 import { tokenMatches } from './routes/admin.ts';
-import { connectAnswerSignature, connectLinkSignature, siteKeys, type ConnectAnswer, type ConnectLink } from './sitekeys.ts';
+import { connectAnswerSignature, connectLinkSignature, siteKeys, verifySiteRequest, type ConnectAnswer, type ConnectLink } from './sitekeys.ts';
 import { Status } from './status.ts';
 import {
   ALL_SCOPES,
@@ -425,6 +425,43 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
       [scopeOf('site', 'read'), scopeOf('site', 'write')].join(' '),
     );
     return c.json({ redirectUrl: codeRedirect(redirectUri, code, state || undefined, issuer) }, 200, { 'Cache-Control': 'no-store' });
+  });
+
+  // The page editor's assistant (WaaS Client): the store itself, signing with its site key, hands the
+  // admin who opened it to the assistant at assistantUrl, for this website only. Same handoff as the
+  // storefront's button, so the assistant trades it at /oauth/site/handoff as usual.
+  app.post('/oauth/site/store-handoff', async (c) => {
+    const raw = await c.req.text();
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      throw badRequest('The body must be JSON');
+    }
+    const site = typeof body.site === 'string' ? body.site.toLowerCase() : '';
+    const assistantUrl = typeof body.assistantUrl === 'string' ? body.assistantUrl : '';
+    if (!site || !assistantUrl) throw badRequest('site and assistantUrl are required');
+    let assistant: URL;
+    try {
+      assistant = new URL(assistantUrl);
+    } catch {
+      throw badRequest('assistantUrl must be an address');
+    }
+    if (assistant.protocol !== 'https:' && assistant.hostname !== 'localhost') throw badRequest('assistantUrl must be https');
+    const { rows } = await pool.query<{ id: string; product_id: string; status: number; is_suspended: boolean }>(
+      `SELECT t.id, t.product_id, t.status, t.is_suspended FROM tenants t JOIN tenant_domains d ON d.tenant_id = t.id
+        WHERE d.domain_name = $1 LIMIT 1`,
+      [site],
+    );
+    const tenant = rows[0];
+    const signed = tenant && verifySiteRequest(keyFor(tenant.id), c.req.header('X-Waas-Signature'), 'POST', '/oauth/site/store-handoff', raw);
+    if (!tenant || !signed) throw new HttpError(403, 'This request is not signed by that website');
+    if (tenant.status !== Status.Done || tenant.is_suspended) throw badRequest('This website is not ready');
+    const root = assistant.origin + assistant.pathname.replace(/\/$/, '');
+    const handoff = await createSiteHandoff(pool, tenant, root);
+    const url = new URL(`${root}/from-shop`);
+    url.searchParams.set('handoff', handoff);
+    return c.json({ url: url.toString() }, 200, { 'Cache-Control': 'no-store' });
   });
 
   app.post('/oauth/token', async (c) => {
