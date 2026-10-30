@@ -20,6 +20,8 @@ export interface Store {
 
 export interface Harness {
   t: TestContext;
+  /** The storefront's Authorization header (its API key and secret). */
+  apiAuth: string;
   llm: LLMock;
   app: ReturnType<typeof createServer>;
   stores: Store[];
@@ -90,6 +92,7 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
 
   return {
     t,
+    apiAuth: `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`,
     llm,
     app,
     stores,

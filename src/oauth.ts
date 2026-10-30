@@ -495,7 +495,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   }
 }
 
-interface CodeRequest {
+export interface CodeRequest {
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
@@ -503,7 +503,7 @@ interface CodeRequest {
 }
 
 /** A new code, for scopes per area (never a legacy grant). `platformAdmin`: approved by a platform admin, not a team member. */
-async function issueCode(pool: Pool, request: CodeRequest, owner: TokenOwner, scope: string, platformAdmin = false): Promise<string> {
+export async function issueCode(pool: Pool, request: CodeRequest, owner: TokenOwner, scope: string, platformAdmin = false): Promise<string> {
   const code = randomToken();
   await pool.query(
     `INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, api_key_id, user_id, tenant_id, product_id, scope, resource, expires_at, legacy_scope, platform_admin)
@@ -519,7 +519,7 @@ function siteWantsWrite(requested: string[], resource: string): boolean {
   return requested.length === 0 || requested.some((s) => s.endsWith(':write'));
 }
 
-function codeRedirect(redirectUri: string, code: string, state: string | null | undefined, issuer: string): string {
+export function codeRedirect(redirectUri: string, code: string, state: string | null | undefined, issuer: string): string {
   const target = new URL(redirectUri);
   target.searchParams.set('code', code);
   if (state !== undefined && state !== null) target.searchParams.set('state', state);
@@ -687,7 +687,7 @@ function allowedRedirectUri(uri: string): boolean {
 }
 
 /** Exact match, except a loopback redirect may use any port (RFC 8252 7.3). */
-function sameRedirectUri(registered: string, requested: string): boolean {
+export function sameRedirectUri(registered: string, requested: string): boolean {
   if (registered === requested) return true;
   try {
     const a = new URL(registered);

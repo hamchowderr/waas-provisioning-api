@@ -6,13 +6,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StatusCode, WaasClient } from '../sdk/typescript/src/index.ts';
 import { createApiKey } from '../src/keys.ts';
 import { connectAnswerSignature, connectLinkSignature, siteKey, siteKeyMaster, type ConnectAnswer, type ConnectLink } from '../src/sitekeys.ts';
-import { setup, TEST_SECRETS_KEY, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_SECRETS_KEY, type TestContext } from './helpers.ts';
+import { createHash, randomBytes } from 'node:crypto';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
 
 let t: TestContext;
 let tenantId: string;
+let apiAuth: string;
 let mainDomain: string;
 const keyOf = (storeId: string) => siteKey(siteKeyMaster(TEST_SECRETS_KEY), storeId);
 let seen: string[] = [];
@@ -90,6 +92,7 @@ beforeAll(async () => {
     return Response.json({ name: 'Bakery' });
   }) as typeof fetch;
   const { key, secret } = await createApiKey(t.pool, t.productId);
+  apiAuth = basic(key, secret);
   const waas = new WaasClient({ baseUrl: BASE, apiKey: key, apiSecret: secret, fetch: appFetch });
   const version = await waas.versions.create({ name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true });
   for (let i = 0; (await waas.versions.list({ versionId: version.id }))[0]?.statusCode !== StatusCode.Done; i++) {
@@ -193,5 +196,59 @@ describe('Sign in with your website', () => {
     });
     expect(response.status).toBe(401);
     expect(response.headers.get('WWW-Authenticate')).not.toContain('Basic');
+  });
+});
+
+describe('The storefront signs its owner in', () => {
+  const signIn = (query: string, body: unknown, auth = apiAuth) =>
+    t.app.request(`/v1/tenants/site/sign-in?${query}`, { method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('gives a registered app a code it finishes with its PKCE verifier, for this one website', async () => {
+    const registered = await t.app.request('/oauth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Website assistant', redirect_uris: [REDIRECT] }),
+    });
+    const { client_id: clientId } = (await registered.json()) as { client_id: string };
+    const verifier = randomBytes(32).toString('base64url');
+    const codeChallenge = createHash('sha256').update(verifier).digest('base64url');
+
+    // Only a registered app, at one of its own addresses, on a store of this storefront.
+    expect((await signIn('externalId=bakery', { clientId: '00000000-0000-0000-0000-000000000000', redirectUri: REDIRECT, codeChallenge })).status).toBe(400);
+    expect((await signIn('externalId=bakery', { clientId, redirectUri: 'https://evil.example/callback', codeChallenge })).status).toBe(400);
+    expect((await signIn('externalId=nobody', { clientId, redirectUri: REDIRECT, codeChallenge })).status).toBe(400);
+    expect((await signIn('externalId=bakery', { clientId, redirectUri: REDIRECT, codeChallenge }, 'Basic bm9wZTpub3Bl')).status).toBe(403);
+
+    const answer = await signIn('externalId=bakery', { clientId, redirectUri: REDIRECT, codeChallenge, state: 'xyz' });
+    expect(answer.status).toBe(200);
+    const target = new URL(((await answer.json()) as { redirectUrl: string }).redirectUrl);
+    expect(`${target.origin}${target.pathname}`).toBe(REDIRECT);
+    expect(target.searchParams.get('state')).toBe('xyz');
+    expect(target.searchParams.get('iss')).toBe(BASE);
+
+    const exchange = (code_verifier: string) =>
+      t.app.request('/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code: target.searchParams.get('code')!, code_verifier, client_id: clientId, redirect_uri: REDIRECT }).toString(),
+      });
+    expect((await exchange('wrong-verifier-wrong-verifier-wrong-verifier')).status).toBe(400);
+    // A wrong verifier used the code up, so sign in again.
+    const again = new URL(((await (await signIn('externalId=bakery', { clientId, redirectUri: REDIRECT, codeChallenge })).json()) as { redirectUrl: string }).redirectUrl);
+    target.searchParams.set('code', again.searchParams.get('code')!);
+    const tokens = (await (await exchange(verifier)).json()) as { access_token: string; scope: string };
+    expect(tokens.scope.split(' ').sort()).toEqual(['site:read', 'site:write']);
+
+    // The token is the owner's, for the site tools on this store only.
+    const client = new Client({ name: 'agent', version: '1' }, { versionNegotiation: { mode: 'auto' } });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${BASE}/mcp/site`), { fetch: appFetch, requestInit: { headers: { Authorization: `Bearer ${tokens.access_token}` } } }),
+    );
+    seen = [];
+    const site = await client.callTool({ name: 'get_site', arguments: {} });
+    expect(site.isError).toBeFalsy();
+    expect(seen.every((url) => new URL(url).host === mainDomain)).toBe(true);
+    expect((await t.app.request('/mcp', { method: 'POST', headers: { Authorization: `Bearer ${tokens.access_token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: '{}' })).status).toBe(401);
+    await client.close();
   });
 });
