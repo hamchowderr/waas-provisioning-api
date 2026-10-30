@@ -76,6 +76,12 @@ delete_option('fluent_cart_do_activation_redirect');
     'reminders_enabled' => 'yes',
     'monthly_renewal_reminders_enabled' => 'yes',
 ]);
+// Settings → Email notifications → Settings: a footer that tells customers how to reach the owner (replies go to the
+// site's sending address; waas-mail sets that). The store logo at the top of each email follows the site logo
+// (mu-plugins/anypress-store.php), so emails carry the owner's brand and nothing of AnyPress.
+\FluentCart\App\Services\Email\EmailNotifications::updateSettings([
+    'email_footer' => '<p>Questions? Just reply to this email.</p>',
+]);
 // Settings → Checkout fields: a terms checkbox buyers must tick.
 $fields = \FluentCart\App\Services\Renderer\CheckoutFieldsSchema::getFieldsSettings();
 $fields['agree_terms'] = ['enabled' => 'yes', 'required' => 'yes', 'text' => 'I agree to the terms and conditions.'];
@@ -106,6 +112,22 @@ $crm = get_option('fluentcrm-global-settings', []);
 unset($crm['campaign'], $crm['email']);
 $crm['email_settings'] = array_merge(\FluentCrm\App\Services\Helper::getGlobalEmailSettings(), ['emails_per_second' => 10]);
 update_option('fluentcrm-global-settings', $crm);
+// Email styles: a calm, neutral look (white card on an off-white page, dark text and links, rounded corners) in
+// place of FluentCRM's blue links on grey, so the owner's own words and logo carry the brand.
+fluentcrm_update_option('global_email_style_config', array_merge((array) fluentcrm_get_option('global_email_style_config', []), [
+    'content_width' => 600,
+    'content_border_radius' => '12px',
+    'content_padding_top' => '28px',
+    'content_padding_right' => '32px',
+    'content_padding_bottom' => '20px',
+    'content_padding_left' => '32px',
+    'body_bg_color' => '#f6f5f2',
+    'content_bg_color' => '#ffffff',
+    'headings_color' => '#141414',
+    'text_color' => '#1f1f1f',
+    'link_color' => '#141414',
+    'footer_text_color' => '#6b6b6b',
+]));
 // Settings → Compliance.
 $merge('_fluentcrm_compliance_settings', array_merge(\FluentCrm\App\Services\Helper::getComplianceSettings(), [
     'anonymize_ip' => 'yes',

@@ -420,6 +420,13 @@ describe('the Team page (/account, the team running itself)', () => {
     const res = await admin('POST', `/products/${productId}/invitations`, { email: 'first@agency.example' });
     expect(await res.json()).toMatchObject({ role: 'owner', emailed: true });
     expect(sent[0]!.text).toMatch(/^You've been invited to join Team storefront on AnyPress\./);
+    // Set up by hand, so it carries the welcome an approved application would.
+    expect(sent[0]!.text).toContain('your free storefront');
+  });
+
+  it("doesn't add the welcome to a team's own invitations", async () => {
+    await team(owner.cookie, 'POST', '/invitations', { email: 'plain@agency.example' });
+    expect(sent[0]!.text).not.toContain('your free storefront');
   });
 
   it('lets admins invite and remove people, but not owners', async () => {
@@ -522,6 +529,29 @@ describe("a reseller's team (docs/resellers.md)", () => {
     expect((await admin('GET', '/resellers/00000000-0000-4000-8000-000000000000/organization')).status).toBe(404);
     // Not on /account: a storefront's team doesn't manage its reseller's.
     expect((await asUser(partner.cookie, 'GET', `/account/resellers/${resellerId}/organization`, undefined, picking(first))).status).toBe(404);
+  });
+
+  it("welcomes a reseller's first owner, set up by hand, to the reseller account", async () => {
+    const texts: string[] = [];
+    const before = t.deps.config.auth;
+    t.deps.config.auth = { ...AUTH, mail: { key: 'test-key', from: 'no-reply@anypress.example', brand: 'AnyPress' } };
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input instanceof Request ? input.url : input).startsWith('https://api.tosend.com/')) return realFetch(input, init);
+      texts.push(JSON.parse(String(init!.body)).text);
+      return new Response('{"id":"e1"}', { status: 200 });
+    });
+    try {
+      const res = await admin('POST', `/resellers/${resellerId}/invitations`, { email: 'welcome@partner.example' });
+      const invitation = (await res.json()) as { id: string };
+      expect(invitation).toMatchObject({ role: 'owner', emailed: true });
+      expect(texts[0]).toContain('Your reseller account runs several storefronts');
+      // Cancelled, so the next test's invitation is the only one for this reseller.
+      expect((await admin('DELETE', `/resellers/${resellerId}/invitations/${invitation.id}`)).status).toBe(200);
+    } finally {
+      vi.stubGlobal('fetch', realFetch);
+      t.deps.config.auth = before;
+    }
   });
 
   it("reaches every one of the reseller's storefronts, one membership each", async () => {
