@@ -248,7 +248,7 @@ function clean_import(): array
  * Settings of a site moved in that point outside the store, cleared once its database is in: an upload folder
  * (`upload_path`) outside the store's files and an upload address (`upload_url_path`) on another host, which would
  * send new uploads, and their links, nowhere; and Elementor's cached CSS, which has the old address in it and is
- * written again when missing. Returns what it cleared.
+ * written again when missing; and AnyPress Export's own state and cleanup event. Returns what it cleared.
  */
 function clean_import_db(string $prefix, string $home): array
 {
@@ -263,8 +263,15 @@ function clean_import_db(string $prefix, string $home): array
         wp('option', 'delete', 'upload_url_path');
         $cleared[] = 'upload_url_path';
     }
-    if (wpMayFail('db', 'query', "DELETE FROM `{$prefix}postmeta` WHERE meta_key = '_elementor_css'") !== null) $cleared[] = '_elementor_css';
+    $css = wpMayFail('db', 'query', "SELECT COUNT(*) FROM `{$prefix}postmeta` WHERE meta_key = '_elementor_css'", '--skip-column-names');
+    if ((int) $css > 0 && wpMayFail('db', 'query', "DELETE FROM `{$prefix}postmeta` WHERE meta_key = '_elementor_css'") !== null) $cleared[] = '_elementor_css';
     wpMayFail('option', 'delete', '_elementor_global_css');
+    // AnyPress Export's own record of the move (its import token, upload address and the old server's paths) and its cleanup event.
+    if (wpMayFail('option', 'get', 'anypress_export_state') !== null) {
+        wp('option', 'delete', 'anypress_export_state');
+        $cleared[] = 'anypress_export_state';
+    }
+    if (wpMayFail('cron', 'event', 'delete', 'anypress_export_cleanup') !== null) $cleared[] = 'anypress_export_cleanup';
     return $cleared;
 }
 
