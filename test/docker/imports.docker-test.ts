@@ -127,7 +127,7 @@ beforeAll(() => {
   docker('run', '-d', '--name', NAMES.wordpress, '--network', NAMES.network, '--network-alias', 'wordpress', '-v', `${NAMES.volume}:/var/www/html`,
     ...DB_ENV.flatMap((e) => ['-e', e]), '-e', `WORDPRESS_CONFIG_EXTRA=${CONFIG_EXTRA}`, IMAGES.wordpress);
   docker('run', '-d', '--name', NAMES.agent, '--network', NAMES.network, '-v', `${NAMES.volume}:/var/www/html`, '-v', `${AGENT}:/tmp/waas-agent.php:ro`,
-    '-v', `${fixtures}:/fixtures:ro`, ...DB_ENV.flatMap((e) => ['-e', e]), '--entrypoint', 'tail', IMAGES.cli, '-f', '/dev/null');
+    '-v', `${fixtures}:/fixtures:ro`, ...DB_ENV.flatMap((e) => ['-e', e]), '-e', `WORDPRESS_CONFIG_EXTRA=${CONFIG_EXTRA}`, '--entrypoint', 'tail', IMAGES.cli, '-f', '/dev/null');
   until('MariaDB starting', () => spawnSync('docker', ['exec', NAMES.db, 'healthcheck.sh', '--connect', '--innodb_initialized']).status === 0);
   until('WordPress copying its files to the volume', () => fileExists('/var/www/html/wp-config.php') && fileExists('/var/www/html/wp-includes/version.php'));
 
@@ -194,13 +194,14 @@ describe('moving a site in, on MariaDB', () => {
       'https://old.example.com/a', 'http://old.example.com/b', 'https://www.old.example.com/c', 'http://www.old.example.com/d',
       'https:\\\\/\\\\/old.example.com\\\\/e', 'https%3A%2F%2Fold.example.com%2Ff', 'https://other.example.org/g',
     ].join(' ');
-    moveIn('urls', {
+    const { restored } = moveIn('urls', {
       sql: [
         `INSERT INTO \`{p}posts\` (post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt, post_status, post_name, to_ping, pinged, post_modified, post_modified_gmt, post_content_filtered, guid, post_type)`,
         `  VALUES (1, NOW(), NOW(), '${content}', 'Links', '', 'publish', 'links', '', '', NOW(), NOW(), '', 'https://old.example.com/?p=900', 'page');`,
         `INSERT INTO \`{p}postmeta\` (post_id, meta_key, meta_value) VALUES (1, '_elementor_data', '[{"settings":{"url":"https:\\\\/\\\\/old.example.com\\\\/wp-content\\\\/uploads\\\\/x.jpg"}}]');`,
         `INSERT INTO \`{p}postmeta\` (post_id, meta_key, meta_value) VALUES (1, '_elementor_css', 'a{background:url(https://old.example.com/x.jpg)}');`,
         `UPDATE \`{p}options\` SET option_value = '/home/old/public_html/wp-content/uploads' WHERE option_name = 'upload_path';`,
+        `INSERT INTO \`{p}options\` (option_name, option_value, autoload) VALUES ('anypress_export_state', 'a:1:{s:5:"token";s:3:"tok";}', 'off');`,
       ].join('\n'),
       files: {
         'uploads/elementor/css/post-1.css': 'a{background:url(https://old.example.com/x.jpg)}',
@@ -222,6 +223,8 @@ describe('moving a site in, on MariaDB', () => {
     // What points outside the store, and caches with the old address in them, are gone; the site's own mu-plugins stay.
     expect(sql("SELECT COUNT(*) FROM wp_postmeta WHERE meta_key = '_elementor_css'")).toBe('0');
     expect(sql("SELECT COUNT(*) FROM wp_options WHERE option_name = 'upload_path'")).toBe('0');
+    expect(sql("SELECT COUNT(*) FROM wp_options WHERE option_name = 'anypress_export_state'")).toBe('0');
+    expect(restored.cleared).toEqual(expect.arrayContaining(['upload_path', '_elementor_css', 'anypress_export_state']));
     expect(fileExists('/var/www/html/wp-content/uploads/elementor/css')).toBe(false);
     expect(fileExists('/var/www/html/wp-content/mu-plugins/wpengine-common')).toBe(false);
     expect(fileExists('/var/www/html/wp-content/mu-plugins/mu-plugin.php')).toBe(false);
@@ -231,7 +234,7 @@ describe('moving a site in, on MariaDB', () => {
 
   it('replaces an old home with a path and a port, and a custom content address, with the store\'s', () => {
     const old = 'http://old.example.com:8080/blog';
-    moveIn('path', {
+    const { restored } = moveIn('path', {
       home: old,
       info: { contentUrl: 'http://old.example.com:8080/app' },
       sql: [
@@ -242,6 +245,8 @@ describe('moving a site in, on MariaDB', () => {
     });
     expect(sql("SELECT post_content FROM wp_posts WHERE post_name = 'path'")).toBe(`${HOME}/hello/ ${HOME}/wp-content/uploads/a.jpg`);
     expect(option('home')).toBe(HOME);
+    // Nothing of that kind was there, so nothing is reported cleared.
+    expect(restored.cleared).toEqual([]);
   });
 });
 
