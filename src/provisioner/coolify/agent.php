@@ -1210,6 +1210,234 @@ function mail_platform(string $month): int
     return is_array($platform) && ($platform['month'] ?? '') === $month ? max(0, (int) ($platform['sent'] ?? 0)) : 0;
 }
 
+/**
+ * What a site moved in runs, for the "what's on this site" report (src/sitereport.ts): its active plugins and, for the
+ * form, shop, CRM, booking, support, affiliate and community plugins that report knows, how much data they hold.
+ * Run by `wp eval-file` with no plugins or themes loaded, so it costs a few queries, not a page load. Counts and
+ * yes/no only: never a value, a key or a customer's details. Each probe fails on its own and says so in `errors`.
+ */
+const INVENTORY_PROBE = <<<'PHP'
+<?php
+global $wpdb;
+$started = microtime(true);
+$wpdb->suppress_errors(true);
+// MariaDB: no single count may hold the store up (MySQL has no such variable; the error is ignored).
+$wpdb->query('SET SESSION max_statement_time = 10');
+$p = $wpdb->prefix;
+$tables = array_flip((array) $wpdb->get_col($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($p) . '%')));
+$has = function (string $t) use ($tables, $p) { return isset($tables[$p . $t]); };
+$num = function (string $sql) use ($wpdb) {
+    $wpdb->last_error = '';
+    $v = $wpdb->get_var($sql);
+    if ($wpdb->last_error !== '') throw new RuntimeException($wpdb->last_error);
+    return (int) $v;
+};
+// Rows of a plugin's own table; null when the table isn't there.
+$rows = function (string $t, string $where = '1=1') use ($has, $num, $p) { return $has($t) ? $num("SELECT COUNT(*) FROM `$p$t` WHERE $where") : null; };
+$posts = function (string $type, string $where = "post_status NOT IN ('trash', 'auto-draft', 'inherit')") use ($wpdb, $num) {
+    return $num($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND ", $type) . $where);
+};
+$like = function (string $column, array $needles) use ($wpdb) {
+    return '(' . implode(' OR ', array_map(function ($n) use ($wpdb, $column) { return $wpdb->prepare("$column LIKE %s", '%' . $wpdb->esc_like($n) . '%'); }, $needles)) . ')';
+};
+// Pages, posts, templates and reusable blocks whose content still has one of these shortcodes or blocks.
+$pages = function (array $needles) use ($wpdb, $num, $like) {
+    return $num("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type NOT IN ('revision', 'nav_menu_item', 'customize_changeset')"
+        . " AND post_status IN ('publish', 'draft', 'pending', 'private', 'future') AND " . $like('post_content', $needles));
+};
+$most = function (string $sql) use ($num) { return $num("SELECT COALESCE(MAX(c), 0) FROM ($sql) x"); };
+
+// The active plugins, read from the database: --skip-plugins empties the active_plugins option for WordPress.
+require_once ABSPATH . 'wp-admin/includes/plugin.php';
+$installed = get_plugins();
+$active = [];
+$list = maybe_unserialize((string) $wpdb->get_var("SELECT option_value FROM {$wpdb->options} WHERE option_name = 'active_plugins'"));
+foreach (is_array($list) ? $list : [] as $file) {
+    if (!is_string($file) || !isset($installed[$file])) continue;
+    $slug = strpos($file, '/') !== false ? dirname($file) : basename($file, '.php');
+    $active[$slug] = ['slug' => $slug, 'name' => substr(wp_strip_all_tags((string) $installed[$file]['Name']), 0, 100), 'version' => substr((string) $installed[$file]['Version'], 0, 30)];
+}
+$on = function (string ...$slugs) use ($active) { foreach ($slugs as $s) if (isset($active[$s])) return true; return false; };
+
+// WooCommerce payment methods switched on with live (not test) keys: their ids only.
+$liveGateways = function () use ($wpdb) {
+    $found = [];
+    $names = $wpdb->get_results($wpdb->prepare("SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name = 'woocommerce-ppcp-settings'",
+        $wpdb->esc_like('woocommerce_') . '%' . $wpdb->esc_like('_settings')));
+    foreach ((array) $names as $o) {
+        $s = maybe_unserialize($o->option_value);
+        if (!is_array($s)) continue;
+        if ($o->option_name === 'woocommerce-ppcp-settings') {
+            if (empty($s['sandbox_on']) && (!empty($s['client_id_production']) || !empty($s['client_secret_production']))) $found[] = 'ppcp';
+            continue;
+        }
+        if (($s['enabled'] ?? '') !== 'yes') continue;
+        $test = false;
+        $key = false;
+        foreach ($s as $k => $v) {
+            if (is_array($v) || is_object($v)) continue;
+            $v = strtolower(trim((string) $v));
+            if (preg_match('/test_?mode|sandbox|environment/i', (string) $k)) {
+                if (in_array($v, ['yes', '1', 'true', 'on', 'sandbox', 'test', 'staging'], true)) $test = true;
+            } elseif ($v !== '' && preg_match('/secret|private_?key|publishable_?key|api_?key|access_?token|transaction_?key|api_?password|signature/i', (string) $k) && !preg_match('/test|sandbox/i', (string) $k)) {
+                $key = true;
+            }
+        }
+        if ($key && !$test) $found[] = substr($o->option_name, strlen('woocommerce_'), -strlen('_settings'));
+    }
+    return array_values(array_unique($found));
+};
+
+$cf7 = function () use ($wpdb, $num, $posts, $pages, $on) {
+    return [
+        'forms' => $posts('wpcf7_contact_form'),
+        // Phone, file and range fields, which Fluent Forms drops without its Pro add-on.
+        'proFieldForms' => $num("SELECT COUNT(DISTINCT m.post_id) FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} f ON f.ID = m.post_id"
+            . " WHERE f.post_type = 'wpcf7_contact_form' AND f.post_status <> 'trash' AND m.meta_key = '_form'"
+            . " AND (m.meta_value LIKE '%[tel%' OR m.meta_value LIKE '%[file%' OR m.meta_value LIKE '%[range%')"),
+        'entries' => $posts('flamingo_inbound'),
+        'flamingo' => $on('flamingo'),
+        'pages' => $pages(['[contact-form-7', 'wp:contact-form-7/']),
+    ];
+};
+$bp = function () use ($rows, $num, $wpdb) {
+    return ['groups' => $rows('bp_groups'), 'members' => $num("SELECT COUNT(*) FROM {$wpdb->users}"), 'posts' => $rows('bp_activity', "type = 'activity_update'"),
+        'messages' => $rows('bp_messages_messages'), 'friendships' => $rows('bp_friends')];
+};
+$probes = [
+    'contact-form-7' => [['contact-form-7'], $cf7],
+    'wpforms' => [['wpforms-lite', 'wpforms'], function () use ($wpdb, $num, $posts, $rows, $pages, $like, $on, $most, $has, $p) {
+        return [
+            'forms' => $posts('wpforms'),
+            'pro' => $on('wpforms'),
+            'entries' => $rows('wpforms_entries'),
+            'largestForm' => $has('wpforms_entries') ? $most("SELECT COUNT(*) c FROM `{$p}wpforms_entries` GROUP BY form_id") : null,
+            'proFieldForms' => $posts('wpforms', "post_status <> 'trash' AND " . $like('post_content', ['"type":"phone"', '"type":"file-upload"', '"type":"pagebreak"', '"type":"number-slider"', '"type":"repeater"', '"type":"richtext"'])),
+            'pages' => $pages(['[wpforms', 'wp:wpforms/']),
+        ];
+    }],
+    'gravityforms' => [['gravityforms'], function () use ($rows, $has, $num, $like, $pages, $most, $p) {
+        $gf = $has('gf_form');
+        return [
+            'forms' => $gf ? $rows('gf_form', 'is_trash = 0') : $rows('rg_form', 'is_trash = 0'),
+            'entries' => $gf ? $rows('gf_entry', "status = 'active'") : $rows('rg_lead', "status = 'active'"),
+            'largestForm' => $has('gf_entry') ? $most("SELECT COUNT(*) c FROM `{$p}gf_entry` WHERE status = 'active' GROUP BY form_id") : null,
+            'proFieldForms' => $has('gf_form_meta') && $gf ? $num("SELECT COUNT(*) FROM `{$p}gf_form_meta` m JOIN `{$p}gf_form` f ON f.id = m.form_id WHERE f.is_trash = 0 AND "
+                . $like('m.display_meta', ['"type":"phone"', '"type":"fileupload"', '"type":"list"', '"type":"page"'])) : null,
+            'pages' => $pages(['[gravityform', 'wp:gravityforms/']),
+        ];
+    }],
+    'ninja-forms' => [['ninja-forms'], function () use ($wpdb, $rows, $has, $num, $posts, $pages, $most, $p) {
+        return [
+            'forms' => $rows('nf3_forms'),
+            'entries' => $posts('nf_sub'),
+            'largestForm' => $most("SELECT COUNT(*) c FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} s ON s.ID = m.post_id WHERE s.post_type = 'nf_sub' AND s.post_status <> 'trash' AND m.meta_key = '_form_id' GROUP BY m.meta_value"),
+            'proFieldForms' => $has('nf3_fields') ? $num("SELECT COUNT(DISTINCT parent_id) FROM `{$p}nf3_fields` WHERE type IN ('phone', 'file_upload', 'starrating', 'repeater')") : null,
+            'pages' => $pages(['[ninja_form', 'wp:ninja-forms/']),
+        ];
+    }],
+    'formidable' => [['formidable', 'formidable-pro'], function () use ($rows, $pages) {
+        return ['forms' => $rows('frm_forms', "status <> 'trash' AND is_template = 0"), 'entries' => $rows('frm_items'), 'pages' => $pages(['[formidable', 'wp:formidable/'])];
+    }],
+    'forminator' => [['forminator'], function () use ($rows, $posts, $pages) {
+        return ['forms' => $posts('forminator_forms'), 'entries' => $rows('frmt_form_entry', "entry_type = 'custom-forms'"), 'pages' => $pages(['[forminator_form', 'wp:forminator/'])];
+    }],
+    'elementor-pro' => [['elementor-pro'], function () use ($wpdb, $rows, $num) {
+        return [
+            'entries' => $rows('e_submissions'),
+            'pages' => $num("SELECT COUNT(DISTINCT post_id) FROM {$wpdb->postmeta} WHERE meta_key = '_elementor_data' AND meta_value LIKE '%\"widgetType\":\"form\"%'"),
+        ];
+    }],
+    'fluentform' => [['fluentform'], function () use ($rows, $on) {
+        return ['forms' => $rows('fluentform_forms'), 'entries' => $rows('fluentform_submissions'), 'pro' => $on('fluentformpro')];
+    }],
+    'woocommerce' => [['woocommerce'], function () use ($wpdb, $rows, $num, $posts, $has, $on, $liveGateways) {
+        $hpos = get_option('woocommerce_custom_orders_table_enabled') === 'yes' && $has('wc_orders');
+        $orders = "status NOT IN ('trash', 'auto-draft', 'wc-checkout-draft')";
+        $subscriptions = $on('woocommerce-subscriptions');
+        return [
+            'products' => $posts('product'),
+            'hpos' => $hpos,
+            'orders' => $hpos ? $rows('wc_orders', "type = 'shop_order' AND $orders") : $posts('shop_order', "post_$orders"),
+            'guestOrders' => $hpos ? $rows('wc_orders', "type = 'shop_order' AND customer_id = 0 AND $orders")
+                : $num("SELECT COUNT(*) FROM {$wpdb->posts} o JOIN {$wpdb->postmeta} m ON m.post_id = o.ID AND m.meta_key = '_customer_user'"
+                    . " WHERE o.post_type = 'shop_order' AND o.post_$orders AND m.meta_value IN ('', '0')"),
+            'subscriptions' => !$subscriptions ? null : ($hpos ? $rows('wc_orders', "type = 'shop_subscription' AND status = 'wc-active'") : $posts('shop_subscription', "post_status = 'wc-active'")),
+            'liveGateways' => $liveGateways(),
+        ];
+    }],
+    'easy-digital-downloads' => [['easy-digital-downloads', 'easy-digital-downloads-pro'], function () use ($rows, $posts, $has) {
+        $edd3 = $has('edd_orders');
+        return [
+            'products' => $posts('download'),
+            'edd3' => $edd3,
+            'orders' => $edd3 ? $rows('edd_orders', "type = 'sale' AND status <> 'trash'") : $posts('edd_payment'),
+            'subscriptions' => $rows('edd_subscriptions', "status = 'active'"),
+        ];
+    }],
+    'surecart' => [['surecart'], function () use ($posts) { return ['products' => $posts('sc_product')]; }],
+    'mailchimp-for-wp' => [['mailchimp-for-wp'], function () use ($posts) { return ['forms' => $posts('mc4wp-form')]; }],
+    'mailpoet' => [['mailpoet'], function () use ($rows) {
+        return ['subscribers' => $rows('mailpoet_subscribers', "status = 'subscribed' AND deleted_at IS NULL"), 'lists' => $rows('mailpoet_segments', "type = 'default' AND deleted_at IS NULL"),
+            'emails' => $rows('mailpoet_newsletters', 'deleted_at IS NULL')];
+    }],
+    'newsletter' => [['newsletter'], function () use ($rows) { return ['subscribers' => $rows('newsletter', "status = 'C'")]; }],
+    'fluent-crm' => [['fluent-crm'], function () use ($rows) { return ['contacts' => $rows('fc_subscribers')]; }],
+    'ameliabooking' => [['ameliabooking'], function () use ($rows) { return ['appointments' => $rows('amelia_appointments'), 'customers' => $rows('amelia_users', "type = 'customer'")]; }],
+    'bookly' => [['bookly-responsive-appointment-booking-tool'], function () use ($rows) { return ['appointments' => $rows('bookly_appointments'), 'customers' => $rows('bookly_customers')]; }],
+    'fluent-booking' => [['fluent-booking'], function () use ($rows) { return ['bookings' => $rows('fcal_bookings'), 'calendars' => $rows('fcal_calendars')]; }],
+    'awesome-support' => [['awesome-support'], function () use ($posts) { return ['tickets' => $posts('ticket'), 'replies' => $posts('ticket_reply')]; }],
+    'supportcandy' => [['supportcandy'], function () use ($rows, $has) {
+        // SupportCandy 3 keeps its tickets in psmsc_ tables; 2.x in wpsc_ ones.
+        $v3 = $has('psmsc_tickets');
+        return ['tickets' => $v3 ? $rows('psmsc_tickets') : $rows('wpsc_ticket'), 'v3' => $v3];
+    }],
+    'fluent-support' => [['fluent-support'], function () use ($rows) { return ['tickets' => $rows('fs_tickets')]; }],
+    'affiliate-wp' => [['affiliate-wp'], function () use ($rows) {
+        return ['affiliates' => $rows('affiliate_wp_affiliates'), 'referrals' => $rows('affiliate_wp_referrals'), 'creatives' => $rows('affiliate_wp_creatives')];
+    }],
+    'slicewp' => [['slicewp'], function () use ($rows) {
+        return ['affiliates' => $rows('slicewp_affiliates'), 'referrals' => $rows('slicewp_commissions'), 'creatives' => $rows('slicewp_creatives')];
+    }],
+    'fluent-affiliate' => [['fluent-affiliate'], function () use ($rows) { return ['affiliates' => $rows('fa_affiliates'), 'referrals' => $rows('fa_referrals')]; }],
+    'buddypress' => [['buddypress'], $bp],
+    'buddyboss-platform' => [['buddyboss-platform'], $bp],
+    'bbpress' => [['bbpress'], function () use ($posts) { return ['forums' => $posts('forum'), 'topics' => $posts('topic'), 'replies' => $posts('reply')]; }],
+    'fluent-community' => [['fluent-community'], function () use ($rows) { return ['spaces' => $rows('fcom_spaces', "type = 'community'"), 'posts' => $rows('fcom_posts')]; }],
+];
+
+$found = [];
+$errors = [];
+foreach ($probes as $key => [$slugs, $probe]) {
+    if (!$on(...$slugs)) continue;
+    try {
+        $found[$key] = $probe();
+    } catch (Throwable $e) {
+        $errors[$key] = substr(preg_replace('/\s+/', ' ', $e->getMessage()), 0, 200);
+    }
+}
+echo 'WAAS_INVENTORY ' . wp_json_encode(['plugins' => array_values($active), 'found' => (object) $found, 'errors' => (object) $errors, 'seconds' => round(microtime(true) - $started, 2)]) . "\n";
+PHP;
+
+/** INVENTORY_PROBE's answer, or `error` saying why there is none: the report is extra, never a reason to fail. */
+function site_inventory(string $home): array
+{
+    $file = tempDir() . '/inventory.php';
+    if (file_put_contents($file, INVENTORY_PROBE) === false) return ['error' => 'cannot write the probe'];
+    $out = run('timeout 90 wp --path=' . ROOT . ' --skip-plugins --skip-themes' . ($home !== '' ? ' --url=' . escapeshellarg($home) : '')
+        . ' eval-file ' . escapeshellarg($file) . ' 2>&1; echo "::$?"', true);
+    if (preg_match('/^WAAS_INVENTORY (\{.*\})\s*$/m', $out, $m)) {
+        $inventory = json_decode($m[1], true);
+        if (is_array($inventory)) {
+            // Maps stay maps when empty: decoded as arrays, they would go out as [].
+            foreach (['found', 'errors'] as $map) if (isset($inventory[$map]) && is_array($inventory[$map])) $inventory[$map] = (object) $inventory[$map];
+            return $inventory;
+        }
+    }
+    [$text] = explode('::', $out, 2);
+    return ['error' => substr(trim(str_replace(ROOT . '/', '', preg_replace('/\s+/', ' ', $text))), -300) ?: 'no answer'];
+}
+
 // Commands run as root in the container; drop to www-data so WordPress can manage its files.
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
     posix_setgid(WWW_UID) && posix_setuid(WWW_UID) || fail('could not drop privileges');
@@ -1344,7 +1572,7 @@ switch ($op) {
         done(['live' => true]);
 
     case 'check-site': {
-        // After a site is moved in: does it serve, with its plugins and theme loaded? The home page and the login page
+        // After a site is moved in: does it serve, with its plugins and theme loaded, and what does it run (`inventory`)? The home page and the login page
         // are fetched from the WordPress container (`base`, on the store's own network) as the store's address, and
         // WordPress is loaded once with every plugin, which shows a PHP fatal error the pages hide.
         $home = rtrim((string) ($args['home'] ?? wpMayFail('option', 'get', 'home') ?? ''), '/');
@@ -1370,7 +1598,8 @@ switch ($op) {
         $loaded = strpos($out, 'WAAS_LOADED') !== false;
         if (preg_match('/Fatal error:\s*(.{1,300}?)(\n|$)/i', $out, $m)) $fatal = $strip($m[1]);
         $ok = $loaded && $fatal === null && $pages['home'] >= 200 && $pages['home'] < 500 && $pages['login'] >= 200 && $pages['login'] < 500;
-        done(['ok' => $ok, 'home' => $pages['home'], 'login' => $pages['login'], 'loaded' => $loaded, 'fatal' => $fatal]);
+        // What's on the site (site_inventory): for the report after the move, not part of whether it is ok.
+        done(['ok' => $ok, 'home' => $pages['home'], 'login' => $pages['login'], 'loaded' => $loaded, 'fatal' => $fatal, 'inventory' => site_inventory($home)]);
     }
 
     case 'snapshot': {

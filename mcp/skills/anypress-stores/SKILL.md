@@ -12,7 +12,7 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 
 | Area | Tools (actions) |
 |---|---|
-| Stores | `show_stores`, `show_store`, `get_stores` (list, get, wait), `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
+| Stores | `show_stores`, `show_store`, `get_stores` (list, get, wait, move_in), `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
 | Backups | `show_store_backups`, `manage_backups` (list, create, restore) |
 | Domains | `show_store_domains`, `manage_domain` (list, check, connect_link, add, set_main, remove) |
 | Email | `mail_domain` (get, set, remove) |
@@ -41,8 +41,9 @@ Repeating `create_store` with the same `externalId` answers with the store it al
 1. `import_site` with `action: "start"`, a `name`, an `externalId` and a `size` big enough for the site's files and database. It answers an `importCode` and `pluginDownload`.
 2. Tell the site owner: install the AnyPress Export plugin from `pluginDownload` on the old site, open Tools → Move to AnyPress and paste the code (or run `wp anypress-export send <code>`). Their old site is not changed. The code works for 7 days; `import_site` with `action: "new_code"` gives a fresh one.
 3. `get_stores` with `action: "wait"` until it is Done (the store stays Pending until the upload arrives and the move finishes, so call it again when it returns `done: false`). The site keeps its own plugins and themes.
-4. The moved site is **on hold** (`onHold: true`): it only sends email to the store's owner and account emails, doesn't run its scheduled tasks and asks search engines not to index it, so the old and new site don't both email customers or take orders. Tell the user, and have them check the site at its new address.
-5. Put it on the customer's domain as below. Once the old host has stopped (or the user says the new site should take over), `store_status` with `action: "go_live"`, then `get_stores` wait. Ask first: from then on the site sends all its email and runs its scheduled tasks.
+4. `get_stores` with `action: "move_in"` says how the move went: any `warnings` to check and, in `siteReport`, what the site runs. For each form, shop, CRM, booking, support, affiliate or community plugin it lists the counts, whether a Fluent plugin can bring that data in (`route`, `needsPro`), what a switch would lose (`willLose`) and what to fix first (`blockers`, such as live payment keys). Tell the user about the blockers.
+5. The moved site is **on hold** (`onHold: true`): it only sends email to the store's owner and account emails, doesn't run its scheduled tasks and asks search engines not to index it, so the old and new site don't both email customers or take orders. Tell the user, and have them check the site at its new address.
+6. Put it on the customer's domain as below. Once the old host has stopped (or the user says the new site should take over), `store_status` with `action: "go_live"`, then `get_stores` wait. Ask first: from then on the site sends all its email and runs its scheduled tasks.
 
 ## Put a store on the customer's own domain
 

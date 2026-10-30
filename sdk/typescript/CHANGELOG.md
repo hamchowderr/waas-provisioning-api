@@ -6,6 +6,7 @@ All notable changes to `waas-provisioning-sdk` are listed here. Versions follow 
 
 - `tenants.addEmailPack()`: emails on top of a store's monthly plan (`POST /v1/tenants/email-packs`).
 - `tenants.goLive()`: makes a site moved in live (`POST /v1/tenants/go-live`); tenants have `onHold`.
+- `tenants.getImport()`: how a move in went, with `siteReport`, what's on the moved site (`GET /v1/tenants/import`).
 
 ## 0.1.0
 

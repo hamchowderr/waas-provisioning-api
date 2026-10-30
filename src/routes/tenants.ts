@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { isUniqueViolation, withTransaction } from '../db.ts';
-import { badRequest, conflict } from '../errors.ts';
+import { badRequest, conflict, HttpError } from '../errors.ts';
 import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE, type Size } from '../plans.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
-import { createImport, importCode, renewImport } from '../imports.ts';
+import { createImport, importCode, importDetail, renewImport } from '../imports.ts';
 import { publicBase } from '../oauth.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
@@ -98,6 +98,26 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
     const token = await renewImport(pool, tenant.id);
     if (!token) throw badRequest(`Tenant ${tenant.external_id} is not waiting for a site to be moved in`);
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id, importCode: importCode(publicBase(c, config.publicUrl), token) });
+  });
+
+  // How a store's move in went (src/imports.ts), as the dashboard sees it: waiting, moving, done or failed, with
+  // why it failed, what to check, and what's on the moved site (src/sitereport.ts).
+  app.get('/import', async (c) => {
+    const tenant = await findTenant(pool, c, { allowWaiting: true });
+    const detail = await importDetail(pool, tenant.id);
+    if (!detail) throw new HttpError(404, `Tenant ${tenant.external_id} was not moved in from another host`);
+    const status = !detail.startedAt ? 'waiting' : tenant.status === Status.Done ? 'done' : tenant.status === Status.Failed ? 'failed' : 'moving';
+    return c.json({
+      tenantId: tenant.id,
+      externalId: tenant.external_id,
+      status,
+      expiresAt: detail.expiresAt,
+      startedAt: detail.startedAt,
+      onHold: tenant.on_hold === true,
+      ...(detail.reason && { reason: detail.reason }),
+      warnings: detail.warnings,
+      ...(detail.siteReport && { siteReport: detail.siteReport }),
+    });
   });
 
   app.post('/version', async (c) => {

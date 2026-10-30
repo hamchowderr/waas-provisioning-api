@@ -34,7 +34,7 @@ Each area has a scope to see and a scope to change. The approve page has a box f
 
 | Area | `:read` | `:write` |
 |---|---|---|
-| `stores` | `show_stores`, `show_store`, `get_stores` (list, get, wait) | `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
+| `stores` | `show_stores`, `show_store`, `get_stores` (list, get, wait, move_in) | `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
 | `backups` | `show_store_backups`, `manage_backups` (list) | `manage_backups` (create, restore) |
 | `domains` | `show_store_domains`, `manage_domain` (list, check, connect_link) | `manage_domain` (add, set_main, remove) |
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
@@ -119,7 +119,7 @@ Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) o
 |---|---|---|
 | Stores | `show_stores` | Panel of every store |
 | | `show_store` | Panel of one store: status, size, version, domains, versions |
-| | `get_stores` | `list`, `get`, `wait` |
+| | `get_stores` | `list`, `get`, `wait`, `move_in` (how a site moved in went, with what's on it) |
 | | `create_store` | Creates a store |
 | | `import_site` | `start` (a store that waits for a site moved in from another host), `new_code` |
 | | `update_store` | `options` (WordPress options, PHP constants, size), `move` (to another version) |

@@ -136,6 +136,7 @@ describe('MCP server', () => {
     const renewed = await call(mcp, 'import_site', { action: 'new_code', externalId: 'mcp-import' });
     expect(renewed.data.importCode).toMatch(/^AP1\./);
     expect(renewed.data.importCode).not.toBe(created.data.importCode);
+    expect((await call(mcp, 'get_stores', { action: 'move_in', externalId: 'mcp-import' })).data).toMatchObject({ status: 'waiting', startedAt: null, warnings: [] });
 
     expect((await call(mcp, 'store_status', { action: 'delete', externalId: 'mcp-import' })).isError).toBe(false);
     for (let i = 0; (await call(mcp, 'get_stores', { action: 'get', externalId: 'mcp-import' })).data; i++) {

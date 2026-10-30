@@ -8,6 +8,7 @@ import { readJson } from './http.ts';
 import { SIZES, type Size } from './plans.ts';
 import type { Provisioner, SiteCheck } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
+import { siteReport, type SiteReport } from './sitereport.ts';
 import { Status } from './status.ts';
 
 /**
@@ -72,11 +73,12 @@ export async function renewImport(pool: Pool, tenantId: string): Promise<string 
 
 /**
  * What the dashboard shows about a store's move: when its code expires, when it started and what the plugin told;
- * once built, what the check of the moved site found and any warnings; once failed, why.
+ * once built, what the check of the moved site found, any warnings and what's on the site (src/sitereport.ts); once
+ * failed, why.
  */
 export async function importDetail(pool: Pool, tenantId: string) {
   const { rows } = await pool.query(
-    `SELECT i.expires_at, i.started_at, i.source, i.failure_reason, i.site_check, i.warnings, t.status
+    `SELECT i.expires_at, i.started_at, i.source, i.failure_reason, i.site_check, i.warnings, i.site_report, t.status
        FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id WHERE i.tenant_id = $1`,
     [tenantId],
   );
@@ -89,6 +91,7 @@ export async function importDetail(pool: Pool, tenantId: string) {
     ...(row.status === Status.Failed && { reason: row.failure_reason ?? FAILED }),
     ...(row.site_check && { check: row.site_check }),
     warnings: (row.warnings ?? []) as string[],
+    ...(row.site_report && { siteReport: row.site_report as SiteReport }),
   };
 }
 
@@ -165,8 +168,9 @@ export function importWarnings(source: ImportSource | null, store: { wordPressVe
 }
 
 /**
- * Records a built move: the check and the warnings, with no failure from an earlier attempt, and puts the store on
- * hold until its owner makes it live (POST /v1/tenants/go-live).
+ * Records a built move: the check, the warnings and the report of what's on the site (src/sitereport.ts, from the
+ * check's inventory, which isn't kept itself), with no failure from an earlier attempt. The store is held until its
+ * owner makes it live (POST /v1/tenants/go-live).
  */
 export async function recordImportBuilt(pool: Pool, tenantId: string, check?: SiteCheck): Promise<void> {
   const { rows } = await pool.query(
@@ -176,10 +180,12 @@ export async function recordImportBuilt(pool: Pool, tenantId: string, check?: Si
   );
   if (!rows[0]) return;
   const warnings = importWarnings(rows[0].source, { wordPressVersion: rows[0].wordpress_version, phpVersion: rows[0].php_version }, check);
-  await pool.query('UPDATE tenant_imports SET site_check = $2, warnings = $3, failure_reason = NULL WHERE tenant_id = $1', [
+  const { inventory, ...found } = check ?? ({} as SiteCheck);
+  await pool.query('UPDATE tenant_imports SET site_check = $2, warnings = $3, site_report = $4, failure_reason = NULL WHERE tenant_id = $1', [
     tenantId,
-    check ?? null,
+    check ? found : null,
     JSON.stringify(warnings),
+    siteReport(inventory),
   ]);
 }
 
@@ -238,7 +244,7 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     if (typeof code !== 'string' || !code.trim()) throw badRequest('code is required');
     const token = tokenFromCode(code);
     const { rows } = await pool.query(
-      `SELECT i.tenant_id, i.expires_at, i.started_at, i.failure_reason, i.warnings, t.name, t.size, t.status, t.on_hold,
+      `SELECT i.tenant_id, i.expires_at, i.started_at, i.failure_reason, i.warnings, i.site_report, t.name, t.size, t.status, t.on_hold,
          (SELECT d.domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
        FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id WHERE i.token_hash = $1`,
       [hashToken(token)],
@@ -251,6 +257,7 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
       started_at: Date | null;
       failure_reason: string | null;
       warnings: string[] | null;
+      site_report: SiteReport | null;
       name: string;
       size: Size;
       status: number;
@@ -297,8 +304,8 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     return c.json({ status: 'moving', store: store(found) });
   });
 
-  // How the move is going: waiting for the upload, moving, done (with the site's address, whether it is still on hold
-  // and any warnings) or failed (with why).
+  // How the move is going: waiting for the upload, moving, done (with the site's address, whether it is still on hold,
+  // any warnings and what's on the site) or failed (with why).
   app.post('/status', async (c) => {
     const found = await findImport(await readJson(c));
     const status = !found.started_at
@@ -315,6 +322,7 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
       ...(status === 'done' && { url: `https://${found.main_domain}`, onHold: found.on_hold }),
       ...(status === 'failed' && { reason: found.failure_reason ?? FAILED }),
       ...(status !== 'waiting' && warnings.length > 0 && { warnings }),
+      ...(status === 'done' && found.site_report && { siteReport: found.site_report }),
     });
   });
 

@@ -306,6 +306,14 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
           }
         },
       },
+      move_in: {
+        access: 'read',
+        does:
+          'for a site moved in (import_site): waiting, moving, done or failed with its reason, warnings to check, and siteReport: ' +
+          'its form, shop, CRM, booking, support, affiliate and community plugins with their counts, whether a Fluent plugin can bring the data in ' +
+          '(route, needsPro), what a switch would lose (willLose) and what to fix first (blockers)',
+        run: (args) => client.tenants.getImport(toRef(args)),
+      },
     },
   });
 
