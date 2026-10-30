@@ -241,6 +241,8 @@ describe('suspending, resuming and deleting a store', () => {
 
     expect(await admin('DELETE', `/admin/tenants/${store.id}`, 200)).toEqual({ tenantId: store.id, externalId: store.externalId });
     await waitFor(async () => !t.provisioner.stores.has(store.id));
+    // The job removes the store first and the row after it, so wait for the row too.
+    await waitFor(async () => (await t.call('GET', `/admin/tenants/${store.id}`, { auth: ADMIN })).status === 404);
     await admin('GET', `/admin/tenants/${store.id}`, 404);
     await admin('DELETE', `/admin/tenants/${store.id}`, 404);
     await admin('POST', `/admin/tenants/${crypto.randomUUID()}/suspend`, 404, {});
