@@ -188,6 +188,7 @@ function anypress_starter_pages(): array
             . anypress_call_to_action(__('Not sure which one is right?', 'anypress'), __('Ask us and we will help you choose.', 'anypress'), [[__('Contact us', 'anypress'), $contact()]]),
         ],
         'anypress/about' => [__('About', 'anypress'), 'about, story, team, values', '', fn () =>
+            /* translators: %s: the store's name. */
             anypress_story(sprintf(__('The story of %s', 'anypress'), $name), [
                 __('How it started, and why.', 'anypress'),
                 __('Who you work with today, and what you care about getting right for them.', 'anypress'),
@@ -214,6 +215,7 @@ function anypress_starter_pages(): array
 function anypress_booking(): string
 {
     global $wpdb;
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- FluentBooking's own table, no input; read only when patterns are built for the editor or REST.
     $calendar = (int) $wpdb->get_var("SELECT id FROM {$wpdb->prefix}fcal_calendars WHERE status = 'active' ORDER BY id LIMIT 1");
 
     return $calendar
@@ -331,7 +333,7 @@ add_action('init', function () {
         'numberposts' => 1,
         'fields' => 'ids',
         'suppress_filters' => true,
-        'meta_query' => [['key' => '_anypress_needs', 'compare' => 'NOT EXISTS']],
+        'meta_query' => [['key' => '_anypress_needs', 'compare' => 'NOT EXISTS']], // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- one query, once per store (behind the starter pages flag).
     ]);
     if (!$own) {
         anypress_make_starter_pages($email);
