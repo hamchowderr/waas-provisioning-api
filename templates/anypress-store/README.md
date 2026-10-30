@@ -32,6 +32,11 @@ And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress
 for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
+And WordPress's [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) 0.7.1 (`mcp-adapter`), installed but **off**. The store
+owner turns it on in Dashboard → Your plan → AI apps (MCP); then AI apps that speak MCP can work on the site's pages and
+design at `/wp-json/mcp/anypress`, signed in as a WordPress user with an application password. It is pinned in
+[`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in `roles.json`.
+
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
 change it in Appearance → Editor.

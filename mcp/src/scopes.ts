@@ -3,7 +3,7 @@
 // The API's OAuth (src/oauth.ts) grants these; Basic auth and the local stdio server get them all.
 
 /** The areas, in the order people see them. */
-export const AREAS = ['stores', 'backups', 'domains', 'email', 'versions', 'site'] as const;
+export const AREAS = ['stores', 'backups', 'domains', 'email', 'versions', 'webhooks', 'site'] as const;
 export type Area = (typeof AREAS)[number];
 export type Access = 'read' | 'write';
 
@@ -14,6 +14,7 @@ export const AREA_LABELS: Record<Area, { name: string; read: string; write: stri
   domains: { name: 'Domains', read: 'See domains and check addresses', write: 'Add, remove and change domains' },
   email: { name: 'Email', read: 'See the sending domain', write: 'Set or remove the sending domain' },
   versions: { name: 'Versions', read: 'See versions, snapshots and templates', write: 'Create, delete and choose the production version' },
+  webhooks: { name: 'Webhooks', read: 'See webhook endpoints and their deliveries', write: 'Add, change, test and remove webhook endpoints' },
   site: { name: 'Website pages and design', read: 'See pages, menus and styles', write: 'Edit pages, menus, header, footer, styles and images' },
 };
 

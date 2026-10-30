@@ -39,6 +39,7 @@ Each area has a scope to see and a scope to change. The approve page has a box f
 | `domains` | `show_store_domains`, `manage_domain` (list, check, connect_link) | `manage_domain` (add, set_main, remove) |
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
 | `versions` | `manage_versions` (list, snapshots, templates) | `manage_versions` (create, set_production, delete) |
+| `webhooks` | `manage_webhooks` (list, get, deliveries) | `manage_webhooks` (create, update, test, retry, rotate_secret, delete) |
 | `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (find, get), `site_styles` (get), `header_footer` (get), `site_menus` (list) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update), `header_footer` (update), `site_menus` (update), `add_image` |
 
 So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
@@ -129,6 +130,7 @@ Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) o
 | | `manage_domain` | `list`, `check`, `connect_link` (Domain Connect), `add`, `set_main`, `remove` (destructive) |
 | Email | `mail_domain` | `get`, `set`, `remove` (destructive) |
 | Versions | `manage_versions` | `list`, `snapshots`, `templates`, `create`, `set_production`, `delete` (destructive) |
+| Webhooks | `manage_webhooks` | `list`, `get`, `deliveries`, `create`, `update`, `test`, `retry`, `rotate_secret` (destructive), `delete` (destructive) |
 | Site editing | `get_site` | The site's name, address, theme and home page |
 | | `site_pages` | `list`, `read`, `revisions`, `create`, `update`, `restore_revision` |
 | | `page_section` | `add`, `replace`, `remove` (destructive) |
