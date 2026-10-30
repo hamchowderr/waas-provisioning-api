@@ -23,6 +23,10 @@ A store owner who isn't on a product's team can still connect an AI app to their
 
 WaaS Client's page (2.3.0) shows that to the website's administrators, and Allow or Cancel goes back to `/oauth/site/answer` signed with the same key. The API checks the signature, uses the request once, and gives the app a code for that store only (`oauth_tokens.tenant_id`), with the scope `site:read`, plus `site:write` when the owner allowed changes. That connection gets only the site tools, and every call goes to its own store whatever store the agent names. The token stops working when the store is deleted.
 
+### Signed in by the storefront
+
+A storefront that has already signed in the store's owner (its customer account page) can skip that step for an app such as the website assistant: `POST /v1/tenants/site/sign-in?externalId=…` with the storefront's key and the app's `clientId`, `redirectUri` and PKCE `codeChallenge` answers with the app's redirect address carrying a code. It is the same code the website's own answer gives (`site:read site:write`, this store only, 10 minutes, once), and the app finishes it at `/oauth/token` with its verifier. The storefront's key can already edit the site through `/v1/tenants/site`, so this reaches nothing new.
+
 ## MCP tools
 
 Most site tools take an `action`; read actions need the `site:read` scope and write actions `site:write`.

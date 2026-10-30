@@ -46,17 +46,15 @@ export function clientId(): Promise<string> {
  * API sends the owner straight to that website's wp-admin to say yes.
  */
 export async function startSignIn(site: string, back: string) {
-  const verifier = b64url(randomBytes(32));
-  const state = b64url(randomBytes(16));
-  (await cookies()).set(PENDING, JSON.stringify({ verifier, state, back }), { ...COOKIE, maxAge: 15 * 60 });
+  const pending = await pendingSignIn(back);
   return {
     action: `${API_URL}/oauth/authorize`,
     fields: {
       response_type: 'code',
-      client_id: await clientId(),
-      redirect_uri: `${PANEL_URL()}/callback`,
-      state,
-      code_challenge: b64url(createHash('sha256').update(verifier).digest()),
+      client_id: pending.clientId,
+      redirect_uri: pending.redirectUri,
+      state: pending.state,
+      code_challenge: pending.codeChallenge,
       code_challenge_method: 'S256',
       resource: SITE_RESOURCE,
       scope: 'site:read site:write',
@@ -64,6 +62,49 @@ export async function startSignIn(site: string, back: string) {
       site,
     },
   };
+}
+
+/** A new sign-in's PKCE verifier and state, kept in a cookie until /callback. */
+async function pendingSignIn(back: string) {
+  const verifier = b64url(randomBytes(32));
+  const state = b64url(randomBytes(16));
+  (await cookies()).set(PENDING, JSON.stringify({ verifier, state, back }), { ...COOKIE, maxAge: 15 * 60 });
+  return {
+    clientId: await clientId(),
+    redirectUri: `${PANEL_URL()}/callback`,
+    state,
+    codeChallenge: b64url(createHash('sha256').update(verifier).digest()),
+  };
+}
+
+/** The shops allowed to sign their owners in (PANEL_SHOPS: comma-separated origins, e.g. https://shop.anypress.io). */
+function allowedShop(address: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return null;
+  }
+  const shops = (process.env.PANEL_SHOPS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean);
+  const secure = url.protocol === 'https:' || url.hostname === 'localhost';
+  return secure && shops.includes(url.origin) ? url : null;
+}
+
+/**
+ * A sign-in the owner's shop vouches for (its "Website assistant" button): the shop's address gets
+ * this sign-in's client, redirect and PKCE challenge, asks the API for a code for the owner's website,
+ * and sends the owner back to /callback with it. Returns where to send the owner, or null for a shop
+ * that isn't allowed.
+ */
+export async function startShopSignIn(shop: string): Promise<string | null> {
+  const target = allowedShop(shop);
+  if (!target) return null;
+  const pending = await pendingSignIn('/');
+  target.searchParams.set('client_id', pending.clientId);
+  target.searchParams.set('redirect_uri', pending.redirectUri);
+  target.searchParams.set('code_challenge', pending.codeChallenge);
+  target.searchParams.set('state', pending.state);
+  return target.toString();
 }
 
 type Tokens = { access_token: string; refresh_token?: string; expires_in?: number };

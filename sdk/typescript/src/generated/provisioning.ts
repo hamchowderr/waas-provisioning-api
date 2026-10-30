@@ -177,6 +177,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/site/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign the store's owner in to an app
+         * @description Added for AnyPress.
+         *
+         *     For a storefront that has signed in the store's owner itself (its customer account page), so the owner can open an app such as the website assistant without "Sign in with your website". Returns the app's sign-in redirect with an authorization code, exactly as the API's own sign-in would: the app finishes it at `/oauth/token` with its PKCE verifier, and gets `site:read site:write` for this one store (resource `/mcp/site`). The code works once, for 10 minutes.
+         *
+         *     `clientId` must be an app registered at `/oauth/register` and `redirectUri` one of its redirect addresses. The tenant must be Done and not suspended.
+         */
+        post: operations["siteSignIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/import-code": {
         parameters: {
             query?: never;
@@ -1877,6 +1901,20 @@ export interface components {
              */
             takeBackup?: boolean;
         };
+        SiteSignInParams: {
+            /** @description The app's client id from /oauth/register */
+            clientId: string;
+            /** @description One of the app's registered redirect addresses */
+            redirectUri: string;
+            /** @description The app's PKCE code challenge (S256) */
+            codeChallenge: string;
+            /** @description Passed back to the app unchanged */
+            state?: string;
+        };
+        SiteSignInResult: {
+            /** @description The app's redirect address with code, state and iss */
+            redirectUrl: string;
+        };
         SiteRequestParams: {
             /**
              * @example POST
@@ -2460,6 +2498,61 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
                 };
+            };
+        };
+    };
+    siteSignIn: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SiteSignInParams"];
+            };
+        };
+        responses: {
+            /** @description Where to send the owner's browser */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSignInResult"];
+                };
+            };
+            /** @description The app or its redirect address is not registered, or the tenant is not ready */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

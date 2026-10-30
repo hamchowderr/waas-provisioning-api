@@ -4,15 +4,18 @@
 // Needs TEST_DATABASE_URL, like the API's own tests, and Playwright with Chromium.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { serve, type ServerType } from '@hono/node-server';
+import { type Browser, chromium } from 'playwright';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startHarness, type Harness } from './harness.ts';
 
-import { type Browser, chromium } from 'playwright';
-
 let h: Harness;
 let assistant: ServerType;
+let api: ServerType;
+let shop: Server;
+let shopUrl: string;
 let panel: ChildProcess;
 let panelUrl: string;
 let browser: Browser;
@@ -53,11 +56,32 @@ beforeAll(async () => {
   h = await startHarness(['bakery'], storeFetch);
   const assistantPort = await freePort();
   assistant = serve({ fetch: h.app.fetch, port: assistantPort });
+  const apiPort = await freePort();
+  api = serve({ fetch: h.t.app.fetch, port: apiPort });
+  // The shop's "Website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery".
+  shop = createHttpServer(async (request, response) => {
+    const asked = new URL(request.url ?? '/', shopUrl).searchParams;
+    const answer = await h.t.app.request('/v1/tenants/site/sign-in?externalId=bakery', {
+      method: 'POST',
+      headers: { Authorization: h.apiAuth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: asked.get('client_id'), redirectUri: asked.get('redirect_uri'), codeChallenge: asked.get('code_challenge'), state: asked.get('state') }),
+    });
+    const { redirectUrl } = (await answer.json()) as { redirectUrl: string };
+    response.writeHead(303, { Location: redirectUrl }).end();
+  }).listen(0);
+  await once(shop, 'listening');
+  shopUrl = `http://localhost:${(shop.address() as AddressInfo).port}`;
   const port = await freePort();
   panelUrl = `http://localhost:${port}`;
   panel = spawn('npx', ['next', 'start', '-p', String(port)], {
     cwd: new URL('../panel/', import.meta.url),
-    env: { ...process.env, MASTRA_SERVER_URL: `http://localhost:${assistantPort}`, ANYPRESS_API_URL: 'https://api.example.test', PANEL_URL: panelUrl },
+    env: {
+      ...process.env,
+      MASTRA_SERVER_URL: `http://localhost:${assistantPort}`,
+      ANYPRESS_API_URL: `http://localhost:${apiPort}`,
+      PANEL_URL: panelUrl,
+      PANEL_SHOPS: shopUrl,
+    },
     stdio: 'ignore',
   });
   await waitFor(panelUrl);
@@ -68,6 +92,8 @@ afterAll(async () => {
   await browser?.close();
   panel?.kill();
   assistant?.close();
+  api?.close();
+  shop?.close();
   await h?.close();
 });
 
@@ -133,4 +159,24 @@ describe('chat panel', () => {
     expect(writes()).toEqual([]);
     await page.context().close();
   }, 90_000);
+
+  it('opens signed in from the shop’s button, with no sign-in of its own', async () => {
+    h.script('What is on my site?', 'get_site', {}, 'Your site is called Bakery.');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${panelUrl}/from-shop?shop=${encodeURIComponent(`${shopUrl}/assistant`)}`);
+    await page.getByRole('textbox').fill('What is on my site?');
+    await page.getByRole('textbox').press('Enter');
+    await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
+    await context.close();
+  }, 90_000);
+
+  it('refuses a shop it doesn’t know', async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${panelUrl}/from-shop?shop=${encodeURIComponent('https://evil.example.com/assistant')}`);
+    expect(new URL(page.url()).origin).toBe(panelUrl);
+    await expect(page.getByRole('button', { name: 'Sign in with your website' }).isVisible()).resolves.toBe(true);
+    await context.close();
+  });
 });
