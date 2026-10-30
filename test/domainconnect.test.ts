@@ -8,7 +8,7 @@ import { domainConnectLink, type DomainConnectNet } from '../src/domainconnect.t
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import type { SendingDomain, SendingDomains } from '../src/tosend.ts';
-import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const storeSpec: any = parse(readFileSync(new URL('../openapi/store-mail.yaml', import.meta.url), 'utf8'));
@@ -114,7 +114,7 @@ describe('store Domain Connect routes', () => {
     const versionId = ((await res.json()) as { id: string }).id;
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as any[])[0]?.statusCode === Status.Done);
     await t.call('PUT', '/v1/versions/production', { body: { versionId } });
-    tenant = (await (await t.call('POST', '/v1/tenants', { body: { name: 'DC Shop' } })).json()) as { id: string; externalId: string };
+    tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'DC Shop' } })).json()) as { id: string; externalId: string };
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
     await t.pool.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, $2, false)', [tenant.id, 'shop.example.com']);
   });

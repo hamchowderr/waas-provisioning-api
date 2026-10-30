@@ -42,6 +42,7 @@ interface UpdateTenantParams {
 }
 
 const EXTERNAL_ID = /^[A-Za-z0-9-]+$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps) {
   const app = new Hono<AppEnv>();
@@ -220,7 +221,11 @@ export async function createTenant(
   const userEmail = body.wordPressUserEmail ?? body.tenantEmail;
   const userRole = body.wordPressUserRole ?? body.tenantUserRole;
   const password = body.wordPressUserPassword ?? body.tenantPassword;
+  // Every new store has an owner who can sign in; their email is also the store's own address, which its starter pages
+  // wait for. A site moved in keeps its own users.
+  if (!imported && !(userName?.trim() && userEmail?.trim())) throw badRequest("wordPressUserName and wordPressUserEmail are required: the store owner's login");
   if ((userName || userEmail) && !(userName && userEmail)) throw badRequest('wordPressUserName and wordPressUserEmail go together');
+  if (userEmail && !EMAIL.test(userEmail.trim())) throw badRequest('wordPressUserEmail must be an email address');
 
   // The checks above give the usual answer; these constraints settle two requests racing past them.
   let token: string | undefined;

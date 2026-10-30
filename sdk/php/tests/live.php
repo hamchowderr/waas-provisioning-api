@@ -31,7 +31,7 @@ function check(bool $ok, string $what): void
 }
 
 $ref = ['externalId' => 'php-1'];
-$created = $client->createTenant(['name' => 'PHP store', 'externalId' => 'php-1']);
+$created = $client->createTenant(['name' => 'PHP store', 'externalId' => 'php-1', 'wordPressUserName' => 'owner', 'wordPressUserEmail' => 'owner@example.com']);
 check($created['externalId'] === 'php-1', 'createTenant answers with the externalId');
 
 $tenant = $client->waitForTenant($ref, 100, 15000);
@@ -54,7 +54,7 @@ check($client->getMailDomain($ref) === null, 'getMailDomain is null without a se
 check(count($client->listVersions()) > 0 && is_array($client->listSnapshots(['onlyProductionVersion' => true])), 'listVersions and listSnapshots');
 
 try {
-    $client->createTenant(['name' => 'bad', 'externalId' => 'has space']);
+    $client->createTenant(['name' => 'bad', 'externalId' => 'has space', 'wordPressUserName' => 'owner', 'wordPressUserEmail' => 'owner@example.com']);
     check(false, 'a bad externalId throws');
 } catch (WaasApiException $e) {
     check($e->getStatus() === 400 && $e->getOperation() === 'createTenant' && $e->getApiMessage() !== null, 'WaasApiException carries the status and the API message');

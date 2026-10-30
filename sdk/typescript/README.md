@@ -35,7 +35,7 @@ const waas = new WaasClient({
 
 try {
   // Ask for a new store. The call returns once the work is queued.
-  await waas.tenants.create({ name: 'Acme Shop', externalId: 'order-1042' });
+  await waas.tenants.create({ name: 'Acme Shop', externalId: 'order-1042', wordPressUserName: 'acme', wordPressUserEmail: 'owner@acme.example' });
 
   // Poll until the store is ready (or failed).
   const store = await waas.waitForTenant({ externalId: 'order-1042' });

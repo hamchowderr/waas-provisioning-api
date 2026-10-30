@@ -1143,7 +1143,7 @@ export interface components {
              */
             tenantPassword?: string;
             /**
-             * @description The name of the user that will be created in the Tenant.
+             * @description The name of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantName` is accepted instead.
              * @example TenantUser
              */
             wordPressUserName?: string;
@@ -1153,7 +1153,7 @@ export interface components {
              */
             wordPressUserRole?: string;
             /**
-             * @description The e-mail address of the user that will be created in the Tenant.
+             * @description The e-mail address of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantEmail` is accepted instead.
              * @example example@gmail.com
              */
             wordPressUserEmail?: string;

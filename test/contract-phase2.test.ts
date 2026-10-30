@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Status } from '../src/status.ts';
 import { contractChecker, operations } from './contract.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 const phase2 = operations.filter((o) => o.phase === 2);
 
@@ -154,7 +154,7 @@ describe('Phase 2 operations with a partner key', () => {
   it('400 responses carry an ExceptionResult', async () => {
     // A store on the storefront with a production version, so it can't be removed.
     const withStore = await florists();
-    expect((await t.call('POST', `/v1/tenants?productId=${withStore.id}`, { auth, body: { name: 'Florist shop' } })).status).toBe(200);
+    expect((await t.call('POST', `/v1/tenants?productId=${withStore.id}`, { auth, body: { ...OWNER, name: 'Florist shop' } })).status).toBe(200);
     const day = `startDate=2026-10-01T00:00:00Z&endDate=2026-10-02T00:00:00Z`;
     // The account's third storefront, so the next one is over its limit of 3.
     expect((await t.call('POST', `/v1/products?subscriptionId=${account.id}`, { auth, body: { name: 'Acme Third' } })).status).toBe(200);
@@ -239,7 +239,7 @@ describe('Phase 1 operations with a partner key', () => {
   it('a store made, listed and removed on a named storefront, as with its own key', async () => {
     const { id, version } = await florists();
 
-    const made: any = await expectContract('createTenant', await t.call('POST', `/v1/tenants?productId=${id}`, { auth, body: { name: 'Rose and Fern', externalId: 'acme-order-1' } }));
+    const made: any = await expectContract('createTenant', await t.call('POST', `/v1/tenants?productId=${id}`, { auth, body: { ...OWNER, name: 'Rose and Fern', externalId: 'acme-order-1' } }));
     expect(made).toMatchObject({ externalId: 'acme-order-1', baseDomain: expect.any(String) });
     const listed: any = await waitFor(async () => {
       const list: any = await expectContract('listTenants', await t.call('GET', `/v1/tenants?productId=${id}&externalId=acme-order-1`, { auth }));

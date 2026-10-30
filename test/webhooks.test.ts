@@ -11,7 +11,7 @@ import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import { checkEndpointUrl, isPrivateAddress, sign } from '../src/webhooks.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const webhookSpec: any = parse(readFileSync(new URL('../openapi/webhooks.yaml', import.meta.url), 'utf8'));
@@ -85,7 +85,7 @@ async function register(body: object, auth?: string) {
 }
 
 async function createTenant(name: string) {
-  const res = await t.call('POST', '/v1/tenants', { body: { name } });
+  const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name } });
   return (await res.json()) as { id: string; externalId: string };
 }
 

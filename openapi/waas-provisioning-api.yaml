@@ -2798,7 +2798,7 @@ components:
           deprecated: true
         wordPressUserName:
           type: string
-          description: The name of the user that will be created in the Tenant.
+          description: The name of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantName` is accepted instead.
           example: TenantUser
         wordPressUserRole:
           type: string
@@ -2806,7 +2806,7 @@ components:
           example: author
         wordPressUserEmail:
           type: string
-          description: The e-mail address of the user that will be created in the Tenant.
+          description: The e-mail address of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantEmail` is accepted instead.
           example: example@gmail.com
         wordPressUserPassword:
           type: string

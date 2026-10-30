@@ -77,14 +77,14 @@ describe('MCP server', () => {
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     expect(byName.get('get_stores')?.annotations?.readOnlyHint).toBe(true);
     expect(byName.get('store_status')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
-    expect(byName.get('create_store')?.inputSchema.required).toEqual(['name']);
+    expect(byName.get('create_store')?.inputSchema.required).toEqual(['name', 'wordPressUserName', 'wordPressUserEmail']);
     expect(byName.get('manage_domain')?.inputSchema.required).toEqual(['action']);
     expect((byName.get('manage_domain')?.inputSchema.properties?.action as { enum: string[] }).enum).toEqual(['list', 'check', 'connect_link', 'add', 'set_main', 'remove']);
     expect(byName.get('manage_domain')?.description).toContain('set_main (makes domainName the main domain');
   });
 
   it('creates a store and waits until it is Done', async () => {
-    const created = await call(mcp, 'create_store', { name: 'MCP store', externalId: 'mcp-1' });
+    const created = await call(mcp, 'create_store', { name: 'MCP store', externalId: 'mcp-1', wordPressUserName: 'owner', wordPressUserEmail: 'owner@example.com' });
     expect(created.data).toMatchObject({ externalId: 'mcp-1' });
 
     const waited = await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
@@ -146,7 +146,7 @@ describe('MCP server', () => {
   });
 
   it('turns API errors, bad refs and unknown actions into tool errors', async () => {
-    const bad = await call(mcp, 'create_store', { name: 'dupe', externalId: 'has space' });
+    const bad = await call(mcp, 'create_store', { name: 'dupe', externalId: 'has space', wordPressUserName: 'owner', wordPressUserEmail: 'owner@example.com' });
     expect(bad.isError).toBe(true);
     expect(bad.text).toMatch(/^The API refused createTenant \(HTTP 400\): /);
 

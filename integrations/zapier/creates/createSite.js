@@ -41,7 +41,7 @@ module.exports = {
         helpText:
           'Your own ID for the site, such as the order or deal number. Letters, numbers and dashes only. The same create sent again answers with the site already made, so a Zap that runs twice still makes one site.',
       },
-      { key: 'email', label: 'Client Email', required: false, helpText: 'Makes a WordPress login for your client with this email.' },
+      { key: 'email', label: 'Client Email', required: true, helpText: 'Makes a WordPress login for your client with this email. Every site needs one.' },
       { key: 'username', label: 'Client Username', required: false, helpText: 'Their WordPress username. The email is used when empty.' },
       {
         key: 'role',

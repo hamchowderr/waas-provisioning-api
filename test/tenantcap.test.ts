@@ -6,7 +6,7 @@ import { parse } from 'yaml';
 import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
@@ -21,7 +21,7 @@ type Tenant = { id: string; externalId: string };
 const getTenant = async (externalId: string, auth?: string) =>
   ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`, { auth })).json()) as any[])[0];
 const settled = (externalId: string, auth?: string) => waitFor(async () => (await getTenant(externalId, auth))?.statusCode === Status.Done);
-const create = (name: string, auth?: string) => t.call('POST', '/v1/tenants', { body: { name }, auth });
+const create = (name: string, auth?: string) => t.call('POST', '/v1/tenants', { body: { ...OWNER, name }, auth });
 
 async function newTenant(name: string, auth?: string): Promise<Tenant> {
   const res = await create(name, auth);

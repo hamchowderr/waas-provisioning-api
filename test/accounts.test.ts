@@ -8,7 +8,7 @@ import { createAuth, type AuthConfig } from '../src/auth.ts';
 import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
 
@@ -71,7 +71,7 @@ async function storeFor(auth: string, name: string): Promise<{ id: string; exter
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`, { auth })).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId }, auth });
-  const created = await t.call('POST', '/v1/tenants', { body: { name }, auth });
+  const created = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name }, auth });
   expect(created.status).toBe(200);
   const tenant = (await created.json()) as { id: string; externalId: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

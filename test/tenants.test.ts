@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiKey } from '../src/keys.ts';
 import { Status } from '../src/status.ts';
-import { basic, setup, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 let versionId: string;
@@ -12,7 +12,7 @@ async function tenantStatus(externalId: string): Promise<number | undefined> {
 }
 
 async function createTenant(body: object) {
-  const res = await t.call('POST', '/v1/tenants', { body });
+  const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, ...body } });
   return { status: res.status, body: (await res.json()) as { id: string; externalId: string; baseDomain: string; customDomain?: string; message?: string } };
 }
 
@@ -72,13 +72,18 @@ describe('tenants', () => {
     const own = await createTenant({ name: 'Own Options', wordPressUserName: 'o', wordPressUserEmail: 'o@example.com', wpOptions: { blogname: 'Mine', admin_email: 'shop@example.com' } });
     await waitFor(async () => (await tenantStatus(own.body.externalId)) === Status.Done);
     expect(t.provisioner.stores.get(own.body.id)!.wpOptions).toMatchObject({ blogname: 'Mine', admin_email: 'shop@example.com' });
-    const bare = await createTenant({ name: 'No Owner' });
-    await waitFor(async () => (await tenantStatus(bare.body.externalId)) === Status.Done);
-    expect(t.provisioner.stores.get(bare.body.id)!.wpOptions).toEqual({ blogname: 'No Owner' });
+  });
+
+  it("needs the owner's login, except for a site moved in", async () => {
+    for (const body of [{ name: 'No Owner' }, { name: 'Half', wordPressUserName: 'h' }, { name: 'Bad Email', wordPressUserName: 'b', wordPressUserEmail: 'not-an-email' }]) {
+      const res = await t.call('POST', '/v1/tenants', { body });
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
   });
 
   it('accepts the deprecated tenant* user fields', async () => {
-    const { body } = await createTenant({ name: 'Old Fields', tenantName: 'legacy', tenantEmail: 'legacy@example.com', tenantUserRole: 'editor' });
+    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Old Fields', tenantName: 'legacy', tenantEmail: 'legacy@example.com', tenantUserRole: 'editor' } });
+    const body = (await res.json()) as { id: string; externalId: string };
     await waitFor(async () => (await tenantStatus(body.externalId)) === Status.Done);
     expect(t.provisioner.stores.get(body.id)!.user).toMatchObject({ name: 'legacy', email: 'legacy@example.com', role: 'editor' });
   });
@@ -103,7 +108,7 @@ describe('tenants', () => {
   it('needs a production version when versionId is omitted', async () => {
     const other = (await t.pool.query("INSERT INTO products (name) VALUES ('Empty storefront') RETURNING id")).rows[0].id;
     const { key, secret } = await createApiKey(t.pool, other);
-    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Nowhere' }, auth: basic(key, secret) });
+    const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Nowhere' }, auth: basic(key, secret) });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { message: string }).message).toMatch(/production version/);
   });

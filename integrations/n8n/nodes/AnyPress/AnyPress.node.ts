@@ -102,9 +102,10 @@ export class AnyPress implements INodeType {
 				displayName: 'Client Email',
 				name: 'email',
 				type: 'string',
+				required: true,
 				placeholder: 'name@email.com',
 				default: '',
-				description: 'Makes a WordPress login for your client with this email',
+				description: 'Makes a WordPress login for your client with this email. Every site needs one.',
 				displayOptions: { show: { resource: ['site'], operation: ['create'] } },
 			},
 			{

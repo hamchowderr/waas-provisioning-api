@@ -289,11 +289,10 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
       const externalId = text(data.externalId) || text(call.extras?.contactId) || undefined;
       const body: Record<string, unknown> = { name, ...(externalId && { externalId }) };
       const email = text(data.email);
-      if (email) {
-        body.wordPressUserEmail = email;
-        body.wordPressUserName = text(data.username) || email;
-        body.wordPressUserRole = text(data.role) || 'administrator';
-      }
+      if (!email) throw badRequest('Client Email is required: it is the site owner\'s login');
+      body.wordPressUserEmail = email;
+      body.wordPressUserName = text(data.username) || email;
+      body.wordPressUserRole = text(data.role) || 'administrator';
       for (const field of ['size', 'groupName', 'customDomainName']) if (text(data[field])) body[field] = text(data[field]);
       const created = (await v1(c, productId, 'POST', '/v1/tenants', body)) as { id?: string; tenantId?: string };
       return c.json(await site(c, productId, { tenantId: created.tenantId ?? created.id }));

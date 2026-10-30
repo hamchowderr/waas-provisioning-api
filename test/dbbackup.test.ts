@@ -22,7 +22,7 @@ import {
 } from '../src/dbbackup.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 import { Status } from '../src/status.ts';
-import { setup, TEST_DATABASE_URL, TEST_SECRETS_KEY, waitFor, type TestContext } from './helpers.ts';
+import { setup, TEST_DATABASE_URL, TEST_SECRETS_KEY, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 class MemoryStore implements BackupStore {
   objects = new Map<string, Uint8Array>();
@@ -191,7 +191,7 @@ describe('the backup job', () => {
     const { id: versionId } = (await (await t.call('POST', '/v1/versions', { body: { name: 'backup-me', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true } })).json()) as { id: string };
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as { statusCode: number }[])[0]?.statusCode === Status.Done);
     await t.call('PUT', '/v1/versions/production', { body: { versionId } });
-    const { externalId } = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Backup Shop' } })).json()) as { externalId: string };
+    const { externalId } = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Backup Shop' } })).json()) as { externalId: string };
     // Let the queue settle, so the job table doesn't change between the dump and the counts.
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as { statusCode: number }[])[0]?.statusCode === Status.Done);
     const store = new MemoryStore();

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { importCode, importFailureReason, importWarnings, maxImportBytes, purgeExpiredImports, tokenFromCode } from '../src/imports.ts';
 import { Status } from '../src/status.ts';
-import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 // Sites moved in from another host (src/imports.ts): the import code, the export plugin's calls, and stores that keep
 // their own plugins and themes.
@@ -178,7 +178,7 @@ describe('moving a site in', () => {
 
   it('cannot be combined with a snapshot', async () => {
     expect((await createImport({ groupName: 'x' })).status).toBe(400);
-    expect((await t.call('POST', '/v1/tenants', { body: { name: 'x', asZip: true } })).status).toBe(400);
+    expect((await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'x', asZip: true } })).status).toBe(400);
   });
 });
 
@@ -219,7 +219,7 @@ describe('a site moved in is held until it goes live', () => {
   it('is refused for a store still waiting for its site; ordinary stores are never on hold', async () => {
     const { body } = await createImport();
     expect((await t.call('POST', `/v1/tenants/go-live?tenantId=${body.id}`)).status).toBe(409);
-    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Ordinary held?' } });
+    const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Ordinary held?' } });
     const { id } = (await res.json()) as { id: string };
     await waitFor(async () => (await tenant(id))?.statusCode === Status.Done);
     expect(await tenant(id)).toMatchObject({ onHold: false });
@@ -303,7 +303,7 @@ describe('how a move went', () => {
   });
 
   it('answers 404 for the move of a store that was not moved in', async () => {
-    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Plain', externalId: 'plain-report' } });
+    const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Plain', externalId: 'plain-report' } });
     expect(res.status).toBe(200);
     expect((await t.call('GET', '/v1/tenants/import?externalId=plain-report')).status).toBe(404);
   });
@@ -380,7 +380,7 @@ describe('stores that keep their own code', () => {
   });
 
   it('while ordinary stores get their version code each time', async () => {
-    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Ordinary' } });
+    const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Ordinary' } });
     const { id } = (await res.json()) as { id: string };
     await waitFor(async () => (await tenant(id))?.statusCode === Status.Done);
     await t.call('POST', `/v1/tenants/version?tenantId=${id}`, { body: { targetVersionId: otherVersionId } });
@@ -392,13 +392,16 @@ describe('stores that keep their own code', () => {
   it('the dashboard makes a new store from the production version', async () => {
     const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
     expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: {} })).status).toBe(400);
-    expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'X', size: 'huge' } })).status).toBe(400);
-    const res = await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'New from the dashboard', size: 'medium' } });
+    expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'No Owner' } })).status).toBe(400);
+    expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'X', ownerEmail: 'owner@example.com', size: 'huge' } })).status).toBe(400);
+    const res = await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'New from the dashboard', ownerEmail: 'Owner@Example.com', size: 'medium' } });
     expect(res.status).toBe(201);
     const made = (await res.json()) as { tenantId: string; externalId: string };
     await waitFor(async () => (await tenant(made.tenantId))?.statusCode === Status.Done);
     expect(await tenant(made.tenantId)).toMatchObject({ name: 'New from the dashboard', size: 'medium' });
     expect(await tenant(made.tenantId)).not.toHaveProperty('keepsOwnCode');
+    expect(t.provisioner.stores.get(made.tenantId)!.user).toMatchObject({ email: 'owner@example.com', role: 'administrator' });
+    expect(t.provisioner.stores.get(made.tenantId)!.wpOptions).toMatchObject({ blogname: 'New from the dashboard', admin_email: 'owner@example.com' });
   });
 
   it('a new storefront starts ready from another one, and can make a store at once', async () => {
@@ -417,7 +420,7 @@ describe('stores that keep their own code', () => {
     const { rows: snaps } = await t.pool.query('SELECT status, source_snapshot_id FROM snapshots WHERE product_id = $1', [productId]);
     expect(snaps).toEqual([expect.objectContaining({ status: Status.Done, source_snapshot_id: expect.any(String) })]);
 
-    const made = await t.call('POST', `/admin/products/${productId}/tenants`, { auth: ADMIN, body: { name: 'Client site' } });
+    const made = await t.call('POST', `/admin/products/${productId}/tenants`, { auth: ADMIN, body: { name: 'Client site', ownerEmail: 'owner@example.com' } });
     expect(made.status).toBe(201);
     const { tenantId } = (await made.json()) as { tenantId: string };
     await waitFor(async () => (await t.pool.query('SELECT status FROM tenants WHERE id = $1', [tenantId])).rows[0]?.status === Status.Done);
