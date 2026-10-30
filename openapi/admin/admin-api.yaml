@@ -1612,6 +1612,30 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/resellers/{id}/products:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminCreateResellerProduct
+      summary: Makes a new storefront inside the reseller
+      description: >-
+        The reseller's own Add storefront (accountCreateResellerProduct), for the platform admin: within its
+        maxProducts (400 at the limit), with no store limit of its own and no API key (the reseller's team and
+        partner keys reach it at once). startFrom may be any storefront with a ready production version here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddStorefront' }
+      responses:
+        '201':
+          description: The storefront made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddedStorefront' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/resellers/{id}/products/{productId}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2038,6 +2062,28 @@ paths:
               schema: { $ref: '#/components/schemas/ResellerInvoices' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /account/reseller/products:
+    post:
+      operationId: accountCreateResellerProduct
+      summary: Add storefront; owners and admins only
+      description: >-
+        One more storefront in the reseller team's account, for another brand, within its maxProducts (400 at
+        the limit). Everyone on the team reaches it at once. startFrom must be one of the account's own
+        storefronts. Anyone who isn't on a reseller's team gets 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddStorefront' }
+      responses:
+        '201':
+          description: The storefront made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddedStorefront' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /account/reseller/keys:
     get:
       operationId: accountListPartnerKeys
@@ -2333,6 +2379,23 @@ components:
             small: { type: integer, minimum: 0, maximum: 1000000 }
             medium: { type: integer, minimum: 0, maximum: 1000000 }
             large: { type: integer, minimum: 0, maximum: 1000000 }
+    AddStorefront:
+      type: object
+      required: [name, startFrom]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: The storefront's name, usually the brand it sells under }
+        startFrom:
+          type: string
+          format: uuid
+          description: >-
+            The storefront whose production version and template the new one copies, so it can make stores as
+            soon as that has built. 400 when it has no ready production version.
+    AddedStorefront:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
     Reseller:
       type: object
       additionalProperties: false

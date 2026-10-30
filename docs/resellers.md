@@ -14,6 +14,7 @@ Everything is on the admin API (`Authorization: Bearer <ADMIN_TOKEN>`). Signed-i
 |---|---|
 | `POST /admin/resellers` `{"name": "Acme Partners", "productIds": ["…"]}` | A new reseller. `productIds` moves those storefronts into it at once |
 | `PUT /admin/resellers/{id}` | Changes only the settings sent (below) |
+| `POST /admin/resellers/{id}/products` `{"name": "…", "startFrom": "…"}` | Makes a new storefront inside it, within `maxProducts`: the same as the team's own Add storefront (below), except `startFrom` may be any storefront |
 | `PUT /admin/resellers/{id}/products/{productId}` | Moves a storefront in. A storefront of another reseller is 409 |
 | `DELETE /admin/resellers/{id}/products/{productId}` | Moves it out; it is its own storefront again |
 | `DELETE /admin/resellers/{id}` | Only when it has no storefronts (409 otherwise). Its usage history stays |
@@ -140,7 +141,14 @@ People at the reseller sign in to the dashboard like any customer. A reseller ha
 | `PATCH /admin/resellers/{id}/members/{memberId}` `{"role": "admin"}` | Changes someone's role. The last owner stays (409) |
 | `DELETE /admin/resellers/{id}/members/{memberId}` | Removes someone. Their account stays; it no longer reaches the storefronts |
 
-The team also sees its own account in the dashboard, at `/account/reseller` (session only, like the rest of `/account`): the account itself, `GET /bill?month=YYYY-MM`, `GET /invoices`, and its partner keys (`GET`/`POST /keys`, `POST /keys/{keyId}/rotate`, `DELETE /keys/{keyId}`). Members may look; owners and admins manage the keys. A storefront's own team gets 404 there. `GET /account/tenants?across=reseller` lists the stores of every storefront in the account at once.
+The team also sees its own account in the dashboard, at `/account/reseller` (session only, like the rest of `/account`): the account itself, `GET /bill?month=YYYY-MM`, `GET /invoices`, and its partner keys (`GET`/`POST /keys`, `POST /keys/{keyId}/rotate`, `DELETE /keys/{keyId}`). Members may look; owners and admins manage the keys. A storefront's own team gets 404 there.
+
+Owners and admins also add storefronts themselves, one per brand, with `POST /account/reseller/products` (the dashboard's **Add storefront**), up to the account's `maxProducts` (400 at the limit):
+
+- `name`: the new storefront's name. It has no store limit of its own and no API key; the team and the partner keys reach it at once.
+- `startFrom`: one of the account's storefronts. The new one gets a copy of its production version and template, so it can make stores as soon as that has built. A storefront with no ready production version can't be copied (400).
+
+The answer is the new storefront's `id` and `name`. `GET /account/tenants?across=reseller` lists the stores of every storefront in the account at once.
 
 Only the platform admin manages the reseller's team. A storefront's own team is separate and works as before; someone on both gets the higher of the two roles on that storefront.
 

@@ -6,6 +6,7 @@ import { compact, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
+import { insertResellerProduct } from '../resellers.ts';
 import { versionService } from './versions.ts';
 
 /**
@@ -90,16 +91,7 @@ export function partnerRoutes(deps: Deps) {
     const body = validateBody<CreateProductParams>('CreateProductParams', await readJson(c));
     const name = body.name.trim();
     if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
-    const productId = await withTransaction(pool, async (client) => {
-      const { rows } = await client.query<{ max_products: number | null }>('SELECT max_products FROM resellers WHERE id = $1 FOR UPDATE', [resellerId]);
-      const max = rows[0]?.max_products ?? null;
-      if (max !== null) {
-        const { rows: count } = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM products WHERE reseller_id = $1', [resellerId]);
-        if (count[0]!.n >= max) throw badRequest(`This account has reached its limit of ${max} storefront${max === 1 ? '' : 's'}`);
-      }
-      const { rows: made } = await client.query<{ id: string }>('INSERT INTO products (name, reseller_id) VALUES ($1, $2) RETURNING id', [name, resellerId]);
-      return made[0]!.id;
-    });
+    const productId = await insertResellerProduct(pool, resellerId, name);
     if (!body.version) return c.json({ id: productId, name });
     try {
       const { id, domainName, wordPressVersion, phpVersion, uploadUrl } = await versions.create(productId, body.version);

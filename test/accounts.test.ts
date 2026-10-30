@@ -586,6 +586,63 @@ describe("a reseller's team (docs/resellers.md)", () => {
     expect((await asUser(partner.cookie, 'DELETE', `/account/reseller/keys/${keyId}`, undefined, picking(first))).status).toBe(200);
   });
 
+  it("adds a storefront to the account from /account/reseller/products, started from one of its own", async () => {
+    const add = (cookie: string, body: unknown) => asUser(cookie, 'POST', '/account/reseller/products', body, picking(first));
+    // The storefront it starts from needs a ready production version.
+    const key = await createApiKey(t.pool, first);
+    const auth = basic(key.key, key.secret);
+    const v = await t.call('POST', '/v1/versions', { body: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true }, auth });
+    const versionId = ((await v.json()) as { id: string }).id;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`, { auth })).json()) as any[])[0]?.statusCode === Status.Done);
+    await t.call('PUT', '/v1/versions/production', { body: { versionId }, auth });
+
+    const made = await add(partner.cookie, { name: '  Gamma storefront ', startFrom: first });
+    expect(made.status).toBe(201);
+    const product = (await made.json()) as { id: string; name: string };
+    expect(product.name).toBe('Gamma storefront');
+    expect((await t.pool.query('SELECT reseller_id, max_tenants FROM products WHERE id = $1', [product.id])).rows[0]).toEqual({ reseller_id: resellerId, max_tenants: null });
+    // It starts ready: a copy of the production version, building; no key of its own.
+    expect((await t.pool.query('SELECT is_production FROM versions WHERE product_id = $1', [product.id])).rows).toEqual([{ is_production: true }]);
+    expect((await t.pool.query('SELECT 1 FROM api_keys WHERE product_id = $1', [product.id])).rowCount).toBe(0);
+    // The team reaches it at once.
+    const me = await (await asUser(partner.cookie, 'GET', '/account')).json();
+    expect(me.memberships.map((m: { productId: string }) => m.productId)).toContain(product.id);
+
+    // Members only look; a storefront's own team isn't the reseller; bad input and the limit make nothing.
+    const viewer = await signedIn('looker@partner.example');
+    const invited = await admin('POST', `/resellers/${resellerId}/invitations`, { email: 'looker@partner.example', role: 'member' });
+    expect((await accept(viewer.cookie, ((await invited.json()) as { id: string }).id)).status).toBe(200);
+    expect((await add(viewer.cookie, { name: 'Nope', startFrom: first })).status).toBe(403);
+    const own = await signedIn('own3@alpha.example');
+    expect((await accept(own.cookie, (await invite(first, 'own3@alpha.example', 'owner')).id)).status).toBe(200);
+    expect((await add(own.cookie, { name: 'Nope', startFrom: first })).status).toBe(404);
+    expect((await add(partner.cookie, { name: '', startFrom: first })).status).toBe(400);
+    expect((await add(partner.cookie, { name: 'Nope' })).status).toBe(400);
+    expect((await add(partner.cookie, { name: 'Nope', startFrom: t.productId })).status).toBe(400);
+    const noVersion = await add(partner.cookie, { name: 'Nope', startFrom: second });
+    expect(noVersion.status).toBe(400);
+    expect((await noVersion.json()).message).toMatch(/no ready production version/);
+    expect((await admin('PUT', `/resellers/${resellerId}`, { maxProducts: 3 })).status).toBe(200);
+    const full = await add(partner.cookie, { name: 'Nope', startFrom: first });
+    expect(full.status).toBe(400);
+    expect((await full.json()).message).toBe('This account has reached its limit of 3 storefronts');
+    expect((await t.pool.query(`SELECT count(*)::int AS n FROM products WHERE name = 'Nope'`)).rows[0].n).toBe(0);
+
+    // The platform admin can add one for the reseller too.
+    expect((await admin('PUT', `/resellers/${resellerId}`, { maxProducts: null })).status).toBe(200);
+    const byAdmin = await admin('POST', `/resellers/${resellerId}/products`, { name: 'Delta storefront', startFrom: first });
+    expect(byAdmin.status).toBe(201);
+    const delta = ((await byAdmin.json()) as { id: string }).id;
+    for (const id of [product.id, delta]) {
+      // Let the copied version finish building before it goes.
+      await waitFor(async () => (await t.pool.query('SELECT 1 FROM versions WHERE product_id = $1 AND status = $2', [id, Status.Pending])).rowCount === 0);
+      await t.pool.query('DELETE FROM snapshots WHERE product_id = $1', [id]);
+      await t.pool.query('DELETE FROM versions WHERE product_id = $1', [id]);
+      await t.pool.query('DELETE FROM products WHERE id = $1', [id]);
+    }
+  });
+
   it('lists the stores of every storefront in the account at once with ?across=reseller', async () => {
     const keyFor = async (productId: string) => {
       const key = await createApiKey(t.pool, productId);
