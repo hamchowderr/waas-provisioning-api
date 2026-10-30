@@ -91,9 +91,10 @@ export interface WebsiteReadyMail {
  * a link to set their password. Sent in the storefront's brand (src/jobs.ts).
  */
 export async function sendWebsiteReady(mail: AuthMail, to: string, site: WebsiteReadyMail, fetchFn: typeof fetch = fetch): Promise<void> {
-  const lead = `Your website ${site.site} is ready at ${site.url}.`;
+  const address = site.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const lead = `Your website ${site.site} is ready at ${address}.`;
   const how = `Set your password to sign in to it. Your username is ${site.username}.`;
-  const note = `The link works once, within a day. After that, use "Lost your password?" on ${site.url.replace(/\/$/, '')}/wp-login.php to get a new one.`;
+  const note = `The link works once, within a day. After that, use "Lost your password?" on ${address}/wp-login.php to get a new one.`;
   const text = `${lead}\n\n${how}\n\n${site.passwordLink}\n\n${note}`;
   const html = layout(mail, {
     title: `${site.site} is ready`,
