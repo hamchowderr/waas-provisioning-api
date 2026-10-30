@@ -43,3 +43,11 @@ fluent_cart_update_option('_fc_checkout_fields', $fields);
 // use it and it is the usual target for password guessing. A storefront holds the API key that creates websites,
 // so its admin login matters more than most.
 update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), ['disable_xmlrpc' => 'yes']));
+
+// FluentKit (FluentHub → Settings): one dashboard for FluentCart, FluentAuth and AnyPress, with the WordPress menu items
+// merged into it and each app's own top bar hidden.
+update_option('_fluent_kit_settings', array_merge((array) get_option('_fluent_kit_settings', []), [
+    'uinified_ui' => 'yes',
+    'merge_admin_menus' => 'yes',
+    'hide_app_headers' => 'yes',
+]));
