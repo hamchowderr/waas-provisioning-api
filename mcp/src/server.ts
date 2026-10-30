@@ -339,6 +339,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         wpOptions: stringMap.optional().describe('WordPress options to set, by option name'),
         phpConstants: phpConstants.optional().describe('PHP constants to define, by name'),
         size: size.optional().describe('small when omitted'),
+        notifyOwner: z.boolean().optional().describe('true emails the owner that the store is ready, with a link to set their password. Off when omitted: only when the user asks for it'),
       },
       annotations: WRITE,
     },

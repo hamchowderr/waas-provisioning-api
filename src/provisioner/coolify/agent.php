@@ -1564,6 +1564,20 @@ switch ($op) {
         done(['userCreated' => $created, 'held' => $held]);
     }
 
+    case 'password-link': {
+        // A link for the store's owner to set their password (WordPress's own reset link), for the email that says
+        // their website is ready. It works once, for as long as WordPress keeps reset keys (a day by default).
+        $email = (string) ($args['email'] ?? '');
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('email must be an email address');
+        $php = '$u = get_user_by("email", ' . var_export($email, true) . '); if (!$u) { echo "WAAS_NO_USER"; return; }'
+            . ' $k = get_password_reset_key($u); if (is_wp_error($k)) { echo "WAAS_NO_KEY"; return; }'
+            . ' echo "WAAS_LINK " . network_site_url("wp-login.php?action=rp&key=" . $k . "&login=" . rawurlencode($u->user_login), "login");';
+        $out = wp('eval', $php);
+        if (strpos($out, 'WAAS_NO_USER') !== false) fail("the store has no user with that email");
+        if (!preg_match('/WAAS_LINK (\S+)/', $out, $m)) fail('WordPress gave no reset link');
+        done(['url' => $m[1]]);
+    }
+
     case 'go-live':
         // The owner says the site moved in is live: its cron starts, and its email and search engines are no longer held.
         if (file_exists(HOLD_FLAG)) unlink(HOLD_FLAG) || fail('cannot remove the hold flag');

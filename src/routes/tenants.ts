@@ -33,6 +33,8 @@ export interface CreateTenantParams {
   wpOptions?: Record<string, string> | null;
   phpConstants?: Record<string, PhpConstant> | null;
   size?: Size;
+  /** Email the owner that their website is ready, with a link to set their password. Off unless asked for. */
+  notifyOwner?: boolean;
 }
 
 interface UpdateTenantParams {
@@ -267,6 +269,7 @@ export async function createTenant(
         userName && userEmail
           ? { name: userName, email: userEmail, role: userRole || 'administrator', encryptedPassword: password ? secrets.encrypt(password) : undefined }
           : undefined,
+      ...(body.notifyOwner === true && { notifyOwner: true }),
     });
   }).then(
     () => null,

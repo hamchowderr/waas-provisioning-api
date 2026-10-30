@@ -38,7 +38,7 @@ const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
 // A job that fails its last retry is emailed to the admins (src/jobalerts.ts).
 const handlers = withFailureAlerts(
-  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost), pool, boss, webhooks),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail), pool, boss, webhooks),
   pool,
   { mail: config.auth?.mail, to: config.jobAlerts, dashboardUrl: config.auth?.url },
 );

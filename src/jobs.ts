@@ -1,3 +1,5 @@
+import { sendWebsiteReady, type AuthMail } from './authmail.ts';
+import { brandedMail } from './branding.ts';
 import { maintainDashboardDomains } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
 import type { Brand, Provisioner, VersionPlugin } from './provisioner/provisioner.ts';
@@ -24,6 +26,8 @@ export function createJobHandlers(
   mailboxDomains?: MailboxDomains,
   /** Sellers' own dashboard addresses, checked nightly (src/dashboarddomains.ts). */
   dashboardHost: () => DashboardHost | undefined = () => undefined,
+  /** Sends the "your website is ready" email a create can ask for (notifyOwner); without it none is sent. */
+  ownerMail: () => AuthMail | undefined = () => undefined,
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -46,7 +50,7 @@ export function createJobHandlers(
           await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
           return;
         case 'tenant.create':
-          return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId));
+          return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail());
         case 'tenant.update': {
           const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
           if (!rows[0]) return;
@@ -302,7 +306,14 @@ async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secr
   await provisioner.stopVersion({ versionId: version.id }).catch((err: unknown) => console.error(`Version ${version.id}: stop failed: ${(err as Error).message}`));
 }
 
-async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'tenant.create' }>, mailbox?: string) {
+async function createTenant(
+  pool: Pool,
+  provisioner: Provisioner,
+  secrets: Secrets,
+  data: Extract<JobData, { type: 'tenant.create' }>,
+  mailbox?: string,
+  ownerMail?: AuthMail,
+) {
   const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
   const tenant = rows[0];
   if (!tenant) return; // removed before it was built
@@ -334,7 +345,34 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
   if (imported) await pool.query('UPDATE tenants SET on_hold = true, date_held = COALESCE(date_held, now()) WHERE id = $1', [tenant.id]);
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
   // A site moved in is built: its upload is no longer needed.
-  if (imported) await provisioner.deleteImport({ storeId: tenant.id });
+  if (imported) await provisioner.deleteImport({ storeId: tenant.id });  if (data.notifyOwner && user && !imported) await notifyOwner(pool, provisioner, ownerMail, tenant, user);
+}
+
+/**
+ * The email whoever made the store asked to send its owner: it is ready, and a link to set their password. In the
+ * storefront's brand, without a "Powered by" line, so a reseller's client sees only the reseller. The store is
+ * built either way, so a failure is only logged.
+ */
+async function notifyOwner(
+  pool: Pool,
+  provisioner: Provisioner,
+  ownerMail: AuthMail | undefined,
+  tenant: { id: string; product_id: string; name: string; main_domain: string },
+  user: { name: string; email: string },
+) {
+  if (!ownerMail) return console.error(`Store ${tenant.id}: no email set up, so its owner was not told it is ready`);
+  try {
+    const passwordLink = await provisioner.passwordLink({ storeId: tenant.id, email: user.email });
+    const mail = await brandedMail(pool, ownerMail, tenant.product_id);
+    await sendWebsiteReady({ ...mail, poweredBy: undefined }, user.email, {
+      site: tenant.name,
+      url: `https://${tenant.main_domain}/`,
+      username: user.name,
+      passwordLink,
+    });
+  } catch (err) {
+    console.error(`Store ${tenant.id}: the email to its owner failed: ${(err as Error).message}`);
+  }
 }
 
 async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, backupId: string) {

@@ -126,6 +126,18 @@ describe('actions', () => {
     expect(await header.json()).toMatchObject({ name: 'Partner Site' });
     await ready(((await named.json()) as { siteId: string }).siteId);
   });
+
+  it("passes on Notify the Owner only when it is yes", async () => {
+    const flag = async (contactId: string) =>
+      (await t.pool.query("SELECT j.data->'notifyOwner' AS flag FROM pgboss.job j JOIN tenants x ON x.id::text = j.data->>'tenantId' WHERE j.data->>'type' = 'tenant.create' AND x.external_id = $1", [contactId])).rows[0]?.flag ?? undefined;
+    for (const [contactId, notifyOwner] of [['ghl-quiet', 'no'], ['ghl-told', 'yes']]) {
+      const res = await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Notify Site', email: 'n@example.com', notifyOwner }, extras: { contactId } });
+      expect(res.status).toBe(200);
+      await ready(((await res.json()) as { siteId: string }).siteId);
+    }
+    expect(await flag('ghl-quiet')).toBeUndefined();
+    expect(await flag('ghl-told')).toBe(true);
+  });
 });
 
 describe('install and triggers', () => {

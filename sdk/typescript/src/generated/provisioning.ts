@@ -1187,6 +1187,8 @@ export interface components {
              */
             wordPressUserPassword?: string;
             size?: components["schemas"]["TenantSize"];
+            /** @description Email the store's owner (`wordPressUserEmail`) once the store is ready, with a link to set their password. Sent in the storefront's brand. Off unless set to true, so you can tell your client yourself. */
+            notifyOwner?: boolean;
             /** @description Move in an existing WordPress site instead of starting from a snapshot. The tenant is not built yet: it waits for its site, and the response carries an `importCode` for the AnyPress Export plugin and an `uploadUrl`. Once the archive (a zip or gzipped tar holding `database.sql` and `wp-content/`) is uploaded and the move started (see Site import), the store is built from it and keeps the site's own plugins and themes. Not with `snapshotId` or `groupName`. */
             uploadCustomSnapshot?: boolean;
             /** @description Accepted for compatibility; zip and gzipped tar are both read. Only with uploadCustomSnapshot. */

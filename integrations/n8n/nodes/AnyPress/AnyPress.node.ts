@@ -154,6 +154,13 @@ export class AnyPress implements INodeType {
 						description: "The client's own domain, if they have one. It can be added later instead.",
 					},
 					{
+						displayName: 'Notify the Owner',
+						name: 'notifyOwner',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to email your client when the site is ready, with a link to set their password. Leave it off to tell them yourself.',
+					},
+					{
 						displayName: 'Size',
 						name: 'size',
 						type: 'options',
@@ -307,6 +314,7 @@ async function createSite(this: IExecuteFunctions, i: number, storefront: IDataO
 		role?: string;
 		username?: string;
 		customDomainName?: string;
+		notifyOwner?: boolean;
 		size?: string;
 		groupName?: string;
 		versionId?: string;
@@ -324,6 +332,7 @@ async function createSite(this: IExecuteFunctions, i: number, storefront: IDataO
 		const value = extra[field]?.trim();
 		if (value) body[field] = value;
 	}
+	if (extra.notifyOwner) body.notifyOwner = true;
 
 	const created = (await anyPressRequest.call(this, 'POST', '/v1/tenants', storefront, body)) as IDataObject;
 	if (!this.getNodeParameter('waitUntilReady', i, false)) return created;

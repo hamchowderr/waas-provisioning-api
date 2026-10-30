@@ -96,6 +96,15 @@ async function delivery(path: string, type: string) {
   return found;
 }
 
+/** Whether the create job for this site asks to email its owner. */
+async function notifyFlag(externalId: string) {
+  const { rows } = await t.pool.query(
+    "SELECT j.data->'notifyOwner' AS flag FROM pgboss.job j JOIN tenants x ON x.id::text = j.data->>'tenantId' WHERE j.data->>'type' = 'tenant.create' AND x.external_id = $1",
+    [externalId],
+  );
+  return (rows[0]?.flag ?? undefined) as boolean | undefined;
+}
+
 // ---------------------------------------------------------------- n8n
 
 /** What n8n's httpRequestWithAuthentication does with the AnyPress API credential, failing as NodeApiError does. */
@@ -191,6 +200,13 @@ describe('n8n node', () => {
     const forged = await trigger.webhook.call(webhookCtx(hit.body.replace('Rose and Fern', 'Someone Else')));
     expect(forged).toEqual({ noWebhookResponse: true });
     expect(status).toBe(401);
+  });
+
+  it('passes on Notify the Owner only when it is on', async () => {
+    await runNode({ operation: 'create', name: 'Quiet Site', externalId: 'n8n-quiet', email: 'quiet@example.com', waitUntilReady: false, additionalFields: {} });
+    await runNode({ operation: 'create', name: 'Told Site', externalId: 'n8n-told', email: 'told@example.com', waitUntilReady: false, additionalFields: { notifyOwner: true } });
+    expect(await notifyFlag('n8n-quiet')).toBeUndefined();
+    expect(await notifyFlag('n8n-told')).toBe(true);
   });
 
   it('waits until ready, and answers a repeated create with the same site', async () => {
@@ -307,6 +323,15 @@ describe('Zapier app', () => {
     await waitFor(async () => (await appTester(ZapierApp.searches.find_site.operation.perform, { authData: authData(), inputData }))[0]?.isSuspended === false);
     await waitFor(async () => (await appTester(ZapierApp.searches.find_site.operation.perform, { authData: authData(), inputData }))[0]?.statusCode === 1);
     expect(await appTester(ZapierApp.creates.delete_site.operation.perform, { authData: authData(), inputData })).toMatchObject({ externalId: 'zap-1', scheduled: true });
+  });
+
+  it('passes on Notify the Owner only when it is on', async () => {
+    const create = (externalId: string, extra: object) =>
+      appTester(ZapierApp.creates.create_site.operation.perform, { authData: authData(), inputData: { storefront: t.productId, name: 'Zap Notify', externalId, email: 'z@example.com', ...extra } });
+    await create('zap-quiet', { notifyOwner: false });
+    await create('zap-told', { notifyOwner: true });
+    expect(await notifyFlag('zap-quiet')).toBeUndefined();
+    expect(await notifyFlag('zap-told')).toBe(true);
   });
 
   it('unsubscribes the Zap', async () => {

@@ -14,6 +14,7 @@ const perform = async (z, bundle) => {
   for (const field of ['size', 'groupName', 'customDomainName']) {
     if (input[field]) body[field] = String(input[field]).trim();
   }
+  if (input.notifyOwner === true || input.notifyOwner === 'true') body.notifyOwner = true;
   const created = await call(z, bundle, 'POST', '/v1/tenants', { params: storefrontQuery(bundle), body });
   return { ...created, url: `https://${created.customDomain || created.baseDomain}` };
 };
@@ -53,6 +54,14 @@ module.exports = {
       { key: 'size', label: 'Size', required: false, default: 'small', choices: { small: 'Small', medium: 'Medium', large: 'Large' } },
       { key: 'groupName', label: 'Starting Site Group', required: false, helpText: 'Which starting site to copy, by group name. Empty uses your current one.' },
       { key: 'customDomainName', label: 'Custom Domain', required: false, helpText: "The client's own domain, if they have one." },
+      {
+        key: 'notifyOwner',
+        label: 'Notify the Owner',
+        type: 'boolean',
+        required: false,
+        default: 'false',
+        helpText: 'Yes emails your client when the site is ready, with a link to set their password. Leave it off to tell them yourself.',
+      },
     ],
     perform,
     sample: { id: SITE_SAMPLE.id, externalId: SITE_SAMPLE.externalId, baseDomain: SITE_SAMPLE.domainName, url: SITE_SAMPLE.url },

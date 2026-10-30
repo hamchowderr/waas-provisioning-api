@@ -10,7 +10,8 @@
         "wordPressUserRole": "{{if(parameters.email, ifempty(parameters.role, 'administrator'), undefined)}}",
         "size": "{{ifempty(parameters.size, undefined)}}",
         "groupName": "{{ifempty(parameters.groupName, undefined)}}",
-        "customDomainName": "{{ifempty(parameters.customDomainName, undefined)}}"
+        "customDomainName": "{{ifempty(parameters.customDomainName, undefined)}}",
+        "notifyOwner": "{{if(parameters.notifyOwner, true, undefined)}}"
     },
     "response": {
         "output": {

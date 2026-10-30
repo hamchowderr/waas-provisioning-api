@@ -80,5 +80,12 @@
         "type": "text",
         "label": "Custom Domain",
         "help": "The client's own domain, if they have one."
+    },
+    {
+        "name": "notifyOwner",
+        "type": "boolean",
+        "label": "Notify the Owner",
+        "default": false,
+        "help": "Yes emails your client when the site is ready, with a link to set their password. Leave it off to tell them yourself."
     }
 ]
