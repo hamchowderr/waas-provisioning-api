@@ -29,7 +29,7 @@ on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plug
 once installed it updates itself from the vendor.
 
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
-for signups, offers and booking forms. A release is pinned by version and checksum in [`build.sh`](build.sh)
+for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,

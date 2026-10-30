@@ -34,8 +34,8 @@ fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fa
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.1.1}
-BLOCKS_SHA256=${BLOCKS_SHA256:-c793c8888fc2f12bcb00ec66ce41c50c78dca21e156f493ea4aa713edbe44840}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.2.0}
+BLOCKS_SHA256=${BLOCKS_SHA256:-520725eaf347bb9a0a19b42ad990a4e742b0e76c5b9d123f78fd86135db6d2b9}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh
