@@ -195,7 +195,7 @@ export function ChatPanel({
           </div>
         ) : (
           <Conversation className="min-h-0 flex-1">
-            <ConversationContent className="px-4">
+            <ConversationContent className="mx-auto w-full max-w-3xl px-4">
               {transcript.messages
                 .filter((m) => m.role === 'user' || m.role === 'assistant')
                 .map((m) => (
@@ -232,14 +232,14 @@ export function ChatPanel({
         {/* A failed turn says so, as the full shell does. Above the composer, so it shows on
           the empty state too (a first message can fail before any transcript exists). */}
         {transcript.error && (
-          <p role="alert" className="shrink-0 px-4 pt-2 text-destructive text-sm">
-            AgentController error: {transcript.error}
+          <p role="alert" className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 text-destructive text-sm">
+            Something went wrong: {transcript.error}
           </p>
         )}
 
         {/* The kit's shared composer: Plan and attach on the left, dictate beside the send
           button, one rounded card. No model picker and no web search in a side panel. */}
-        <div className="shrink-0 p-3 pt-1">
+        <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-1 pb-3">
           <Composer
             onSend={handleSend}
             status={busy ? 'streaming' : status === 'error' ? 'error' : 'ready'}

@@ -297,8 +297,7 @@ export const emptyTranscript = (): AgentControllerTranscript => ({
 /**
  * Convert restored text-only UIMessages (AI SDK v7 parts shape, from `/agent-controller/threads/:id/messages`)
  * into transcript messages, so reopening a past conversation shows its history.
- * Only text is restored here; richer parts (tools, thinking) rehydrate on the live
- * stream when the conversation continues.
+ * Text, attachments, finished tool steps and thread cards are restored; thinking is not.
  */
 export function uiMessagesToAgentController(
   messages: Array<{
@@ -345,6 +344,17 @@ export function uiMessagesToAgentController(
             name: 'start_thread',
             result: { threadId: d.threadId, title },
           },
+        ];
+      }
+      // A finished step (reading the website, changing a page): restored as its call and result, so its
+      // card shows again where it was.
+      if (p.type === 'data-tool-call') {
+        const d = p.data as { id?: unknown; name?: unknown; args?: unknown; result?: unknown } | undefined;
+        if (typeof d?.name !== 'string') return [];
+        const id = typeof d.id === 'string' && d.id ? d.id : `tool-${m.id}-${at}`;
+        return [
+          { type: 'tool_call', id, name: d.name, args: d.args },
+          { type: 'tool_result', id, name: d.name, result: d.result },
         ];
       }
       // Threads a `suggest_threads` call offered: restored as that call and its result, so the card shows

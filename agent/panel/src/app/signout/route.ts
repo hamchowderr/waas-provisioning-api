@@ -1,6 +1,6 @@
-import { signOut } from '@/lib/site-session';
+import { panelLink, signOut } from '@/lib/site-session';
 
-export async function POST(request: Request) {
+export async function POST() {
   await signOut();
-  return Response.redirect(new URL('/', request.url), 303);
+  return Response.redirect(panelLink('/'), 303);
 }

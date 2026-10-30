@@ -7,6 +7,15 @@ import { cookies } from 'next/headers';
 
 export const API_URL = (process.env.ANYPRESS_API_URL ?? 'https://api.anypress.io').replace(/\/$/, '');
 const PANEL_URL = () => (process.env.PANEL_URL ?? 'http://localhost:3200').replace(/\/$/, '');
+
+/**
+ * A path on this panel as the owner's browser reaches it. Behind a proxy the request's own URL is the
+ * container's (http://localhost:3200), so redirects are built from PANEL_URL. Only same-site paths.
+ */
+export function panelLink(path: string): string {
+  const safe = path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : '/';
+  return `${PANEL_URL()}${safe}`;
+}
 export const SITE_RESOURCE = `${API_URL}/mcp/site`;
 
 const ACCESS = 'ap_access';

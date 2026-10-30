@@ -166,7 +166,32 @@ describe('chat panel', () => {
     await page.getByRole('textbox').fill('What is on my site?');
     await page.getByRole('textbox').press('Enter');
     await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
+    // Every redirect lands on the panel's own address (PANEL_URL), never the container's.
+    expect(new URL(page.url()).origin).toBe(panelUrl);
+
+    // Reopened, the chat keeps its step card as well as its answer.
+    await page.reload();
+    await page.getByRole('button', { name: 'Chat history' }).click();
+    await page.getByRole('menuitem', { name: /What is on my site/ }).click();
+    await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
+    await expect(page.getByText('Reading your website').isVisible()).resolves.toBe(true);
     await context.close();
+  }, 90_000);
+
+  it('keeps the conversation in a centred column on a wide screen', async () => {
+    h.script('Hello wide', 'get_site', {}, 'Hello from the middle.');
+    const page = await signedInPage(1600, 900);
+    await page.goto(panelUrl);
+    await page.getByRole('textbox').fill('Hello wide');
+    await page.getByRole('textbox').press('Enter');
+    await page.getByText('Hello from the middle.').waitFor({ timeout: 30_000 });
+    const box = await page.getByRole('textbox').boundingBox();
+    expect(box).not.toBeNull();
+    // The input sits in the middle, no wider than the reading column.
+    expect(box!.width).toBeLessThanOrEqual(800);
+    expect(Math.abs(box!.x + box!.width / 2 - 800)).toBeLessThan(40);
+    await page.screenshot({ path: 'test-results/panel-wide.png', fullPage: true });
+    await page.context().close();
   }, 90_000);
 
   it('refuses a made-up or used handoff', async () => {
