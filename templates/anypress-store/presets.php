@@ -231,3 +231,43 @@ $menu = wp_insert_post([
 if (is_wp_error($menu)) {
     throw new RuntimeException($menu->get_error_message());
 }
+
+// Theme (AnyPress). Synced patterns (Appearance → Editor → Patterns, "My patterns"), made from the theme's AnyPress
+// Blocks sections. The notice band is fully synced: change it once (holiday hours, a sale) and every page that shows
+// it changes. The call to action and the customer quote use pattern overrides: the design stays the same everywhere,
+// while each page keeps its own heading, text, buttons and photo.
+$overridable = ['core/heading', 'core/paragraph', 'core/button', 'core/image'];
+$withOverrides = static function (array $blocks, array &$used) use (&$withOverrides, $overridable): array {
+    foreach ($blocks as &$block) {
+        if (in_array($block['blockName'], $overridable, true)) {
+            $kind = ['core/heading' => 'Heading', 'core/paragraph' => 'Text', 'core/button' => 'Button', 'core/image' => 'Image'][$block['blockName']];
+            $used[$kind] = ($used[$kind] ?? 0) + 1;
+            $block['attrs']['metadata'] = array_merge($block['attrs']['metadata'] ?? [], [
+                'name' => $used[$kind] === 1 ? $kind : "$kind {$used[$kind]}",
+                'bindings' => ['__default' => ['source' => 'core/pattern-overrides']],
+            ]);
+        }
+        $block['innerBlocks'] = $withOverrides($block['innerBlocks'], $used);
+    }
+    return $blocks;
+};
+foreach ([
+    'anypress/notice' => ['Notice band', false],
+    'anypress/call-to-action-dark' => ['Call to action', true],
+    'anypress/testimonial-single' => ['Customer quote', true],
+] as $slug => [$title, $overrides]) {
+    $pattern = WP_Block_Patterns_Registry::get_instance()->get_registered($slug);
+    if (!$pattern) {
+        throw new RuntimeException("theme pattern $slug missing");
+    }
+    $content = $pattern['content'];
+    if ($overrides) {
+        $used = [];
+        $content = serialize_blocks($withOverrides(parse_blocks($content), $used));
+    }
+    // wp_insert_post unslashes; serialized block attributes carry backslash escapes.
+    $synced = wp_insert_post(['post_type' => 'wp_block', 'post_status' => 'publish', 'post_title' => $title, 'post_content' => wp_slash($content)], true);
+    if (is_wp_error($synced)) {
+        throw new RuntimeException($synced->get_error_message());
+    }
+}

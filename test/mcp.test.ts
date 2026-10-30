@@ -73,7 +73,7 @@ describe('MCP server', () => {
 
   it('offers about 20 tools, with actions and read-only and destructive hints', async () => {
     const { tools } = await mcp.listTools();
-    expect(tools.length).toBe(21);
+    expect(tools.length).toBe(22);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     expect(byName.get('get_stores')?.annotations?.readOnlyHint).toBe(true);
     expect(byName.get('store_status')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
@@ -101,6 +101,18 @@ describe('MCP server', () => {
     expect(domains.map((d: { domainName: string }) => d.domainName)).toContain('shop.mcp-example.com');
     await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
     expect((await call(mcp, 'manage_domain', { action: 'remove', externalId: 'mcp-1', domainName: 'shop.mcp-example.com' })).isError).toBe(false);
+  });
+
+  it('manages webhook endpoints', async () => {
+    expect(await call(mcp, 'manage_webhooks', { action: 'create' })).toMatchObject({ isError: true, text: 'Action create needs url.' });
+    const created = (await call(mcp, 'manage_webhooks', { action: 'create', url: 'https://hooks.mcp-example.com/anypress', eventTypes: ['tenant.ready'] })).data;
+    expect(created).toMatchObject({ url: 'https://hooks.mcp-example.com/anypress', eventTypes: ['tenant.ready'] });
+    expect(created.secret).toBeTruthy();
+    const listed = (await call(mcp, 'manage_webhooks', { action: 'list' })).data;
+    expect(JSON.stringify(listed)).toContain(created.id);
+    expect((await call(mcp, 'manage_webhooks', { action: 'update', webhookId: created.id, enabled: false })).data).toMatchObject({ enabled: false });
+    expect((await call(mcp, 'manage_webhooks', { action: 'deliveries', webhookId: created.id })).isError).toBe(false);
+    expect((await call(mcp, 'manage_webhooks', { action: 'delete', webhookId: created.id })).isError).toBe(false);
   });
 
   it('suspends, backs up and resumes a store', async () => {

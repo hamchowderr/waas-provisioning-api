@@ -17,12 +17,13 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 | Domains | `show_store_domains`, `manage_domain` (list, check, connect_link, add, set_main, remove) |
 | Email | `mail_domain` (get, set, remove) |
 | Versions | `manage_versions` (list, snapshots, templates, create, set_production, delete) |
+| Webhooks | `manage_webhooks` (list, get, deliveries, create, update, test, retry, rotate_secret, delete) |
 | Website pages and design | `get_site`, `site_pages` (list, read, revisions, create, update, restore_revision), `page_section` (add, replace, remove), `site_patterns` (find, get), `site_styles` (get, update), `header_footer` (get, update), `site_menus` (list, update), `add_image` |
 
 ## Rules that apply to everything
 
 - **Writes are asynchronous.** `create_store`, `manage_backups` restore, `update_store` and domain changes return as soon as the work is scheduled. The store then shows `statusCode` 0 (Pending) until it reaches 1 (Done) or 2 (Failed). Call `get_stores` with `action: "wait"` before telling the user it's ready, and before the next write to the same store. If it returns `done: false`, call it again; store setup can take a few minutes.
-- **Ask before anything destructive.** `store_status` delete and suspend (suspend takes the site offline), `manage_backups` restore (it replaces the live files and database), `manage_domain` remove, `mail_domain` remove, `manage_versions` delete, `page_section` remove and `store_status` go_live need the user's explicit yes for that store. Name the store and what will happen.
+- **Ask before anything destructive.** `store_status` delete and suspend (suspend takes the site offline), `manage_backups` restore (it replaces the live files and database), `manage_domain` remove, `mail_domain` remove, `manage_versions` delete, `manage_webhooks` rotate_secret and delete, `page_section` remove and `store_status` go_live need the user's explicit yes for that store. Name the store and what will happen.
 - **Show, don't dump.** When the user wants to see their stores, call `show_stores`; for one store, `show_store`; for its backups or domains, `show_store_backups` or `show_store_domains`. Clients that support MCP Apps render these as interactive screens. Otherwise summarize: name, status, main domain. Don't paste raw JSON unless asked.
 - **Errors carry the API's reason.** A tool error reads `The API refused <operation> (HTTP <status>): <message>`. Relay the message plainly and suggest the fix; don't retry a 400 unchanged.
 - If a tool or action is missing, the server may be read-only (`/mcp/read-only` or `WAAS_MCP_READ_ONLY=1`), or the connection wasn't allowed that area: whoever connected the app ticks what it may see and change per area (stores, backups, domains, email, versions, website pages and design). A tool then offers only the actions it may use. Say so, and that reconnecting can allow more, instead of looking for a workaround.

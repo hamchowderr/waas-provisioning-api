@@ -501,6 +501,45 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     },
   });
 
+  // Webhooks: store and version events sent to your own URL (docs/webhooks.md), for automations and apps.
+
+  const EVENT_TYPES = [
+    'tenant.ready', 'tenant.updated', 'tenant.version_changed', 'tenant.domains_changed', 'tenant.suspended', 'tenant.resumed', 'tenant.deleted',
+    'tenant.restored', 'tenant.rolled_back', 'tenant.backup_completed', 'tenant.backup_failed', 'tenant.failed', 'version.ready', 'version.deleted',
+    'version.failed', 'webhook.test',
+  ] as const;
+  actionTool('manage_webhooks', {
+    title: 'Webhooks', area: 'webhooks',
+    description: 'Endpoints that get a signed POST when something happens to your stores or versions, such as tenant.ready when a new store is up.',
+    input: {
+      webhookId: z.string().optional().describe('The endpoint, from list; for everything but list and create'),
+      deliveryId: z.string().optional().describe('For retry: the delivery, from deliveries'),
+      url: z.string().url().optional().describe('For create and update: the https URL to send events to'),
+      description: z.string().optional().describe('For create and update: what the endpoint is for'),
+      eventTypes: z.array(z.enum(EVENT_TYPES)).optional().describe('For create and update: the events to send; every event when omitted on create'),
+      enabled: z.boolean().optional().describe('For update: false pauses the endpoint, true starts it again'),
+    },
+    actions: {
+      list: { access: 'read', does: 'your webhook endpoints', run: () => client.webhooks.list() },
+      get: { access: 'read', does: 'one endpoint', run: ({ webhookId }) => client.webhooks.get(need(webhookId, 'webhookId', 'get')) },
+      deliveries: { access: 'read', does: 'the endpoint’s recent deliveries, with status and response', run: ({ webhookId }) => client.webhooks.deliveries(need(webhookId, 'webhookId', 'deliveries')) },
+      create: {
+        access: 'write',
+        does: 'adds an endpoint for url and returns its signing secret, shown only this once',
+        run: ({ url, description, eventTypes }) => client.webhooks.create({ url: need(url, 'url', 'create'), description, eventTypes }),
+      },
+      update: {
+        access: 'write',
+        does: 'changes the endpoint’s url, description, eventTypes or enabled',
+        run: ({ webhookId, url, description, eventTypes, enabled }) => client.webhooks.update(need(webhookId, 'webhookId', 'update'), { url, description, eventTypes, enabled }),
+      },
+      test: { access: 'write', does: 'sends a webhook.test event to the endpoint now', run: ({ webhookId }) => client.webhooks.test(need(webhookId, 'webhookId', 'test')) },
+      retry: { access: 'write', does: 'sends a failed delivery again', run: ({ deliveryId }) => client.webhooks.retryDelivery(need(deliveryId, 'deliveryId', 'retry')) },
+      rotate_secret: { access: 'write', destructive: true, does: 'replaces the signing secret; the old one stops working, so update your receiver', run: ({ webhookId }) => client.webhooks.rotateSecret(need(webhookId, 'webhookId', 'rotate_secret')) },
+      delete: { access: 'write', destructive: true, does: 'removes the endpoint', run: ({ webhookId }) => client.webhooks.delete(need(webhookId, 'webhookId', 'delete')) },
+    },
+  });
+
   // Site: the store's pages and design, through its WaaS Client (docs/site-editing.md).
 
   siteTools = true;
