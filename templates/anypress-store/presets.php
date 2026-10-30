@@ -82,6 +82,13 @@ delete_option('fluent_cart_do_activation_redirect');
 \FluentCart\App\Services\Email\EmailNotifications::updateSettings([
     'email_footer' => '<p>Questions? Just reply to this email.</p>',
 ]);
+// Settings → Email notifications → Store digest: off. FluentCart's weekly report to the admin keeps its own design
+// and a FluentCart Pro ad, which settings can't change; the owner can turn it back on there.
+$digest = \FluentCart\App\Services\Email\StoreDigestService::getSettings();
+foreach (['daily', 'weekly', 'monthly'] as $cadence) {
+    $digest[$cadence]['enabled'] = 'no';
+}
+\FluentCart\App\Services\Email\StoreDigestService::saveSettings($digest);
 // Settings → Checkout fields: a terms checkbox buyers must tick.
 $fields = \FluentCart\App\Services\Renderer\CheckoutFieldsSchema::getFieldsSettings();
 $fields['agree_terms'] = ['enabled' => 'yes', 'required' => 'yes', 'text' => 'I agree to the terms and conditions.'];
