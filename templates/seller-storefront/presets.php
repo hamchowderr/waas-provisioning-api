@@ -22,6 +22,12 @@ delete_option('fluent_cart_do_activation_redirect');
 \FluentCart\App\Services\Email\EmailNotifications::updateSettings([
     'email_footer' => '<p>Questions? Just reply to this email.</p>',
 ]);
+// Settings → Email notifications → Store digest: off (FluentCart's own design and a Pro ad, which settings can't change).
+$digest = \FluentCart\App\Services\Email\StoreDigestService::getSettings();
+foreach (['daily', 'weekly', 'monthly'] as $cadence) {
+    $digest[$cadence]['enabled'] = 'no';
+}
+\FluentCart\App\Services\Email\StoreDigestService::saveSettings($digest);
 // Settings → Email notifications: one email per moment. WaaS Host's own emails already cover a cancelled plan
 // ("stays online until"), websites aren't shipped, and the store-managed renewal emails (renewal invoice, upcoming
 // charge, charge failed, overdue reminders) repeat the card-renewal ones a storefront sends (waas-api-mi4).
