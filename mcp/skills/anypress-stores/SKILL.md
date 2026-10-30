@@ -31,7 +31,7 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 ## Launch a store
 
 1. Pick the version: new stores go on the production version unless the user names one (`manage_versions` list). To start from a specific template or snapshot, find it with `manage_versions` snapshots and pass `snapshotId`, or pass `groupName`.
-2. `create_store` with `name` (at most 30 characters, starting and ending with a letter or digit) and an `externalId` (letters, digits and `-` only). If the user gives a custom domain up front, pass it as `customDomainName`.
+2. `create_store` with `name` (at most 30 characters, starting and ending with a letter or digit), an `externalId` (letters, digits and `-` only), and the owner's login: `wordPressUserName` and `wordPressUserEmail` (ask the user for the owner's email if you don't have it). The store takes its name as its site title and the email as its own address, and opens on the starter home page for its site type. If the user gives a custom domain up front, pass it as `customDomainName`.
 3. `get_stores` wait. Report the store's main domain (`domainName`) when it is Done.
 
 Repeating `create_store` with the same `externalId` answers with the store it already made, so it's safe to retry after a timeout.

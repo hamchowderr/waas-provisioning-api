@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StatusCode, WaasClient } from '../sdk/typescript/src/index.ts';
 import { createApiKey } from '../src/keys.ts';
 import { signedRoute, siteKey, siteKeyMaster } from '../src/sitekeys.ts';
-import { basic, setup, TEST_SECRETS_KEY, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_SECRETS_KEY, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 let waas: WaasClient;
@@ -62,7 +62,7 @@ beforeAll(async () => {
     await new Promise((r) => setTimeout(r, 100));
   }
   await waas.versions.setProduction(version.id!);
-  await waas.tenants.create({ name: 'Bakery', externalId: 'site-1' });
+  await waas.tenants.create({ ...OWNER, name: 'Bakery', externalId: 'site-1' });
   const done = await waas.waitForTenant({ externalId: 'site-1' }, { intervalMs: 100, timeoutMs: 15_000 });
   tenantId = done.id!;
   mainDomain = done.domainName!;

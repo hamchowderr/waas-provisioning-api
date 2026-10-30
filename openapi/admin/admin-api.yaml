@@ -862,9 +862,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [name, ownerEmail]
               properties:
                 name: { type: string, maxLength: 100 }
+                ownerEmail: { type: string, format: email, description: "The store owner's email: their login (an administrator) and the store's own address" }
                 size: { type: string, enum: [small, medium, large] }
                 customDomainName: { type: string, description: 'Its own address; default <label>.<platform domain>' }
       responses:

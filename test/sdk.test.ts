@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StatusCode, verifyWebhook, WaasApiError, WaasClient, WebhookVerificationError } from '../sdk/typescript/src/index.ts';
 import { sign } from '../src/webhooks.ts';
 import { createApiKey } from '../src/keys.ts';
-import { setup, type TestContext } from './helpers.ts';
+import { setup, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 let client: WaasClient;
@@ -38,7 +38,7 @@ afterAll(async () => {
 
 describe('TypeScript SDK', () => {
   it('creates a store and waits until it is Done', async () => {
-    const created = await client.tenants.create({ name: 'SDK store', externalId: 'sdk-1' });
+    const created = await client.tenants.create({ ...OWNER, name: 'SDK store', externalId: 'sdk-1' });
     expect(created).toMatchObject({ externalId: 'sdk-1' });
     expect(requests).toContain('POST /v1/tenants');
 
@@ -70,7 +70,7 @@ describe('TypeScript SDK', () => {
   });
 
   it('throws WaasApiError with the API message', async () => {
-    const error = await client.tenants.create({ name: 'dupe', externalId: 'has space' }).catch((e: unknown) => e);
+    const error = await client.tenants.create({ ...OWNER, name: 'dupe', externalId: 'has space' }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(WaasApiError);
     expect(error).toMatchObject({ status: 400, operationId: 'createTenant' });
     expect((error as WaasApiError).apiMessage).toBeTruthy();

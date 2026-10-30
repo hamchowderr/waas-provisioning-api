@@ -40,7 +40,7 @@ $waas = new Client(
 
 try {
     // Ask for a new store. The call returns once the work is queued.
-    $waas->createTenant(['name' => 'Acme Shop', 'externalId' => 'order-1042']);
+    $waas->createTenant(['name' => 'Acme Shop', 'externalId' => 'order-1042', 'wordPressUserName' => 'acme', 'wordPressUserEmail' => 'owner@acme.example']);
 
     // Poll until the store is ready (or failed).
     $store = $waas->waitForTenant(['externalId' => 'order-1042']);

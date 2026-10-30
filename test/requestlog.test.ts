@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { pruneRequestLog } from '../src/requestlog.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, type TestContext, OWNER } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
@@ -79,7 +79,7 @@ describe('request log', () => {
   });
 
   it('records a failed sign-in with the key id and the error, but not the secret', async () => {
-    const res = await t.call('POST', '/v1/tenants', { auth: basic(key, 'wrong-secret'), body: { name: 'x' } });
+    const res = await t.call('POST', '/v1/tenants', { auth: basic(key, 'wrong-secret'), body: { ...OWNER, name: 'x' } });
     expect(res.status).toBe(403);
     const { items } = await requests('?outcome=error');
     expect(items).toHaveLength(1);

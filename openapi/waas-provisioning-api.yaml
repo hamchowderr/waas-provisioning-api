@@ -2846,7 +2846,7 @@ components:
           deprecated: true
         wordPressUserName:
           type: string
-          description: The name of the user that will be created in the Tenant.
+          description: The name of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantName` is accepted instead.
           example: TenantUser
         wordPressUserRole:
           type: string
@@ -2854,7 +2854,7 @@ components:
           example: author
         wordPressUserEmail:
           type: string
-          description: The e-mail address of the user that will be created in the Tenant.
+          description: The e-mail address of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantEmail` is accepted instead.
           example: example@gmail.com
         wordPressUserPassword:
           type: string
@@ -2872,7 +2872,7 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: "A collection of key value pairs that will be used to initialize WordPress options;\r\nUse the key as option name. The value will be set as is."
+          description: "A collection of key value pairs that will be used to initialize WordPress options;\r\nUse the key as option name. The value will be set as is. When not given, `blogname` (the site title) is the store's `name` and `admin_email` is `wordPressUserEmail`, so the store starts with its own title and starter pages."
           nullable: true
           example:
             important_option: initialValue

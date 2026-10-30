@@ -8,7 +8,7 @@ import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import { dnsSafeLabel } from '../src/tenants.ts';
 import { ToSendError, type EmailCountQuery, type MailCounter } from '../src/tosend.ts';
-import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 const domains = { storesDomain: 'stores.anypress.site', platformDomain: 'anypress.site' };
 
@@ -72,7 +72,7 @@ async function admin(method: string, path: string, body?: unknown): Promise<any>
 }
 
 async function createTenant(name: string) {
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name } })).json()) as { id: string; externalId: string };
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name } })).json()) as { id: string; externalId: string };
   await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as { statusCode: number }[])[0]?.statusCode === Status.Done);
   return tenant.id;
 }

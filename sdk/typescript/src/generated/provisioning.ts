@@ -1167,7 +1167,7 @@ export interface components {
              */
             tenantPassword?: string;
             /**
-             * @description The name of the user that will be created in the Tenant.
+             * @description The name of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantName` is accepted instead.
              * @example TenantUser
              */
             wordPressUserName?: string;
@@ -1177,7 +1177,7 @@ export interface components {
              */
             wordPressUserRole?: string;
             /**
-             * @description The e-mail address of the user that will be created in the Tenant.
+             * @description The e-mail address of the user that will be created in the Tenant (the store's owner). Required, except with `uploadCustomSnapshot` (a site moved in keeps its own users); the deprecated `tenantEmail` is accepted instead.
              * @example example@gmail.com
              */
             wordPressUserEmail?: string;
@@ -1193,7 +1193,7 @@ export interface components {
             asZip?: boolean;
             /**
              * @description A collection of key value pairs that will be used to initialize WordPress options;
-             *     Use the key as option name. The value will be set as is.
+             *     Use the key as option name. The value will be set as is. When not given, `blogname` (the site title) is the store's `name` and `admin_email` is `wordPressUserEmail`, so the store starts with its own title and starter pages.
              * @example {
              *       "important_option": "initialValue"
              *     }

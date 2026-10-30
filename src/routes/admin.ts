@@ -516,8 +516,14 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     const body = ((await readJson(c)) ?? {}) as Record<string, unknown>;
     if (typeof body.name !== 'string') throw badRequest('name is required');
     if (body.size !== undefined && !['small', 'medium', 'large'].includes(body.size as string)) throw badRequest('size must be small, medium or large');
+    // The owner signs in with their email; it is the store's own address too.
+    const ownerEmail = typeof body.ownerEmail === 'string' ? body.ownerEmail.trim().toLowerCase() : '';
+    if (!ownerEmail) throw badRequest("ownerEmail is required: the store owner's email");
     const params = {
       name: body.name.trim().slice(0, 100),
+      wordPressUserName: ownerEmail,
+      wordPressUserEmail: ownerEmail,
+      wordPressUserRole: 'administrator',
       ...(typeof body.size === 'string' && { size: body.size }),
       ...(typeof body.customDomainName === 'string' && body.customDomainName.trim() && { customDomainName: body.customDomainName.trim() }),
     } as Parameters<typeof createTenant>[2];

@@ -9,7 +9,7 @@ import {
   startStoreBackups,
   STORE_BACKUPS_QUEUE,
 } from '../src/storebackups.ts';
-import { setup, waitFor, type TestContext } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 
@@ -20,7 +20,7 @@ const scheduled = async (tenantId: string) =>
   (await t.pool.query("SELECT id, status FROM tenant_backups WHERE tenant_id = $1 AND reason = 'scheduled' ORDER BY date_created", [tenantId])).rows;
 
 async function newTenant(name: string): Promise<Tenant> {
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name } })).json()) as Tenant;
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name } })).json()) as Tenant;
   await waitFor(async () => (await getTenant(tenant.externalId))?.statusCode === Status.Done);
   return tenant;
 }

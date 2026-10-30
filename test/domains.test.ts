@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Status } from '../src/status.ts';
-import { setup, waitFor, type TestContext } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 
 async function newTenant(name: string, customDomainName?: string) {
-  const body = (await (await t.call('POST', '/v1/tenants', { body: { name, customDomainName } })).json()) as { id: string; externalId: string; baseDomain: string };
+  const body = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name, customDomainName } })).json()) as { id: string; externalId: string; baseDomain: string };
   await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${body.externalId}`)).json()) as { statusCode: number }[])[0]?.statusCode === Status.Done);
   return body;
 }
@@ -46,7 +46,7 @@ describe('tenant domains', () => {
     for (const domain of ['brand.example', 'shop.brand.example', 'a.b.brand.example']) expect(await available(domain), domain).toBe(false);
     expect(await available('notbrand.example')).toBe(true);
 
-    const create = await t.call('POST', '/v1/tenants', { body: { name: 'Www', customDomainName: 'www.waas.example' } });
+    const create = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Www', customDomainName: 'www.waas.example' } });
     expect(create.status).toBe(400);
     expect(await create.text()).toContain('already in use');
     const b = await newTenant('Named', 'named.waas.example');

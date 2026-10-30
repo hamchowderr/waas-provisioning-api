@@ -38,7 +38,7 @@ Each is an API action: `POST` to the URL with the headers above. HighLevel sends
 
 | Action key | Name | URL | Fields (key, required) |
 |---|---|---|---|
-| `anypress_create_site` | Create site | `API/v1/apps/actions/create-site` | `name` (yes): Site name, up to 30 characters. `externalId`: Your reference; empty uses the contact's id, so a workflow that runs twice for a contact makes one site. `email`: Client email, which makes their WordPress login. `username`, `role` (administrator, editor, author, contributor), `size` (small, medium, large), `groupName`: starting site group, `customDomainName`, `storefront` |
+| `anypress_create_site` | Create site | `API/v1/apps/actions/create-site` | `name` (yes): Site name, up to 30 characters. `externalId`: Your reference; empty uses the contact's id, so a workflow that runs twice for a contact makes one site. `email` (yes): Client email, which makes their WordPress login. Every site needs one. `username`, `role` (administrator, editor, author, contributor), `size` (small, medium, large), `groupName`: starting site group, `customDomainName`, `storefront` |
 | `anypress_get_site` | Get site | `API/v1/apps/actions/get-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_suspend_site` | Suspend site | `API/v1/apps/actions/suspend-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_resume_site` | Resume site | `API/v1/apps/actions/resume-site` | `externalId` or `siteId`, `storefront` |

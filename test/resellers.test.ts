@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
@@ -51,7 +51,7 @@ const tenant = async (externalId: string, auth: string) =>
   ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`, { auth })).json()) as any[])[0];
 
 async function newTenant(auth: string, body: object = {}) {
-  const res = await t.call('POST', '/v1/tenants', { body: { name: 'Shop', ...body }, auth });
+  const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Shop', ...body }, auth });
   expect(res.status).toBe(200);
   const created = (await res.json()) as { id: string; externalId: string };
   await waitFor(async () => (await tenant(created.externalId, auth))?.statusCode === Status.Done);
@@ -133,7 +133,7 @@ describe('reseller accounts', () => {
     await admin('PUT', `/admin/resellers/${resellerId}`, 200, { maxTenants: 2 });
     await newTenant(partner.auth);
     await newTenant(second.auth);
-    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Third' }, auth: partner.auth });
+    const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Third' }, auth: partner.auth });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { message: string }).message).toMatch(/limit of 2 stores/);
     await admin('PUT', `/admin/resellers/${resellerId}`, 200, { maxTenants: null });
@@ -175,7 +175,7 @@ describe('usage record', () => {
   });
 
   it('opens a period when a store finishes building, under its reseller', async () => {
-    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Shop' }, auth: product.auth });
+    const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Shop' }, auth: product.auth });
     const created = (await res.json()) as { id: string; externalId: string };
     // Not live while it is still being built.
     expect(await periods(created.id)).toEqual([]);

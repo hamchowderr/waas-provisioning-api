@@ -42,6 +42,7 @@ interface UpdateTenantParams {
 }
 
 const EXTERNAL_ID = /^[A-Za-z0-9-]+$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps) {
   const app = new Hono<AppEnv>();
@@ -141,6 +142,20 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
 }
 
 /**
+ * The options a new store starts with: the ones asked for, plus its name as the site title and the owner's email as
+ * its administration address when the call doesn't set them. The store template keeps a placeholder address
+ * (admin@example.invalid) until one is set, and only a store with a real one gets its starter pages and opens on its
+ * home page (templates/anypress-store/mu-plugins/anypress-patterns.php).
+ */
+function storeOptions(name: string, email: string | undefined, wpOptions: Record<string, string> | null | undefined): Record<string, string> {
+  return {
+    blogname: name.trim(),
+    ...(email?.trim() ? { admin_email: email.trim().toLowerCase() } : {}),
+    ...(wpOptions ?? {}),
+  };
+}
+
+/**
  * Creates a store for a product: what POST /v1/tenants does, also used for the platform's own stores (hosted
  * storefronts, src/routes/admin.ts). Answers { id, externalId, baseDomain, customDomain? }.
  *
@@ -206,7 +221,11 @@ export async function createTenant(
   const userEmail = body.wordPressUserEmail ?? body.tenantEmail;
   const userRole = body.wordPressUserRole ?? body.tenantUserRole;
   const password = body.wordPressUserPassword ?? body.tenantPassword;
+  // Every new store has an owner who can sign in; their email is also the store's own address, which its starter pages
+  // wait for. A site moved in keeps its own users.
+  if (!imported && !(userName?.trim() && userEmail?.trim())) throw badRequest("wordPressUserName and wordPressUserEmail are required: the store owner's login");
   if ((userName || userEmail) && !(userName && userEmail)) throw badRequest('wordPressUserName and wordPressUserEmail go together');
+  if (userEmail && !EMAIL.test(userEmail.trim())) throw badRequest('wordPressUserEmail must be an email address');
 
   // The checks above give the usual answer; these constraints settle two requests racing past them.
   let token: string | undefined;
@@ -225,7 +244,7 @@ export async function createTenant(
         snapshot.name,
         snapshot.group_name,
         // A site moved in keeps its own options: none from the create call are written over them, now or on a rollback.
-        imported ? {} : (body.wpOptions ?? {}),
+        imported ? {} : storeOptions(body.name, userEmail, body.wpOptions),
         encodePhpConstants(secrets, body.phpConstants ?? {}),
         Status.Pending,
         body.size ?? DEFAULT_SIZE,

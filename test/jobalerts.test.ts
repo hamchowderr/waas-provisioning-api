@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { checkHealth } from '../src/health.ts';
 import { describeJob, withFailureAlerts } from '../src/jobalerts.ts';
 import type { JobData, JobHandlers } from '../src/queue.ts';
-import { setup, waitFor, type TestContext } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 import { Status } from '../src/status.ts';
 
 let t: TestContext;
@@ -14,7 +14,7 @@ beforeAll(async () => {
   const versionId = ((await res.json()) as { id: string }).id;
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId } });
-  tenantId = ((await (await t.call('POST', '/v1/tenants', { body: { name: 'Acme' } })).json()) as { id: string }).id;
+  tenantId = ((await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Acme' } })).json()) as { id: string }).id;
   await t.pool.query('UPDATE tenant_domains SET is_main = false WHERE tenant_id = $1', [tenantId]);
   await t.pool.query("INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, 'acme.anypress.site', true)", [tenantId]);
 }, 60_000);

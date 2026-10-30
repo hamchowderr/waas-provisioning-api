@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Status } from '../src/status.ts';
-import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 
@@ -10,7 +10,7 @@ const settled = (externalId: string) => waitFor(async () => (await getTenant(ext
 const addPack = (query: string, body: unknown) => t.call('POST', `/v1/tenants/email-packs?${query}`, { body });
 
 async function newTenant(name: string): Promise<Tenant> {
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name } })).json()) as Tenant;
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name } })).json()) as Tenant;
   await settled(tenant.externalId);
   return tenant;
 }

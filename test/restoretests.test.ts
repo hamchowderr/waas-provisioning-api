@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { checkHealth } from '../src/health.ts';
 import { cleanUpInterruptedTests, loadRestoreTestConfig, RESTORE_TEST_QUEUE, restoreTestStatus, runRestoreTest, startRestoreTests } from '../src/restoretests.ts';
 import { Status } from '../src/status.ts';
-import { setup, waitFor, type TestContext } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 
@@ -10,7 +10,7 @@ type Tenant = { id: string; externalId: string };
 const getTenant = async (externalId: string) => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as any[])[0];
 
 async function newTenant(name: string): Promise<Tenant> {
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name } })).json()) as Tenant;
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name } })).json()) as Tenant;
   await waitFor(async () => (await getTenant(tenant.externalId))?.statusCode === Status.Done);
   return tenant;
 }
