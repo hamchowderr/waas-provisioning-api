@@ -23,10 +23,12 @@ export interface Harness {
   llm: LLMock;
   app: ReturnType<typeof createServer>;
   stores: Store[];
-  /** POST /chat as `store`'s owner (or signed out). */
-  chat(store: Store | null, body: unknown): Promise<Response>;
-  /** POST /chat/approval as `store`'s owner. */
-  answer(store: Store, body: unknown): Promise<Response>;
+  /** POST `path` as `store`'s owner (or signed out). */
+  post(path: string, store: Store | null, body: unknown): Promise<Response>;
+  /** GET `path` as `store`'s owner. */
+  get(path: string, store: Store): Promise<Response>;
+  /** Starts a message on /agent-controller/stream and reads its events as they come. */
+  send(store: Store, body: Record<string, unknown>): Turn;
   /** The model calls `tool` once for `message`, then answers `reply` after seeing the result. */
   script(message: string, tool: string, args: Record<string, unknown>, reply: string): void;
   close(): Promise<void>;
@@ -74,30 +76,110 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
   await llm.start();
   // Mastra's model router reads <PROVIDER>_BASE_URL, so the assistant speaks Anthropic's API, just to AIMock.
   process.env.ANTHROPIC_BASE_URL = `${llm.url}/v1`;
-  const { agent } = createAssistant({ model: 'test-model', anthropicApiKey: 'mock', storage: new LibSQLStore({ id: 'assistant-test', url: ':memory:' }) });
-  const app = createServer({ assistant: agent, apiUrl: BASE, fetch: appFetch });
+  const storage = new LibSQLStore({ id: 'assistant-test', url: ':memory:' });
+  const app = createServer({
+    createAssistant: (callSite) => createAssistant({ model: 'test-model', anthropicApiKey: 'mock', storage, callSite }),
+    apiUrl: BASE,
+    fetch: appFetch,
+  });
 
+  const auth = (store: Store | null): Record<string, string> => (store ? { authorization: `Bearer ${store.token}` } : {});
   const post = async (path: string, store: Store | null, body: unknown) =>
-    app.request(path, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(store ? { authorization: `Bearer ${store.token}` } : {}) },
-      body: JSON.stringify(body),
-    });
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', ...auth(store) }, body: JSON.stringify(body) });
+  const get = async (path: string, store: Store) => app.request(path, { headers: auth(store) });
 
   return {
     t,
     llm,
     app,
     stores,
-    chat: (store, body) => post('/chat', store, body),
-    answer: (store, body) => post('/chat/approval', store, body),
+    post,
+    get,
+    send: (store, body) => new Turn(post('/agent-controller/stream', store, body)),
     script(message, tool, args, reply) {
       llm.on({ userMessage: message, hasToolResult: false }, { toolCalls: [{ name: tool, arguments: args }] });
       llm.on({ userMessage: message, hasToolResult: true }, { content: reply });
     },
     async close() {
+      await app.close();
       await llm.stop();
       await t.close();
     },
   };
+}
+
+type Event = { type: string; [key: string]: unknown };
+
+/** One message's server-sent events, read as they arrive. */
+export class Turn {
+  readonly events: Event[] = [];
+  readonly done: Promise<Event[]>;
+  status = 0;
+  #waiters: (() => void)[] = [];
+
+  constructor(response: Promise<Response>) {
+    this.done = (async () => {
+      const answer = await response;
+      this.status = answer.status;
+      if (!answer.ok || !answer.body) {
+        this.events.push({ type: 'http', status: answer.status, body: await answer.text() });
+        this.#wake();
+        return this.events;
+      }
+      const reader = answer.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let end: number;
+        while ((end = buffer.indexOf('\n\n')) >= 0) {
+          const line = buffer.slice(0, end).replace(/^data: /, '');
+          buffer = buffer.slice(end + 2);
+          if (line) this.events.push(JSON.parse(line) as Event);
+          this.#wake();
+        }
+      }
+      this.#wake();
+      return this.events;
+    })();
+  }
+
+  #wake() {
+    for (const wake of this.#waiters.splice(0)) wake();
+  }
+
+  /** The first event of `type`, waiting for it if it hasn't come yet. */
+  async next(type: string, timeoutMs = 15_000): Promise<Event> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const found = this.events.find((event) => event.type === type);
+      if (found) return found;
+      if (this.events.some((event) => event.type === '__done__' || event.type === 'http') || Date.now() > deadline) {
+        throw new Error(`no ${type} event; got ${this.events.map((event) => event.type).join(', ')}`);
+      }
+      await Promise.race([new Promise<void>((resolve) => this.#waiters.push(resolve)), new Promise((resolve) => setTimeout(resolve, 200))]);
+    }
+  }
+
+  /** Everything the assistant wrote, once the turn is done. */
+  async text(): Promise<string> {
+    await this.done;
+    return this.events
+      .map((event) => event.event as { type?: string; delta?: string } | undefined)
+      .filter((part) => part?.type === 'text-delta')
+      .map((part) => part!.delta)
+      .join('');
+  }
+
+  /** The tool calls waiting for the owner, as the approval cards show them. */
+  gates(): { toolCallId: string; toolName: string; summary: string }[] {
+    return this.events
+      .filter((event) => event.type === 'tool_approval_required')
+      .map((event) => ({
+        toolCallId: event.toolCallId as string,
+        toolName: event.toolName as string,
+        summary: (event.preview as { summary: string }).summary,
+      }));
+  }
 }

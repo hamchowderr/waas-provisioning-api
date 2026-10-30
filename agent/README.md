@@ -8,19 +8,23 @@ It has no tools of its own. Every request carries the owner's token from **Sign 
 
 Reading never waits. Adding a draft page or an image to the media library happens straight away, because visitors can't see either. Every other change waits for the owner's yes: publishing, editing a page or section, removing a section, changing styles, the header, the footer or a menu, and restoring a revision. If the owner says no, nothing changes. Every change WordPress makes keeps a revision, so the owner can ask for it back later.
 
-Which calls wait is decided in [`src/approval.ts`](src/approval.ts). A tool or action it doesn't know always waits.
+The site tools come in two kinds ([`src/site-tools.ts`](src/site-tools.ts)). `site_pages`, `site_styles`, `header_footer` and `site_menus` only look, and add drafts: a page they create is always a draft, whatever the model asks. Their `_change` twins, and `page_section`, make the changes, and each call waits for the owner. "Always allow" can't switch that off: the change tools are set to ask on every call, and an explicit "ask" outranks any grant.
 
 ## HTTP
 
-Both routes take `Authorization: Bearer <website sign-in token>` and answer `{ conversation, text, pending }`, where `pending` lists the changes waiting for the owner (`toolCallId`, `tool`, `args`, and a plain `summary` such as "Publish page 14").
+The assistant speaks [Mastra Chat Kit](https://github.com/hamchowderr/mastra-chat-kit)'s chat routes (Mastra's Agent Controller), streamed as server-sent events. Every route takes `Authorization: Bearer <website sign-in token>`.
 
-| Route | Body |
+| Route | |
 |---|---|
-| `POST /chat` | `{ message, conversation? }`. Leave `conversation` out to start a new one; send the returned id to carry on. |
-| `POST /chat/approval` | `{ conversation, toolCallId, approve, reason? }`. `approve: false` declines; `reason` is passed to the assistant. |
-| `GET /health` | `{ ok: true }` |
+| `POST /agent-controller/stream` | `{ text, threadId? }`. Streams the reply: text, tool steps, and `tool_approval_required` for each change that waits, with a plain `preview.summary` such as "Publish page 14" |
+| `POST /agent-controller/approve` | `{ decision: "approve" \| "decline", toolCallId }` |
+| `POST /agent-controller/answer` | The owner's answer to a question the assistant asked |
+| `POST /agent-controller/abort` | Stops the current reply |
+| `GET /agent-controller/threads` | The website's conversations, and `/threads/<id>/messages` for one |
 
-Conversations and waiting changes are kept per website, under the address the API answers for the token. A conversation id from another website opens nothing.
+Conversations and waiting changes are kept per website, under the address the API answers for the token. Another website's conversation or waiting change can't be opened, answered or written to.
+
+The chat the owner sees is [`panel/`](panel/), a Next.js app with **Sign in with your website**.
 
 ## Running it
 
@@ -33,8 +37,9 @@ ASSISTANT_MODEL=<Anthropic model id> ANTHROPIC_API_KEY=... DATABASE_URL=postgres
 |---|---|
 | `ASSISTANT_MODEL` | The Anthropic model to use |
 | `ANTHROPIC_API_KEY` | Its API key |
-| `DATABASE_URL` | Postgres for conversations and waiting changes (schema `assistant`) |
+| `DATABASE_URL` | Postgres for conversations (schema `assistant`) |
 | `ANYPRESS_API_URL` | The AnyPress API |
+| `ALLOWED_ORIGINS` | Optional: comma-separated addresses whose pages may call the assistant from the browser |
 | `PORT` | Default 3100 |
 
 ## Tests
@@ -43,3 +48,4 @@ The tests run the API itself in-process, on the API's test database (`TEST_DATAB
 
 - `npm test`: stores that answer like WaaS Client. Checks the sign-in, drafts, approve and decline, that one website's owner can't see or answer another's waiting change, and that a model told to use another website still only reaches its own.
 - `npm run test:playground`: a real WordPress on [WordPress Playground](https://wordpress.github.io/wordpress-playground/) with WaaS Client from [waas-plugins](https://github.com/hamchowderr/waas-plugins). Checks a draft page, publishing only after the owner's yes, a section change and its undo, and a decline, on actual pages. Needs Node 24.18+ and `WAAS_CLIENT_DIR` pointing at `waas-plugins/packages/waas-client` with its `vendor` folder (`composer install --no-dev`).
+- `npm run test:browser`: the chat panel in Chromium at desktop and phone width (Playwright). Types a request, checks the change waits on an Approve / Reject card, and that only Approve makes it. Run `npm ci && npm run build` in `panel/` first.

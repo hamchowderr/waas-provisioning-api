@@ -9,12 +9,16 @@ function need(name: string): string {
   return value;
 }
 
-const { agent } = createAssistant({
-  model: need('ASSISTANT_MODEL'),
-  anthropicApiKey: need('ANTHROPIC_API_KEY'),
-  storage: new PostgresStore({ id: 'assistant', connectionString: need('DATABASE_URL'), schemaName: 'assistant' }),
+const storage = new PostgresStore({ id: 'assistant', connectionString: need('DATABASE_URL'), schemaName: 'assistant' });
+const model = need('ASSISTANT_MODEL');
+const anthropicApiKey = need('ANTHROPIC_API_KEY');
+
+const app = createServer({
+  createAssistant: (callSite) => createAssistant({ model, anthropicApiKey, storage, callSite }),
+  apiUrl: need('ANYPRESS_API_URL'),
+  allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean),
 });
 
 const port = Number(process.env.PORT ?? 3100);
-serve({ fetch: createServer({ assistant: agent, apiUrl: need('ANYPRESS_API_URL') }).fetch, port });
+serve({ fetch: app.fetch, port });
 console.log(`website assistant on :${port}`);
