@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentAuth, FluentKit and
-# Twenty Twenty-Five, packaged as the provisioner restores it (see README). A storefront made from it
+# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentCRM, FluentAuth,
+# FluentKit, WP Fusion Lite, AnyPress Blocks and the AnyPress theme, packaged as the provisioner restores it (see README). A storefront made from it
 # is connected to the API when it is created: the API writes its key, secret and address into wp-config
 # (POST /admin/products/{productId}/storefront).
 #
@@ -19,6 +19,8 @@ WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f9
 # wordpress.org plugins: slug version sha256. All installed and active.
 PLUGINS="
 fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
+fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63e
+wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
 "
 # Plugins that aren't on wordpress.org: slug version sha256, the zip shared with the store template
@@ -26,9 +28,12 @@ fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
-THEME=twentytwentyfive
-THEME_VERSION=${THEME_VERSION:-1.5}
-THEME_SHA256=${THEME_SHA256:-f333ce53aaa4049639298247d03480a4bd9b56fa8f0fea0440da262d7d595ba4}
+# AnyPress Blocks and the AnyPress theme: the same releases the store template pins (its build.sh and theme.sh).
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.3.0}
+BLOCKS_SHA256=${BLOCKS_SHA256:-79721b6151064d97ceb66636a1d9d29470803c18d4377d50cfe47b7e30399c28}
+THEME=anypress
+# shellcheck source=../anypress-store/theme.sh
+. "$(dirname "$0")/../anypress-store/theme.sh"
 PHP_VERSION=${PHP_VERSION:-8.3}
 
 # The build site's address. The provisioner rewrites it to each storefront's domain (wp search-replace),
@@ -71,14 +76,15 @@ while read -r slug version sha; do
     [ -n "$slug" ] || continue
     fetch "https://downloads.wordpress.org/plugin/$slug.$version.zip" "$sha" "$WORK/downloads/$slug.$version.zip"
 done <<<"$PLUGINS"
-fetch "https://downloads.wordpress.org/theme/$THEME.$THEME_VERSION.zip" "$THEME_SHA256" "$WORK/downloads/$THEME.zip"
+anypress_theme_fetch "$WORK/downloads"
+fetch "https://github.com/hamchowderr/anypress-blocks/releases/download/v$BLOCKS_VERSION/anypress-blocks.zip" "$BLOCKS_SHA256" "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip"
 
 echo "== WordPress $WP_VERSION"
 unzip -q "$WORK/downloads/wordpress.zip" -d "$WORK"
 cp -a "$WORK/wordpress/." "$SITE/" && rm -rf "$WORK/wordpress"
 # Only what the template ships: no bundled plugins, no other themes.
 rm -rf "$SITE/wp-content/plugins/akismet" "$SITE/wp-content/plugins/hello.php" "$SITE/wp-content/themes/"*
-unzip -q "$WORK/downloads/$THEME.zip" -d "$SITE/wp-content/themes"
+cp -a "$WORK/downloads/anypress" "$SITE/wp-content/themes/$THEME"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$WORK/downloads/$slug.$version.zip" -d "$SITE/wp-content/plugins"
@@ -89,7 +95,11 @@ while read -r slug version sha; do
     echo "$sha  $ZIP" | sha256sum -c --quiet || { echo "checksum mismatch: $ZIP" >&2; exit 1; }
     unzip -q "$ZIP" -d "$SITE/wp-content/plugins"
 done <<<"$VENDORED"
-SLUGS=$(awk 'NF {print $1}' <<<"$PLUGINS$VENDORED" | sort | tr '\n' ' ')
+unzip -q "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip" -d "$SITE/wp-content/plugins"
+SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | sort | tr '\n' ' ')
+# Settings kept in code (WP Fusion out of staging mode, buyers into FluentCRM): mu-plugins/seller-storefront.php.
+mkdir -p "$SITE/wp-content/mu-plugins"
+cp "$HERE/mu-plugins/seller-storefront.php" "$SITE/wp-content/mu-plugins/"
 
 echo "== WaaS Host $HOST_VERSION from $PLUGINS_REPO"
 # The release build: production dependencies only, the version stamped, one waas-host/ folder.
@@ -124,7 +134,8 @@ COMMENTS=$(wp comment list --format=ids)
 wp option update wp_page_for_privacy_policy 0
 wp widget reset --all 2>/dev/null || true
 
-# FluentCart's own pages (shop, cart, checkout, receipt, order review, account), with the shop as the home page.
+# FluentCart's own pages (shop, cart, checkout, receipt, order review, account), with the shop as the home page
+# until the presets make Home.
 wp eval --user=waas-admin '(new \FluentCart\App\CPT\Pages())->createPages();'
 wp option update show_on_front page
 wp option update page_on_front "$(wp post list --post_type=page --name=shop --field=ID)"
@@ -142,8 +153,9 @@ wp option update users_can_register 0
 
 echo "== Presets"
 cp "$HERE/presets.php" "$SITE/presets.php"
+cp "$HERE/../anypress-store/mu-plugins/anypress-patterns.php" "$SITE/anypress-patterns.php"
 wp eval-file /var/www/html/presets.php --user=waas-admin
-rm "$SITE/presets.php"
+rm "$SITE/presets.php" "$SITE/anypress-patterns.php"
 wp rewrite flush
 wp transient delete --all
 wp cache flush 2>/dev/null || true
@@ -155,6 +167,10 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-host | sort | tr '\n' ' ')
 [ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
 [ "$(wp plugin get waas-host --field=version)" = "$HOST_VERSION" ] || { echo "WaaS Host is not $HOST_VERSION" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
+[ "$(wp post get "$(wp option get page_on_front)" --field=post_name)" = home ] || { echo "Home is not the front page" >&2; exit 1; }
+[ "$(wp theme list --status=active --field=name)" = "$THEME" ] || { echo "theme $THEME not active" >&2; exit 1; }
+[ "$(wp eval 'echo implode(",", \FluentCrm\App\Models\Tag::orderBy("title")->pluck("title")->toArray());')" = "Website: Active,Website: Past" ] || { echo "FluentCRM tags missing" >&2; exit 1; }
+[ "$(wp eval 'echo var_export(WPF_STAGING_MODE, true), " ", wpf_get_option("crm"), wpf_get_option("connection_configured") ? " connected" : "";')" = "false fluentcrm connected" ] || { echo "WP Fusion must ship connected to FluentCRM and out of staging mode" >&2; exit 1; }
 # Nothing that connects the storefront may ship: each one gets its own when it is created.
 for OPTION in wpcs_credentials_api_key_setting wpcs_credentials_api_secret_setting wpcs_credentials_api_base_url_setting; do
     [ -z "$(wp option get "$OPTION" 2>/dev/null || true)" ] || { echo "$OPTION must not ship" >&2; exit 1; }
@@ -166,7 +182,7 @@ wp db export /var/www/html/database.sql --add-drop-table --quiet
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED") \
+PLUGINS_JSON=$( (echo "waas-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

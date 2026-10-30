@@ -7,14 +7,21 @@ who doesn't bring a WordPress site of their own. The API builds one with
 | | |
 |---|---|
 | WordPress | 7.1.4 for the build; storefronts run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
-| Theme | Twenty Twenty-Five 1.5, the only theme installed |
-| Plugins | WaaS Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-host` with its release script, at the version given to `build.sh`), FluentCart 2.2.0 and FluentAuth 3.1.0 (free, wordpress.org), and FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`). All active |
-| Pages | FluentCart's own: Shop (the home page), Cart, Checkout, Receipt, Review Your Order, Account |
+| Theme | The AnyPress theme, the release the store template pins ([`../anypress-store/theme.sh`](../anypress-store/theme.sh)), the only theme installed |
+| Plugins | WaaS Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-host` with its release script, at the version given to `build.sh`), FluentCart 2.2.0, FluentCRM 3.3.1, WP Fusion Lite 3.48.0 and FluentAuth 3.1.0 (free, wordpress.org), FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`) and AnyPress Blocks 0.3.0. All active |
+| Pages | Home (the home page: what a website includes, how it works, the plans, questions), built from the theme's sections; FluentCart's own Plans (its shop), Cart, Checkout, Receipt, Review Your Order and Account. The main menu has Plans and Account |
 | Settings | Permalinks `/%postname%/`, timezone UTC, comments and pingbacks closed, registration off, **search engines discouraged** until launch |
 | Users | `waas-admin` with a random password nobody keeps. The owner's administrator account is made when the storefront is created |
 
 [`presets.php`](presets.php) runs once on the build: FluentCart's first activation marked done, the cart icon in the
-menu, renewal reminders, a terms checkbox at checkout, FluentAuth's first-run defaults with XML-RPC off, and FluentKit's one dashboard (merged menus, app headers hidden).
+menu, renewal reminders, a terms checkbox at checkout, FluentAuth's first-run defaults with XML-RPC off, FluentKit's one dashboard (merged menus, app headers hidden), FluentCRM (no setup wizard, an unticked newsletter box at checkout
+into a Newsletter list, neutral email styles, compliance settings) and WP Fusion Lite connected to FluentCRM on the site.
+
+[`mu-plugins/seller-storefront.php`](mu-plugins/seller-storefront.php) ships with the storefront. It makes each buyer a
+FluentCRM contact tagged **Website: Active**, swapped for **Website: Past** when their last plan ends or is refunded;
+a new contact is "transactional" until they tick the newsletter box, and an unsubscribed contact stays unsubscribed. It
+also fills FluentCRM's business name and email from the owner's on the first visit, and keeps WP Fusion out of staging
+mode. To use HighLevel or another CRM instead, the owner picks it in **Settings → WP Fusion → Setup**.
 
 ## How a storefront is connected
 
