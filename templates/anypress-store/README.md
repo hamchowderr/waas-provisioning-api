@@ -12,11 +12,11 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 | Plugin | Slug | Version |
 |---|---|---|
 | FluentCart | `fluent-cart` | 2.2.0 |
-| FluentCRM | `fluent-crm` | 3.2.6 |
+| FluentCRM | `fluent-crm` | 3.3.1 |
 | Fluent Forms | `fluentform` | 6.2.16 |
 | FluentBooking | `fluent-booking` | 2.5.0 |
 | Fluent Support | `fluent-support` | 2.4.7 |
-| FluentAffiliate | `fluent-affiliate` | 1.6.5 |
+| FluentAffiliate | `fluent-affiliate` | 1.7.0 |
 | FluentSnippets | `easy-code-manager` | 10.58 |
 | Rank Math SEO | `seo-by-rank-math` | 1.0.280 |
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
