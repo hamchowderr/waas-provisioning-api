@@ -67,6 +67,12 @@ export interface Provisioner {
   deleteVersion(input: { versionId: string }): Promise<void>;
 
   /**
+   * The site types (waas-client-data/roles.json, parsed) in a built version's saved code, or null when it has
+   * none. Read from the saved code because the version's site is stopped once it is built.
+   */
+  readVersionRoles(input: { versionId: string }): Promise<unknown | null>;
+
+  /**
    * Stops a built version's site to free the server. Stores are built from the version's saved code,
    * not from its site, and building the version again starts the site again.
    */

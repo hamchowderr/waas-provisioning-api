@@ -93,6 +93,18 @@ describe('versions', () => {
     expect(versions.filter((v) => v.isProduction).map((v) => v.id)).toEqual([b]);
   });
 
+  it("serves the production version's site types from its saved code, and keeps them", async () => {
+    const [prod] = ((await (await t.call('GET', '/v1/versions')).json()) as { id: string; isProduction: boolean }[]).filter((v) => v.isProduction);
+    expect((await t.call('GET', '/v1/versions/production/roles')).status).toBe(404); // no roles.json in its code
+    const roles = { 'website-small': { name: 'Website (Small)', plugins: ['waas-client/waas-client.php'] } };
+    t.provisioner.versionRoles.set(prod!.id, roles);
+    const res = await t.call('GET', '/v1/versions/production/roles');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(roles);
+    t.provisioner.versionRoles.delete(prod!.id);
+    expect(await (await t.call('GET', '/v1/versions/production/roles')).json()).toEqual(roles); // kept
+  });
+
   it('refuses to delete the production version', async () => {
     const [prod] = ((await (await t.call('GET', '/v1/versions')).json()) as { id: string; isProduction: boolean }[]).filter((v) => v.isProduction);
     expect((await t.call('DELETE', `/v1/versions?versionId=${prod!.id}`)).status).toBe(400);

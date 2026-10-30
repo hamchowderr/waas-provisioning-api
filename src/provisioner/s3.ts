@@ -141,6 +141,13 @@ export class S3 {
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  /** Bytes start..end (inclusive) of the object. */
+  async getRange(key: string, start: number, end: number): Promise<Uint8Array> {
+    const res = await this.request('GET', key, { range: `bytes=${start}-${end}` });
+    await S3.check(res, `GET ${key}`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
   /** The object's bytes, or null when it does not exist. */
   async getIfExists(key: string): Promise<Uint8Array | null> {
     const res = await this.request('GET', key);
