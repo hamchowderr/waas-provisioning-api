@@ -113,6 +113,7 @@ describe('admin endpoints', () => {
   it('tenants: across products, with filters, search and paging', async () => {
     const all = await admin('GET', '/admin/tenants');
     expect(all.total).toBe(2);
+    expect(all.items.every((r: any) => r.onHold === false)).toBe(true);
     const other = await admin('GET', `/admin/tenants?productId=${otherProductId}`);
     expect(other.items.map((x: any) => x.name)).toEqual(['Other Shop']);
     const byDomain = await admin('GET', '/admin/tenants?q=ADMIN-SHOP.example');

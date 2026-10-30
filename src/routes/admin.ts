@@ -418,6 +418,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         statusName: statusName(t.status),
         size: t.size,
         isSuspended: t.is_suspended,
+        onHold: t.on_hold,
         latestBackupAt: iso(t.latest_backup_at),
         dateCreated: iso(t.date_created),
       })),

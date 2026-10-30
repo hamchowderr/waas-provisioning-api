@@ -2678,7 +2678,7 @@ components:
     TenantRow:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, isSuspended, latestBackupAt, dateCreated]
+      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, isSuspended, onHold, latestBackupAt, dateCreated]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -2693,6 +2693,7 @@ components:
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
         isSuspended: { type: boolean }
+        onHold: { type: boolean, description: A site moved in, held until it goes live. }
         latestBackupAt: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }
     ImportCode:
