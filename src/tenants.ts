@@ -91,9 +91,9 @@ export async function checkTenantCap(client: Client, productId: string): Promise
  * now or later. A wildcard DNS record sends every other name to the store server.
  */
 export const RESERVED_LABELS = new Set([
-  'about', 'account', 'accounts', 'admin', 'api', 'app', 'assets', 'auth', 'billing', 'blog', 'cdn', 'dashboard',
-  'dev', 'docs', 'email', 'ftp', 'help', 'imap', 'login', 'mail', 'mx', 'ns1', 'ns2', 'pop', 'portal', 'shop', 'smtp',
-  'staging', 'static', 'status', 'store', 'stores', 'support', 'test', 'versions', 'webmail', 'www',
+  'about', 'account', 'accounts', 'admin', 'api', 'app', 'assets', 'assistant', 'auth', 'billing', 'blog', 'cdn',
+  'dashboard', 'dev', 'docs', 'email', 'ftp', 'help', 'imap', 'login', 'mail', 'mx', 'ns1', 'ns2', 'pop', 'portal',
+  'shop', 'smtp', 'staging', 'static', 'status', 'store', 'stores', 'support', 'test', 'versions', 'webmail', 'www',
 ]);
 
 /**

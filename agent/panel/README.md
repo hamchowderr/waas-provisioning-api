@@ -23,6 +23,8 @@ MASTRA_SERVER_URL=http://localhost:3100 ANYPRESS_API_URL=https://api.anypress.io
 | `PANEL_SHOPS` | Comma-separated shop addresses (e.g. `https://shop.anypress.io`) that may sign their owners in |
 | `PANEL_OAUTH_CLIENT_ID` | Optional: a fixed sign-in client. Without it the panel registers itself with the API on first use |
 
+In a container: `docker build agent/panel` (listens on 3200).
+
 The cookies are `Secure` and `SameSite=None; Partitioned`, so the panel needs https outside `localhost`.
 
 ## Where the files come from
