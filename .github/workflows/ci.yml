@@ -42,6 +42,51 @@ jobs:
       - run: npm run typecheck
       - run: npm run sdk:check
       - run: npm test
+      # The website assistant (agent/) is its own package; its tests run it against the API above.
+      - name: Website assistant
+        working-directory: agent
+        run: npm ci && npm run typecheck && npm test
+
+  assistant-playground:
+    # The website assistant on a real WordPress: WordPress Playground running WaaS Client from waas-plugins.
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: waas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/waas_test
+      WAAS_CLIENT_DIR: ${{ github.workspace }}/waas-plugins/packages/waas-client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: hamchowderr/waas-plugins
+          path: waas-plugins
+      - uses: actions/setup-node@v4
+        with:
+          # Playground's CLI needs Node 24.18 or newer.
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            agent/package-lock.json
+      - run: npm ci
+      - name: WaaS Client
+        working-directory: waas-plugins/packages/waas-client
+        run: composer install --no-dev --no-interaction --prefer-dist
+      - name: Website assistant on Playground
+        working-directory: agent
+        run: npm ci && npm run test:playground
 
   imports-docker:
     # Moves sites into real MariaDB and WordPress containers (test/docker). Separate from `test` so that job stays fast.
