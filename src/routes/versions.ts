@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { withTransaction } from '../db.ts';
-import { badRequest } from '../errors.ts';
+import { badRequest, notFound } from '../errors.ts';
 import { compact, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
@@ -168,6 +168,21 @@ export function versionService(deps: Deps) {
   }
 
   /**
+   * The site types of the product's production version (its roles.json), read from the version's saved code
+   * the first time and kept. Storefronts load them here: the version's own site is stopped once it is built.
+   */
+  async function productionRoles(productId: string) {
+    const { rows } = await pool.query('SELECT id, status, roles FROM versions WHERE product_id = $1 AND is_production', [productId]);
+    const version = rows[0];
+    if (!version || version.status !== Status.Done) throw notFound('The product has no production version ready');
+    if (version.roles !== null) return version.roles as unknown;
+    const roles = await provisioner.readVersionRoles({ versionId: version.id });
+    if (roles === null) throw notFound(`Version ${version.id} has no site types (waas-client-data/roles.json)`);
+    await pool.query('UPDATE versions SET roles = $2 WHERE id = $1', [version.id, JSON.stringify(roles)]);
+    return roles;
+  }
+
+  /**
    * The production version of `sourceProductId` and its newest template, as they would build a store
    * now; 400 when it has none ready. What a new product can start from.
    */
@@ -206,7 +221,7 @@ export function versionService(deps: Deps) {
     return id;
   }
 
-  return { list, create, remove, setProduction, productionSource, copyProduction };
+  return { list, create, remove, setProduction, productionRoles, productionSource, copyProduction };
 }
 
 export function versionRoutes(deps: Deps) {
@@ -223,6 +238,8 @@ export function versionRoutes(deps: Deps) {
     await versions.remove(c.get('productId'), requiredUuidQuery(c, 'versionId'));
     return c.body(null, 200);
   });
+
+  app.get('/production/roles', async (c) => c.json(await versions.productionRoles(c.get('productId'))));
 
   app.put('/production', async (c) => {
     const body = validateBody<{ versionId: string }>('ProductionVersionParams', await readJson(c));

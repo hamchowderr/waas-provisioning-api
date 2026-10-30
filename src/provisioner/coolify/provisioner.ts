@@ -5,6 +5,7 @@ import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
 import { encodeConstants, renderCompose } from './compose.ts';
+import { readZipEntry } from '../../zipentry.ts';
 
 export interface CoolifyProvisionerConfig {
   /** e.g. https://coolify.example.com */
@@ -459,6 +460,15 @@ export class CoolifyProvisioner implements Provisioner {
     await this.s3.delete(keys.pluginChoices(versionId));
     await this.s3.delete(keys.upload(versionId, true));
     await this.s3.delete(keys.upload(versionId, false));
+  }
+
+  async readVersionRoles({ versionId }: { versionId: string }) {
+    const key = keys.code(versionId);
+    const size = await this.s3.head(key);
+    if (size === null) return null;
+    const read = async (start: number, end: number) => Buffer.from(await this.s3.getRange(key, start, end));
+    const bytes = await readZipEntry(read, size, 'wp-content/plugins/waas-client-data/roles.json', 1024 * 1024);
+    return bytes ? (JSON.parse(bytes.toString('utf8')) as unknown) : null;
   }
 
   async stopVersion({ versionId }: { versionId: string }) {

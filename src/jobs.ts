@@ -299,7 +299,8 @@ async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secr
   }
 
   // A delete queued meanwhile has already set Removing; leave that alone.
-  await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [version.id, Status.Done, Status.Pending]);
+  // roles: a rebuilt version is read again from its new code.
+  await pool.query('UPDATE versions SET status = $2, roles = NULL, date_changed = now() WHERE id = $1 AND status = $3', [version.id, Status.Done, Status.Pending]);
 
   // Its snapshots are taken, so the site isn't needed any more: 18 idle version sites once loaded the server.
   // The version is built either way, so a failed stop is only logged.

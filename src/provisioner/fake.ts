@@ -107,6 +107,14 @@ export class FakeProvisioner implements Provisioner {
     this.versions.delete(versionId);
   }
 
+  /** Each version's roles.json, as a test sets it. */
+  readonly versionRoles = new Map<string, unknown>();
+
+  async readVersionRoles({ versionId }: { versionId: string }) {
+    this.check('readVersionRoles');
+    return this.versionRoles.get(versionId) ?? null;
+  }
+
   async stopVersion(_input: { versionId: string }) {
     this.check('stopVersion');
   }
