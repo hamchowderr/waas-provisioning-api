@@ -42,6 +42,8 @@ ASSISTANT_MODEL=<Anthropic model id> ANTHROPIC_API_KEY=... DATABASE_URL=postgres
 | `ALLOWED_ORIGINS` | Optional: comma-separated addresses whose pages may call the assistant from the browser |
 | `PORT` | Default 3100 |
 
+In a container: `docker build -f agent/Dockerfile .` from the repository root (it reads the root `tsconfig.json` and the AnyPress stores skill).
+
 ## Tests
 
 The tests run the API itself in-process, on the API's test database (`TEST_DATABASE_URL`), with [AIMock](https://aimock.copilotkit.dev) playing the model, so every test decides exactly which tool the model calls and then checks what reached which website.
