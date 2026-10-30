@@ -1,7 +1,8 @@
+import { gunzipSync } from 'node:zlib';
 import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
-import { AGENT_COMMAND, AGENT_SCRIPT, CRON_LIMIT, renderCompose } from '../src/provisioner/coolify/compose.ts';
+import { AGENT_COMMAND, AGENT_GZ, AGENT_SCRIPT, CRON_LIMIT, ENV_VALUE_LIMIT, renderCompose } from '../src/provisioner/coolify/compose.ts';
 import { CRON_TASK, CoolifyProvisioner, formatMeta, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
@@ -452,7 +453,7 @@ describe('CoolifyProvisioner', () => {
     const starts = store.started;
     await p.setEmailPacks({ storeId: STORE_ID, purchased: 5000 });
     expect(store.started).toBe(starts + 1);
-    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_B64).toBe(Buffer.from(AGENT_SCRIPT).toString('base64'));
+    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_GZ).toBe(AGENT_GZ);
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size medium`);
     expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['configure', 'mail-packs']);
   });
@@ -695,7 +696,7 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreMail({ storeId: STORE_ID, mailbox: 'acme' })).toBe('updated');
     expect(store.started).toBe(starts + 1);
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
-    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_B64).toBe(Buffer.from(AGENT_SCRIPT).toString('base64'));
+    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_GZ).toBe(AGENT_GZ);
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
   });
@@ -1074,7 +1075,15 @@ describe('Store compose file', () => {
     const vars = compose.match(/\$\{?[A-Za-z0-9_]*/g) ?? [];
     expect(new Set(vars)).toEqual(new Set(['${SERVICE_PASSWORD_DB', '${SERVICE_PASSWORD_ROOT', '${WAAS_CONSTANTS_B64', '${WAAS_MAIL_B64', '${WAAS_INIT_PASSWORD', '${WAAS_SITE_KEY']));
     const parsed = parse(compose);
-    expect(Buffer.from(parsed.services.agent.environment.WAAS_AGENT_B64, 'base64').toString()).toBe(AGENT_SCRIPT);
+    expect(gunzipSync(Buffer.from(parsed.services.agent.environment.WAAS_AGENT_GZ, 'base64')).toString()).toBe(AGENT_SCRIPT);
+  });
+
+  it('keeps every environment value under the 128 KiB Linux allows, or the container never starts', () => {
+    const parsed = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3', size: 'large' }));
+    for (const service of Object.values(parsed.services) as { environment?: Record<string, string>; command?: string[] }[]) {
+      for (const value of Object.values(service.environment ?? {})) expect(Buffer.byteLength(String(value))).toBeLessThan(ENV_VALUE_LIMIT);
+      for (const arg of service.command ?? []) expect(Buffer.byteLength(arg)).toBeLessThan(ENV_VALUE_LIMIT);
+    }
   });
 
   it('turns off WP-cron on page loads, after the phpConstants so a constant of that name wins', () => {

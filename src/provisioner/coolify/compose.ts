@@ -1,9 +1,19 @@
 import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { stringify } from 'yaml';
 import { DEFAULT_SIZE, SIZES, type Size } from '../../plans.ts';
 
 /** The agent script, shipped to each store through an environment variable (no image registry). */
 export const AGENT_SCRIPT = readFileSync(new URL('./agent.php', import.meta.url), 'utf8');
+
+/**
+ * The agent script as the WAAS_AGENT_GZ value: gzipped, then base64. Linux refuses to start a container with any one
+ * environment variable over 128 KiB ("argument list too long"); the script alone passed that in base64 on 2026-10-30.
+ */
+export const AGENT_GZ = gzipSync(AGENT_SCRIPT, { level: 9 }).toString('base64');
+
+/** Linux's limit on one environment variable (MAX_ARG_STRLEN), with room for its name. */
+export const ENV_VALUE_LIMIT = 128 * 1024 - 64;
 
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
@@ -80,7 +90,7 @@ export const CRON_LIMIT = 120;
  * Docker Compose and Coolify would both try to interpolate.
  */
 export const AGENT_COMMAND = [
-  "file_put_contents('/tmp/waas-agent.php', base64_decode(getenv('WAAS_AGENT_B64')));",
+  "file_put_contents('/tmp/waas-agent.php', gzdecode(base64_decode(getenv('WAAS_AGENT_GZ'))));",
   'sleep(random_int(60, 300));',
   'while (true) {',
   "if (is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')) {",
@@ -157,7 +167,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         image: `wordpress:cli-php${input.phpVersion}`,
         restart: 'unless-stopped',
         user: '33:33',
-        environment: { ...wpEnv, WAAS_AGENT_B64: Buffer.from(AGENT_SCRIPT).toString('base64'), WAAS_INIT_PASSWORD: '${WAAS_INIT_PASSWORD:-}' },
+        environment: { ...wpEnv, WAAS_AGENT_GZ: AGENT_GZ, WAAS_INIT_PASSWORD: '${WAAS_INIT_PASSWORD:-}' },
         command: ['php', '-r', AGENT_COMMAND],
         volumes: ['wp:/var/www/html'],
         depends_on: ['wordpress'],
