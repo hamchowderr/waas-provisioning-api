@@ -85,6 +85,8 @@ Stores before setup 9 ran their cron as a Coolify scheduled task named `wp-cron`
 
 From setup 10 the agent container is held to half a core (`cpus: 0.5`), the database to as many cores as the plan's WordPress, and each cron command is stopped after `CRON_LIMIT` (120) seconds, as the Coolify task's 5-minute timeout used to. On 2026-10-24 one store's agent ran a core flat out under setup 9, which had neither limit.
 
+From setup 11 the agent script travels gzipped and base64-encoded in `WAAS_AGENT_GZ`. Linux won't start a container with any one environment variable over 128 KiB ("argument list too long"), and in plain base64 (`WAAS_AGENT_B64`, setup 10 and before) the script grew past that on 2026-10-30. A test keeps every value in the compose under the limit.
+
 **Pruning the executions.** Coolify trims that table itself, but only to 60 days: its scheduler runs `php artisan cleanup:database --yes` daily (`app/Console/Kernel.php`, not on dev instances), which deletes `scheduled_task_executions` rows older than `--keep-days` (default 60; no setting in the UI or API changes it). That leaves ~86,000 rows per store. The API cannot delete executions (no endpoint), so keep 7 days with one daily host cron job (step 4 of [self-hosting.md](self-hosting.md)). In Coolify → Servers → your server → Terminal (a root shell on the host), run `crontab -e` and add:
 
 ```

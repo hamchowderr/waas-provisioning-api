@@ -158,8 +158,9 @@ export interface StoreMeta {
  *    and health checks run every minute instead of every 5 or 10 seconds.
  * 10: the agent container is held to half a core, the database to the plan's cores, and each cron command stops
  *    after CRON_LIMIT seconds.
+ * 11: the agent script travels gzipped (WAAS_AGENT_GZ), as plain base64 it no longer fit in one environment variable.
  */
-export const STORE_SETUP = 10;
+export const STORE_SETUP = 11;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
