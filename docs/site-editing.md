@@ -25,7 +25,9 @@ WaaS Client's page (2.3.0) shows that to the website's administrators, and Allow
 
 ### Signed in by the storefront
 
-A storefront that has already signed in the store's owner (its customer account page) can skip that step for an app such as the website assistant: `POST /v1/tenants/site/sign-in?externalId=…` with the storefront's key and the app's `clientId`, `redirectUri` and PKCE `codeChallenge` answers with the app's redirect address carrying a code. It is the same code the website's own answer gives (`site:read site:write`, this store only, 10 minutes, once), and the app finishes it at `/oauth/token` with its verifier. The storefront's key can already edit the site through `/v1/tenants/site`, so this reaches nothing new.
+A storefront that has already signed in the store's owner (its customer account page) can skip that step for the website assistant. It calls `POST /v1/tenants/site/handoff?externalId=…` with the storefront's key and the assistant's `assistantUrl`, and the answer is the assistant's address with a one-time handoff. The assistant trades that handoff at `POST /oauth/site/handoff`, with its registered `client_id`, `redirect_uri` (which must be `<assistantUrl>/callback`) and PKCE `code_challenge`, for the same code the website's own answer gives: `site:read site:write`, this store only. It finishes the code at `/oauth/token` with its verifier. A handoff works once, for 2 minutes. The storefront's key can already edit the site through `/v1/tenants/site`, so this reaches nothing new.
+
+`POST /v1/tenants/site/sign-in` (the storefront passes the app's own `clientId`, `redirectUri` and `codeChallenge`, and gets the code back) still works for apps that send the owner to the storefront first.
 
 ## MCP tools
 

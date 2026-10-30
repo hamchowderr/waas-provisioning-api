@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { badRequest, HttpError } from '../errors.ts';
 import { isUuid, readJson } from '../http.ts';
-import { codeRedirect, issueCode, publicBase, sameRedirectUri } from '../oauth.ts';
+import { codeRedirect, createSiteHandoff, issueCode, publicBase, sameRedirectUri } from '../oauth.ts';
 import { validateBody } from '../openapi.ts';
 import { scopeOf } from '../../mcp/src/scopes.ts';
 import { callSite, siteKeys, type SiteRequest } from '../sitekeys.ts';
@@ -61,6 +61,22 @@ export function siteRoutes(deps: Deps) {
       [scopeOf('site', 'read'), scopeOf('site', 'write')].join(' '),
     );
     return c.json({ redirectUrl: codeRedirect(redirectUri, code, state, issuer) });
+  });
+
+  // The storefront's "Ask the website assistant" button: a one-time handoff of its signed-in owner to the
+  // assistant at assistantUrl, for this website only. The assistant needs no list of storefronts: the
+  // handoff itself shows the storefront (holding this key) vouched for the owner.
+  app.post('/site/handoff', async (c) => {
+    const tenant = await findTenant(pool, c);
+    const { assistantUrl } = validateBody<{ assistantUrl: string }>('SiteHandoffParams', await readJson(c));
+    if (tenant.status !== Status.Done) throw badRequest(`Tenant ${tenant.external_id} is ${statusName(tenant.status)}; wait until it is Done`);
+    if (tenant.is_suspended) throw badRequest(`Tenant ${tenant.external_id} is suspended`);
+    const assistant = new URL(assistantUrl);
+    if (assistant.protocol !== 'https:' && assistant.hostname !== 'localhost') throw badRequest('assistantUrl must be https');
+    const handoff = await createSiteHandoff(pool, tenant, assistant.origin + assistant.pathname.replace(/\/$/, ''));
+    const url = new URL(`${assistant.origin}${assistant.pathname.replace(/\/$/, '')}/from-shop`);
+    url.searchParams.set('handoff', handoff);
+    return c.json({ url: url.toString() });
   });
 
   return app;

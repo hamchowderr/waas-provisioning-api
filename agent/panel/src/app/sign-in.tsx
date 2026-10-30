@@ -11,7 +11,7 @@ export function SignIn({ site, error }: { site?: string; error?: string }) {
         <div className="flex flex-col gap-1">
           <h1 className="text-lg font-semibold">Website assistant</h1>
           <p className="text-sm text-muted-foreground">
-            Change your pages and design in plain words. Sign in with your website first: we’ll ask you to say yes in its dashboard.
+            Change your pages and design in plain words. Opening it from your account on the shop signs you in by itself. Here, type your website’s address, then log in to its WordPress to let the assistant in.
           </p>
         </div>
         <label className="flex flex-col gap-1.5 text-sm font-medium">
@@ -19,7 +19,7 @@ export function SignIn({ site, error }: { site?: string; error?: string }) {
           <Input name="site" defaultValue={site} placeholder="mybakery.com" autoComplete="url" required />
         </label>
         {error ? <p className="text-sm text-destructive">{MESSAGES[error] ?? error}</p> : null}
-        <Button type="submit">Sign in with your website</Button>
+        <Button type="submit">Continue with WordPress</Button>
       </form>
     </main>
   );
