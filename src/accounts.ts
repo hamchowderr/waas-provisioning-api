@@ -1,7 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
 import { INVITATION_DAYS, ORG_ROLES, type OrgRole } from './auth.ts';
-import { sendInvitation } from './authmail.ts';
+import { sendInvitation, welcomeText } from './authmail.ts';
 import { withTransaction } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
@@ -398,7 +398,9 @@ export function adminAccountRoutes(deps: Deps) {
       if (mail) {
         const inviter = rules.caller ? rules.caller.user.name || rules.caller.user.email : null;
         try {
-          await sendInvitation(mail, email, { url, organization: organization.name, inviter, days: INVITATION_DAYS });
+          // An account the platform admin sets up by hand gets the welcome an approved application would.
+          const welcome = !rules.caller && role === 'owner' ? welcomeText('resellerId' in owner) : null;
+          await sendInvitation(mail, email, { url, organization: organization.name, inviter, days: INVITATION_DAYS, welcome });
           emailed = true;
         } catch (err) {
           console.error(`Invitation ${invitation.id}: ${(err as Error).message}`);
