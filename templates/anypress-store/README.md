@@ -5,7 +5,7 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 
 | | |
 |---|---|
-| WordPress | 7.1.3 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
+| WordPress | 7.1.4 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Theme | The [AnyPress theme](https://github.com/hamchowderr/anypress-theme) (a release pinned by version and checksum in [`theme.sh`](theme.sh)), a block theme with 13 kits (a style and sections for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
 | Plugins | WaaS Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`) and these free wordpress.org plugins, all active: |
 
