@@ -119,7 +119,7 @@ describe('chat panel', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(panelUrl);
-    await expect(page.getByRole('button', { name: 'Sign in with your website' }).isVisible()).resolves.toBe(true);
+    await expect(page.getByRole('button', { name: 'Continue with WordPress' }).isVisible()).resolves.toBe(true);
     await context.close();
   });
 
@@ -176,7 +176,7 @@ describe('chat panel', () => {
     const page = await context.newPage();
     await page.goto(`${panelUrl}/from-shop?shop=${encodeURIComponent('https://evil.example.com/assistant')}`);
     expect(new URL(page.url()).origin).toBe(panelUrl);
-    await expect(page.getByRole('button', { name: 'Sign in with your website' }).isVisible()).resolves.toBe(true);
+    await expect(page.getByRole('button', { name: 'Continue with WordPress' }).isVisible()).resolves.toBe(true);
     await context.close();
   });
 });
