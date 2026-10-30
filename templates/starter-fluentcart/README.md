@@ -4,7 +4,7 @@ The first store template: a clean WordPress shop that every new store is created
 
 | | |
 |---|---|
-| WordPress | 7.1.3 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
+| WordPress | 7.1.4 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Plugins | WaaS Client (`waas-client`, built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`), FluentCart 1.7.0 (free, wordpress.org). Nothing else |
 | Theme | Twenty Twenty-Five 1.5, the only theme installed |
 | Pages | FluentCart's own: Shop (the home page), Cart, Checkout, Receipt, Review Your Order, Account. The sample post, sample page, privacy policy draft and comment are removed |

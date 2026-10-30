@@ -14,8 +14,8 @@
 set -euo pipefail
 
 # Pinned inputs. Bump these (and the checksums) to rebuild on newer releases.
-WP_VERSION=${WP_VERSION:-7.1.3}
-WP_SHA256=${WP_SHA256:-eb58a90ed55147f90f7bd55d0d3334960a69b7e8a4cc142c8ddfea8965218227}
+WP_VERSION=${WP_VERSION:-7.1.4}
+WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f938c5f87}
 # wordpress.org plugins: slug version sha256. All installed and active.
 PLUGINS="
 fluent-cart 1.9.0 0de495740dcdd2e3a2585c2658e5a74c89d98528b24e2c47011294f3cb1b3829

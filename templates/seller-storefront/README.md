@@ -6,7 +6,7 @@ who doesn't bring a WordPress site of their own. The API builds one with
 
 | | |
 |---|---|
-| WordPress | 7.1.3 for the build; storefronts run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
+| WordPress | 7.1.4 for the build; storefronts run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Theme | Twenty Twenty-Five 1.5, the only theme installed |
 | Plugins | WaaS Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-host` with its release script, at the version given to `build.sh`), FluentCart 1.9.0 and FluentAuth 3.0.5 (free, wordpress.org). All active |
 | Pages | FluentCart's own: Shop (the home page), Cart, Checkout, Receipt, Review Your Order, Account |

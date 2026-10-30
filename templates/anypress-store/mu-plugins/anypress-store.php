@@ -36,14 +36,15 @@ function anypress_remove_bundled_plugins(): void
             continue;
         }
         if (is_file($target)) {
-            @unlink($target);
+            wp_delete_file($target);
             continue;
         }
         $items = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($items as $item) {
-            $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- empty folders only, once, while setting up a new store.
+            $item->isDir() ? @rmdir($item->getPathname()) : wp_delete_file($item->getPathname());
         }
-        @rmdir($target);
+        @rmdir($target); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- as above.
     }
 }
 add_action('admin_init', 'anypress_remove_bundled_plugins');
@@ -258,7 +259,7 @@ add_action('init', function () {
         try {
             $steps[$plugin]();
         } catch (\Throwable $e) {
-            error_log("AnyPress store: owner details for $plugin: " . $e->getMessage());
+            error_log("AnyPress store: owner details for $plugin: " . $e->getMessage()); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- one plugin's setup failing must not stop the rest; the store's log is where it is looked into.
         }
         $applied[] = $plugin;
     }
@@ -293,7 +294,7 @@ add_action('init', function () {
     $pages = get_posts([
         'post_type' => 'page',
         'post_status' => ['publish', 'draft'],
-        'meta_key' => '_anypress_needs',
+        'meta_key' => '_anypress_needs', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- runs only when the set of active plugins changes.
         'numberposts' => -1,
         'suppress_filters' => true,
     ]);

@@ -10,16 +10,16 @@
 set -euo pipefail
 
 # Pinned inputs. Bump these (and the checksums) to rebuild on newer releases.
-WP_VERSION=${WP_VERSION:-7.1.3}
-WP_SHA256=${WP_SHA256:-eb58a90ed55147f90f7bd55d0d3334960a69b7e8a4cc142c8ddfea8965218227}
+WP_VERSION=${WP_VERSION:-7.1.4}
+WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f938c5f87}
 # wordpress.org plugins: slug version sha256. All installed and active (roles.json switches them per plan).
 PLUGINS="
 fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
-fluent-crm 3.2.6 ae51abf11c083cdab113b19161a9a4a09f47b794b620ec27aa798f066c80b6a4
+fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63e
 fluentform 6.2.16 9ec4fce3857a0c069dcb392f6e0e9bd1a5a1231d94a49a76d9768a40e973a7fd
 fluent-booking 2.5.0 1443134ef2f1ae24c17435bab81d6a15ba10136c15095c90e2d07de15f1c0eb0
 fluent-support 2.4.7 606b04ca47e8dfddcd241136953ed426fa7e60dcad03b3b1504285fda7be3e10
-fluent-affiliate 1.6.5 da885534b9ddfeb24c966ae09191065cbd950195ee3b7238de88ac4c04ab3820
+fluent-affiliate 1.7.0 f1c617715aaae58657b155c75752adab2db42dd1a8a896469823a19a3b3ee8c8
 easy-code-manager 10.58 39bfd2fe29b099147949086c42dfe715cedd4ddce3631c9ef33165470ed25667
 seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb9686fa8aa290
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
