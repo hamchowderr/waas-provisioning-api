@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { siteReport } from '../../src/sitereport.ts';
 
 /*
  * Moving a site in, end to end on real containers (npm run test:docker): the store agent's `restore` with `import`
@@ -247,6 +248,101 @@ describe('moving a site in, on MariaDB', () => {
     expect(option('home')).toBe(HOME);
     // Nothing of that kind was there, so nothing is reported cleared.
     expect(restored.cleared).toEqual([]);
+  });
+});
+
+/** A post row with the columns WordPress requires, under an id of our own. */
+const post = (id: number, type: string, content = '', status = 'publish') =>
+  "INSERT INTO `{p}posts` (ID, post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt, post_status, post_name, to_ping, pinged, post_modified, post_modified_gmt, post_content_filtered, guid, post_type)" +
+  ` VALUES (${id}, 1, NOW(), NOW(), '${content}', '${type} ${id}', '', '${status}', '${type}-${id}', '', '', NOW(), NOW(), '', 'https://old.example.com/?p=${id}', '${type}');`;
+const meta = (id: number, key: string, value: string) => `INSERT INTO \`{p}postmeta\` (post_id, meta_key, meta_value) VALUES (${id}, '${key}', '${value}');`;
+/** PHP's serialize() of a list or a map of strings, as WordPress stores arrays in options. */
+const serialize = (value: string[] | Record<string, string>): string => {
+  const entries = Array.isArray(value) ? value.map((v, i) => [i, v] as const) : Object.entries(value);
+  const str = (v: string) => `s:${Buffer.byteLength(v)}:"${v}";`;
+  return `a:${entries.length}:{${entries.map(([k, v]) => (typeof k === 'number' ? `i:${k};` : str(k)) + str(v)).join('')}}`;
+};
+const pluginFile = (name: string) => `<?php\n/*\nPlugin Name: ${name}\nVersion: 1.2.3\n*/\n`;
+
+describe("what's on a site moved in", () => {
+  it('counts Contact Form 7 with Flamingo, WooCommerce with HPOS off, and MailPoet, and never reads a payment key', () => {
+    const active = ['contact-form-7/wp-contact-form-7.php', 'flamingo/flamingo.php', 'woocommerce/woocommerce.php', 'mailpoet/mailpoet.php'];
+    moveIn('inventory', {
+      files: {
+        'plugins/contact-form-7/wp-contact-form-7.php': pluginFile('Contact Form 7'),
+        'plugins/flamingo/flamingo.php': pluginFile('Flamingo'),
+        'plugins/woocommerce/woocommerce.php': pluginFile('WooCommerce'),
+        'plugins/mailpoet/mailpoet.php': pluginFile('MailPoet'),
+        // Installed, not active: not in the report.
+        'plugins/gravityforms/gravityforms.php': pluginFile('Gravity Forms'),
+      },
+      sql: [
+        `UPDATE \`{p}options\` SET option_value = '${serialize(active)}' WHERE option_name = 'active_plugins';`,
+        "INSERT INTO `{p}options` (option_name, option_value, autoload) VALUES ('woocommerce_custom_orders_table_enabled', 'no', 'yes');",
+        `INSERT INTO \`{p}options\` (option_name, option_value, autoload) VALUES ('woocommerce_stripe_settings', '${serialize({ enabled: 'yes', testmode: 'no', secret_key: 'sk_live_not_a_real_key' })}', 'yes');`,
+        `INSERT INTO \`{p}options\` (option_name, option_value, autoload) VALUES ('woocommerce_cod_settings', '${serialize({ enabled: 'yes', title: 'Cash' })}', 'yes');`,
+        post(1001, 'wpcf7_contact_form'),
+        meta(1001, '_form', '[text* your-name] [email* your-email] [submit]'),
+        post(1002, 'wpcf7_contact_form'),
+        meta(1002, '_form', '[text* your-name] [tel* your-phone] [submit]'),
+        post(1003, 'flamingo_inbound'),
+        post(1004, 'flamingo_inbound'),
+        post(1005, 'flamingo_inbound', '', 'trash'),
+        post(1006, 'page', '<!-- wp:shortcode -->[contact-form-7 id=\"1001\" title=\"Contact\"]<!-- /wp:shortcode -->'),
+        post(1007, 'page', 'No form here'),
+        post(1008, 'product'),
+        post(1009, 'product'),
+        post(1010, 'shop_order', '', 'wc-completed'),
+        meta(1010, '_customer_user', '0'),
+        post(1011, 'shop_order', '', 'wc-processing'),
+        meta(1011, '_customer_user', '1'),
+        post(1012, 'shop_order', '', 'wc-completed'),
+        meta(1012, '_customer_user', '0'),
+        // HPOS off: its table is there but holds nothing that counts.
+        'CREATE TABLE `{p}wc_orders` (id bigint unsigned NOT NULL, type varchar(20), status varchar(20), customer_id bigint unsigned, PRIMARY KEY (id));',
+        'CREATE TABLE `{p}mailpoet_subscribers` (id int NOT NULL AUTO_INCREMENT, status varchar(12) NOT NULL, deleted_at timestamp NULL, PRIMARY KEY (id));',
+        "INSERT INTO `{p}mailpoet_subscribers` (status, deleted_at) VALUES ('subscribed', NULL), ('subscribed', NULL), ('unsubscribed', NULL), ('subscribed', NOW());",
+        'CREATE TABLE `{p}mailpoet_segments` (id int NOT NULL AUTO_INCREMENT, type varchar(90) NOT NULL, deleted_at timestamp NULL, PRIMARY KEY (id));',
+        "INSERT INTO `{p}mailpoet_segments` (type) VALUES ('default'), ('wp_users');",
+      ].join('\n'),
+    });
+    const started = Date.now();
+    const check = agent('check-site', { home: HOME });
+    expect(Date.now() - started).toBeLessThan(60_000);
+    expect(check).toMatchObject({ ok: true, loaded: true });
+    const { inventory } = check;
+    expect(inventory.plugins).toEqual([
+      { slug: 'contact-form-7', name: 'Contact Form 7', version: '1.2.3' },
+      { slug: 'flamingo', name: 'Flamingo', version: '1.2.3' },
+      { slug: 'woocommerce', name: 'WooCommerce', version: '1.2.3' },
+      { slug: 'mailpoet', name: 'MailPoet', version: '1.2.3' },
+    ]);
+    expect(inventory.found).toEqual({
+      'contact-form-7': { forms: 2, proFieldForms: 1, entries: 2, flamingo: true, pages: 1 },
+      woocommerce: { products: 2, hpos: false, orders: 3, guestOrders: 2, subscriptions: null, liveGateways: ['stripe'] },
+      // Its newsletters table isn't there: not counted.
+      mailpoet: { subscribers: 2, lists: 1, emails: null },
+    });
+    expect(inventory.errors).toEqual({});
+    expect(inventory.seconds).toBeLessThan(10);
+    expect(JSON.stringify(check)).not.toContain('sk_live');
+
+    const report = siteReport(inventory)!;
+    expect(report.items.map((i) => [i.plugin, i.route])).toEqual([
+      ['Contact Form 7', 'Needs Fluent Forms Pro'],
+      ['WooCommerce', 'Needs the FluentCart Migrator add-on'],
+      ['MailPoet', 'No Fluent route yet'],
+    ]);
+    expect(report.items[1]!.blockers.join(' ')).toMatch(/HPOS is off.*Live payment keys came across for Stripe/);
+  });
+
+  it('records a probe that fails and still answers the others', () => {
+    // A MailPoet table with no status column: its count fails, the rest is counted.
+    inAgent('sh', '-c', "wp --path=/var/www/html --skip-plugins --skip-themes db query 'DROP TABLE wp_mailpoet_subscribers; CREATE TABLE wp_mailpoet_subscribers (id int NOT NULL, PRIMARY KEY (id));'");
+    const check = agent('check-site', { home: HOME });
+    expect(check.inventory.errors).toEqual({ mailpoet: expect.stringMatching(/status/) });
+    expect(check.inventory.found).toHaveProperty('woocommerce');
+    expect(check.inventory.found).not.toHaveProperty('mailpoet');
   });
 });
 

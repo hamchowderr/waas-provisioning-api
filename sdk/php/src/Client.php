@@ -135,6 +135,18 @@ final class Client
     }
 
     /**
+     * How a store's move in went: waiting, moving, done or failed (with a reason), warnings to check and, once done,
+     * siteReport: what's on the moved site and how its data could move to a Fluent plugin.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @return array<string, mixed>
+     */
+    public function getTenantImport(array $tenant): array
+    {
+        return $this->call('getTenantImport', 'GET', '/v1/tenants/import', $this->ref($tenant));
+    }
+
+    /**
      * Adds $emails on top of the store's monthly plan; they never expire. $reference (your order id, say) makes a
      * repeat add nothing. The answer's `emailPacks` is the total bought for the store.
      *

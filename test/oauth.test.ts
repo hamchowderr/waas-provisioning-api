@@ -25,7 +25,7 @@ type Access = 'read' | 'write';
 const TOOLS: Record<string, { area: string; access?: Access; actions?: Record<string, Access> }> = {
   show_stores: { area: 'stores', access: 'read' },
   show_store: { area: 'stores', access: 'read' },
-  get_stores: { area: 'stores', actions: { list: 'read', get: 'read', wait: 'read' } },
+  get_stores: { area: 'stores', actions: { list: 'read', get: 'read', wait: 'read', move_in: 'read' } },
   create_store: { area: 'stores', access: 'write' },
   import_site: { area: 'stores', actions: { start: 'write', new_code: 'write' } },
   update_store: { area: 'stores', actions: { options: 'write', move: 'write' } },

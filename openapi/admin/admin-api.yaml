@@ -2705,6 +2705,129 @@ components:
         externalId: { type: string }
         importCode: { type: string, description: Starts with AP1. }
         pluginUrl: { type: string, description: Downloads the AnyPress Export plugin. }
+    SiteReport:
+      type: object
+      description: 'What is on a site moved in, found by the store once the move is built: one item for each form, shop, CRM, booking, support, affiliate or community plugin it knows, with how much data the plugin holds and how that data could move to a Fluent plugin. Counts only: never the data itself or any key.'
+      required:
+      - items
+      - plugins
+      - notes
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SiteReportItem'
+        plugins:
+          type: array
+          description: Every plugin active on the moved site
+          items:
+            type: object
+            required:
+            - slug
+            - name
+            - version
+            properties:
+              slug:
+                type: string
+                example: contact-form-7
+              name:
+                type: string
+                example: Contact Form 7
+              version:
+                type: string
+                example: '6.1'
+            additionalProperties: false
+        notes:
+          type: array
+          items:
+            type: string
+          description: What the store could not count, in plain words
+      additionalProperties: false
+    SiteReportItem:
+      type: object
+      required:
+      - area
+      - plugin
+      - slug
+      - counts
+      - fluentRoute
+      - fluentPlugin
+      - onFluent
+      - needsPro
+      - route
+      - willLose
+      - blockers
+      properties:
+        area:
+          type: string
+          enum:
+          - forms
+          - shop
+          - crm
+          - booking
+          - support
+          - affiliates
+          - community
+        plugin:
+          type: string
+          example: Contact Form 7
+        slug:
+          type: string
+          example: contact-form-7
+        version:
+          type: string
+          example: '6.1'
+        counts:
+          type: array
+          items:
+            type: object
+            required:
+            - name
+            - count
+            - label
+            properties:
+              name:
+                type: string
+                example: entries
+              count:
+                type: integer
+                minimum: 0
+              label:
+                type: string
+                example: 1,204 entries
+            additionalProperties: false
+        fluentRoute:
+          type: string
+          enum:
+          - native
+          - native-pro
+          - addon
+          - none
+          description: 'How a Fluent plugin can take the data over: its own importer (`native`), its importer with Pro (`native-pro`), a separate add-on (`addon`), or not yet (`none`)'
+        fluentPlugin:
+          type: string
+          example: Fluent Forms
+        onFluent:
+          type: boolean
+          description: The site already runs that Fluent plugin
+        needsPro:
+          type: boolean
+          description: The switch needs the Fluent plugin's Pro version, for the importer or for fields in use
+        route:
+          type: string
+          description: The route in a few words
+          example: Fluent Forms can bring this in
+        willLose:
+          type: array
+          items:
+            type: string
+          description: What a switch to the Fluent plugin would not bring across
+        blockers:
+          type: array
+          items:
+            type: string
+          description: What to fix or decide before switching
+      additionalProperties: false
     TenantDetail:
       type: object
       additionalProperties: false
@@ -2759,6 +2882,7 @@ components:
               type: array
               items: { type: string }
               description: What to check after the move (another PHP version, a newer WordPress, a failed check).
+            siteReport: { $ref: '#/components/schemas/SiteReport' }
         emailUsage:
           type: object
           description: >-

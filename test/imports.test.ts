@@ -259,6 +259,55 @@ describe('how a move went', () => {
     }
   });
 
+  it("reports what's on the moved site to the plugin, the storefront API and the dashboard, and keeps only the report", async () => {
+    t.provisioner.importCheck = {
+      ok: true, home: 200, login: 200, loaded: true, fatal: null,
+      inventory: {
+        plugins: [{ slug: 'contact-form-7', name: 'Contact Form 7', version: '6.1' }, { slug: 'woocommerce', name: 'WooCommerce', version: '10.2.1' }],
+        found: {
+          'contact-form-7': { forms: 2, proFieldForms: 0, entries: 14, flamingo: false, pages: 2 },
+          woocommerce: { products: 12, hpos: false, orders: 40, guestOrders: 9, subscriptions: null, liveGateways: ['stripe'] },
+        },
+        errors: {},
+        seconds: 0.4,
+      },
+    };
+    try {
+      const { body } = await createImport({ externalId: 'report-1' });
+      const waiting = await t.call('GET', '/v1/tenants/import?externalId=report-1');
+      expect(await waiting.json()).toMatchObject({ status: 'waiting', startedAt: null, onHold: false, warnings: [] });
+      t.provisioner.imports.set(body.id, 1024);
+      await plugin('start', { code: body.importCode, source: { phpVersion: '8.3.6', wordPressVersion: '6.8.1' } });
+      await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+
+      const status = (await plugin('status', { code: body.importCode })).body as { siteReport: { items: { plugin: string; blockers: string[]; route: string }[] } };
+      expect(status.siteReport.items.map((i) => [i.plugin, i.route])).toEqual([
+        ['Contact Form 7', 'Fluent Forms can bring this in'],
+        ['WooCommerce', 'Needs the FluentCart Migrator add-on'],
+      ]);
+      expect(status.siteReport.items[0]!.blockers[0]).toMatch(/^Flamingo is off/);
+      expect(status.siteReport.items[1]!.blockers).toHaveLength(2);
+
+      const res = await t.call('GET', '/v1/tenants/import?externalId=report-1');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        tenantId: body.id, externalId: 'report-1', status: 'done', expiresAt: expect.any(String), startedAt: expect.any(String), onHold: true, warnings: [], siteReport: status.siteReport,
+      });
+      const detail = (await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as Record<string, any>;
+      expect(detail.moveIn.siteReport).toEqual(status.siteReport);
+      // The raw counts aren't kept: the check is stored without them.
+      expect(detail.moveIn.check).toEqual({ ok: true, home: 200, login: 200, loaded: true, fatal: null });
+    } finally {
+      t.provisioner.importCheck = { ok: true, home: 200, login: 200, loaded: true, fatal: null };
+    }
+  });
+
+  it('answers 404 for the move of a store that was not moved in', async () => {
+    const res = await t.call('POST', '/v1/tenants', { body: { name: 'Plain', externalId: 'plain-report' } });
+    expect(res.status).toBe(200);
+    expect((await t.call('GET', '/v1/tenants/import?externalId=plain-report')).status).toBe(404);
+  });
+
   it('has no warnings when the old site matches the store and serves', async () => {
     const { body } = await createImport();
     t.provisioner.imports.set(body.id, 1024);

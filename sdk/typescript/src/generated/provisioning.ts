@@ -223,6 +223,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How a move in went
+         * @description Added for AnyPress.
+         *
+         *     For a tenant created with `uploadCustomSnapshot`: `waiting` for the site, `moving`, `done` or `failed` (with a `reason`). `warnings` lists what to check after the move. Once done, `siteReport` says what is on the moved site: its form, shop, CRM, booking, support, affiliate and community plugins, how much each holds, whether a Fluent plugin can bring that in (and whether it needs Pro), what a switch would lose and what blocks one.
+         */
+        get: operations["getTenantImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -729,7 +751,7 @@ export interface paths {
         put?: never;
         /**
          * Import status
-         * @description How the move is going: `waiting` for the upload, `moving`, `done` (with the site's `url` and `onHold`) or `failed` (with a `reason`). `warnings` lists what to check after the move, when there is anything.
+         * @description How the move is going: `waiting` for the upload, `moving`, `done` (with the site's `url`, `onHold` and `siteReport`, what is on the moved site) or `failed` (with a `reason`). `warnings` lists what to check after the move, when there is anything.
          */
         post: operations["getImportStatus"];
         delete?: never;
@@ -1609,6 +1631,80 @@ export interface components {
              *     ]
              */
             warnings?: string[];
+            siteReport?: components["schemas"]["SiteReport"];
+        };
+        TenantImportResult: {
+            /** Format: uuid */
+            tenantId: string;
+            externalId: string;
+            /** @enum {string} */
+            status: "waiting" | "moving" | "done" | "failed";
+            /**
+             * Format: date-time
+             * @description When the import code stops working if the move hasn't started
+             */
+            expiresAt: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** @description Whether the site is still on hold (no scheduled jobs, email only to its owner, not indexed) until it goes live */
+            onHold: boolean;
+            /** @description Once it failed, why, in words the site's owner can act on */
+            reason?: string;
+            /** @description What the owner should check once the site is moved */
+            warnings: string[];
+            siteReport?: components["schemas"]["SiteReport"];
+        };
+        /** @description What is on a site moved in, found by the store once the move is built: one item for each form, shop, CRM, booking, support, affiliate or community plugin it knows, with how much data the plugin holds and how that data could move to a Fluent plugin. Counts only: never the data itself or any key. */
+        SiteReport: {
+            items: components["schemas"]["SiteReportItem"][];
+            /** @description Every plugin active on the moved site */
+            plugins: {
+                /** @example contact-form-7 */
+                slug: string;
+                /** @example Contact Form 7 */
+                name: string;
+                /** @example 6.1 */
+                version: string;
+            }[];
+            /** @description What the store could not count, in plain words */
+            notes: string[];
+        };
+        SiteReportItem: {
+            /** @enum {string} */
+            area: "forms" | "shop" | "crm" | "booking" | "support" | "affiliates" | "community";
+            /** @example Contact Form 7 */
+            plugin: string;
+            /** @example contact-form-7 */
+            slug: string;
+            /** @example 6.1 */
+            version?: string;
+            counts: {
+                /** @example entries */
+                name: string;
+                count: number;
+                /** @example 1,204 entries */
+                label: string;
+            }[];
+            /**
+             * @description How a Fluent plugin can take the data over: its own importer (`native`), its importer with Pro (`native-pro`), a separate add-on (`addon`), or not yet (`none`)
+             * @enum {string}
+             */
+            fluentRoute: "native" | "native-pro" | "addon" | "none";
+            /** @example Fluent Forms */
+            fluentPlugin: string;
+            /** @description The site already runs that Fluent plugin */
+            onFluent: boolean;
+            /** @description The switch needs the Fluent plugin's Pro version, for the importer or for fields in use */
+            needsPro: boolean;
+            /**
+             * @description The route in a few words
+             * @example Fluent Forms can bring this in
+             */
+            route: string;
+            /** @description What a switch to the Fluent plugin would not bring across */
+            willLose: string[];
+            /** @description What to fix or decide before switching */
+            blockers: string[];
         };
         GetVersionQueryResult: {
             /**
@@ -2471,6 +2567,66 @@ export interface operations {
             };
             /** @description The tenant is still waiting for its site */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getTenantImport: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The move */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantImportResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The tenant was not moved in from another host */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

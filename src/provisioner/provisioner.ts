@@ -1,4 +1,5 @@
 import type { Size } from '../plans.ts';
+import type { SiteInventory } from '../sitereport.ts';
 
 /**
  * Everything that touches the machines stores run on. The API records state in Postgres and
@@ -260,6 +261,8 @@ export interface SiteCheck {
   fatal?: string | null;
   /** The check itself could not run. */
   error?: string;
+  /** What the moved site runs and holds (agent.php site_inventory), for the report after the move (src/sitereport.ts). */
+  inventory?: SiteInventory;
 }
 
 /** What a restored backup holds, as testRestore found it. */
