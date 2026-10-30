@@ -742,6 +742,21 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/go-live:
+    post:
+      operationId: adminGoLiveTenant
+      summary: Make a moved-in site live
+      description: >-
+        Ends the hold of a site moved in (onHold), as the storefront API's goLiveTenant does: its
+        scheduled jobs start, it emails everyone again and search engines may index it. A store that
+        isn't on hold is left as it is. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/TenantLifecycle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/domains/main:
     put:
       operationId: adminSetTenantMainDomain
@@ -2692,7 +2707,7 @@ components:
     TenantDetail:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, keepsOwnCode, isSuspended, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
+      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, keepsOwnCode, isSuspended, onHold, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -2726,6 +2741,23 @@ components:
                 tablePrefix: { type: string }
                 sizeBytes: { type: number }
                 uploadedBytes: { type: number }
+            reason: { type: string, description: Once the move failed, why, in words the site's owner can act on. }
+            check:
+              type: object
+              description: >-
+                What the store found when it checked the moved site once built: the HTTP status of its home and
+                login pages, whether WordPress loaded with every plugin, and the first PHP fatal error.
+              properties:
+                ok: { type: boolean }
+                home: { type: integer }
+                login: { type: integer }
+                loaded: { type: boolean }
+                fatal: { type: string, nullable: true }
+                error: { type: string, description: The check itself could not run. }
+            warnings:
+              type: array
+              items: { type: string }
+              description: What to check after the move (another PHP version, a newer WordPress, a failed check).
         emailUsage:
           type: object
           description: >-
@@ -2740,6 +2772,8 @@ components:
             checkedAt: { type: string, format: date-time }
         isSuspended: { type: boolean }
         dateSuspended: { type: string, format: date-time, nullable: true }
+        onHold: { type: boolean, description: 'A site moved in, held until it goes live (POST /admin/tenants/{id}/go-live): no scheduled jobs, email only to its owner, not indexed.' }
+        dateHeld: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }
         dateChanged: { type: string, format: date-time }
         wpOptionNames: { type: array, items: { type: string }, description: Names only; values can be secret. }
@@ -2839,7 +2873,7 @@ components:
     WebhookEventType:
       type: string
       description: See openapi/webhooks.yaml.
-      enum: [tenant.ready, tenant.updated, tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed, tenant.deleted, tenant.restored, tenant.rolled_back, tenant.backup_completed, tenant.backup_failed, tenant.failed, version.ready, version.deleted, version.failed, webhook.test]
+      enum: [tenant.ready, tenant.updated, tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed, tenant.live, tenant.deleted, tenant.restored, tenant.rolled_back, tenant.backup_completed, tenant.backup_failed, tenant.failed, version.ready, version.deleted, version.failed, webhook.test]
     WebhookEndpointParams:
       type: object
       properties:

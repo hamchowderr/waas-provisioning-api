@@ -94,8 +94,12 @@ export interface Provisioner {
 
   // Stores (tenants).
 
-  /** Creates a store from a snapshot on a version, with its constants, options and first user. */
-  createStore(input: CreateStoreInput): Promise<void>;
+  /**
+   * Creates a store from a snapshot on a version, with its constants, options and first user. A site moved in
+   * (snapshotId null) is built from its upload, held until it goes live (goLive), and then checked: the answer
+   * says whether it serves with its plugins loaded.
+   */
+  createStore(input: CreateStoreInput): Promise<{ check?: SiteCheck } | void>;
 
   /**
    * Sets the domains a store answers on. The main domain is SiteUrl and Home; the rest redirect to it.
@@ -174,6 +178,12 @@ export interface Provisioner {
   suspendStore(input: { storeId: string; brand?: Brand }): Promise<void>;
   resumeStore(input: { storeId: string }): Promise<void>;
 
+  /**
+   * Ends the hold of a site moved in (createStore with snapshotId null): its scheduled jobs start, it emails
+   * everyone again and search engines may index it. Nothing changes for a store that isn't held.
+   */
+  goLive(input: { storeId: string }): Promise<void>;
+
   deleteStore(input: { storeId: string }): Promise<void>;
 
   /**
@@ -240,6 +250,18 @@ export function storeFromAddress(platformFrom: string, { sender, mailbox }: Stor
   return mailbox ? `${mailbox}@${domain}` : platformFrom;
 }
 
+/** A site moved in, checked once built: its home and login pages' HTTP status, and the first PHP fatal error. */
+export interface SiteCheck {
+  ok: boolean;
+  home?: number;
+  login?: number;
+  /** WordPress loaded with every plugin and the theme. */
+  loaded?: boolean;
+  fatal?: string | null;
+  /** The check itself could not run. */
+  error?: string;
+}
+
 /** What a restored backup holds, as testRestore found it. */
 export interface RestoreTestResult {
   /** The site's title and address in the restored database. */
@@ -274,4 +296,11 @@ export interface CreateStoreInput {
   /** The store's mailbox at the platform's sending domain (StoreMailFrom); unset: the platform's address. */
   mailbox?: string;
   user?: { name: string; email: string; role: string; password?: string };
+  /**
+   * Holds the store until goLive: no cron, email only to its administrator and `holdAllow`, not indexed. A site
+   * moved in is always held; a held store restored after deletion is held again.
+   */
+  hold?: boolean;
+  /** Who else gets email while the store is held: its owner's addresses. */
+  holdAllow?: string[];
 }

@@ -200,6 +200,7 @@ x-webhooks:
       description: >-
         tenant.ready (created and answering), tenant.updated (wpOptions, phpConstants, a new size or email packs applied),
         tenant.version_changed, tenant.domains_changed, tenant.suspended, tenant.resumed,
+        tenant.live (a site moved in went live: its hold ended),
         tenant.deleted (data.tenant is the store as it was), tenant.restored (a deleted store is back),
         tenant.rolled_back (a live store went back to a backup), tenant.backup_completed and
         tenant.backup_failed (data.backupId; nightly backups included), and tenant.failed (data.action
@@ -273,6 +274,7 @@ components:
         - tenant.domains_changed
         - tenant.suspended
         - tenant.resumed
+        - tenant.live
         - tenant.deleted
         - tenant.restored
         - tenant.rolled_back
@@ -365,6 +367,7 @@ components:
                 statusName: { type: string }
                 size: { type: string, enum: [small, medium, large] }
                 isSuspended: { type: boolean }
+                onHold: { type: boolean, description: A site moved in that has not gone live yet }
             version:
               description: The version, shaped as an item of GET /v1/versions (version.* events).
               type: object
@@ -379,6 +382,6 @@ components:
             action:
               description: What failed (tenant.failed, version.failed).
               type: string
-              enum: [create, update, change_version, change_domains, delete, suspend, resume, restore, roll_back]
+              enum: [create, update, change_version, change_domains, delete, suspend, resume, go_live, restore, roll_back]
             backupId: { type: string, format: uuid, description: The backup (tenant.backup_completed, tenant.backup_failed) }
             endpointId: { type: string, format: uuid, description: The endpoint tested (webhook.test) }

@@ -12,7 +12,7 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 
 | Area | Tools (actions) |
 |---|---|
-| Stores | `show_stores`, `show_store`, `get_stores` (list, get, wait), `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, delete) |
+| Stores | `show_stores`, `show_store`, `get_stores` (list, get, wait), `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
 | Backups | `show_store_backups`, `manage_backups` (list, create, restore) |
 | Domains | `show_store_domains`, `manage_domain` (list, check, connect_link, add, set_main, remove) |
 | Email | `mail_domain` (get, set, remove) |
@@ -23,7 +23,7 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 ## Rules that apply to everything
 
 - **Writes are asynchronous.** `create_store`, `manage_backups` restore, `update_store` and domain changes return as soon as the work is scheduled. The store then shows `statusCode` 0 (Pending) until it reaches 1 (Done) or 2 (Failed). Call `get_stores` with `action: "wait"` before telling the user it's ready, and before the next write to the same store. If it returns `done: false`, call it again; store setup can take a few minutes.
-- **Ask before anything destructive.** `store_status` delete and suspend (suspend takes the site offline), `manage_backups` restore (it replaces the live files and database), `manage_domain` remove, `mail_domain` remove, `manage_versions` delete, `manage_webhooks` rotate_secret and delete, and `page_section` remove need the user's explicit yes for that store. Name the store and what will happen.
+- **Ask before anything destructive.** `store_status` delete and suspend (suspend takes the site offline), `manage_backups` restore (it replaces the live files and database), `manage_domain` remove, `mail_domain` remove, `manage_versions` delete, `manage_webhooks` rotate_secret and delete, `page_section` remove and `store_status` go_live need the user's explicit yes for that store. Name the store and what will happen.
 - **Show, don't dump.** When the user wants to see their stores, call `show_stores`; for one store, `show_store`; for its backups or domains, `show_store_backups` or `show_store_domains`. Clients that support MCP Apps render these as interactive screens. Otherwise summarize: name, status, main domain. Don't paste raw JSON unless asked.
 - **Errors carry the API's reason.** A tool error reads `The API refused <operation> (HTTP <status>): <message>`. Relay the message plainly and suggest the fix; don't retry a 400 unchanged.
 - If a tool or action is missing, the server may be read-only (`/mcp/read-only` or `WAAS_MCP_READ_ONLY=1`), or the connection wasn't allowed that area: whoever connected the app ticks what it may see and change per area (stores, backups, domains, email, versions, website pages and design). A tool then offers only the actions it may use. Say so, and that reconnecting can allow more, instead of looking for a workaround.
@@ -40,7 +40,9 @@ Repeating `create_store` with the same `externalId` answers with the store it al
 
 1. `import_site` with `action: "start"`, a `name`, an `externalId` and a `size` big enough for the site's files and database. It answers an `importCode` and `pluginDownload`.
 2. Tell the site owner: install the AnyPress Export plugin from `pluginDownload` on the old site, open Tools → Move to AnyPress and paste the code (or run `wp anypress-export send <code>`). Their old site is not changed. The code works for 7 days; `import_site` with `action: "new_code"` gives a fresh one.
-3. `get_stores` with `action: "wait"` until it is Done (the store stays Pending until the upload arrives and the move finishes, so call it again when it returns `done: false`). The site keeps its own plugins and themes. Then put it on the customer's domain as below.
+3. `get_stores` with `action: "wait"` until it is Done (the store stays Pending until the upload arrives and the move finishes, so call it again when it returns `done: false`). The site keeps its own plugins and themes.
+4. The moved site is **on hold** (`onHold: true`): it only sends email to the store's owner and account emails, doesn't run its scheduled tasks and asks search engines not to index it, so the old and new site don't both email customers or take orders. Tell the user, and have them check the site at its new address.
+5. Put it on the customer's domain as below. Once the old host has stopped (or the user says the new site should take over), `store_status` with `action: "go_live"`, then `get_stores` wait. Ask first: from then on the site sends all its email and runs its scheduled tasks.
 
 ## Put a store on the customer's own domain
 

@@ -204,7 +204,8 @@ export async function createTenant(
         snapshot.id,
         snapshot.name,
         snapshot.group_name,
-        body.wpOptions ?? {},
+        // A site moved in keeps its own options: none from the create call are written over them, now or on a rollback.
+        imported ? {} : (body.wpOptions ?? {}),
         encodePhpConstants(secrets, body.phpConstants ?? {}),
         Status.Pending,
         body.size ?? DEFAULT_SIZE,
