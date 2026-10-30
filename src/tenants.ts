@@ -151,7 +151,13 @@ export function toTenant(row: any) {
     keepsOwnCode: row.own_code || undefined,
     waitingForSite: row.waiting_for_site || undefined,
   });
-  return { ...tenant, isSuspended: row.is_suspended, dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null };
+  return {
+    ...tenant,
+    isSuspended: row.is_suspended,
+    dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null,
+    // A site moved in, held until its owner makes it live (goLiveTenant).
+    onHold: row.on_hold === true,
+  };
 }
 
 /** The emails of every pack bought for the tenant. */
@@ -181,7 +187,7 @@ export async function findTenant(pool: Pool, c: Context<AppEnv>, { allowWaiting 
   return rows[0];
 }
 
-// Suspend, resume and delete, shared by the storefront API (/v1/tenants) and the dashboard (/admin/tenants/:id).
+// Suspend, resume, go live and delete, shared by the storefront API (/v1/tenants) and the dashboard (/admin/tenants/:id).
 // Each takes the tenant row and leaves the checks of who may and in what state to the caller.
 interface TenantRef {
   id: string;
@@ -189,6 +195,7 @@ interface TenantRef {
   external_id: string;
   status: number;
   is_suspended: boolean;
+  on_hold?: boolean;
 }
 
 /** Takes the store offline. Backs it up first unless takeBackup is false; a suspended store is left as it is. */
@@ -221,6 +228,18 @@ export async function resumeTenant(pool: Pool, boss: PgBoss, tenant: TenantRef):
       [tenant.id, Status.Pending],
     );
     await enqueue(boss, client, { type: 'tenant.resume', tenantId: tenant.id });
+  });
+}
+
+/**
+ * Makes a site moved in live: its scheduled jobs start, it emails everyone again and may be indexed (docs/site-imports.md).
+ * A store that isn't held is left as it is.
+ */
+export async function goLiveTenant(pool: Pool, boss: PgBoss, tenant: TenantRef): Promise<void> {
+  if (!tenant.on_hold) return;
+  await withTransaction(pool, async (client) => {
+    await client.query('UPDATE tenants SET on_hold = false, date_held = NULL, status = $2, date_changed = now() WHERE id = $1', [tenant.id, Status.Pending]);
+    await enqueue(boss, client, { type: 'tenant.go-live', tenantId: tenant.id });
   });
 }
 

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_SIZE, isSize, type Size } from '../../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type StoreMailFrom } from '../provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
@@ -497,7 +497,7 @@ export class CoolifyProvisioner implements Provisioner {
   // Stores
 
   async createStore(input: CreateStoreInput) {
-    await this.buildStore(input, input.snapshotId === null ? keys.import(input.storeId) : keys.snapshot(input.snapshotId), input.snapshotId === null);
+    return this.buildStore(input, input.snapshotId === null ? keys.import(input.storeId) : keys.snapshot(input.snapshotId), input.snapshotId === null);
   }
 
   async restoreDeletedStore(input: Parameters<Provisioner['restoreDeletedStore']>[0]) {
@@ -505,8 +505,12 @@ export class CoolifyProvisioner implements Provisioner {
     await this.buildStore(store, keys.backup(backupId));
   }
 
-  /** `imported`: the source is a site moved in from another host, which the agent cleans up on the way in. */
-  private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string, imported = false) {
+  /**
+   * `imported`: the source is a site moved in from another host, which the agent cleans up on the way in and holds
+   * until it goes live. It comes with its own options, so the store's are not written over them, and it is checked
+   * once built (check-site): the answer carries what the check found.
+   */
+  private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string, imported = false): Promise<{ check?: SiteCheck }> {
     const version = await this.versionMeta(input.versionId);
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
@@ -526,22 +530,35 @@ export class CoolifyProvisioner implements Provisioner {
       envs,
     });
     const home = https(input.mainDomain);
+    const hold = imported || input.hold === true;
+    let check: SiteCheck | undefined;
     try {
-      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }) });
+      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
       if (!input.ownCode) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)) });
       // A site from elsewhere may come from an older WordPress than the version runs.
       if (imported) await this.exec(uuid, 'update-db', {});
       await this.exec(uuid, 'configure', {
         home,
-        options: input.wpOptions,
+        // A site moved in keeps its own title and settings.
+        options: imported ? {} : input.wpOptions,
         user: input.user && { name: input.user.name, email: input.user.email, role: input.user.role },
+        ...(hold && { holdAllow: input.holdAllow ?? [] }),
       });
+      // Whether the moved site serves with its plugins loaded. The store is built either way: what the check found
+      // is reported with the move, not a reason to build it again.
+      if (imported) {
+        check = await this.exec(uuid, 'check-site', { home }).then(
+          (found) => found as unknown as SiteCheck,
+          (err: unknown) => ({ ok: false, error: (err as Error).message.slice(0, 300) }),
+        );
+      }
     } finally {
       // The first user's password is needed once; don't leave it in Coolify.
       if (envs.WAAS_INIT_PASSWORD) await this.removeEnv(uuid, 'WAAS_INIT_PASSWORD');
     }
-    // Its agent runs its cron from now on (configure set the flag); a task left by an older retry goes.
+    // Its agent runs its cron from now on (configure set the flag, unless the store is held); a task left by an older retry goes.
     await this.removeCron(uuid);
+    return check ? { check } : {};
   }
 
   /**
@@ -834,6 +851,11 @@ export class CoolifyProvisioner implements Provisioner {
   async resumeStore({ storeId }: { storeId: string }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     await this.exec(store.uuid, 'resume', {});
+  }
+
+  async goLive({ storeId }: { storeId: string }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    await this.exec(store.uuid, 'go-live', {});
   }
 
   async deleteStore({ storeId }: { storeId: string }) {

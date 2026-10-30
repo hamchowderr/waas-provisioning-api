@@ -117,6 +117,11 @@ export class WaasClient {
     /** Takes the store offline (backing it up first unless takeBackup is false). */
     suspend: (ref: TenantRef, params: BodyOf<'suspendTenant'> = {}) => this.#call('suspendTenant', 'POST', '/v1/tenants/suspend', ref, params),
     resume: (ref: TenantRef) => this.#call('resumeTenant', 'POST', '/v1/tenants/resume', ref),
+    /**
+     * Makes a site moved in live (onHold true): its scheduled jobs start, it emails customers again and search
+     * engines may index it. A store that isn't on hold is left as it is.
+     */
+    goLive: (ref: TenantRef) => this.#call('goLiveTenant', 'POST', '/v1/tenants/go-live', ref),
     /** Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when backupId is omitted). */
     restore: (ref: TenantRef, params: BodyOf<'restoreTenant'> = {}) => this.#call('restoreTenant', 'POST', '/v1/tenants/restore', ref, params),
     /**

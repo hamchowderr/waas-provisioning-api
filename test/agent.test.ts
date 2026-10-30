@@ -307,6 +307,19 @@ do_action('shutdown');
     expect(existsSync(join(content(), '.waas-cron'))).toBe(true);
   });
 
+  it('keeps cron off while a moved-in store is held, serves it nothing from the cache, and starts cron when it goes live', async () => {
+    rmSync(join(content(), '.waas-cron'), { force: true });
+    writeFileSync(join(content(), '.waas-hold'), '');
+    configure();
+    expect(existsSync(join(content(), '.waas-cron'))).toBe(false);
+    expect(existsSync(join(content(), 'mu-plugins/waas-hold.php'))).toBe(true);
+    await visit('/held/', { 'x-body': '<html>held</html>' });
+    expect(saved()).toHaveLength(0);
+    execFileSync('php', [AGENT, 'go-live', Buffer.from('{}').toString('base64')], { env: { ...process.env, WAAS_ROOT: root } });
+    expect(existsSync(join(content(), '.waas-hold'))).toBe(false);
+    expect(existsSync(join(content(), '.waas-cron'))).toBe(true);
+  });
+
   it("leaves another cache plugin's drop-in alone", () => {
     writeFileSync(join(content(), 'advanced-cache.php'), '<?php // Another cache plugin');
     configure();

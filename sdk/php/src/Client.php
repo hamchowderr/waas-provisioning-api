@@ -123,6 +123,18 @@ final class Client
     }
 
     /**
+     * Makes a site moved in live (onHold true): its scheduled jobs start, it emails customers again and search
+     * engines may index it. A store that isn't on hold is left as it is.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @return array<string, mixed>
+     */
+    public function goLiveTenant(array $tenant): array
+    {
+        return $this->call('goLiveTenant', 'POST', '/v1/tenants/go-live', $this->ref($tenant));
+    }
+
+    /**
      * Adds $emails on top of the store's monthly plan; they never expire. $reference (your order id, say) makes a
      * repeat add nothing. The answer's `emailPacks` is the total bought for the store.
      *

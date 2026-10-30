@@ -9,15 +9,31 @@ For whoever runs the API. A WordPress site running on another host can be moved 
 3. **The plugin's calls** take the code in the JSON body and no API key (the token is the credential), and are not request-logged:
    - `POST /imports/upload` answers a 12-hour upload link (`s3://$S3_BUCKET/imports/<store id>`), the most the archive may hold (the store size's storage, at most 5 GB, one PUT's limit) and the store's name, size and address.
    - `POST /imports/start` checks the uploaded size, records what the plugin says about the old site (`tenant_imports.source`: home, WordPress and PHP versions, table prefix, size) and queues `tenant.create`.
-   - `POST /imports/status` answers `waiting`, `moving`, `done` (with the store's `url`) or `failed`.
-4. **The store is built from the archive.** `tenant.create` makes the store as usual, then the agent's `restore` with `import: true`: it unpacks the archive, removes what must not come along (host drop-ins such as `object-cache.php` and `advanced-cache.php`, backup plugins' folders, the export plugin, and managed hosts' must-use plugins, see `IMPORT_DROP` in `agent.php`), loads the database, renames its tables to the store's prefix (fixing the prefixed option and user meta keys), then runs `update-db` and `configure` (the store's address, its options and constants, the owner's user). Version code is not copied in. The upload is deleted once the store is Done.
-5. **Afterwards** the store is an ordinary store that keeps its own code: moving it to another version, rolling it back, restoring it and restoring it after deletion never replace its plugins and themes (`keepsOwnCode: true`). Its updates are the site owner's, as on any WordPress.
+   - `POST /imports/status` answers `waiting`, `moving`, `done` (with the store's `url` and `onHold`) or `failed` (with a `reason`). Once the move has run, `warnings` lists anything the owner should check (below).
+4. **The store is built from the archive.** `tenant.create` makes the store as usual, then the agent's `restore` with `import: true`: it unpacks the archive, removes what must not come along (host drop-ins such as `object-cache.php` and `advanced-cache.php`, backup plugins' folders, the export plugin, managed hosts' must-use plugins, and page builders' CSS caches, see `IMPORT_DROP` in `agent.php`), loads the database and renames its tables to the store's prefix. Only WordPress's own prefixed keys are renamed with them (the `user_roles` option, and each user's capabilities, level, screen settings and preferences): a plugin's option that happens to start with the old prefix keeps its name, so a prefix such as `site_` leaves `site_icon` and `site_logo` alone.
+5. **The site's addresses move to the store.** Every link to the old address becomes the store's: over http and https, on the `www.` and bare forms of its host, with its port and path (a site at `https://old.com/blog` comes to the store's root), and as written, JSON-escaped (`https:\/\/old.com`, as page builders keep them) and URL-encoded (`https%3A%2F%2Fold.com`). A custom content address (Bedrock's `/app`, when the export plugin sends `contentUrl` in `waas.json`) becomes the store's `/wp-content`. Post GUIDs are left as they were. An upload folder or upload address that points outside the store (`upload_path`, `upload_url_path`) and Elementor's cached CSS are cleared. Then `update-db` and `configure` run (the store's address, its constants, the owner's user). The options sent when the store was created are not written over the moved site's own (its title and settings stay); send them with an update after the move if you want them.
+6. **The site is checked.** The store loads the moved site's home page and `/wp-login.php` from inside its own network, and loads WordPress once with every plugin and the theme. A page that fails, or a PHP fatal error, does not stop the move: the store is built, and the warning (with the first PHP error, without server paths) is in `/imports/status` and the dashboard, so the owner can fix or switch off the plugin at fault. The warnings also say when the old site ran another PHP than the store (8.3), or a newer WordPress than the store's version.
+7. **The store is on hold until it goes live** (`onHold: true` on the tenant). The old site usually still runs while the owner looks over the new one, so the moved store must not act as if it were the live site:
+   - its scheduled tasks don't run (no WP-cron or Action Scheduler: no subscription renewals, order clean-ups, newsletter or feed syncs, backups to the old site's storage);
+   - it sends email only to its administration address and to the people with an account on its storefront; every other email is held, not sent, and the last 20 held (subject, and recipients partly hidden) are kept in the `waas_hold_mail` option;
+   - it asks search engines not to index it (`noindex` in the page and an `X-Robots-Tag` header, and a `robots.txt` that disallows everything);
+   - its administrators see a notice that it is on hold.
+
+   When the owner is ready (usually once the domain points at the store), `POST /v1/tenants/go-live` (the dashboard's *Go live*, `POST /admin/tenants/:id/go-live`, or the connector's `store_status` with `go_live`) ends the hold: cron starts, email goes to everyone and it may be indexed. Webhooks get `tenant.live`. Restoring, rolling back or moving a held store keeps it held, and a held store restored after deletion comes back held.
+8. **Afterwards** the store is an ordinary store that keeps its own code: moving it to another version, rolling it back, restoring it and restoring it after deletion never replace its plugins and themes (`keepsOwnCode: true`). Its updates are the site owner's, as on any WordPress. The upload is deleted once the store is Done.
+
+## When a move fails
+
+`/imports/status` and the dashboard give a `reason` the owner can act on: the export is missing its database or files, the upload could not be read (run the export again), the database could not be imported, the database has two sets of WordPress tables whose names collide, or the site is a multisite network. Anything else says to contact support; the full error is on the Jobs page.
 
 ## Limits
 
-- Multisite networks are refused by the plugin.
+- Multisite networks are refused by the plugin and by the store.
 - The archive must fit the store's storage (5, 10 or 25 GB by size) and 5 GB in all. A larger site needs a larger size, or its media moved separately.
 - The old host needs PHP 7.4+, zlib and cURL, and room in its uploads folder for the archive.
+- `wp-config.php` is not moved: licence keys and other constants kept there (and its salts, so everyone signs in again) must be added to the store's constants.
+- Links to the old site inside theme and plugin files (CSS and JavaScript) are not rewritten; page builders' CSS caches are cleared and written again.
+- Changes on the old site after the export (new orders, form entries) are not in the store.
 - Store email, domains, backups and the cron task are the store's, as for any store. The old site's address keeps working where it is until its DNS is moved.
 
 ## Housekeeping
