@@ -1,7 +1,7 @@
 import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
 import { magicLink, organization } from 'better-auth/plugins';
-import { sendSignInLink, type AuthMail } from './authmail.ts';
+import { ANYPRESS_MAIL, sendSignInLink, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
@@ -49,8 +49,17 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
   // Sign-in links go out like the stores' email unless AUTH_MAIL_KEY / AUTH_MAIL_FROM say otherwise.
   const mailKey = env.AUTH_MAIL_KEY?.trim() || env.STORE_SMTP_PASSWORD?.trim();
   const mailFrom = env.AUTH_MAIL_FROM?.trim() || env.STORE_MAIL_FROM?.trim();
+  // Under the default AnyPress name the footer and logo are AnyPress's; another name sets its own or goes without.
+  const brand = env.AUTH_BRAND?.trim();
   const mail = mailKey && mailFrom
-    ? { key: mailKey, from: mailFrom, brand: env.AUTH_BRAND?.trim() || 'AnyPress', apiUrl: env.TOSEND_API_URL?.trim() || undefined }
+    ? {
+        key: mailKey,
+        from: mailFrom,
+        brand: brand || 'AnyPress',
+        apiUrl: env.TOSEND_API_URL?.trim() || undefined,
+        supportEmail: env.AUTH_SUPPORT_EMAIL?.trim() || (brand ? undefined : ANYPRESS_MAIL.supportEmail),
+        logoUrl: env.AUTH_LOGO_URL?.trim() || (brand ? undefined : ANYPRESS_MAIL.logoUrl),
+      }
     : undefined;
   return { url, secret, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE'), mail };
 }

@@ -118,7 +118,8 @@ export async function brandedMail(pool: Deps['pool'], mail: AuthMail, productId:
     pool.query('SELECT name FROM products WHERE id = $1', [productId]),
   ]);
   const name = brand?.name ?? (address ? (product.rows[0]?.name as string | undefined) : undefined);
-  return name ? { ...mail, brand: name, poweredBy: mail.brand } : mail;
+  // The seller's own support address, if any; the platform's logo and address aren't theirs to show.
+  return name ? { ...mail, brand: name, poweredBy: mail.brand, supportEmail: brand?.supportEmail ?? undefined, logoUrl: undefined } : mail;
 }
 
 interface Fields {

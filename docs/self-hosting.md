@@ -254,7 +254,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
 | `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
-| `AUTH_URL`, `AUTH_SECRET` | off | Dashboard sign-in. With `AUTH_GITHUB_ID`/`_SECRET`, `AUTH_GOOGLE_ID`/`_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM`, `AUTH_BRAND` ([accounts.md](accounts.md)) |
+| `AUTH_URL`, `AUTH_SECRET` | off | Dashboard sign-in. With `AUTH_GITHUB_ID`/`_SECRET`, `AUTH_GOOGLE_ID`/`_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM`, `AUTH_BRAND`, `AUTH_SUPPORT_EMAIL`, `AUTH_LOGO_URL` ([accounts.md](accounts.md)) |
 | `BRAND_DOMAIN` | off | Reserves this domain and every name under it |
 | `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID`, `DOMAIN_CONNECT_IPV6` | on with `PLATFORM_DOMAIN` or `BRAND_DOMAIN`, none, `_dck1`, `BRAND_DOMAIN` else `PLATFORM_DOMAIN`, none | [domain-connect.md](domain-connect.md) |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |

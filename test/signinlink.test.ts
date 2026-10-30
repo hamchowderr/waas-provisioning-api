@@ -143,7 +143,25 @@ describe('sign-in email settings', () => {
       from: 'no-reply@anypress.io',
       brand: 'AnyPress',
       apiUrl: undefined,
+      supportEmail: 'support@anypress.io',
+      logoUrl: 'https://anypress.io/logo-512.png',
     });
+  });
+
+  it("shows AnyPress's address and logo only under the AnyPress name", () => {
+    const env = { ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'a@x.example', AUTH_BRAND: 'Acme Sites' };
+    expect(loadAuthConfig(env)!.mail).toMatchObject({ brand: 'Acme Sites', supportEmail: undefined, logoUrl: undefined });
+    expect(loadAuthConfig({ ...env, AUTH_SUPPORT_EMAIL: 'help@acme.example' })!.mail).toMatchObject({ supportEmail: 'help@acme.example' });
+  });
+
+  it('puts the message, one button and the support address in the email', async () => {
+    let body: any;
+    const capture = async (_: unknown, init?: RequestInit) => ((body = JSON.parse(String(init!.body))), new Response('{}', { status: 200 }));
+    await sendSignInLink({ ...MAIL, supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' }, 'a@b.example', 'https://x.example/l?a=1&b=2', capture as typeof fetch);
+    expect(body.html).toContain('<img src="https://anypress.io/logo-512.png"');
+    expect(/href="([^"]+)"/.exec(body.html)![1]).toBe('https://x.example/l?a=1&amp;b=2');
+    expect(body.html).toContain('mailto:support@anypress.io');
+    expect(body.text).toMatch(/Questions\? Write to support@anypress\.io\.$/);
   });
 
   it('prefers AUTH_MAIL_KEY and AUTH_MAIL_FROM, and is off without a key', () => {
