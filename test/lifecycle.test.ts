@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { purgeExpiredBackups, stopBuiltVersions } from '../src/jobs.ts';
 import type { Provisioner } from '../src/provisioner/provisioner.ts';
 import { Status } from '../src/status.ts';
-import { setup, waitFor, type TestContext } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 
@@ -12,7 +12,7 @@ const backups = async (externalId: string) => (await (await t.call('GET', `/v1/t
 const settled = (externalId: string) => waitFor(async () => (await getTenant(externalId))?.statusCode === Status.Done);
 
 async function newTenant(name: string): Promise<Tenant> {
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name } })).json()) as Tenant;
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name } })).json()) as Tenant;
   await settled(tenant.externalId);
   return tenant;
 }
@@ -162,11 +162,11 @@ describe('suspend, resume and backups', () => {
     await deleteTenant(a.externalId);
     expect((await restore(a.externalId, { backupId: backupOfB })).status).toBe(400);
 
-    const c = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Domain Owner', customDomainName: 'owned.example.com' } })).json()) as Tenant;
+    const c = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Domain Owner', customDomainName: 'owned.example.com' } })).json()) as Tenant;
     await settled(c.externalId);
     await backUp(c.externalId);
     await deleteTenant(c.externalId);
-    const squatter = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Squatter', customDomainName: 'owned.example.com' } })).json()) as Tenant;
+    const squatter = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Squatter', customDomainName: 'owned.example.com' } })).json()) as Tenant;
     await settled(squatter.externalId);
     expect(((await (await restore(c.externalId)).json()) as any).message).toMatch(/owned.example.com/);
   });

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Status } from '../src/status.ts';
 import { dnsSafeLabel } from '../src/tenants.ts';
 import { contractChecker, operations } from './contract.ts';
-import { setup, waitFor, type TestContext } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 const phase1 = operations.filter((o) => o.phase === 1);
 
@@ -140,7 +140,7 @@ describe('Phase 1 operations', () => {
   });
 
   it('createTenant: customDomain is absent, not null or "", without a custom domain', async () => {
-    const body: any = await expectContract('createTenant', await t.call('POST', '/v1/tenants', { body: { name: 'No Custom Domain' } }));
+    const body: any = await expectContract('createTenant', await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'No Custom Domain' } }));
     expect('customDomain' in body).toBe(false);
     const [created]: any = await waitFor(async () => {
       const list: any = await (await t.call('GET', `/v1/tenants?externalId=${body.externalId}`)).json();
@@ -305,7 +305,7 @@ describe('Phase 1 operations', () => {
       return r;
     }));
     const externalId = 'example-store-42';
-    await t.call('POST', '/v1/tenants', { body: { name: 'Delete Me', externalId } });
+    await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Delete Me', externalId } });
     await expectContract('deleteTenant', await t.call('DELETE', `/v1/tenants?tenantId=${externalId}`));
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as unknown[]).length === 0);
   });
@@ -372,7 +372,7 @@ describe('Phase 1 operations', () => {
     const groups: any = await expectContract('listSnapshots', await t.call('GET', '/v1/snapshots?onlyProductionVersion=true&groupName=peptide-starter'));
     expect(groups).toEqual([expect.objectContaining({ versionId: version.id, name: 'Peptide Starter', groupName: 'peptide-starter', isTenantSnapshot: true })]);
 
-    const store = (await (await t.call('POST', '/v1/tenants', { body: { name: 'From Template', groupName: 'peptide-starter' } })).json()) as any;
+    const store = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'From Template', groupName: 'peptide-starter' } })).json()) as any;
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${store.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
     const [built]: any = await (await t.call('GET', `/v1/tenants?externalId=${store.externalId}`)).json();
     expect(built).toMatchObject({ versionId: version.id, basedOnSnapshotId: groups[0].id, snapshotGroupName: 'peptide-starter' });
@@ -385,7 +385,7 @@ describe('Phase 1 operations', () => {
 
   it('400 responses carry an ExceptionResult', async () => {
     // A live tenant, so the domain cases fail on their own input and not on an unknown tenant.
-    const live = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Error Cases' } })).json()) as { externalId: string };
+    const live = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Error Cases' } })).json()) as { externalId: string };
     tenant = { ...tenant, externalId: live.externalId };
     const cases: [string, Promise<Response>][] = [
       ['createVersion', t.call('POST', '/v1/versions', { body: { name: 'v2' } })],
@@ -393,7 +393,7 @@ describe('Phase 1 operations', () => {
       ['setProductionVersion', t.call('PUT', '/v1/versions/production', { body: [] })],
       ['listSnapshots', t.call('GET', '/v1/snapshots?onlyProductionVersion=maybe')],
       ['downloadSnapshot', t.call('GET', '/v1/snapshots/download')],
-      ['createTenant', t.call('POST', '/v1/tenants', { body: { name: 'x', customDomainName: 'https://shop.example.com/' } })],
+      ['createTenant', t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'x', customDomainName: 'https://shop.example.com/' } })],
       ['updateTenantOptionsAndConstants', t.call('PUT', '/v1/tenants', { body: {} })],
       ['deleteTenant', t.call('DELETE', '/v1/tenants')],
       ['moveTenantToAVersion', t.call('POST', '/v1/tenants/version?externalId=nobody', { body: { targetVersionId: crypto.randomUUID() } })],

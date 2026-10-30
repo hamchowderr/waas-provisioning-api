@@ -16,7 +16,8 @@
         "name": "email",
         "type": "email",
         "label": "Client Email",
-        "help": "Makes a WordPress login for your client with this email."
+        "required": true,
+        "help": "Makes a WordPress login for your client with this email. Every site needs one."
     },
     {
         "name": "username",

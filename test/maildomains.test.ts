@@ -10,7 +10,7 @@ import type { StoreSender } from '../src/provisioner/provisioner.ts';
 import { Status } from '../src/status.ts';
 import { dnsSafeLabel } from '../src/tenants.ts';
 import type { SendingDomain, SendingDomains } from '../src/tosend.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
@@ -74,7 +74,7 @@ beforeAll(async () => {
   const versionId = ((await res.json()) as { id: string }).id;
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId } });
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Mail Shop' } })).json()) as { id: string; externalId: string };
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Mail Shop' } })).json()) as { id: string; externalId: string };
   tenantId = tenant.id;
   await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
 });
@@ -145,7 +145,7 @@ describe('store sending domains from the storefront', () => {
   }
 
   it("lets a storefront set, read and remove its own store's sending domain, and nobody else's", async () => {
-    const tenant = (await (await t.call('POST', '/v1/tenants', { body: { name: 'Plugin Shop' } })).json()) as { id: string; externalId: string };
+    const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Plugin Shop' } })).json()) as { id: string; externalId: string };
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
     const q = `externalId=${tenant.externalId}`;
 

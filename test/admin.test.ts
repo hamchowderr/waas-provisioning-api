@@ -8,7 +8,7 @@ import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { QUEUE } from '../src/queue.ts';
 import { Status } from '../src/status.ts';
-import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
@@ -44,7 +44,7 @@ async function admin(method: string, path: string, expected = 200, body?: unknow
 const tenantStatus = async (externalId: string) => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as any[])[0]?.statusCode;
 
 async function newTenant(body: object, auth?: string) {
-  const tenant = (await (await t.call('POST', '/v1/tenants', { body, auth })).json()) as { id: string; externalId: string };
+  const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, ...body }, auth })).json()) as { id: string; externalId: string };
   await waitFor(async () => {
     const res = await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`, { auth });
     return ((await res.json()) as any[])[0]?.statusCode === Status.Done;
@@ -131,7 +131,7 @@ describe('admin endpoints', () => {
     expect(detail.domains).toHaveLength(2);
     expect(detail.backups).toHaveLength(1);
     expect(detail.recentJobs.map((j: any) => j.type)).toEqual(expect.arrayContaining(['tenant.create', 'tenant.backup']));
-    expect(detail.wpOptionNames).toEqual(['blogname']);
+    expect([...detail.wpOptionNames].sort()).toEqual(['admin_email', 'blogname']);
     expect(JSON.stringify(detail)).not.toContain('secret-ish value');
     await admin('GET', `/admin/tenants/${crypto.randomUUID()}`, 404);
   });

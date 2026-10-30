@@ -31,6 +31,9 @@ export interface TestContext {
   close(): Promise<void>;
 }
 
+/** The store owner every new store needs (wordPressUserName and wordPressUserEmail). */
+export const OWNER = { wordPressUserName: 'owner', wordPressUserEmail: 'owner@example.com' };
+
 export const basic = (key: string, secret: string) => `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`;
 
 /** Wipes the test database, migrates it, and starts the app with a queue worker and the fake provisioner. */

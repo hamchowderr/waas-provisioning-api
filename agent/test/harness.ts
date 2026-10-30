@@ -62,7 +62,7 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
 
   const stores: Store[] = [];
   for (const name of storeNames) {
-    await waas.tenants.create({ name, externalId: name });
+    await waas.tenants.create({ name, externalId: name, wordPressUserName: 'owner', wordPressUserEmail: 'owner@example.com' });
     const done = await waas.waitForTenant({ externalId: name }, { intervalMs: 100, timeoutMs: 15_000 });
     // An access token as the API's sign-in issues it: this store only, its pages and design only.
     const token = randomBytes(32).toString('base64url');

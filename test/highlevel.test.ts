@@ -120,7 +120,7 @@ describe('actions', () => {
     expect((await app('POST', '/v1/apps/actions/get-site', { data: { externalId: 'x' } }, partner)).status).toBe(400);
     const other = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Someone else') RETURNING id")).rows[0]!.id;
     expect((await app('POST', '/v1/apps/actions/get-site', { data: { externalId: 'x', storefront: other } }, partner)).status).toBe(403);
-    const named = await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Partner Site', storefront: t.productId }, extras: { contactId: 'contact77' } }, partner);
+    const named = await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Partner Site', email: 'owner@example.com', storefront: t.productId }, extras: { contactId: 'contact77' } }, partner);
     expect(named.status).toBe(200);
     const header = await app('POST', '/v1/apps/actions/get-site', { data: { externalId: 'contact77' } }, { ...partner, 'X-AnyPress-Storefront': t.productId });
     expect(await header.json()).toMatchObject({ name: 'Partner Site' });
@@ -156,7 +156,7 @@ describe('install and triggers', () => {
     const { rows } = await t.pool.query("SELECT event_types FROM webhook_endpoints WHERE kind = 'highlevel'");
     expect(rows).toEqual([{ event_types: ['tenant.ready'] }]);
 
-    const created = await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Trigger Site' }, extras: { contactId: 'contact9' } });
+    const created = await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Trigger Site', email: 'owner@example.com' }, extras: { contactId: 'contact9' } });
     const siteId = ((await created.json()) as { siteId: string }).siteId;
     const hit = await waitFor(async () => received.find((r) => r.path.endsWith('/trigger-1')));
     expect(hit.headers.authorization).toBe('Bearer location-token-loc-9');
@@ -175,7 +175,7 @@ describe('install and triggers', () => {
       triggerData: { id: 'trigger-2', eventType: 'CREATED', targetUrl: `${base}/elsewhere`, filters: [] },
       extras: { locationId: 'loc-9', companyId: 'company-1' },
     });
-    await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Elsewhere Site' }, extras: { contactId: 'contact10' } });
+    await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Elsewhere Site', email: 'owner@example.com' }, extras: { contactId: 'contact10' } });
     const hit = await waitFor(async () => received.find((r) => r.path === '/elsewhere' && JSON.parse(r.body).event === 'tenant.ready'));
     expect(hit.headers.authorization).toBeUndefined();
     t.deps.config.webhooks!.highlevel = { clientId: 'client-1', clientSecret: 'client-secret', apiUrl: base };

@@ -58,16 +58,15 @@ beforeAll(async () => {
   assistant = serve({ fetch: h.app.fetch, port: assistantPort });
   const apiPort = await freePort();
   api = serve({ fetch: h.t.app.fetch, port: apiPort });
-  // The shop's "Website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery".
-  shop = createHttpServer(async (request, response) => {
-    const asked = new URL(request.url ?? '/', shopUrl).searchParams;
-    const answer = await h.t.app.request('/v1/tenants/site/sign-in?externalId=bakery', {
+  // The shop's "Ask the website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery".
+  shop = createHttpServer(async (_request, response) => {
+    const answer = await h.t.app.request('/v1/tenants/site/handoff?externalId=bakery', {
       method: 'POST',
       headers: { Authorization: h.apiAuth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId: asked.get('client_id'), redirectUri: asked.get('redirect_uri'), codeChallenge: asked.get('code_challenge'), state: asked.get('state') }),
+      body: JSON.stringify({ assistantUrl: panelUrl }),
     });
-    const { redirectUrl } = (await answer.json()) as { redirectUrl: string };
-    response.writeHead(303, { Location: redirectUrl }).end();
+    const { url } = (await answer.json()) as { url: string };
+    response.writeHead(303, { Location: url }).end();
   }).listen(0);
   await once(shop, 'listening');
   shopUrl = `http://localhost:${(shop.address() as AddressInfo).port}`;
@@ -80,7 +79,6 @@ beforeAll(async () => {
       MASTRA_SERVER_URL: `http://localhost:${assistantPort}`,
       ANYPRESS_API_URL: `http://localhost:${apiPort}`,
       PANEL_URL: panelUrl,
-      PANEL_SHOPS: shopUrl,
     },
     stdio: 'ignore',
   });
@@ -119,7 +117,7 @@ describe('chat panel', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(panelUrl);
-    await expect(page.getByRole('button', { name: 'Sign in with your website' }).isVisible()).resolves.toBe(true);
+    await expect(page.getByRole('button', { name: 'Continue with WordPress' }).isVisible()).resolves.toBe(true);
     await context.close();
   });
 
@@ -164,19 +162,19 @@ describe('chat panel', () => {
     h.script('What is on my site?', 'get_site', {}, 'Your site is called Bakery.');
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(`${panelUrl}/from-shop?shop=${encodeURIComponent(`${shopUrl}/assistant`)}`);
+    await page.goto(`${shopUrl}/assistant`);
     await page.getByRole('textbox').fill('What is on my site?');
     await page.getByRole('textbox').press('Enter');
     await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
     await context.close();
   }, 90_000);
 
-  it('refuses a shop it doesn’t know', async () => {
+  it('refuses a made-up or used handoff', async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(`${panelUrl}/from-shop?shop=${encodeURIComponent('https://evil.example.com/assistant')}`);
+    await page.goto(`${panelUrl}/from-shop?handoff=made-up`);
     expect(new URL(page.url()).origin).toBe(panelUrl);
-    await expect(page.getByRole('button', { name: 'Sign in with your website' }).isVisible()).resolves.toBe(true);
+    await expect(page.getByRole('button', { name: 'Continue with WordPress' }).isVisible()).resolves.toBe(true);
     await context.close();
   });
 });
