@@ -17,6 +17,8 @@ export interface AuthMail {
   supportEmail?: string;
   /** A logo image (https) shown above the message. */
   logoUrl?: string;
+  /** The no-reply sender a seller's branded email uses, when `from` is the platform's own support address. */
+  plainFrom?: string;
 }
 
 /** The platform's own address and logo when it runs under the default AnyPress name (src/auth.ts). */
@@ -25,7 +27,8 @@ export const ANYPRESS_MAIL = { supportEmail: 'support@anypress.io', logoUrl: 'ht
 export async function sendSignInLink(mail: AuthMail, to: string, url: string, fetchFn: typeof fetch = fetch): Promise<void> {
   const text = `Use this link to sign in to ${mail.brand}:\n\n${url}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.`;
   const html = layout(mail, {
-    lines: [`Use this link to sign in to ${mail.brand}.`],
+    title: `Sign in to ${mail.brand}`,
+    lines: [`Use this button to sign in to ${mail.brand}.`],
     button: { label: `Sign in to ${mail.brand}`, url },
     note: "It works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.",
   });
@@ -63,6 +66,7 @@ export async function sendInvitation(mail: AuthMail, to: string, invite: Invitat
   const how = `Open the link and sign in with this email address (${to}). The invitation lasts ${invite.days} days.`;
   const text = `${lead}\n\n${invite.url}\n\n${how} If you weren't expecting it, you can ignore this email.${invite.welcome ? `\n\n${invite.welcome}` : ''}`;
   const html = layout(mail, {
+    title: `Join ${invite.organization}`,
     lines: invite.welcome ? [lead, invite.welcome] : [lead],
     button: { label: `Join ${invite.organization}`, url: invite.url },
     note: `${how} If you weren't expecting it, you can ignore this email.`,
@@ -80,13 +84,13 @@ export interface ApplicationMail {
 export async function sendApplicationReceived(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
   const next = "We review every application by hand. When yours is approved, you'll get another email with a link to sign in.";
-  await send(mail, to, `We got your ${mail.brand} application`, layout(mail, { lines: [lead, next] }), `${lead}\n\n${next}`, 'application email', fetchFn);
+  await send(mail, to, `We got your ${mail.brand} application`, layout(mail, { title: 'Thanks for applying', lines: [lead, next] }), `${lead}\n\n${next}`, 'application email', fetchFn);
 }
 
 /** To the platform admin: a new application is waiting on the dashboard at `url`. */
 export async function sendApplicationNotice(mail: AuthMail, to: string, app: ApplicationMail & { email: string; url: string }, fetchFn: typeof fetch = fetch): Promise<void> {
   const lead = `${app.name} (${app.email}) applied to sell websites as ${app.business}.`;
-  const html = layout(mail, { lines: [lead], button: { label: 'Review the application', url: app.url } });
+  const html = layout(mail, { title: 'New seller application', lines: [lead], button: { label: 'Review the application', url: app.url } });
   await send(mail, to, `New seller application: ${app.business}`, html, `${lead}\n\nReview it: ${app.url}`, 'application notice', fetchFn);
 }
 
@@ -107,6 +111,7 @@ export async function sendApplicationApproved(
     ? `We're also building your storefront at https://${app.storefront}. It's usually ready within a few minutes; sign in to it with "Lost your password?" on its login page.`
     : null;
   const html = layout(mail, {
+    title: "You're approved",
     lines: [lead, what],
     button: { label: `Sign in to ${mail.brand}`, url: app.url },
     note: storefront ? `${how}\n\n${storefront}` : how,
@@ -130,6 +135,7 @@ export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobF
   const lead = `This failed after ${job.attempts} ${job.attempts === 1 ? 'try' : 'tries'}: ${job.what}.`;
   const next = job.url ? 'Retry it from the Jobs page once the cause is fixed.' : 'Retry it with POST /admin/jobs/{id}/retry once the cause is fixed.';
   const html = layout(mail, {
+    title: 'A job failed',
     lines: [lead],
     code: job.error,
     button: job.url ? { label: 'Open the Jobs page', url: job.url } : undefined,
@@ -143,7 +149,7 @@ export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobF
 export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { store: string; backupAt: Date; error: string }, fetchFn: typeof fetch = fetch): Promise<void> {
   const lead = `Last night's restore test failed: the backup of ${test.store} from ${test.backupAt.toISOString().slice(0, 16).replace('T', ' ')} UTC could not be restored into a test copy.`;
   const next = 'The store itself is untouched and the test copy was deleted. The test runs again tomorrow night, on the store tested longest ago.';
-  const html = layout(mail, { lines: [lead], code: test.error, note: next });
+  const html = layout(mail, { title: 'Restore test failed', lines: [lead], code: test.error, note: next });
   const text = `${lead}\n\n${test.error}\n\n${next}`;
   await send(mail, to, `Failed: restore test of ${test.store}`, html, text, 'restore test notice', fetchFn);
 }
@@ -152,54 +158,71 @@ export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { 
 export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
   const body = "We can't offer you a seller account right now. If you have questions, contact us through our website.";
-  await send(mail, to, `Your ${mail.brand} application`, layout(mail, { lines: [lead, body] }), `${lead}\n\n${body}`, 'decline email', fetchFn);
+  await send(mail, to, `Your ${mail.brand} application`, layout(mail, { title: 'About your application', lines: [lead, body] }), `${lead}\n\n${body}`, 'decline email', fetchFn);
 }
 
 /** What one email says, in reading order; layout() puts it in the shared look. */
 interface Message {
+  /** The headline at the top of the card. */
+  title: string;
   lines: string[];
   /** Shown as plain monospace text, e.g. an error. */
   code?: string;
-  /** The one thing to do, as a button. It is the email's first link. */
+  /** The one thing to do, as a button. It is the email's first link, with the address written out under it. */
   button?: { label: string; url: string };
   /** Smaller grey text under the button; blank lines start a new paragraph. */
   note?: string;
 }
 
+const INK = '#141414';
+const SOFT = '#5f5a55';
+const LINE = '#e9e4de';
+const PAPER = '#faf8f5';
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+
 /**
- * One look for every account email: the sender's logo or name, the message, one button and a footer
- * with the support address. Tables and inline styles only, so it holds up in Outlook and Gmail.
+ * One look for every account email: the sender's logo and name, a card with a coloured top edge, a
+ * headline, the message, one button (with its link written out for clients that block buttons) and a
+ * footer with the support address. Tables and inline styles only, so it holds up in Outlook and Gmail.
  */
 function layout(mail: AuthMail, m: Message): string {
-  const font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+  const name = `<span style="font-size:20px;font-weight:700;letter-spacing:-0.01em;color:${INK}">${escape(mail.brand)}</span>`;
   const head = mail.logoUrl
-    ? `<img src="${escape(mail.logoUrl)}" width="40" height="40" alt="" style="display:inline-block;vertical-align:middle;border:0;border-radius:8px"> <span style="display:inline-block;vertical-align:middle;margin-left:8px;font-size:18px;font-weight:700;color:#141414">${escape(mail.brand)}</span>`
-    : `<span style="font-size:18px;font-weight:700;color:#141414">${escape(mail.brand)}</span>`;
+    ? `<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:10px;vertical-align:middle"><img src="${escape(mail.logoUrl)}" width="36" height="36" alt="" style="display:block;border:0"></td><td style="vertical-align:middle">${name}</td></tr></table>`
+    : name;
   const para = (t: string, style: string) => `<p style="margin:0 0 16px;${style}">${escape(t)}</p>`;
+  const button = m.button
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 12px"><tr><td style="background:${INK};border-radius:8px"><a href="${escape(m.button.url)}" style="display:inline-block;padding:14px 24px;font-size:16px;font-weight:600;line-height:20px;color:#ffffff;text-decoration:none">${escape(m.button.label)}</a></td></tr></table>` +
+      `<p style="margin:0 0 24px;font-size:13px;line-height:19px;color:${SOFT}">Or paste this link into your browser:<br><span style="color:${INK};word-break:break-all">${escape(m.button.url)}</span></p>`
+    : '';
   const body =
-    m.lines.map((l) => para(l, 'font-size:16px;line-height:24px;color:#141414')).join('') +
-    (m.code ? `<pre style="margin:0 0 16px;padding:12px;background:#faf8f5;border:1px solid #e9e4de;border-radius:6px;font-size:13px;line-height:18px;white-space:pre-wrap;word-break:break-word;color:#141414">${escape(m.code)}</pre>` : '') +
-    (m.button
-      ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px"><tr><td style="background:#141414;border-radius:6px"><a href="${escape(m.button.url)}" style="display:inline-block;padding:12px 20px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none">${escape(m.button.label)}</a></td></tr></table>`
-      : '') +
-    (m.note ? m.note.split('\n\n').map((n) => para(n, 'font-size:14px;line-height:20px;color:#5f5a55')).join('') : '');
+    `<h1 style="margin:0 0 16px;font-size:24px;line-height:30px;font-weight:700;letter-spacing:-0.01em;color:${INK}">${escape(m.title)}</h1>` +
+    m.lines.map((l) => para(l, `font-size:16px;line-height:25px;color:${INK}`)).join('') +
+    (m.code ? `<pre style="margin:0 0 16px;padding:12px 14px;background:${PAPER};border:1px solid ${LINE};border-radius:6px;font-size:13px;line-height:19px;white-space:pre-wrap;word-break:break-word;color:${INK}">${escape(m.code)}</pre>` : '') +
+    button +
+    (m.note
+      ? `<div style="border-top:1px solid ${LINE};padding-top:16px">${m.note.split('\n\n').map((n) => para(n, `font-size:14px;line-height:21px;color:${SOFT}`)).join('')}</div>`
+      : '');
   const foot = [
-    mail.supportEmail ? `Questions? Write to <a href="mailto:${escape(mail.supportEmail)}" style="color:#5f5a55">${escape(mail.supportEmail)}</a>.` : '',
+    mail.supportEmail ? `Questions? Write to <a href="mailto:${escape(mail.supportEmail)}" style="color:${SOFT};text-decoration:underline">${escape(mail.supportEmail)}</a> or just reply to this email.` : '',
     mail.poweredBy ? `Powered by ${escape(mail.poweredBy)}` : '',
   ].filter(Boolean);
   return (
-    `<!doctype html><html><body style="margin:0;padding:0;background:#faf8f5">` +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#faf8f5"><tr><td align="center" style="padding:32px 16px;${font}">` +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">` +
-    `<tr><td style="padding:0 0 20px">${head}</td></tr>` +
-    `<tr><td style="background:#ffffff;border:1px solid #e9e4de;border-radius:10px;padding:28px">${body}</td></tr>` +
-    (foot.length ? `<tr><td style="padding:16px 4px 0;font-size:12px;line-height:18px;color:#5f5a55">${foot.join('<br>')}</td></tr>` : '') +
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>` +
+    `<body style="margin:0;padding:0;background:${PAPER}">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER}"><tr><td align="center" style="padding:32px 12px;font-family:${FONT}">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">` +
+    `<tr><td style="padding:0 4px 20px">${head}</td></tr>` +
+    `<tr><td style="background:#ffffff;border:1px solid ${LINE};border-radius:12px;overflow:hidden">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:#ff7a2a;background-image:linear-gradient(90deg,#ffc75a,#ff7a2a,#ee2f5e,#d21fa4)">&nbsp;</td></tr>` +
+    `<tr><td style="padding:32px 32px 16px">${body}</td></tr></table></td></tr>` +
+    (foot.length ? `<tr><td style="padding:20px 4px 0;font-size:13px;line-height:20px;color:${SOFT}">${foot.join('<br>')}</td></tr>` : '') +
     `</table></td></tr></table></body></html>`
   );
 }
 
 async function send(mail: AuthMail, to: string, subject: string, html: string, text: string, what: string, fetchFn: typeof fetch) {
-  if (mail.supportEmail) text += `\n\nQuestions? Write to ${mail.supportEmail}.`;
+  if (mail.supportEmail) text += `\n\nQuestions? Write to ${mail.supportEmail} or just reply to this email.`;
   if (mail.poweredBy) text += `\n\nPowered by ${mail.poweredBy}`;
   const res = await fetchFn(`${(mail.apiUrl ?? 'https://api.tosend.com').replace(/\/$/, '')}/v2/emails`, {
     method: 'POST',

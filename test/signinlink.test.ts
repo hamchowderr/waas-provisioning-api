@@ -140,12 +140,20 @@ describe('sign-in email settings', () => {
   it("reuses the stores' toSend key and sender", () => {
     expect(loadAuthConfig({ ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'no-reply@anypress.io' })!.mail).toEqual({
       key: 'tsend_k',
-      from: 'no-reply@anypress.io',
+      from: 'support@anypress.io',
       brand: 'AnyPress',
       apiUrl: undefined,
       supportEmail: 'support@anypress.io',
       logoUrl: 'https://anypress.io/logo-512.png',
+      plainFrom: 'no-reply@anypress.io',
     });
+  });
+
+  it('sends from the support address only when the sending domain covers it', () => {
+    const other = loadAuthConfig({ ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'no-reply@x.example' })!.mail!;
+    expect(other).toMatchObject({ from: 'no-reply@x.example', plainFrom: undefined });
+    const own = loadAuthConfig({ ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'no-reply@x.example', AUTH_BRAND: 'X', AUTH_SUPPORT_EMAIL: 'help@x.example' })!.mail!;
+    expect(own).toMatchObject({ from: 'help@x.example', plainFrom: 'no-reply@x.example' });
   });
 
   it("shows AnyPress's address and logo only under the AnyPress name", () => {
@@ -161,7 +169,7 @@ describe('sign-in email settings', () => {
     expect(body.html).toContain('<img src="https://anypress.io/logo-512.png"');
     expect(/href="([^"]+)"/.exec(body.html)![1]).toBe('https://x.example/l?a=1&amp;b=2');
     expect(body.html).toContain('mailto:support@anypress.io');
-    expect(body.text).toMatch(/Questions\? Write to support@anypress\.io\.$/);
+    expect(body.text).toMatch(/Questions\? Write to support@anypress\.io or just reply to this email\.$/);
   });
 
   it('prefers AUTH_MAIL_KEY and AUTH_MAIL_FROM, and is off without a key', () => {

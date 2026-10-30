@@ -16,7 +16,7 @@ Sign-in runs on [Better Auth](https://www.better-auth.com) inside the API. Its t
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | optional: a Google OAuth client with callback `<AUTH_URL>/api/auth/callback/google` |
 | `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM` | optional: the toSend API key and sender for emailed sign-in links. Default: the stores' `STORE_SMTP_PASSWORD` and `STORE_MAIL_FROM`, so links work wherever stores already send email |
 | `AUTH_BRAND` | the name in sign-in emails (default `AnyPress`) |
-| `AUTH_SUPPORT_EMAIL`, `AUTH_LOGO_URL` | optional: the address in the emails' footer ("Questions? Write to …") and an https logo shown above them. Under the default `AnyPress` name they default to support@anypress.io and the AnyPress logo; with your own `AUTH_BRAND`, set them or the emails go without |
+| `AUTH_SUPPORT_EMAIL`, `AUTH_LOGO_URL` | optional: the address in the emails' footer ("Questions? Write to …") and an https logo shown above them. Under the default `AnyPress` name they default to support@anypress.io and the AnyPress logo; with your own `AUTH_BRAND`, set them or the emails go without. When the support address is on the same domain as `STORE_MAIL_FROM`, account emails are sent from it (so replies reach someone), and sellers' branded emails keep `STORE_MAIL_FROM` |
 
 Without `AUTH_URL` and `AUTH_SECRET`, sign-in is off: `/api/auth/*` answers 404 and session requests get 403.
 
