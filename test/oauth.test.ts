@@ -29,13 +29,14 @@ const TOOLS: Record<string, { area: string; access?: Access; actions?: Record<st
   create_store: { area: 'stores', access: 'write' },
   import_site: { area: 'stores', actions: { start: 'write', new_code: 'write' } },
   update_store: { area: 'stores', actions: { options: 'write', move: 'write' } },
-  store_status: { area: 'stores', actions: { suspend: 'write', resume: 'write', delete: 'write' } },
+  store_status: { area: 'stores', actions: { suspend: 'write', resume: 'write', go_live: 'write', delete: 'write' } },
   show_store_backups: { area: 'backups', access: 'read' },
   manage_backups: { area: 'backups', actions: { list: 'read', create: 'write', restore: 'write' } },
   show_store_domains: { area: 'domains', access: 'read' },
   manage_domain: { area: 'domains', actions: { list: 'read', check: 'read', connect_link: 'read', add: 'write', set_main: 'write', remove: 'write' } },
   mail_domain: { area: 'email', actions: { get: 'read', set: 'write', remove: 'write' } },
   manage_versions: { area: 'versions', actions: { list: 'read', snapshots: 'read', templates: 'read', create: 'write', set_production: 'write', delete: 'write' } },
+  manage_webhooks: { area: 'webhooks', actions: { list: 'read', get: 'read', deliveries: 'read', create: 'write', update: 'write', test: 'write', retry: 'write', rotate_secret: 'write', delete: 'write' } },
   get_site: { area: 'site', access: 'read' },
   site_pages: { area: 'site', actions: { list: 'read', read: 'read', revisions: 'read', create: 'write', update: 'write', restore_revision: 'write' } },
   page_section: { area: 'site', actions: { add: 'write', replace: 'write', remove: 'write' } },
@@ -222,7 +223,7 @@ describe('OAuth for /mcp', () => {
     );
     expect(ALL_SCOPES).toEqual([
       'stores:read', 'stores:write', 'backups:read', 'backups:write', 'domains:read', 'domains:write',
-      'email:read', 'email:write', 'versions:read', 'versions:write', 'site:read', 'site:write',
+      'email:read', 'email:write', 'versions:read', 'versions:write', 'webhooks:read', 'webhooks:write', 'site:read', 'site:write',
     ]);
 
     const resource = await (await app.request('/.well-known/oauth-protected-resource/mcp')).json();
@@ -348,7 +349,7 @@ describe('OAuth for /mcp', () => {
     const view = await (await asUser(owner.cookie, 'GET', `/account/oauth/requests/${id}`)).json();
     expect(view).toMatchObject({ wantsWrite: true, readOnly: false, asAdmin: false, requestedScopes: ['stores:read', 'domains:write'] });
     const ticks = Object.fromEntries(view.areas.map((a: { area: string; read: { ticked: boolean }; write: { ticked: boolean } }) => [a.area, [a.read.ticked, a.write.ticked]]));
-    expect(ticks).toEqual({ stores: [true, false], backups: [true, false], domains: [true, true], email: [true, false], versions: [true, false], site: [true, false] });
+    expect(ticks).toEqual({ stores: [true, false], backups: [true, false], domains: [true, true], email: [true, false], versions: [true, false], webhooks: [true, false], site: [true, false] });
     expect(view.areas[0]).toMatchObject({ name: 'Stores', read: { scope: 'stores:read' }, write: { scope: 'stores:write' } });
 
     // Nothing ticked, or a scope we don't have, is refused, and the request is still there.

@@ -343,6 +343,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       'Moves an existing WordPress site from another host into a new store, which keeps the site’s own plugins and themes. ' +
       'The site owner installs the AnyPress Export plugin (pluginDownload) on the old site and pastes the importCode under Tools → Move to AnyPress, ' +
       'or runs `wp anypress-export send <code>`. The code works for 7 days. The store stays Pending until the move is done; follow it with get_stores action wait. ' +
+      'Once moved the store is on hold (onHold): no scheduled tasks, email only to its owner, not indexed, until the owner says it is live (store_status action go_live). ' +
       'Multisite networks cannot be moved.',
     input: {
       ...ref,
@@ -398,12 +399,17 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   });
 
   actionTool('store_status', {
-    title: 'Suspend, resume or delete a store', area: 'stores',
-    description: 'Takes a store offline, brings it back, or deletes it.',
+    title: 'Suspend, resume, make live or delete a store', area: 'stores',
+    description: 'Takes a store offline, brings it back, makes a site moved in live, or deletes it.',
     input: { ...ref, takeBackup: z.boolean().optional().describe('For suspend: back up first, true when omitted') },
     actions: {
       suspend: { access: 'write', destructive: true, does: 'takes the store offline, backing it up first unless takeBackup is false', run: ({ takeBackup, ...args }) => client.tenants.suspend(toRef(args), { takeBackup: takeBackup ?? true }) },
       resume: { access: 'write', does: 'brings a suspended store back online', run: (args) => client.tenants.resume(toRef(args)) },
+      go_live: {
+        access: 'write',
+        does: 'ends the hold on a site moved in (onHold): its scheduled tasks start, it emails customers again and search engines may index it; ask the owner first',
+        run: (args) => client.tenants.goLive(toRef(args)),
+      },
       delete: { access: 'write', destructive: true, does: 'deletes the store; its backups are kept for the retention period, so it can be restored until then', run: (args) => client.tenants.delete(toRef(args)) },
     },
   });
@@ -492,6 +498,45 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       },
       set_production: { access: 'write', does: 'new stores are made on versionId unless they name another', run: ({ versionId }) => client.versions.setProduction(need(versionId, 'versionId', 'set_production')) },
       delete: { access: 'write', destructive: true, does: 'deletes versionId; stores must be moved off it first', run: ({ versionId }) => client.versions.delete(need(versionId, 'versionId', 'delete')) },
+    },
+  });
+
+  // Webhooks: store and version events sent to your own URL (docs/webhooks.md), for automations and apps.
+
+  const EVENT_TYPES = [
+    'tenant.ready', 'tenant.updated', 'tenant.version_changed', 'tenant.domains_changed', 'tenant.suspended', 'tenant.resumed', 'tenant.deleted',
+    'tenant.restored', 'tenant.rolled_back', 'tenant.backup_completed', 'tenant.backup_failed', 'tenant.failed', 'version.ready', 'version.deleted',
+    'version.failed', 'webhook.test',
+  ] as const;
+  actionTool('manage_webhooks', {
+    title: 'Webhooks', area: 'webhooks',
+    description: 'Endpoints that get a signed POST when something happens to your stores or versions, such as tenant.ready when a new store is up.',
+    input: {
+      webhookId: z.string().optional().describe('The endpoint, from list; for everything but list and create'),
+      deliveryId: z.string().optional().describe('For retry: the delivery, from deliveries'),
+      url: z.string().url().optional().describe('For create and update: the https URL to send events to'),
+      description: z.string().optional().describe('For create and update: what the endpoint is for'),
+      eventTypes: z.array(z.enum(EVENT_TYPES)).optional().describe('For create and update: the events to send; every event when omitted on create'),
+      enabled: z.boolean().optional().describe('For update: false pauses the endpoint, true starts it again'),
+    },
+    actions: {
+      list: { access: 'read', does: 'your webhook endpoints', run: () => client.webhooks.list() },
+      get: { access: 'read', does: 'one endpoint', run: ({ webhookId }) => client.webhooks.get(need(webhookId, 'webhookId', 'get')) },
+      deliveries: { access: 'read', does: 'the endpoint’s recent deliveries, with status and response', run: ({ webhookId }) => client.webhooks.deliveries(need(webhookId, 'webhookId', 'deliveries')) },
+      create: {
+        access: 'write',
+        does: 'adds an endpoint for url and returns its signing secret, shown only this once',
+        run: ({ url, description, eventTypes }) => client.webhooks.create({ url: need(url, 'url', 'create'), description, eventTypes }),
+      },
+      update: {
+        access: 'write',
+        does: 'changes the endpoint’s url, description, eventTypes or enabled',
+        run: ({ webhookId, url, description, eventTypes, enabled }) => client.webhooks.update(need(webhookId, 'webhookId', 'update'), { url, description, eventTypes, enabled }),
+      },
+      test: { access: 'write', does: 'sends a webhook.test event to the endpoint now', run: ({ webhookId }) => client.webhooks.test(need(webhookId, 'webhookId', 'test')) },
+      retry: { access: 'write', does: 'sends a failed delivery again', run: ({ deliveryId }) => client.webhooks.retryDelivery(need(deliveryId, 'deliveryId', 'retry')) },
+      rotate_secret: { access: 'write', destructive: true, does: 'replaces the signing secret; the old one stops working, so update your receiver', run: ({ webhookId }) => client.webhooks.rotateSecret(need(webhookId, 'webhookId', 'rotate_secret')) },
+      delete: { access: 'write', destructive: true, does: 'removes the endpoint', run: ({ webhookId }) => client.webhooks.delete(need(webhookId, 'webhookId', 'delete')) },
     },
   });
 

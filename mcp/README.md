@@ -34,11 +34,12 @@ Each area has a scope to see and a scope to change. The approve page has a box f
 
 | Area | `:read` | `:write` |
 |---|---|---|
-| `stores` | `show_stores`, `show_store`, `get_stores` (list, get, wait) | `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, delete) |
+| `stores` | `show_stores`, `show_store`, `get_stores` (list, get, wait) | `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
 | `backups` | `show_store_backups`, `manage_backups` (list) | `manage_backups` (create, restore) |
 | `domains` | `show_store_domains`, `manage_domain` (list, check, connect_link) | `manage_domain` (add, set_main, remove) |
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
 | `versions` | `manage_versions` (list, snapshots, templates) | `manage_versions` (create, set_production, delete) |
+| `webhooks` | `manage_webhooks` (list, get, deliveries) | `manage_webhooks` (create, update, test, retry, rotate_secret, delete) |
 | `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (find, get), `site_styles` (get), `header_footer` (get), `site_menus` (list) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update), `header_footer` (update), `site_menus` (update), `add_image` |
 
 So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
@@ -122,13 +123,14 @@ Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) o
 | | `create_store` | Creates a store |
 | | `import_site` | `start` (a store that waits for a site moved in from another host), `new_code` |
 | | `update_store` | `options` (WordPress options, PHP constants, size), `move` (to another version) |
-| | `store_status` | `suspend` (destructive), `resume`, `delete` (destructive) |
+| | `store_status` | `suspend` (destructive), `resume`, `go_live` (a moved-in site starts sending email and running its scheduled tasks), `delete` (destructive) |
 | Backups | `show_store_backups` | Panel of a store's backups |
 | | `manage_backups` | `list`, `create`, `restore` (destructive) |
 | Domains | `show_store_domains` | Panel of a store's domains |
 | | `manage_domain` | `list`, `check`, `connect_link` (Domain Connect), `add`, `set_main`, `remove` (destructive) |
 | Email | `mail_domain` | `get`, `set`, `remove` (destructive) |
 | Versions | `manage_versions` | `list`, `snapshots`, `templates`, `create`, `set_production`, `delete` (destructive) |
+| Webhooks | `manage_webhooks` | `list`, `get`, `deliveries`, `create`, `update`, `test`, `retry`, `rotate_secret` (destructive), `delete` (destructive) |
 | Site editing | `get_site` | The site's name, address, theme and home page |
 | | `site_pages` | `list`, `read`, `revisions`, `create`, `update`, `restore_revision` |
 | | `page_section` | `add`, `replace`, `remove` (destructive) |

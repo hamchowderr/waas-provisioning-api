@@ -27,6 +27,11 @@ automatorwp 6.0.5 541d640bdf4b6f602123e0f1f26a5041f950a13d338f08ca0b665a9a161714
 fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
 fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
 "
+# wordpress.org plugins installed but left off: slug version sha256. The store owner turns them on (WordPress's
+# MCP Adapter: Dashboard > Your plan > AI apps, WaaS Client 2.4.0+); not in roles.json.
+OFF_PLUGINS="
+mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe9b
+"
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
 VENDORED="
@@ -81,7 +86,7 @@ fetch "https://wordpress.org/wordpress-$WP_VERSION.zip" "$WP_SHA256" "$WORK/down
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     fetch "https://downloads.wordpress.org/plugin/$slug.$version.zip" "$sha" "$WORK/downloads/$slug.$version.zip"
-done <<<"$PLUGINS"
+done <<<"$PLUGINS$OFF_PLUGINS"
 anypress_theme_fetch "$WORK/downloads"
 fetch "https://github.com/hamchowderr/anypress-blocks/releases/download/v$BLOCKS_VERSION/anypress-blocks.zip" "$BLOCKS_SHA256" "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip"
 while read -r slug version sha; do
@@ -98,13 +103,14 @@ cp -a "$WORK/downloads/anypress" "$SITE/wp-content/themes/$THEME"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$WORK/downloads/$slug.$version.zip" -d "$SITE/wp-content/plugins"
-done <<<"$PLUGINS"
+done <<<"$PLUGINS$OFF_PLUGINS"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$HERE/plugins/$slug-$version.zip" -d "$SITE/wp-content/plugins"
 done <<<"$VENDORED"
 unzip -q "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip" -d "$SITE/wp-content/plugins"
 SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | sort | tr '\n' ' ')
+OFF_SLUGS=$(awk 'NF {print $1}' <<<"$OFF_PLUGINS" | sort | tr '\n' ' ')
 
 echo "== WaaS Client from $PLUGINS_REPO"
 # Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
@@ -186,11 +192,15 @@ wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
 EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
 [ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected active plugins" >&2; exit 1; }
-[ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
+INSTALLED=$(printf '%s\n' $SLUGS $OFF_SLUGS waas-client | sort | tr '\n' ' ')
+[ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$INSTALLED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
 
 # Rank Math's sitemap is only served once its rewrite rules exist. Read the whole list first: grep -q stops at the
 # first match, and with pipefail the cut-off wp counts as a failure.
 grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Math sitemap rules missing" >&2; exit 1; }
+# Synced patterns (presets.php): the notice band, and the call to action and quote with pattern overrides.
+[ "$(wp post list --post_type=wp_block --format=count)" = 3 ] || { echo "synced patterns missing" >&2; exit 1; }
+[ "$(wp eval '$p = get_posts(["post_type" => "wp_block", "title" => "Call to action"]); $b = $p ? parse_blocks($p[0]->post_content) : []; echo $p && str_contains($p[0]->post_content, "core/pattern-overrides") && $b && $b[0]["blockName"] === "core/group" ? "ok" : "bad";')" = ok ] || { echo "call to action pattern has no overrides" >&2; exit 1; }
 [ "$(wp post list --post_type=page --meta_key=_anypress_needs --format=count)" -ge 7 ] || { echo "pages missing their site-type marker" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
@@ -205,7 +215,7 @@ done
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
+PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; awk 'NF {print $1, $2 " (off)"}' <<<"$OFF_PLUGINS"; echo "anypress-blocks $BLOCKS_VERSION") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

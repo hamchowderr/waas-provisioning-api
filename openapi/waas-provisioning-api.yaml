@@ -632,6 +632,69 @@ paths:
         '403':
           description: Forbidden
       operationId: newImportCode
+  /v1/tenants/go-live:
+    post:
+      tags:
+      - SiteImport
+      summary: Make a moved-in site live
+      description: 'Added for AnyPress.
+
+
+        A site moved in (`uploadCustomSnapshot`) is on hold once it is built (`onHold` true): its scheduled jobs (WP-cron, Action Scheduler) don''t run, it sends email only to its administration address and its owner''s account, holding the rest, and it asks search engines not to index it. This makes it live: its jobs start, it emails everyone and may be indexed. Call it when the owner says the site is ready, usually once its domain points at the store. No body.
+
+
+        The tenant shows `statusCode` 0 (Pending) until the store is live, then 1 (Done), and `onHold` false. Idempotent: a tenant that is not on hold returns 200 and changes nothing.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      responses:
+        '200':
+          description: The store going live was scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantLifecycleCommandResult'
+              examples:
+                scheduled:
+                  summary: 'Go live: Scheduled'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    backupId: null
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '409':
+          description: The tenant is still waiting for its site
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: goLiveTenant
   /v1/tenants/email-packs:
     post:
       tags:
@@ -2199,7 +2262,7 @@ paths:
       tags:
       - SiteImport
       summary: Import status
-      description: 'How the move is going: `waiting` for the upload, `moving`, `done` (with the site''s `url`) or `failed`.'
+      description: 'How the move is going: `waiting` for the upload, `moving`, `done` (with the site''s `url` and `onHold`) or `failed` (with a `reason`). `warnings` lists what to check after the move, when there is anything.'
       security: []
       requestBody:
         content:
@@ -3125,6 +3188,11 @@ components:
           type: boolean
           description: Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise.
           readOnly: true
+        onHold:
+          type: boolean
+          description: 'Added for AnyPress. True while a site moved in is held after its move: no scheduled jobs, email only to its owner, not indexed, until Make a moved-in site live (`POST /v1/tenants/go-live`). Must be a JSON boolean.'
+          readOnly: true
+          example: false
       additionalProperties: false
     ImportCodeParams:
       required:
@@ -3217,6 +3285,20 @@ components:
           type: string
           description: The site's address, once it is done
           example: https://old-site.anypress.site
+        onHold:
+          type: boolean
+          description: Once it is done, whether the site is still on hold (no scheduled jobs, email only to its owner, not indexed) until its owner makes it live in AnyPress
+        reason:
+          type: string
+          description: Once it failed, why, in words the site's owner can act on
+          example: The export is missing its database or its files. Run the export again on the old site.
+        warnings:
+          type: array
+          items:
+            type: string
+          description: 'What the owner should check once the site is moved: another PHP version, a newer WordPress than the store''s, or a check after the move that found the home or login page failing (with the first PHP error). Absent when there are none.'
+          example:
+          - The old site ran PHP 7.4 and this store runs PHP 8.3. Check that its plugins and theme work.
       additionalProperties: false
     GetVersionQueryResult:
       type: object

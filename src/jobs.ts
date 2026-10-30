@@ -2,7 +2,7 @@ import { maintainDashboardDomains } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
 import type { Brand, Provisioner, VersionPlugin } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
-import { purgeExpiredImports } from './imports.ts';
+import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure } from './imports.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
@@ -98,6 +98,7 @@ export function createJobHandlers(
             snapshotGroupName: rows[0].snapshot_group_name,
             size: rows[0].size,
             ownCode: rows[0].own_code,
+            onHold: rows[0].on_hold,
             domains: domains.map((d) => ({ domainName: d.domain_name, isMain: d.is_main, isBase: d.is_base })),
           };
           await pool.query(
@@ -123,6 +124,8 @@ export function createJobHandlers(
             size: tenant.size,
             ownCode: tenant.own_code,
             mailbox: restoredMailbox,
+            // A site moved in that was still held comes back held.
+            ...(tenant.on_hold && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
           });
           await recordMailSender(pool, provisioner, tenant.id, { mailbox: restoredMailbox });
           await setTenantStatus(tenant.id, Status.Done, Status.Pending);
@@ -154,6 +157,10 @@ export function createJobHandlers(
           return;
         case 'tenant.resume':
           await provisioner.resumeStore({ storeId: data.tenantId });
+          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+          return;
+        case 'tenant.go-live':
+          await provisioner.goLive({ storeId: data.tenantId });
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         case 'tenant.backup':
@@ -203,6 +210,10 @@ export function createJobHandlers(
           await pool.query('UPDATE snapshots SET status = $2 WHERE version_id = $1 AND status = $3', [data.versionId, Status.Failed, Status.Removing]);
           return;
         case 'tenant.create':
+          // A site being moved in: why, in words its owner can act on (/imports/status).
+          await recordImportFailure(pool, data.tenantId, error instanceof Error ? error.message : String(error));
+          await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
         case 'tenant.update':
         case 'tenant.move':
         case 'tenant.domains':
@@ -216,6 +227,7 @@ export function createJobHandlers(
           return;
         case 'tenant.suspend':
         case 'tenant.resume':
+        case 'tenant.go-live':
           if ('backupId' in data && data.backupId) await failBackup(pool, data.backupId);
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
@@ -301,7 +313,9 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
     role: data.user.role,
     password: data.user.encryptedPassword ? secrets.decrypt(data.user.encryptedPassword) : undefined,
   };
-  await provisioner.createStore({
+  // A site moved in is held until its owner makes it live; its owner's team still gets its email meanwhile.
+  const imported = tenant.snapshot_id === null;
+  const built = await provisioner.createStore({
     storeId: tenant.id,
     versionId: tenant.version_id,
     snapshotId: tenant.snapshot_id,
@@ -313,11 +327,14 @@ async function createTenant(pool: Pool, provisioner: Provisioner, secrets: Secre
     ownCode: tenant.own_code,
     mailbox,
     user,
+    ...(imported && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
   });
   await recordMailSender(pool, provisioner, tenant.id, { mailbox });
+  if (imported) await recordImportBuilt(pool, tenant.id, built?.check);
+  if (imported) await pool.query('UPDATE tenants SET on_hold = true, date_held = COALESCE(date_held, now()) WHERE id = $1', [tenant.id]);
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
   // A site moved in is built: its upload is no longer needed.
-  if (tenant.snapshot_id === null) await provisioner.deleteImport({ storeId: tenant.id });
+  if (imported) await provisioner.deleteImport({ storeId: tenant.id });
 }
 
 async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, backupId: string) {

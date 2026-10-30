@@ -26,7 +26,7 @@ import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
-import { deleteTenant, resumeTenant, suspendTenant } from '../tenants.ts';
+import { deleteTenant, goLiveTenant, resumeTenant, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 
@@ -418,6 +418,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         statusName: statusName(t.status),
         size: t.size,
         isSuspended: t.is_suspended,
+        onHold: t.on_hold,
         latestBackupAt: iso(t.latest_backup_at),
         dateCreated: iso(t.date_created),
       })),
@@ -470,6 +471,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       ...(emailUsage && { emailUsage }),
       isSuspended: t.is_suspended,
       dateSuspended: iso(t.date_suspended),
+      // A site moved in, held until it goes live (POST /admin/tenants/:id/go-live).
+      onHold: t.on_hold,
+      dateHeld: iso(t.date_held),
       dateCreated: iso(t.date_created),
       dateChanged: iso(t.date_changed),
       // Names only: values can be secret.
@@ -581,6 +585,22 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       await enqueue(boss, client, { type: 'tenant.rollback', tenantId: id, backupId: body.backupId as string, ...(safetyBackupId ? { safetyBackupId } : {}) });
     });
     return c.json({ tenantId: id, externalId: tenant.external_id, backupId: body.backupId, safetyBackupId });
+  });
+
+  // Makes a site moved in live (docs/site-imports.md), as POST /v1/tenants/go-live does: for any store the caller may
+  // see, since it is the owner's own step. A store that isn't held is left as it is.
+  app.post('/tenants/:id/go-live', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query(
+      'SELECT id, product_id, external_id, status, is_suspended, on_hold FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)',
+      [id, scopedProduct(c)],
+    );
+    const tenant = rows[0];
+    if (!tenant) throw notFound(`Tenant ${id} not found`);
+    assertChangeable(tenant);
+    await goLiveTenant(pool, boss, tenant);
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, backupId: null });
   });
 
   // Suspend, resume and delete a store from the dashboard, as the storefront's own calls do (src/tenants.ts).

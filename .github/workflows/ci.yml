@@ -87,3 +87,15 @@ jobs:
       - name: Website assistant on Playground
         working-directory: agent
         run: npm ci && npm run test:playground
+
+  imports-docker:
+    # Moves sites into real MariaDB and WordPress containers (test/docker). Separate from `test` so that job stays fast.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:docker

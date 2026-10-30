@@ -6,7 +6,7 @@ import { badRequest, HttpError } from './errors.ts';
 import { channelKey, parseManifest } from './releases.ts';
 import { readJson } from './http.ts';
 import { SIZES, type Size } from './plans.ts';
-import type { Provisioner } from './provisioner/provisioner.ts';
+import type { Provisioner, SiteCheck } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
 import { Status } from './status.ts';
 
@@ -70,15 +70,136 @@ export async function renewImport(pool: Pool, tenantId: string): Promise<string 
   });
 }
 
-/** What the dashboard shows about a store's move: when its code expires, when it started and what the plugin told. */
+/**
+ * What the dashboard shows about a store's move: when its code expires, when it started and what the plugin told;
+ * once built, what the check of the moved site found and any warnings; once failed, why.
+ */
 export async function importDetail(pool: Pool, tenantId: string) {
-  const { rows } = await pool.query('SELECT expires_at, started_at, source FROM tenant_imports WHERE tenant_id = $1', [tenantId]);
+  const { rows } = await pool.query(
+    `SELECT i.expires_at, i.started_at, i.source, i.failure_reason, i.site_check, i.warnings, t.status
+       FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id WHERE i.tenant_id = $1`,
+    [tenantId],
+  );
   const row = rows[0];
   if (!row) return undefined;
-  return { expiresAt: row.expires_at.toISOString(), startedAt: row.started_at?.toISOString() ?? null, source: row.source ?? null };
+  return {
+    expiresAt: row.expires_at.toISOString(),
+    startedAt: row.started_at?.toISOString() ?? null,
+    source: row.source ?? null,
+    ...(row.status === Status.Failed && { reason: row.failure_reason ?? FAILED }),
+    ...(row.site_check && { check: row.site_check }),
+    warnings: (row.warnings ?? []) as string[],
+  };
 }
 
-interface ImportSource {
+/** Why a move failed, when nothing more is known. */
+const FAILED = 'The move could not be finished. Contact support with the store\'s address.';
+
+/**
+ * Why a move failed, in words the site's owner can act on, from the store agent's error (agent.php). Only these fixed
+ * sentences reach the owner: an error can carry paths and database output.
+ */
+export function importFailureReason(error: string): string {
+  const reasons: [RegExp, string][] = [
+    [/must hold database\.sql and wp-content/, 'The export is missing its database or its files. Run the export again on the old site.'],
+    [/multisite/i, 'Multisite networks can\'t be moved in yet.'],
+    [/has both \S+ and \S+/, 'The database holds two sets of WordPress tables whose names collide. Remove the old copy\'s tables from the old site\'s database, then export again.'],
+    [/no WordPress tables|table prefix WordPress cannot use/, 'The export\'s database holds no WordPress tables this store can use. Run the export again on the old site.'],
+    [/download failed|not a readable zip|\btar exited|gzip|unexpected end of file/i, 'The uploaded export could not be read: it may be incomplete. Run the export again on the old site.'],
+    [/database could not be imported|wp db exited|db import|server has gone away|Unknown collation|ERROR \d{4}/i, 'The database could not be imported. Contact support with the store\'s address so we can look at it.'],
+    [/timed out/i, 'The move took too long. A smaller export (media moved separately) may help; contact support.'],
+  ];
+  return reasons.find(([pattern]) => pattern.test(error))?.[1] ?? FAILED;
+}
+
+/** Records why a move failed (importFailureReason). Nothing for a store that wasn't moved in. */
+export async function recordImportFailure(pool: Pool | Client, tenantId: string, error: string): Promise<void> {
+  await pool.query('UPDATE tenant_imports SET failure_reason = $2 WHERE tenant_id = $1', [tenantId, importFailureReason(error)]);
+}
+
+/** Major.minor of a version, as numbers: "8.3.6" is [8, 3]. Null when it isn't one. */
+const majorMinor = (v: string | undefined) => {
+  const m = /^(\d+)\.(\d+)/.exec(v ?? '');
+  return m ? [Number(m[1]), Number(m[2])] : null;
+};
+/**
+ * -1, 0 or 1 as `a` is older, the same as, or newer than `b`, part by part as far as both go (a version's "7.1" is
+ * whichever 7.1 release its image has); 0 when either isn't a version.
+ */
+function compareVersions(a: string | undefined, b: string | undefined): number {
+  if (!/^\d+(\.\d+)*$/.test(a ?? '') || !/^\d+(\.\d+)*$/.test(b ?? '')) return 0;
+  const x = a!.split('.').map(Number);
+  const y = b!.split('.').map(Number);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    if (x[i] !== y[i]) return x[i]! < y[i]! ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * What the owner should know about a site moved in: it ran another PHP than the store does, or a newer WordPress
+ * (the store can't go back), and what the check after the move found (src/provisioner: SiteCheck).
+ */
+export function importWarnings(source: ImportSource | null, store: { wordPressVersion: string; phpVersion: string }, check?: SiteCheck): string[] {
+  const warnings: string[] = [];
+  const php = majorMinor(source?.phpVersion);
+  const storePhp = majorMinor(store.phpVersion);
+  if (php && storePhp && (php[0] !== storePhp[0] || php[1] !== storePhp[1])) {
+    warnings.push(`The old site ran PHP ${php.join('.')} and this store runs PHP ${storePhp.join('.')}. Check that its plugins and theme work.`);
+  }
+  if (compareVersions(source?.wordPressVersion?.replace(/-.*$/, ''), store.wordPressVersion) > 0) {
+    warnings.push(
+      `The old site ran WordPress ${source!.wordPressVersion}, newer than this store's ${store.wordPressVersion}. Plugins that need the newer WordPress may not work until the store moves to a version with it.`,
+    );
+  }
+  if (check && !check.ok) {
+    if (check.error) warnings.push('The site could not be checked after the move. Open it and its admin to see that it works.');
+    else {
+      const pages = [check.home !== undefined && `the home page answered ${check.home || 'nothing'}`, check.login !== undefined && `the login page ${check.login || 'nothing'}`]
+        .filter(Boolean)
+        .join(' and ');
+      warnings.push(`After the move ${pages}${check.fatal ? `, and PHP stopped with: ${check.fatal}` : check.loaded === false ? ', and WordPress did not load with its plugins' : ''}. Fix or switch off the plugin or theme at fault.`);
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Records a built move: the check and the warnings, with no failure from an earlier attempt, and puts the store on
+ * hold until its owner makes it live (POST /v1/tenants/go-live).
+ */
+export async function recordImportBuilt(pool: Pool, tenantId: string, check?: SiteCheck): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT i.source, v.wordpress_version, v.php_version FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id JOIN versions v ON v.id = t.version_id
+      WHERE i.tenant_id = $1`,
+    [tenantId],
+  );
+  if (!rows[0]) return;
+  const warnings = importWarnings(rows[0].source, { wordPressVersion: rows[0].wordpress_version, phpVersion: rows[0].php_version }, check);
+  await pool.query('UPDATE tenant_imports SET site_check = $2, warnings = $3, failure_reason = NULL WHERE tenant_id = $1', [
+    tenantId,
+    check ?? null,
+    JSON.stringify(warnings),
+  ]);
+}
+
+/**
+ * Who else gets email while a moved site is held, besides its administration address: the people with an account on
+ * the store's storefront (its owner and team).
+ */
+export async function holdAllowList(pool: Pool, tenantId: string): Promise<string[]> {
+  const { rows } = await pool.query<{ email: string }>(
+    `SELECT DISTINCT lower(u.email) AS email FROM tenants t
+       JOIN auth.organization o ON o."productId" = t.product_id
+       JOIN auth.member m ON m."organizationId" = o.id
+       JOIN auth."user" u ON u.id = m."userId"
+      WHERE t.id = $1 ORDER BY 1 LIMIT 20`,
+    [tenantId],
+  );
+  return rows.map((r) => r.email);
+}
+
+export interface ImportSource {
   home?: string;
   wordPressVersion?: string;
   phpVersion?: string;
@@ -117,14 +238,25 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     if (typeof code !== 'string' || !code.trim()) throw badRequest('code is required');
     const token = tokenFromCode(code);
     const { rows } = await pool.query(
-      `SELECT i.tenant_id, i.expires_at, i.started_at, t.name, t.size, t.status,
+      `SELECT i.tenant_id, i.expires_at, i.started_at, i.failure_reason, i.warnings, t.name, t.size, t.status, t.on_hold,
          (SELECT d.domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
        FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id WHERE i.token_hash = $1`,
       [hashToken(token)],
     );
     const found = rows[0];
     if (!found) throw new HttpError(404, 'This import code is not valid. Copy it again from AnyPress.');
-    return found as { tenant_id: string; expires_at: Date; started_at: Date | null; name: string; size: Size; status: number; main_domain: string };
+    return found as {
+      tenant_id: string;
+      expires_at: Date;
+      started_at: Date | null;
+      failure_reason: string | null;
+      warnings: string[] | null;
+      name: string;
+      size: Size;
+      status: number;
+      on_hold: boolean;
+      main_domain: string;
+    };
   }
 
   const notStarted = (found: { expires_at: Date; started_at: Date | null }) => {
@@ -165,7 +297,8 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     return c.json({ status: 'moving', store: store(found) });
   });
 
-  // How the move is going: waiting for the upload, moving, done (with the site's address) or failed.
+  // How the move is going: waiting for the upload, moving, done (with the site's address, whether it is still on hold
+  // and any warnings) or failed (with why).
   app.post('/status', async (c) => {
     const found = await findImport(await readJson(c));
     const status = !found.started_at
@@ -175,7 +308,14 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
         : found.status === Status.Failed
           ? 'failed'
           : 'moving';
-    return c.json({ status, store: store(found), ...(status === 'done' && { url: `https://${found.main_domain}` }) });
+    const warnings = found.warnings ?? [];
+    return c.json({
+      status,
+      store: store(found),
+      ...(status === 'done' && { url: `https://${found.main_domain}`, onHold: found.on_hold }),
+      ...(status === 'failed' && { reason: found.failure_reason ?? FAILED }),
+      ...(status !== 'waiting' && warnings.length > 0 && { warnings }),
+    });
   });
 
   return app;

@@ -1,8 +1,10 @@
 import type { Size } from '../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type RestoreTestResult, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
+  /** Held until goLive: a site moved in, or a held store restored. */
+  held?: boolean;
   /** The brand its "unavailable" page was given when suspended; none is the platform's. */
   suspendedBrand?: Brand;
   /** The pack emails the store was told it has bought (setEmailPacks). */
@@ -27,6 +29,8 @@ export class FakeProvisioner implements Provisioner {
   readonly imports = new Map<string, number>();
   /** Every store whose plugins and themes were replaced with its version's code, in order. */
   readonly codeReplaced: string[] = [];
+  /** What the check after a move answers (createStore of a site moved in). */
+  importCheck: SiteCheck = { ok: true, home: 200, login: 200, loaded: true, fatal: null };
   /** Every restore test run (testRestore), in order. */
   readonly restoreTests: { testId: string; backupId: string }[] = [];
   /** The platform's STORE_MAIL_FROM, as if stores sent email. Unset: they send none, as without a relay. */
@@ -150,8 +154,17 @@ export class FakeProvisioner implements Provisioner {
   async createStore(input: CreateStoreInput) {
     this.check('createStore');
     if (input.snapshotId === null && !this.imports.has(input.storeId)) throw new Error(`FakeProvisioner: no import uploaded for ${input.storeId}`);
-    this.stores.set(input.storeId, { ...input, suspended: false, mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined });
+    const imported = input.snapshotId === null;
+    this.stores.set(input.storeId, {
+      ...input,
+      // A site moved in comes with its own options (createStore writes none over them).
+      wpOptions: imported ? {} : input.wpOptions,
+      suspended: false,
+      held: imported || !!input.hold,
+      mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined,
+    });
     if (!input.ownCode) this.codeReplaced.push(input.storeId);
+    return imported ? { check: { ...this.importCheck } } : undefined;
   }
 
   async setDomains({ storeId, mainDomain, redirectDomains, mail }: Parameters<Provisioner['setDomains']>[0]) {
@@ -209,7 +222,7 @@ export class FakeProvisioner implements Provisioner {
     const backup = this.backups.get(input.backupId);
     if (!backup || backup.storeId !== input.storeId) throw new Error(`FakeProvisioner: no backup ${input.backupId} of ${input.storeId}`);
     const { backupId, ...store } = input;
-    this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false, mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined });
+    this.stores.set(input.storeId, { ...store, snapshotId: backupId, suspended: false, held: !!input.hold, mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined });
     if (!input.ownCode) this.codeReplaced.push(input.storeId);
   }
 
@@ -253,6 +266,11 @@ export class FakeProvisioner implements Provisioner {
   async resumeStore({ storeId }: { storeId: string }) {
     this.check('resumeStore');
     this.store(storeId).suspended = false;
+  }
+
+  async goLive({ storeId }: { storeId: string }) {
+    this.check('goLive');
+    this.store(storeId).held = false;
   }
 
   async deleteStore({ storeId }: { storeId: string }) {
