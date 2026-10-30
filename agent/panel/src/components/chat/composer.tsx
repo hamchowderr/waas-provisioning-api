@@ -41,19 +41,8 @@ import { SpeechInput } from '@/components/ai-elements/speech-input';
 type Provider = string;
 export type ModelOption = { id: string; name: string; provider: Provider };
 
-// Model router ids (provider/model). Keep in sync with MODEL_ALLOWLIST in the
-// server's mastra/index.ts. OpenAI entries are the cheaper chat tier on purpose.
-// `name` is the DISPLAY label — kept short (no "Claude" prefix; the provider logo
-// beside it already conveys the vendor). OpenAI names keep "GPT" (it's the model
-// name, not a vendor word).
-export const MODELS: ModelOption[] = [
-  { id: 'anthropic/claude-sonnet-4-6', name: 'Sonnet 4.6', provider: 'anthropic' },
-  { id: 'anthropic/claude-opus-4-8', name: 'Opus 4.8', provider: 'anthropic' },
-  { id: 'anthropic/claude-haiku-4-5', name: 'Haiku 4.5', provider: 'anthropic' },
-  { id: 'openai/gpt-4.1-mini', name: 'GPT-4.1 mini', provider: 'openai' },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai' },
-  { id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 nano', provider: 'openai' },
-];
+// The website assistant runs on the server's own model, so the picker offers none.
+export const MODELS: ModelOption[] = [];
 
 // What the server's /agent-controller/stream accepts (server routes/stream-body.ts):
 // images, PDFs and plain text, at most 4 files of 5 MB each. Checked here too, so a file
@@ -157,7 +146,7 @@ export function Composer({
   footerExtra,
   toolsExtra,
   menuExtra,
-  models = MODELS,
+  models = false,
   webSearch: showWebSearch = true,
   placeholder = 'Ask anything…',
   label = 'Message',
