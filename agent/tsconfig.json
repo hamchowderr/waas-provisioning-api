@@ -1,0 +1,5 @@
+{
+  // The API's settings (and its path to the SDK): the tests run the API in-process.
+  "extends": "../tsconfig.json",
+  "include": ["src", "test", "vitest.config.ts"]
+}
