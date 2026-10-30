@@ -46,6 +46,12 @@ jobs:
       - name: Website assistant
         working-directory: agent
         run: npm ci && npm run typecheck && npm test
+      - name: Website assistant chat panel
+        working-directory: agent/panel
+        run: npm ci && npx tsc --noEmit && npm run build
+      - name: Chat panel in a browser
+        working-directory: agent
+        run: npx playwright install --with-deps chromium && npm run test:browser
 
   assistant-playground:
     # The website assistant on a real WordPress: WordPress Playground running WaaS Client from waas-plugins.

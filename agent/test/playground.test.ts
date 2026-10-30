@@ -75,22 +75,32 @@ describe.skipIf(!CLIENT)('website assistant on WordPress Playground', () => {
   const pages = () => read<Page[]>('/pages');
   const faq = async () => (await pages()).find((p) => p.title === 'FAQ');
 
+  /** Says yes or no to the change `turn` is waiting on, then waits for the reply. */
+  async function decide(turn: ReturnType<Harness['send']>, decision: 'approve' | 'decline', summary?: string) {
+    const gate = await turn.next('tool_approval_required');
+    if (summary) expect(turn.gates()[0]!.summary).toBe(summary);
+    expect((await h.post('/agent-controller/approve', store, { decision, toolCallId: gate.toolCallId })).status).toBe(200);
+    await turn.done;
+  }
+
   it('adds a draft, publishes it only after the owner says yes, and can undo a change', async () => {
     h.script('Add an FAQ page', 'site_pages', {
       action: 'create',
       title: 'FAQ',
       content: '<!-- wp:heading --><h2 class="wp-block-heading">Questions</h2><!-- /wp:heading -->',
     }, 'I added a draft FAQ page.');
-    const added = (await (await h.chat(store, { message: 'Add an FAQ page', conversation: 'faq' })).json()) as { pending: unknown[] };
-    expect(added.pending).toEqual([]);
+    const added = h.send(store, { text: 'Add an FAQ page' });
+    const thread = (await added.next('__thread__')).threadId as string;
+    await added.done;
+    expect(added.gates()).toEqual([]);
     const page = await faq();
     expect(page?.status).toBe('draft');
 
-    h.script('Publish it', 'site_pages', { action: 'update', pageId: page!.id, status: 'publish' }, 'The FAQ page is live.');
-    const waiting = (await (await h.chat(store, { message: 'Publish it', conversation: 'faq' })).json()) as { pending: { toolCallId: string; summary: string }[] };
-    expect(waiting.pending.map((p) => p.summary)).toEqual([`Publish page ${page!.id}`]);
+    h.script('Publish it', 'site_pages_change', { action: 'update', pageId: page!.id, status: 'publish' }, 'The FAQ page is live.');
+    const publish = h.send(store, { text: 'Publish it', threadId: thread });
+    await publish.next('tool_approval_required');
     expect((await faq())?.status).toBe('draft');
-    await h.answer(store, { conversation: 'faq', toolCallId: waiting.pending[0]!.toolCallId, approve: true });
+    await decide(publish, 'approve', `Publish page ${page!.id}`);
     expect((await faq())?.status).toBe('publish');
 
     h.script('Change the heading to Good to know', 'page_section', {
@@ -99,8 +109,7 @@ describe.skipIf(!CLIENT)('website assistant on WordPress Playground', () => {
       section: 0,
       content: '<!-- wp:heading --><h2 class="wp-block-heading">Good to know</h2><!-- /wp:heading -->',
     }, 'Done.');
-    const change = (await (await h.chat(store, { message: 'Change the heading to Good to know', conversation: 'faq' })).json()) as { pending: { toolCallId: string }[] };
-    await h.answer(store, { conversation: 'faq', toolCallId: change.pending[0]!.toolCallId, approve: true });
+    await decide(h.send(store, { text: 'Change the heading to Good to know', threadId: thread }), 'approve');
     const changed = await read<{ content: string }>(`/pages/${page!.id}`);
     expect(changed.content).toContain('Good to know');
 
@@ -108,10 +117,8 @@ describe.skipIf(!CLIENT)('website assistant on WordPress Playground', () => {
     const revisions = await read<{ id: number; outline: unknown }[]>(`/pages/${page!.id}/revisions`);
     const before = revisions.find((r) => JSON.stringify(r.outline).includes('Questions'));
     expect(before).toBeDefined();
-    h.script('Put the old heading back', 'site_pages', { action: 'restore_revision', pageId: page!.id, revisionId: before!.id }, 'It’s back the way it was.');
-    const undo = (await (await h.chat(store, { message: 'Put the old heading back', conversation: 'faq' })).json()) as { pending: { toolCallId: string; summary: string }[] };
-    expect(undo.pending[0]!.summary).toBe(`Put page ${page!.id} back to an earlier version`);
-    await h.answer(store, { conversation: 'faq', toolCallId: undo.pending[0]!.toolCallId, approve: true });
+    h.script('Put the old heading back', 'site_pages_change', { action: 'restore_revision', pageId: page!.id, revisionId: before!.id }, 'It’s back the way it was.');
+    await decide(h.send(store, { text: 'Put the old heading back', threadId: thread }), 'approve', `Put page ${page!.id} back to an earlier version`);
     expect((await read<{ content: string }>(`/pages/${page!.id}`)).content).toContain('Questions');
   });
 
@@ -119,8 +126,7 @@ describe.skipIf(!CLIENT)('website assistant on WordPress Playground', () => {
     const page = await faq();
     const before = await read<{ content: string }>(`/pages/${page!.id}`);
     h.script('Remove the heading', 'page_section', { action: 'remove', pageId: page!.id, section: 0 }, 'Okay, I left it.');
-    const waiting = (await (await h.chat(store, { message: 'Remove the heading', conversation: 'faq-2' })).json()) as { pending: { toolCallId: string }[] };
-    await h.answer(store, { conversation: 'faq-2', toolCallId: waiting.pending[0]!.toolCallId, approve: false });
+    await decide(h.send(store, { text: 'Remove the heading' }), 'decline');
     expect((await read<{ content: string }>(`/pages/${page!.id}`)).content).toBe(before.content);
   });
 });

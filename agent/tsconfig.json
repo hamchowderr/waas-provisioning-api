@@ -1,5 +1,7 @@
 {
   // The API's settings (and its path to the SDK): the tests run the API in-process.
   "extends": "../tsconfig.json",
+  // src/chat-server comes from the Chat Kit, which imports without file extensions.
+  "compilerOptions": { "module": "Preserve", "moduleResolution": "Bundler" },
   "include": ["src", "test", "vitest.config.ts"]
 }
