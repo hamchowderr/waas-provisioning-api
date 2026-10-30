@@ -1169,7 +1169,7 @@ export interface components {
             asZip?: boolean;
             /**
              * @description A collection of key value pairs that will be used to initialize WordPress options;
-             *     Use the key as option name. The value will be set as is.
+             *     Use the key as option name. The value will be set as is. When not given, `blogname` (the site title) is the store's `name` and `admin_email` is `wordPressUserEmail`, so the store starts with its own title and starter pages.
              * @example {
              *       "important_option": "initialValue"
              *     }

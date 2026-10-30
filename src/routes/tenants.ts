@@ -141,6 +141,20 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
 }
 
 /**
+ * The options a new store starts with: the ones asked for, plus its name as the site title and the owner's email as
+ * its administration address when the call doesn't set them. The store template keeps a placeholder address
+ * (admin@example.invalid) until one is set, and only a store with a real one gets its starter pages and opens on its
+ * home page (templates/anypress-store/mu-plugins/anypress-patterns.php).
+ */
+function storeOptions(name: string, email: string | undefined, wpOptions: Record<string, string> | null | undefined): Record<string, string> {
+  return {
+    blogname: name.trim(),
+    ...(email?.trim() ? { admin_email: email.trim().toLowerCase() } : {}),
+    ...(wpOptions ?? {}),
+  };
+}
+
+/**
  * Creates a store for a product: what POST /v1/tenants does, also used for the platform's own stores (hosted
  * storefronts, src/routes/admin.ts). Answers { id, externalId, baseDomain, customDomain? }.
  *
@@ -225,7 +239,7 @@ export async function createTenant(
         snapshot.name,
         snapshot.group_name,
         // A site moved in keeps its own options: none from the create call are written over them, now or on a rollback.
-        imported ? {} : (body.wpOptions ?? {}),
+        imported ? {} : storeOptions(body.name, userEmail, body.wpOptions),
         encodePhpConstants(secrets, body.phpConstants ?? {}),
         Status.Pending,
         body.size ?? DEFAULT_SIZE,

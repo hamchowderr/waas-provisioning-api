@@ -2824,7 +2824,7 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: "A collection of key value pairs that will be used to initialize WordPress options;\r\nUse the key as option name. The value will be set as is."
+          description: "A collection of key value pairs that will be used to initialize WordPress options;\r\nUse the key as option name. The value will be set as is. When not given, `blogname` (the site title) is the store's `name` and `admin_email` is `wordPressUserEmail`, so the store starts with its own title and starter pages."
           nullable: true
           example:
             important_option: initialValue

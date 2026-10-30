@@ -65,6 +65,18 @@ describe('tenants', () => {
     expect(store.phpConstants.EXAMPLE_PRIVATE).toEqual({ value: 'example-private-value', isPrivate: true });
   });
 
+  it('names the store and gives it the owner\'s email unless wpOptions sets them', async () => {
+    const { body } = await createTenant({ name: 'Rose Florist', wordPressUserName: 'rose', wordPressUserEmail: 'Rose@Example.com' });
+    await waitFor(async () => (await tenantStatus(body.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(body.id)!.wpOptions).toMatchObject({ blogname: 'Rose Florist', admin_email: 'rose@example.com' });
+    const own = await createTenant({ name: 'Own Options', wordPressUserName: 'o', wordPressUserEmail: 'o@example.com', wpOptions: { blogname: 'Mine', admin_email: 'shop@example.com' } });
+    await waitFor(async () => (await tenantStatus(own.body.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(own.body.id)!.wpOptions).toMatchObject({ blogname: 'Mine', admin_email: 'shop@example.com' });
+    const bare = await createTenant({ name: 'No Owner' });
+    await waitFor(async () => (await tenantStatus(bare.body.externalId)) === Status.Done);
+    expect(t.provisioner.stores.get(bare.body.id)!.wpOptions).toEqual({ blogname: 'No Owner' });
+  });
+
   it('accepts the deprecated tenant* user fields', async () => {
     const { body } = await createTenant({ name: 'Old Fields', tenantName: 'legacy', tenantEmail: 'legacy@example.com', tenantUserRole: 'editor' });
     await waitFor(async () => (await tenantStatus(body.externalId)) === Status.Done);
