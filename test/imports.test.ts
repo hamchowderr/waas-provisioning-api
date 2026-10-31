@@ -346,6 +346,12 @@ describe('how a move went', () => {
   it('compares versions as far as the store names them', () => {
     expect(importWarnings({ phpVersion: '8.3.6', wordPressVersion: '6.8.3' }, { wordPressVersion: '6.8', phpVersion: '8.3' })).toEqual([]);
     expect(importWarnings({ phpVersion: '8.2.1', wordPressVersion: '6.7' }, { wordPressVersion: '6.8', phpVersion: '8.3' })).toHaveLength(1);
+    const store = { wordPressVersion: '6.8', phpVersion: '8.3' };
+    const rows = Array.from({ length: 7 }, (_, i) => ({ table: `wp_t${i}`, exported: 10, loaded: i }));
+    expect(importWarnings(null, store, undefined, { rows, notes: ['Left behind on the old site: Database views: v1'] })).toEqual([
+      "Some rows did not arrive: wp_t0 (0 of 10), wp_t1 (1 of 10), wp_t2 (2 of 10), wp_t3 (3 of 10), wp_t4 (4 of 10) and 2 more tables. Contact support with the store's address before going live.",
+      'Left behind on the old site: Database views: v1',
+    ]);
     expect(importWarnings(null, { wordPressVersion: '6.8', phpVersion: '8.3' }, { ok: false, error: 'boom /var/www' })).toEqual([
       'The site could not be checked after the move. Open it and its admin to see that it works.',
     ]);

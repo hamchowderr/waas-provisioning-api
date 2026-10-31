@@ -1,5 +1,5 @@
 import type { Size } from '../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type MoveReport, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
@@ -31,6 +31,8 @@ export class FakeProvisioner implements Provisioner {
   readonly codeReplaced: string[] = [];
   /** What the check after a move answers (createStore of a site moved in). */
   importCheck: SiteCheck = { ok: true, home: 200, login: 200, loaded: true, fatal: null };
+  /** What the agent's restore reports about a move (rows short, the export's notes); none by default. */
+  importMoved: MoveReport | undefined;
   /** Every restore test run (testRestore), in order. */
   readonly restoreTests: { testId: string; backupId: string }[] = [];
   /** The platform's STORE_MAIL_FROM, as if stores sent email. Unset: they send none, as without a relay. */
@@ -172,7 +174,7 @@ export class FakeProvisioner implements Provisioner {
       mailFrom: this.mailFrom({ mailbox: input.mailbox }) ?? undefined,
     });
     if (!input.ownCode) this.codeReplaced.push(input.storeId);
-    return imported ? { check: { ...this.importCheck } } : undefined;
+    return imported ? { check: { ...this.importCheck }, ...(this.importMoved && { moved: this.importMoved }) } : undefined;
   }
 
   async setDomains({ storeId, mainDomain, redirectDomains, mail }: Parameters<Provisioner['setDomains']>[0]) {

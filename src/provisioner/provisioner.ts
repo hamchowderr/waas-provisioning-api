@@ -106,7 +106,7 @@ export interface Provisioner {
    * (snapshotId null) is built from its upload, held until it goes live (goLive), and then checked: the answer
    * says whether it serves with its plugins loaded.
    */
-  createStore(input: CreateStoreInput): Promise<{ check?: SiteCheck } | void>;
+  createStore(input: CreateStoreInput): Promise<{ check?: SiteCheck; moved?: MoveReport } | void>;
 
   /**
    * Sets the domains a store answers on. The main domain is SiteUrl and Home; the rest redirect to it.
@@ -275,6 +275,14 @@ export interface SiteCheck {
   error?: string;
   /** What the moved site runs and holds (agent.php site_inventory), for the report after the move (src/sitereport.ts). */
   inventory?: SiteInventory;
+}
+
+/** What the move itself found, from the export's waas.json (AnyPress Export 1.1+), for the warnings after it. */
+export interface MoveReport {
+  /** Tables with fewer rows on the store than the export counted. */
+  rows?: { table: string; exported: number; loaded: number }[];
+  /** What the export told the owner to check once the site is on AnyPress. */
+  notes?: string[];
 }
 
 /** What a restored backup holds, as testRestore found it. */

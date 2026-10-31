@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_SIZE, isSize, type Size } from '../../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom } from '../provisioner.ts';
+import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type MoveReport, type SiteCheck, type StoreMailFrom } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
@@ -521,7 +521,7 @@ export class CoolifyProvisioner implements Provisioner {
    * until it goes live. It comes with its own options, so the store's are not written over them, and it is checked
    * once built (check-site): the answer carries what the check found.
    */
-  private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string, imported = false): Promise<{ check?: SiteCheck }> {
+  private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string, imported = false): Promise<{ check?: SiteCheck; moved?: MoveReport }> {
     const version = await this.versionMeta(input.versionId);
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
@@ -543,8 +543,10 @@ export class CoolifyProvisioner implements Provisioner {
     const home = https(input.mainDomain);
     const hold = imported || input.hold === true;
     let check: SiteCheck | undefined;
+    let moved: MoveReport | undefined;
     try {
-      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
+      const restored = await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
+      if (imported) moved = moveReport(restored);
       if (!input.ownCode) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)) });
       // A site from elsewhere may come from an older WordPress than the version runs.
       if (imported) await this.exec(uuid, 'update-db', {});
@@ -569,7 +571,7 @@ export class CoolifyProvisioner implements Provisioner {
     }
     // Its agent runs its cron from now on (configure set the flag, unless the store is held); a task left by an older retry goes.
     await this.removeCron(uuid);
-    return check ? { check } : {};
+    return { ...(check && { check }), ...(moved && Object.keys(moved).length > 0 && { moved }) };
   }
 
   /**
@@ -955,4 +957,15 @@ export function parseMeta(description: string | null | undefined): VersionMeta |
   const size = store[3] ?? DEFAULT_SIZE;
   // A size this API does not know (a newer one's) is no metadata it can act on.
   return isSize(size) ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1), size } : null;
+}
+
+/** The agent's restore answer, as a MoveReport: only well-formed rows and lines. */
+export function moveReport(restored: Record<string, unknown>): MoveReport {
+  const rows = (Array.isArray(restored.rows) ? restored.rows : [])
+    .filter((r): r is { table: string; exported: number; loaded: number } =>
+      !!r && typeof r.table === 'string' && Number.isInteger(r.exported) && Number.isInteger(r.loaded))
+    .slice(0, 20)
+    .map(({ table, exported, loaded }) => ({ table, exported, loaded }));
+  const notes = (Array.isArray(restored.notes) ? restored.notes : []).filter((n): n is string => typeof n === 'string').slice(0, 20).map((n) => n.slice(0, 300));
+  return { ...(rows.length > 0 && { rows }), ...(notes.length > 0 && { notes }) };
 }

@@ -186,11 +186,13 @@ function url_pairs(string $old, string $new, bool $twins = true): array
  * custom content address such as Bedrock's /app) to the store's `$home`, then sets home and siteurl. GUIDs keep the
  * old address, as WordPress wants.
  */
-function set_import_home(string $oldHome, ?string $oldSiteurl, ?string $contentUrl, string $home): void
+function set_import_home(string $oldHome, array $oldSiteurls, ?string $contentUrl, string $home): void
 {
     $home = rtrim($home, '/');
     $pairs = url_pairs($oldHome, $home);
-    if ($oldSiteurl && rtrim($oldSiteurl, '/') !== rtrim($oldHome, '/')) $pairs += url_pairs($oldSiteurl, $home);
+    foreach ($oldSiteurls as $oldSiteurl) {
+        if (rtrim($oldSiteurl, '/') !== rtrim($oldHome, '/')) $pairs += url_pairs($oldSiteurl, $home);
+    }
     if ($contentUrl && rtrim($contentUrl, '/') !== rtrim($oldHome, '/') . '/wp-content') $pairs += url_pairs($contentUrl, "$home/wp-content");
     // Longest first: a path or content address goes before the bare host it starts with.
     uksort($pairs, fn ($a, $b) => strlen($b) <=> strlen($a) ?: strcmp($a, $b));
@@ -242,6 +244,47 @@ function clean_import(): array
     }
     foreach ($removed as $rel) run('rm -rf ' . escapeshellarg(CONTENT . "/$rel"));
     return $removed;
+}
+
+/**
+ * The tables whose rows didn't all arrive: waas.json's row count per table (AnyPress Export 1.1+), against what the
+ * store's database now holds under the same names. Up to 20, for the warnings after the move.
+ */
+function compare_rows(array $exported): array
+{
+    $short = [];
+    foreach ($exported as $table => $rows) {
+        if (!is_string($table) || !preg_match('/^[A-Za-z0-9_$]{1,64}$/', $table) || !is_int($rows)) continue;
+        $loaded = wpMayFail('db', 'query', "SELECT COUNT(*) FROM `$table`", '--skip-column-names');
+        $loaded = $loaded !== null && preg_match('/(\d+)\s*$/', $loaded, $m) ? (int) $m[1] : 0;
+        if ($loaded < $rows) $short[] = ['table' => $table, 'exported' => $rows, 'loaded' => $loaded];
+        if (count($short) >= 20) break;
+    }
+    return $short;
+}
+
+/**
+ * What the export told the owner to check once the site is on AnyPress (its preflight notes, AnyPress Export 1.1+):
+ * the "leave behind", "re-add" and "check after" groups as plain lines, not "before you start", which is about the old
+ * site. Up to 20 lines of up to 300 characters.
+ */
+function export_notes(array $groups): array
+{
+    $lead = ['behind' => 'Left behind on the old site: ', 'constants' => 'Set in the old wp-config.php, which doesn\'t move: ', 'after' => ''];
+    $lines = [];
+    foreach ($groups as $group) {
+        $id = is_array($group) ? ($group['id'] ?? '') : '';
+        if (!isset($lead[$id]) || !is_array($group['items'] ?? null)) continue;
+        $items = array_values(array_filter($group['items'], 'is_string'));
+        if ($id === 'constants') $items = $items ? [implode(', ', array_slice($items, 0, 20))] : [];
+        foreach ($items as $item) {
+            $line = $lead[$id] . trim(preg_replace('/\s+/', ' ', strip_tags($item)));
+            // Without mbstring (the agent's image may not have it): cut at 299 characters, not bytes.
+            if (strlen($line) > 300 && preg_match('/^.{300}/us', $line)) $line = (preg_match('/^.{0,299}/us', $line, $m) ? $m[0] : substr($line, 0, 299)) . '…';
+            $lines[] = $line;
+        }
+    }
+    return array_slice($lines, 0, 20);
 }
 
 /**
@@ -1517,6 +1560,7 @@ switch ($op) {
         if ($sql) {
             wpMayFail('db', 'clean', '--yes');
             load_sql($sql, $import ? 'the database could not be imported' : 'the database could not be restored');
+            if ($import) $result['rows'] = compare_rows(is_array($info['tables'] ?? null) ? $info['tables'] : []);
             if ($import) {
                 $result['tablePrefix'] = adopt_prefix(is_string($info['tablePrefix'] ?? null) ? $info['tablePrefix'] : null);
                 $result['previousHome'] = wpMayFail('option', 'get', 'home');
@@ -1527,8 +1571,12 @@ switch ($op) {
                 '--admin_email=' . ($args['adminEmail'] ?? 'admin@example.invalid'), '--admin_password=' . bin2hex(random_bytes(24)), '--skip-email');
         }
         if ($import && $result['previousHome']) {
-            set_import_home($result['previousHome'], $oldSiteurl, is_string($info['contentUrl'] ?? null) ? $info['contentUrl'] : null, $args['home']);
+            // The old site's own siteurl: the database's, and what WordPress answered there (WP_SITEURL in its
+            // wp-config.php, which doesn't move, wins over the database).
+            $siteurls = array_filter([$oldSiteurl, is_string($info['siteurl'] ?? null) ? $info['siteurl'] : null]);
+            set_import_home($result['previousHome'], $siteurls, is_string($info['contentUrl'] ?? null) ? $info['contentUrl'] : null, $args['home']);
             $result['cleared'] = clean_import_db(wp('config', 'get', 'table_prefix'), $args['home']);
+            $result['notes'] = export_notes(is_array($info['preflight']['notes'] ?? null) ? $info['preflight']['notes'] : []);
         } else {
             set_home($args['home']);
         }

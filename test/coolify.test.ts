@@ -3,7 +3,7 @@ import { parse } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { AGENT_COMMAND, AGENT_GZ, AGENT_SCRIPT, CRON_LIMIT, ENV_VALUE_LIMIT, renderCompose } from '../src/provisioner/coolify/compose.ts';
-import { CRON_TASK, CoolifyProvisioner, formatMeta, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
+import { CRON_TASK, CoolifyProvisioner, formatMeta, moveReport, parseMeta, STORE_SETUP } from '../src/provisioner/coolify/provisioner.ts';
 import { S3 } from '../src/provisioner/s3.ts';
 
 const COOLIFY = 'https://coolify.test';
@@ -1226,5 +1226,17 @@ describe('Provisioner selection', () => {
     expect(releases).toEqual({ endpoint: S3_ENDPOINT, bucket: 'waas-releases', region: 'auto', accessKeyId: 'READKEY', secretAccessKey: 'read-secret', virtualHost: true });
     // A blank RELEASES_ value falls back to the backup one, as an unset one does.
     expect(loadConfig({ ...base, RELEASES_S3_BUCKET: 'waas-releases', S3_ENDPOINT, S3_ACCESS_KEY_ID: 'BACKUPKEY', S3_SECRET_ACCESS_KEY: 'backup-secret', RELEASES_S3_ACCESS_KEY_ID: '\n' }).releases?.accessKeyId).toBe('BACKUPKEY');
+  });
+});
+
+describe('moveReport', () => {
+  it("keeps only well-formed rows and lines from the agent's restore answer", () => {
+    expect(moveReport({})).toEqual({});
+    expect(
+      moveReport({
+        rows: [{ table: 'wp_posts', exported: 9, loaded: 7 }, { table: 'x', exported: '9', loaded: 1 }, null],
+        notes: ['Check the mail plugin.', 42, 'y'.repeat(400)],
+      }),
+    ).toEqual({ rows: [{ table: 'wp_posts', exported: 9, loaded: 7 }], notes: ['Check the mail plugin.', 'y'.repeat(300)] });
   });
 });
