@@ -124,7 +124,9 @@ beforeAll(() => {
   docker('network', 'create', NAMES.network);
   docker('volume', 'create', NAMES.volume);
   docker('run', '-d', '--name', NAMES.db, '--network', NAMES.network, '--network-alias', 'db',
-    '-e', 'MARIADB_DATABASE=wordpress', '-e', 'MARIADB_USER=wordpress', '-e', 'MARIADB_PASSWORD=wordpress', '-e', 'MARIADB_ROOT_PASSWORD=root', IMAGES.db);
+    '-e', 'MARIADB_DATABASE=wordpress', '-e', 'MARIADB_USER=wordpress', '-e', 'MARIADB_PASSWORD=wordpress', '-e', 'MARIADB_ROOT_PASSWORD=root', IMAGES.db,
+    // As compose.ts starts a store's database.
+    '--max-allowed-packet=256M');
   docker('run', '-d', '--name', NAMES.wordpress, '--network', NAMES.network, '--network-alias', 'wordpress', '-v', `${NAMES.volume}:/var/www/html`,
     ...DB_ENV.flatMap((e) => ['-e', e]), '-e', `WORDPRESS_CONFIG_EXTRA=${CONFIG_EXTRA}`, IMAGES.wordpress);
   docker('run', '-d', '--name', NAMES.agent, '--network', NAMES.network, '-v', `${NAMES.volume}:/var/www/html`, '-v', `${AGENT}:/tmp/waas-agent.php:ro`,
@@ -412,5 +414,17 @@ describe('a site moved in is held until it goes live', () => {
     expect(fileExists('/var/www/html/wp-content/.waas-cron')).toBe(true);
     expect(send()).toEqual(['sent', 'sent', 'sent', 'sent']);
     expect(agent('configure', {})).toMatchObject({ held: false });
+  });
+
+  it('moves in a row past MariaDB\'s 16 MB default packet, as one statement', () => {
+    const big = 'x'.repeat(20 * 1024 * 1024);
+    moveIn('big-row', { sql: `INSERT INTO \`{p}options\` (option_name, option_value, autoload) VALUES ('big_row', '${big}', 'no');\n` });
+    expect(sql("SELECT LENGTH(option_value) FROM wp_options WHERE option_name = 'big_row'")).toBe(String(big.length));
+  });
+
+  it('fails a backup restore at a statement that fails, instead of reporting a partly loaded database as restored', () => {
+    const broken = inAgent('sh', '-c', "cd /tmp && rm -rf r && mkdir r && wp --path=/var/www/html --skip-plugins --skip-themes db export r/database.sql >/dev/null && printf \"INSERT INTO wp_options (option_name, option_value) VALUES ('siteurl', 'twice');\\n\" >> r/database.sql && cd r && tar -czf /tmp/broken.tar.gz . && echo ok");
+    expect(broken.trim()).toBe('ok');
+    expect(() => agent('restore', { url: 'file:///tmp/broken.tar.gz', home: HOME })).toThrow(/the database could not be restored: .*Duplicate entry 'siteurl'/);
   });
 });

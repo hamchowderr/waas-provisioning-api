@@ -245,6 +245,20 @@ function clean_import(): array
 }
 
 /**
+ * Loads a database.sql into the store's database. Not `wp db import`: it runs the file with SOURCE, and the client then
+ * goes on past a statement that fails (a duplicate key, an unknown collation) and exits 0, so a restore or a move would
+ * finish with tables or rows missing. Fed on stdin, the client stops at the first error and this fails, saying where.
+ * The server takes packets up to 256 MB (compose.ts), so the client may send them too: one big row is one packet.
+ */
+function load_sql(string $sql, string $what): void
+{
+    $out = run('(printf "SET autocommit=0; SET unique_checks=0; SET foreign_key_checks=0;\\n"; cat ' . escapeshellarg($sql) . '; printf "\\nCOMMIT;\\n")'
+        . ' | wp --path=' . ROOT . ' --skip-plugins --skip-themes db query --max_allowed_packet=256M 2>&1; echo "::$?"', true);
+    [$text, $code] = array_pad(explode('::', $out, 2), 2, '1');
+    if (trim($code) !== '0') fail($what . ': ' . substr(trim(preg_replace('/^.*Deprecated program name.*$/m', '', $text)), -400));
+}
+
+/**
  * Settings of a site moved in that point outside the store, cleared once its database is in: an upload folder
  * (`upload_path`) outside the store's files and an upload address (`upload_url_path`) on another host, which would
  * send new uploads, and their links, nowhere; and Elementor's cached CSS, which has the old address in it and is
@@ -1502,17 +1516,7 @@ switch ($op) {
         $oldSiteurl = null;
         if ($sql) {
             wpMayFail('db', 'clean', '--yes');
-            if ($import) {
-                // Not `wp db import`: it runs the file with SOURCE, and the client then goes on past a statement that
-                // fails (a duplicate key, an unknown collation) and exits 0, so a site would arrive with tables or rows
-                // missing. Fed on stdin, the client stops at the first error and the move fails, saying where.
-                $out = run('(printf "SET autocommit=0; SET unique_checks=0; SET foreign_key_checks=0;\\n"; cat ' . escapeshellarg($sql) . '; printf "\\nCOMMIT;\\n")'
-                    . ' | wp --path=' . ROOT . ' --skip-plugins --skip-themes db query 2>&1; echo "::$?"', true);
-                [$text, $code] = array_pad(explode('::', $out, 2), 2, '1');
-                if (trim($code) !== '0') fail('the database could not be imported: ' . substr(trim(preg_replace('/^.*Deprecated program name.*$/m', '', $text)), -400));
-            } else {
-                wp('db', 'import', $sql);
-            }
+            load_sql($sql, $import ? 'the database could not be imported' : 'the database could not be restored');
             if ($import) {
                 $result['tablePrefix'] = adopt_prefix(is_string($info['tablePrefix'] ?? null) ? $info['tablePrefix'] : null);
                 $result['previousHome'] = wpMayFail('option', 'get', 'home');

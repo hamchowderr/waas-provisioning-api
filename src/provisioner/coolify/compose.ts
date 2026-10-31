@@ -150,6 +150,9 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
       db: {
         image: 'mariadb:11',
         restart: 'unless-stopped',
+        // One row is one packet, and a moved-in site can hold a row (a big option, a page builder's post) past
+        // MariaDB's 16 MB default. The buffer only grows when such a packet arrives.
+        command: ['--max-allowed-packet=256M'],
         environment: {
           MARIADB_DATABASE: 'wordpress',
           MARIADB_USER: 'wordpress',
