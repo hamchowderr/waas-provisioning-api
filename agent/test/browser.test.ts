@@ -199,6 +199,33 @@ describe('chat panel', () => {
     }, 90_000);
   }
 
+  for (const [label, width, height] of [['desktop', 1280, 800], ['phone', 390, 844]] as const) {
+    it(`says plainly when the month's assistant messages are used up (${label})`, async () => {
+      const month = new Date().toISOString().slice(0, 7) + '-01';
+      await h.t.pool.query(
+        `INSERT INTO assistant_usage (tenant_id, month, messages) VALUES ($1, $2, 150)
+         ON CONFLICT (tenant_id, month) DO UPDATE SET messages = 150`,
+        [h.stores[0]!.id, month],
+      );
+      try {
+        const page = await signedInPage(width, height);
+        await page.goto(panelUrl);
+        const box = page.getByRole('textbox');
+        await box.fill('Change my heading');
+        await box.press('Enter');
+        const notice = page.getByRole('alert').filter({ hasText: 'assistant messages' });
+        await notice.waitFor({ timeout: 30_000 });
+        expect(await notice.innerText()).toMatch(/^You've used all 150 assistant messages in your plan this month\. They start again on \w+ 1\. A bigger plan gets more\.$/);
+        expect(writes()).toEqual([]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await page.screenshot({ path: `test-results/panel-allowance-${label}.png`, fullPage: true });
+        await page.context().close();
+      } finally {
+        await h.t.pool.query('DELETE FROM assistant_usage WHERE tenant_id = $1', [h.stores[0]!.id]);
+      }
+    }, 60_000);
+  }
+
   it('changes nothing when the owner clicks Reject', async () => {
     h.script('Remove my second section', 'page_section', { action: 'remove', pageId: 2, section: 1 }, 'Okay, I left it as it is.');
     const page = await signedInPage(1280, 800);

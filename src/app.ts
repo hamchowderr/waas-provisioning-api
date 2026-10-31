@@ -17,6 +17,7 @@ import { checkHealth } from './health.ts';
 import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
+import { assistantUsageRoutes } from './assistant-usage.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
 import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
@@ -197,6 +198,8 @@ export function createApp(deps: Deps) {
 
   // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
   oauthRoutes(app, deps);
+  // The website assistant's monthly allowance per store (src/assistant-usage.ts).
+  assistantUsageRoutes(app, deps);
   mcpRoutes(app, deps);
 
   app.onError((err, c) => {

@@ -235,8 +235,8 @@ export function ChatPanel({
         {/* A failed turn says so, as the full shell does. Above the composer, so it shows on
           the empty state too (a first message can fail before any transcript exists). */}
         {transcript.error && (
-          <p role="alert" className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 text-destructive text-sm">
-            Something went wrong: {transcript.error}
+          <p role="alert" className={`mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 text-sm ${transcript.notice ? 'text-muted-foreground' : 'text-destructive'}`}>
+            {transcript.notice ? transcript.error : `Something went wrong: ${transcript.error}`}
           </p>
         )}
 
