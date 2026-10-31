@@ -56,7 +56,10 @@ addEventListener('message', async (event) => {
     const { url } = await (await fetch('/assistant-handoff', { method: 'POST' })).json();
     frame.src = url + '&back=/editor';
   }
-  if (event.data.type === 'ready') frame.contentWindow.postMessage({ source: 'anypress-editor', type: 'view', view }, panelOrigin);
+  if (event.data.type === 'ready') {
+    frame.contentWindow.postMessage({ source: 'anypress-editor', type: 'view', view }, panelOrigin);
+    window.viewSent = true;
+  }
   if (event.data.type === 'apply') {
     window.applied.push(event.data.change);
     document.getElementById('hero').textContent = 'Bread baked at dawn';
@@ -255,6 +258,9 @@ describe('chat panel', () => {
       const chat = page.frameLocator('#panel');
       const box = chat.getByRole('textbox');
       await box.waitFor({ timeout: 30_000 });
+      // The chat box shows before the panel has heard what the editor has open; a message sent sooner carries no
+      // view, so editor_change refuses it (as it should) and nothing reaches the editor.
+      await page.waitForFunction(() => (window as unknown as { viewSent?: boolean }).viewSent === true, undefined, { timeout: 30_000 });
       await box.fill(`Make this heading warmer ${label}`);
       await box.press('Enter');
       await chat.getByText('Done. Press Save to keep it.').waitFor({ timeout: 30_000 });

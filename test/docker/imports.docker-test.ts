@@ -416,6 +416,34 @@ describe('a site moved in is held until it goes live', () => {
     expect(agent('configure', {})).toMatchObject({ held: false });
   });
 
+  it("compares the export's row counts, passes on its notes, and moves the address WP_SITEURL gave the old site", () => {
+    const { restored } = moveIn('counted', {
+      sql: "INSERT INTO `{p}posts` (post_title, post_content, post_status, post_type) VALUES ('Linked', 'See https://cms.old.example.com/page', 'publish', 'post');\n",
+      info: {
+        siteurl: 'https://cms.old.example.com',
+        tables: { wp_options: 1, wp_posts: 100000, wp_gone: 3 },
+        preflight: {
+          notes: [
+            { id: 'before', title: 'Before you start', items: ['Free up space.'] },
+            { id: 'behind', title: "We'll leave these behind", items: ['Database views: <b>v1</b>'] },
+            { id: 'constants', title: 'Re-add these', text: '…', items: ['STRIPE_KEY', 'GF_LICENSE'] },
+            { id: 'after', title: 'Check these after the move', items: ['Turn off WP Rocket.'] },
+          ],
+        },
+      },
+    });
+    expect(restored.rows).toEqual([
+      { table: 'wp_posts', exported: 100000, loaded: expect.any(Number) },
+      { table: 'wp_gone', exported: 3, loaded: 0 },
+    ]);
+    expect(restored.notes).toEqual([
+      'Left behind on the old site: Database views: v1',
+      "Set in the old wp-config.php, which doesn't move: STRIPE_KEY, GF_LICENSE",
+      'Turn off WP Rocket.',
+    ]);
+    expect(sql("SELECT post_content FROM wp_posts WHERE post_title = 'Linked'")).toBe(`See ${HOME}/page`);
+  });
+
   it('moves in a row past MariaDB\'s 16 MB default packet, as one statement', () => {
     const big = 'x'.repeat(20 * 1024 * 1024);
     moveIn('big-row', { sql: `INSERT INTO \`{p}options\` (option_name, option_value, autoload) VALUES ('big_row', '${big}', 'no');\n` });

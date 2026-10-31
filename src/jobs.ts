@@ -342,7 +342,7 @@ async function createTenant(
     ...(imported && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
   });
   await recordMailSender(pool, provisioner, tenant.id, { mailbox });
-  if (imported) await recordImportBuilt(pool, tenant.id, built?.check);
+  if (imported) await recordImportBuilt(pool, tenant.id, built?.check, built?.moved);
   if (imported) await pool.query('UPDATE tenants SET on_hold = true, date_held = COALESCE(date_held, now()) WHERE id = $1', [tenant.id]);
   await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
   // A site moved in is built: its upload is no longer needed.

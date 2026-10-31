@@ -6,7 +6,7 @@ import { badRequest, HttpError } from './errors.ts';
 import { channelKey, parseManifest } from './releases.ts';
 import { readJson } from './http.ts';
 import { SIZES, type Size } from './plans.ts';
-import type { Provisioner, SiteCheck } from './provisioner/provisioner.ts';
+import type { MoveReport, Provisioner, SiteCheck } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
 import { siteReport, type SiteReport } from './sitereport.ts';
 import { Status } from './status.ts';
@@ -143,7 +143,12 @@ function compareVersions(a: string | undefined, b: string | undefined): number {
  * What the owner should know about a site moved in: it ran another PHP than the store does, or a newer WordPress
  * (the store can't go back), and what the check after the move found (src/provisioner: SiteCheck).
  */
-export function importWarnings(source: ImportSource | null, store: { wordPressVersion: string; phpVersion: string }, check?: SiteCheck): string[] {
+export function importWarnings(
+  source: ImportSource | null,
+  store: { wordPressVersion: string; phpVersion: string },
+  check?: SiteCheck,
+  moved?: MoveReport,
+): string[] {
   const warnings: string[] = [];
   const php = majorMinor(source?.phpVersion);
   const storePhp = majorMinor(store.phpVersion);
@@ -164,6 +169,12 @@ export function importWarnings(source: ImportSource | null, store: { wordPressVe
       warnings.push(`After the move ${pages}${check.fatal ? `, and PHP stopped with: ${check.fatal}` : check.loaded === false ? ', and WordPress did not load with its plugins' : ''}. Fix or switch off the plugin or theme at fault.`);
     }
   }
+  const short = moved?.rows ?? [];
+  if (short.length > 0) {
+    const list = short.slice(0, 5).map((r) => `${r.table} (${r.loaded} of ${r.exported})`).join(', ');
+    warnings.push(`Some rows did not arrive: ${list}${short.length > 5 ? ` and ${short.length - 5} more tables` : ''}. Contact support with the store's address before going live.`);
+  }
+  warnings.push(...(moved?.notes ?? []));
   return warnings;
 }
 
@@ -172,14 +183,14 @@ export function importWarnings(source: ImportSource | null, store: { wordPressVe
  * check's inventory, which isn't kept itself), with no failure from an earlier attempt. The store is held until its
  * owner makes it live (POST /v1/tenants/go-live).
  */
-export async function recordImportBuilt(pool: Pool, tenantId: string, check?: SiteCheck): Promise<void> {
+export async function recordImportBuilt(pool: Pool, tenantId: string, check?: SiteCheck, moved?: MoveReport): Promise<void> {
   const { rows } = await pool.query(
     `SELECT i.source, v.wordpress_version, v.php_version FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id JOIN versions v ON v.id = t.version_id
       WHERE i.tenant_id = $1`,
     [tenantId],
   );
   if (!rows[0]) return;
-  const warnings = importWarnings(rows[0].source, { wordPressVersion: rows[0].wordpress_version, phpVersion: rows[0].php_version }, check);
+  const warnings = importWarnings(rows[0].source, { wordPressVersion: rows[0].wordpress_version, phpVersion: rows[0].php_version }, check, moved);
   const { inventory, ...found } = check ?? ({} as SiteCheck);
   await pool.query('UPDATE tenant_imports SET site_check = $2, warnings = $3, site_report = $4, failure_reason = NULL WHERE tenant_id = $1', [
     tenantId,
