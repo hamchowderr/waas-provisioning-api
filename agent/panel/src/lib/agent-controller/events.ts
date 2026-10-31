@@ -260,6 +260,8 @@ export type AgentControllerTranscript = {
   /** Tools whose input is still streaming (input-streaming <Tool>), suppressed once settled. */
   activeTools: ActiveTool[];
   error: string | null;
+  /** The error is a notice, not a failure: the website's monthly assistant allowance is spent (a 429). */
+  notice?: boolean;
   done: boolean;
 };
 

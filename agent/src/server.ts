@@ -113,6 +113,23 @@ export function createServer(deps: ServerDeps) {
     return toolAnswer(await run(args, {}));
   }
 
+  /**
+   * Counts one message with the API. The answer when the month's allowance is spent; null when the message may go
+   * ahead, also when the API can't be reached, so an owner is never stopped by an outage.
+   */
+  async function countMessage(token: string): Promise<string | null> {
+    try {
+      const res = await fetchImpl(new URL('/oauth/site/assistant-usage', deps.apiUrl), { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (res.status !== 429) return null;
+      const usage = (await res.json().catch(() => null)) as { limit?: number; resetsAt?: string } | null;
+      const resets = usage?.resetsAt ? new Date(usage.resetsAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'the first of next month';
+      return `You've used all ${usage?.limit ?? 'the'} assistant messages in your plan this month. They start again on ${resets}. A bigger plan gets more.`;
+    } catch (error) {
+      console.error('assistant usage:', error instanceof Error ? error.message : error);
+      return null;
+    }
+  }
+
   const assistant = deps.createAssistant(callSite);
 
   const chatDeps: ChatServerDeps = {
@@ -155,6 +172,11 @@ export function createServer(deps: ServerDeps) {
       return c.json({ error: signedOut ? 'Sign in with your website again.' : 'The website can’t be reached right now. Try again in a minute.' }, signedOut ? 401 : 502);
     }
     byResource.set(connection.resource, hash(token));
+    // Each message the owner sends counts against the store's monthly allowance, which the API keeps per plan size.
+    if (c.req.method === 'POST' && c.req.path === '/agent-controller/stream') {
+      const refused = await countMessage(token);
+      if (refused) return c.json({ error: refused }, 429);
+    }
     const requestContext = new RequestContext();
     requestContext.set(MASTRA_RESOURCE_ID_KEY, connection.resource);
     c.set('requestContext' as never, requestContext as never);

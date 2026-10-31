@@ -255,7 +255,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
       // NOTE: no optimistic user message — the AgentController echoes the user turn as its
       // own `message_start`/`message_end` (role=user) at the start of the run. Adding
       // our own would render the user's message twice (different ids → both kept).
-      setTranscript((s) => ({ ...s, error: null, done: false }));
+      setTranscript((s) => ({ ...s, error: null, notice: false, done: false }));
       setStatus('streaming');
       const run = startRun(running);
 
@@ -265,8 +265,10 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
         setTranscript((s) => ({
           ...s,
           error: err instanceof Error ? err.message : String(err),
+          notice: Boolean((err as { notice?: boolean } | null)?.notice),
         }));
-        setStatus('error');
+        // A notice leaves the composer as it was; only a failure shows its error state.
+        setStatus((err as { notice?: boolean } | null)?.notice ? 'ready' : 'error');
       };
 
       let res: Response;
@@ -299,7 +301,8 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
       // Refused (a bad message, too large, signed out …): say why, and tell the caller,
       // so the composer can keep what was typed and attached.
       if (!res.ok) {
-        fail(new Error(await refusalReason(res)));
+        // A 429 is the website's monthly allowance: shown as a notice, not as something that went wrong.
+        fail(Object.assign(new Error(await refusalReason(res)), { notice: res.status === 429 }));
         return false;
       }
 

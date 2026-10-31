@@ -29,6 +29,8 @@ The assistant speaks [Mastra Chat Kit](https://github.com/hamchowderr/mastra-cha
 | `GET /agent-controller/threads` | The website's conversations, and `/threads/<id>/messages` for one |
 | `GET /agent-controller/site` | The signed-in website's address |
 
+Each message the owner sends counts against the website's monthly allowance, which the API sets by the store's size (`POST /oauth/site/assistant-usage`, [docs/site-editing.md](../docs/site-editing.md)). When it's used up, `/agent-controller/stream` answers 429 with a plain `error` the chat shows as a notice: how many messages the plan has, when they start again, and that a bigger plan gets more. If the API can't be reached, the message goes ahead.
+
 Conversations and waiting changes are kept per website, under the address the API answers for the token. Another website's conversation or waiting change can't be opened, answered or written to.
 
 The chat the owner sees is [`panel/`](panel/), a Next.js app with **Sign in with your website**.

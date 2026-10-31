@@ -188,3 +188,24 @@ describe('website assistant', () => {
     expect(writes()).toEqual([]);
   });
 });
+
+describe('the monthly allowance', () => {
+  it('counts each message, and stops the store at its plan’s limit with a plain answer', async () => {
+    const [, b] = h.stores;
+    const month = new Date().toISOString().slice(0, 7) + '-01';
+    const count = async () =>
+      (await h.t.pool.query<{ messages: number }>('SELECT messages FROM assistant_usage WHERE tenant_id = $1 AND month = $2', [b!.id, month])).rows[0]?.messages ?? 0;
+    const before = await count();
+    h.script('Hello', 'get_site', {}, 'Hi there.');
+    expect(await h.send(b!, { text: 'Hello' }).text()).toBe('Hi there.');
+    expect(await count()).toBe(before + 1);
+
+    await h.t.pool.query('UPDATE assistant_usage SET messages = 150 WHERE tenant_id = $1 AND month = $2', [b!.id, month]);
+    const refused = await h.post('/agent-controller/stream', b!, { text: 'One more' });
+    expect(refused.status).toBe(429);
+    expect((await refused.json()).error).toMatch(/^You've used all 150 assistant messages in your plan this month\. They start again on \w+ 1\./);
+    // Other stores aren't affected.
+    h.script('Good morning', 'get_site', {}, 'Morning.');
+    expect(await h.send(h.stores[0]!, { text: 'Good morning' }).text()).toBe('Morning.');
+  });
+});
