@@ -100,6 +100,17 @@ describe('website assistant', () => {
     await second.done;
   });
 
+  it('asks a question as choices straight away, with no Approve card first', async () => {
+    const [a] = h.stores;
+    const question = { question: 'Which heading?', options: [{ label: 'Main title' }, { label: 'How we can help' }] };
+    h.script('Change this heading', 'ask_user', question, 'Which heading?');
+    const turn = h.send(a!, { text: 'Change this heading' });
+    const asked = await turn.next('tool_suspended');
+    expect(asked.toolName).toBe('ask_user');
+    expect(turn.gates()).toEqual([]);
+    expect(writes()).toEqual([]);
+  });
+
   it('changes nothing when the owner says no', async () => {
     const [a] = h.stores;
     h.script('Remove the second section of my home page', 'page_section', { action: 'remove', pageId: 2, section: 1 }, 'Okay, I left it as it is.');

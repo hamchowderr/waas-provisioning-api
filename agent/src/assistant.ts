@@ -85,6 +85,8 @@ export function createAssistant(config: AssistantConfig) {
         const created = await controller.createSession({ resourceId, id: resourceId });
         // The editor's changes wait for the owner's Save instead.
         for (const tool of [...SAFE_TOOLS, ...EDITOR_TOOLS]) await created.permissions.setForTool({ toolName: tool, policy: 'allow' });
+        // A question is already a pause for the owner: it shows as choices, not behind an Approve card first.
+        await created.permissions.setForTool({ toolName: 'ask_user', policy: 'allow' });
         // An explicit "ask" outranks any grant, so a change always waits.
         for (const tool of CHANGE_TOOLS) await created.permissions.setForTool({ toolName: tool, policy: 'ask' });
         return created;
