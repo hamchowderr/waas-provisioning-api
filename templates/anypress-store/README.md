@@ -28,6 +28,11 @@ Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one 
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
 
+Plus FluentCart Migrator 1.1.0-beta (`fluent-cart-migrator`), FluentCart's free add-on that copies a WooCommerce shop's
+products, orders, customers and coupons into FluentCart. WaaS Client's shop switch (`wp waas shop switch`) runs it, so a
+store moved in from WooCommerce can switch without installing anything. FluentCart offers it only as a download from its
+add-ons page, so its GPL zip is kept in [`plugins/`](plugins/) and checked by SHA-256. It is on wherever FluentCart is.
+
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
 for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
@@ -150,6 +155,8 @@ store's plugins to that role's list:
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
 | `store` | Everything, for stores bought before site types | all of them |
+
+Every role with FluentCart also turns on FluentCart Migrator.
 
 Pages that need one plugin carry the post meta `_anypress_needs` (FluentCart's six pages and the Support Portal). The
 mu-plugin puts them back to draft while that plugin is off, and the home page shows the latest posts while the shop is

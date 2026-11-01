@@ -34,8 +34,11 @@ mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
+# FluentCart Migrator (FluentCart's free add-on, https://addons-cdn.fluentcart.com/fluent-cart-migrator.zip, an unversioned
+# URL) is what WaaS Client's shop switch runs to copy a WooCommerce shop into FluentCart; on with FluentCart (roles.json).
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
+fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a2904fea1db653b560ff
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
