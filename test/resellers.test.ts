@@ -249,9 +249,12 @@ describe('usage record', () => {
       storeDays: { small: 30, medium: 0, large: 10 },
       products: [{ productId: storefront.id, name: 'Counted storefront', storeDays: { small: 30, medium: 0, large: 10 } }],
     });
-    // The default is this month; a period not overlapping it is left out.
+    // The default is this month: the large store, still live, is counted; the small one ended in October and is
+    // left out once that month is over.
     const current = await admin('GET', `/admin/resellers/${other.id}/usage`);
-    expect(current.storeDays.small).toBeGreaterThan(0);
+    expect(current.products.map((p: { productId: string }) => p.productId)).toEqual([storefront.id]);
+    expect(current.storeDays.medium).toBe(0);
+    if (Date.now() >= Date.parse('2026-11-01T00:00:00Z')) expect(current.storeDays.small).toBe(0);
     await admin('GET', `/admin/resellers/${other.id}/usage?from=2026-10-01&to=2026-09-01`, 400);
     await admin('GET', `/admin/resellers/${other.id}/usage?from=yesterday`, 400);
 
