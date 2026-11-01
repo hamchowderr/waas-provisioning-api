@@ -821,11 +821,13 @@ describe('CoolifyProvisioner', () => {
     cloud.agent = (op, args, service) =>
       op === 'check-site' ? { status: 'success', message: 'WAAS_RESULT {"ok":false,"home":500,"login":200,"loaded":true,"fatal":"x"}' } : agent(op, args, service);
     const built = await p.createStore({ ...storeInput, snapshotId: null, ownCode: true, hold: true, holdAllow: ['owner@example.com'] });
-    expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'update-db', 'configure', 'check-site']);
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'update-db', 'code-import', 'configure', 'check-site']);
     expect(cloud.agentOps[1]!.args).toMatchObject({ import: true, home: 'https://shop.example.com' });
     expect(cloud.agentOps[1]!.args).not.toHaveProperty('hold');
+    // It keeps its own plugins and themes and gets the version's WaaS Client and what it lacks.
+    expect(cloud.agentOps[3]!.args).toMatchObject({ add: true, url: expect.stringContaining(`versions/${storeInput.versionId}/code.zip`) });
     // The moved site keeps its own options; its owner still gets its email while it is held.
-    expect(cloud.agentOps[3]!.args).toMatchObject({ options: {}, holdAllow: ['owner@example.com'] });
+    expect(cloud.agentOps[4]!.args).toMatchObject({ options: {}, holdAllow: ['owner@example.com'] });
     expect(built).toEqual({ check: { ok: false, home: 500, login: 200, loaded: true, fatal: 'x' } });
   });
 
@@ -842,6 +844,7 @@ describe('CoolifyProvisioner', () => {
     const { snapshotId: _s, user: _u, ...store } = storeInput;
     await p.restoreDeletedStore({ ...store, backupId: 'b-1', ownCode: true, hold: true, holdAllow: [] });
     expect(cloud.agentOps.find((o) => o.op === 'restore')!.args).toMatchObject({ hold: true });
+    expect(cloud.agentOps.find((o) => o.op === 'code-import')!.args).toMatchObject({ add: true });
     expect(cloud.agentOps.find((o) => o.op === 'configure')!.args).toMatchObject({ options: storeInput.wpOptions, holdAllow: [] });
     cloud.agentOps = [];
     await p.goLive({ storeId: STORE_ID });

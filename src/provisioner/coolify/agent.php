@@ -1793,6 +1793,24 @@ switch ($op) {
         curlTransfer($args['url'], "$tmp/code.zip", false);
         mkdir("$tmp/x");
         extract_archive("$tmp/code.zip", "$tmp/x");
+        if (!empty($args['add'])) {
+            // A store with its own code (a site moved in): the version's WaaS Client and its site types, always,
+            // and the version's other plugins and themes the site doesn't have, left off. WaaS Client is switched
+            // on; it turns on what the store's plan runs.
+            $added = [];
+            foreach (['plugins', 'themes'] as $dir) {
+                is_dir(CONTENT . "/$dir") || mkdir(CONTENT . "/$dir", 0755, true) || fail("cannot make wp-content/$dir");
+                foreach (glob("$tmp/x/wp-content/$dir/*", GLOB_ONLYDIR) ?: [] as $from) {
+                    $name = basename($from);
+                    $ours = $dir === 'plugins' && in_array($name, ['waas-client', 'waas-client-data'], true);
+                    if (!$ours && file_exists(CONTENT . "/$dir/$name")) continue;
+                    if (!$ours) $added[] = "$dir/$name";
+                    run('rm -rf ' . escapeshellarg(CONTENT . "/$dir/$name") . ' && cp -a ' . escapeshellarg($from) . ' ' . escapeshellarg(CONTENT . "/$dir/"));
+                }
+            }
+            $client = is_dir(CONTENT . '/plugins/waas-client') && wpMayFail('plugin', 'activate', 'waas-client') !== null;
+            done(['added' => $added, 'client' => $client]);
+        }
         foreach (['plugins', 'themes'] as $dir) {
             if (!is_dir("$tmp/x/wp-content/$dir")) continue;
             run('rm -rf ' . CONTENT . "/$dir && cp -a " . escapeshellarg("$tmp/x/wp-content/$dir") . ' ' . CONTENT . "/$dir");

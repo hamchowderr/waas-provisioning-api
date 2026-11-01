@@ -450,6 +450,31 @@ describe('a site moved in is held until it goes live', () => {
     expect(sql("SELECT LENGTH(option_value) FROM wp_options WHERE option_name = 'big_row'")).toBe(String(big.length));
   });
 
+  it("gives a moved site WaaS Client, switched on, and the version's plugins and themes it lacks, keeping its own", () => {
+    moveIn('client', { files: { 'plugins/contact-form-7/wp-contact-form-7.php': pluginFile('Contact Form 7') } });
+    // The version's code, as code-export packs it.
+    const code = join(fixtures, 'code');
+    const files: Record<string, string> = {
+      'plugins/waas-client/index.php': pluginFile('WaaS Client'),
+      'plugins/waas-client-data/roles.json': '{}',
+      'plugins/fluent-crm/fluent-crm.php': pluginFile('FluentCRM'),
+      'plugins/contact-form-7/wp-contact-form-7.php': `<?php\n/*\nPlugin Name: Contact Form 7\nVersion: 9.9.9\n*/\n`,
+      'themes/anypress/style.css': '/*\nTheme Name: AnyPress\n*/\n',
+    };
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(dirname(join(code, 'wp-content', path)), { recursive: true });
+      writeFileSync(join(code, 'wp-content', path), body);
+    }
+    execFileSync('tar', ['-czf', join(fixtures, 'code.tar.gz'), '-C', code, '.']);
+    chmodSync(join(fixtures, 'code.tar.gz'), 0o644);
+    const added = agent('code-import', { url: 'file:///fixtures/code.tar.gz', add: true });
+    expect(added).toEqual({ added: ['plugins/fluent-crm', 'themes/anypress'], client: true });
+    expect(wp('plugin', 'list', '--status=active', '--field=name')).toContain('waas-client');
+    expect(wp('plugin', 'get', 'contact-form-7', '--field=version')).toBe('1.2.3');
+    expect(wp('plugin', 'get', 'fluent-crm', '--field=status')).toBe('inactive');
+    expect(option('stylesheet')).toBe('plain');
+  });
+
   it('fails a backup restore at a statement that fails, instead of reporting a partly loaded database as restored', () => {
     const broken = inAgent('sh', '-c', "cd /tmp && rm -rf r && mkdir r && wp --path=/var/www/html --skip-plugins --skip-themes db export r/database.sql >/dev/null && printf \"INSERT INTO wp_options (option_name, option_value) VALUES ('siteurl', 'twice');\\n\" >> r/database.sql && cd r && tar -czf /tmp/broken.tar.gz . && echo ok");
     expect(broken.trim()).toBe('ok');
