@@ -37,6 +37,11 @@ mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
+# Vendored plugins installed but left off. The FluentCart Migrator add-on (FluentCart's own WooCommerce importer, from
+# addons-cdn.fluentcart.com) is only for WaaS Client's shop switch, which turns it on when it runs.
+OFF_VENDORED="
+fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a2904fea1db653b560ff
+"
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
 BLOCKS_VERSION=${BLOCKS_VERSION:-0.3.0}
@@ -92,7 +97,7 @@ fetch "https://github.com/hamchowderr/anypress-blocks/releases/download/v$BLOCKS
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     echo "$sha  $HERE/plugins/$slug-$version.zip" | sha256sum -c --quiet || { echo "checksum mismatch: plugins/$slug-$version.zip" >&2; exit 1; }
-done <<<"$VENDORED"
+done <<<"$VENDORED$OFF_VENDORED"
 
 echo "== WordPress $WP_VERSION"
 unzip -q "$WORK/downloads/wordpress.zip" -d "$WORK"
@@ -107,10 +112,10 @@ done <<<"$PLUGINS$OFF_PLUGINS"
 while read -r slug version sha; do
     [ -n "$slug" ] || continue
     unzip -q "$HERE/plugins/$slug-$version.zip" -d "$SITE/wp-content/plugins"
-done <<<"$VENDORED"
+done <<<"$VENDORED$OFF_VENDORED"
 unzip -q "$WORK/downloads/anypress-blocks.$BLOCKS_VERSION.zip" -d "$SITE/wp-content/plugins"
 SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | sort | tr '\n' ' ')
-OFF_SLUGS=$(awk 'NF {print $1}' <<<"$OFF_PLUGINS" | sort | tr '\n' ' ')
+OFF_SLUGS=$(awk 'NF {print $1}' <<<"$OFF_PLUGINS$OFF_VENDORED" | sort | tr '\n' ' ')
 
 echo "== WaaS Client from $PLUGINS_REPO"
 # Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
@@ -225,7 +230,7 @@ done
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; awk 'NF {print $1, $2 " (off)"}' <<<"$OFF_PLUGINS"; echo "anypress-blocks $BLOCKS_VERSION") \
+PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; awk 'NF {print $1, $2 " (off)"}' <<<"$OFF_PLUGINS$OFF_VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

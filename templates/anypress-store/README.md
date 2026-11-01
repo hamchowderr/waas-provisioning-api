@@ -28,6 +28,10 @@ Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one 
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
 
+The FluentCart Migrator add-on 1.1.0-beta (`fluent-cart-migrator`, FluentCart's own importer for WooCommerce shops) is kept
+in [`plugins/`](plugins/) the same way and installed switched off, so it doesn't load on every page. WaaS Client's shop
+switch (`wp waas shop switch`) turns it on when it runs.
+
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
 for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
