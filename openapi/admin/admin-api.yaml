@@ -174,6 +174,20 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/storefront/wp-login:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    post:
+      operationId: adminStorefrontWordPressLogin
+      summary: A one-time link that logs in to the ready-made storefront's WordPress
+      description: >-
+        As POST /admin/tenants/{id}/wp-login, for the product's ready-made storefront, so its seller can open their
+        storefront's wp-admin. 404 when the product has no ready-made storefront.
+      responses:
+        '200': { $ref: '#/components/responses/WordPressLogin' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/products/{productId}/keys/{id}/rotate:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -757,6 +771,23 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/wp-login:
+    post:
+      operationId: adminTenantWordPressLogin
+      summary: A one-time link that logs in to the store's WordPress
+      description: >-
+        "Log in to WordPress": a link that opens the store's wp-admin signed in as its first administrator. It works
+        once, for 5 minutes, and is signed with the store's site key; WaaS Client 2.10.0 or later checks it (WaaS Host
+        2.8.0 or later on a ready-made storefront). A store with an older plugin answers oneClick false and its own
+        WordPress login page instead. For anyone who may change the store; team members who only look get 403.
+        409 when the store isn't Done, is suspended or has no address yet.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/WordPressLogin' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/tenants/{id}/domains/main:
     put:
       operationId: adminSetTenantMainDomain
@@ -2195,6 +2226,17 @@ components:
     NotFound:
       description: Not found
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    WordPressLogin:
+      description: The link to open
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [url, oneClick, expiresAt]
+            properties:
+              url: { type: string, format: uri, description: 'Opens wp-admin signed in; when oneClick is false, the site''s own login page' }
+              oneClick: { type: boolean, description: False when the site's plugin is older than one-click login }
+              expiresAt: { type: string, format: date-time, nullable: true, description: When the link stops working; null when oneClick is false }
     Conflict:
       description: Refused in the record's current state
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }

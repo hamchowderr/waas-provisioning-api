@@ -28,6 +28,7 @@ import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
 import { deleteTenant, goLiveTenant, resumeTenant, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
+import { wpLogin } from '../wplogin.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 
 /**
@@ -610,6 +611,21 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id, backupId: null });
   });
 
+  // "Log in to WordPress" (src/wplogin.ts): a one-time link to the store's wp-admin, for anyone who may change
+  // the store (members only look: POST is refused to them by the session check).
+  app.post('/tenants/:id/wp-login', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query(
+      `SELECT t.id, t.product_id, t.external_id, t.status, t.is_suspended,
+         (SELECT domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
+       FROM tenants t WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`,
+      [id, scopedProduct(c)],
+    );
+    if (!rows[0]) throw notFound(`Tenant ${id} not found`);
+    return c.json(await wpLogin(deps, rows[0]));
+  });
+
   // Suspend, resume and delete a store from the dashboard, as the storefront's own calls do (src/tenants.ts).
   // Platform admin only: a seller's stores follow their shop's subscriptions.
   async function adminTenant(c: Context) {
@@ -879,6 +895,22 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     const productId = await product(c);
     const body = (await readJson(c)) as NewStorefront;
     return c.json(await createStorefront(deps, productId, body, publicBase(c, config.publicUrl)), 201);
+  });
+
+  // The same for the product's ready-made storefront, which its seller can't open as a store of theirs.
+  app.post('/products/:productId/storefront/wp-login', async (c) => {
+    const storefront = await getStorefront(deps, await product(c));
+    if (!storefront) throw notFound('This storefront has no ready-made site');
+    return c.json(
+      await wpLogin(deps, {
+        id: storefront.id,
+        product_id: config.storefrontProductId!,
+        external_id: storefront.externalId,
+        status: storefront.statusCode,
+        is_suspended: storefront.isSuspended,
+        main_domain: storefront.domainName ?? null,
+      }),
+    );
   });
 
   async function product(c: Context): Promise<string> {
