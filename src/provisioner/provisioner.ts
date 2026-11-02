@@ -34,6 +34,9 @@ export interface VersionPlugin {
   constants?: Record<string, string>;
 }
 
+/** The uploaded parts of a moved-in site's archive don't make one archive; the message says what to do. */
+export class ImportPartsError extends Error {}
+
 export interface Provisioner {
   // Versions: the shared WordPress code a set of stores runs on.
 
@@ -166,6 +169,21 @@ export interface Provisioner {
 
   /** Where the site's archive (database.sql and wp-content, zip or gzipped tar) is PUT, valid for `expiresInSeconds`. */
   createImportUpload(input: { storeId: string; expiresInSeconds: number }): Promise<string>;
+
+  /**
+   * Uploading the archive in parts, so a dropped connection loses one part, not the whole upload. Starts a multipart
+   * upload to the same place createImportUpload's link writes; answers its id.
+   */
+  startImportParts(input: { storeId: string }): Promise<string>;
+
+  /** Links to PUT each of `parts` (part numbers from 1) of the upload, valid for `expiresInSeconds`. */
+  importPartUrls(input: { storeId: string; uploadId: string; parts: number[]; expiresInSeconds: number }): Promise<Record<number, string>>;
+
+  /** The parts uploaded so far, in order, or null when the upload is unknown (finished, given up or never started). */
+  importParts(input: { storeId: string; uploadId: string }): Promise<{ number: number; size: number }[] | null>;
+
+  /** Joins the uploaded parts into the archive. Throws ImportPartsError when they don't make one. */
+  finishImportParts(input: { storeId: string; uploadId: string }): Promise<void>;
 
   /** The size of the uploaded archive in bytes, or null when nothing was uploaded yet. */
   importSize(input: { storeId: string }): Promise<number | null>;

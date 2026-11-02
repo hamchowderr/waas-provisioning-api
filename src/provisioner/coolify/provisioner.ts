@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_SIZE, isSize, type Size } from '../../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type MoveReport, type SiteCheck, type StoreMailFrom } from '../provisioner.ts';
+import { ImportPartsError, storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type MoveReport, type SiteCheck, type StoreMailFrom } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
@@ -873,6 +873,32 @@ export class CoolifyProvisioner implements Provisioner {
 
   async createImportUpload({ storeId, expiresInSeconds }: { storeId: string; expiresInSeconds: number }) {
     return this.s3.presign('PUT', keys.import(storeId), expiresInSeconds);
+  }
+
+  async startImportParts({ storeId }: { storeId: string }) {
+    return this.s3.createMultipart(keys.import(storeId));
+  }
+
+  async importPartUrls({ storeId, uploadId, parts, expiresInSeconds }: { storeId: string; uploadId: string; parts: number[]; expiresInSeconds: number }) {
+    return Object.fromEntries(parts.map((n) => [n, this.s3.presign('PUT', keys.import(storeId), expiresInSeconds, { partNumber: String(n), uploadId })]));
+  }
+
+  async importParts({ storeId, uploadId }: { storeId: string; uploadId: string }) {
+    const parts = await this.s3.listParts(keys.import(storeId), uploadId);
+    return parts && parts.map(({ number, size }) => ({ number, size }));
+  }
+
+  async finishImportParts({ storeId, uploadId }: { storeId: string; uploadId: string }) {
+    const key = keys.import(storeId);
+    const parts = await this.s3.listParts(key, uploadId);
+    if (!parts) throw new ImportPartsError('This upload is no longer known. Upload the export again.');
+    if (parts.length === 0 || parts.some((p, i) => p.number !== i + 1)) throw new ImportPartsError('Some parts of the export are missing. Upload them, then finish.');
+    try {
+      await this.s3.completeMultipart(key, uploadId, parts);
+    } catch (e) {
+      if (/EntityTooSmall|InvalidPart/.test(String(e))) throw new ImportPartsError('The parts of the export do not fit together. Upload the export again.');
+      throw e;
+    }
   }
 
   async importSize({ storeId }: { storeId: string }) {

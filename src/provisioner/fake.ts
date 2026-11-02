@@ -1,5 +1,5 @@
 import type { Size } from '../plans.ts';
-import { storeFromAddress, type Brand, type CreateStoreInput, type MoveReport, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
+import { ImportPartsError, storeFromAddress, type Brand, type CreateStoreInput, type MoveReport, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
   suspended: boolean;
@@ -249,6 +249,41 @@ export class FakeProvisioner implements Provisioner {
   async createImportUpload({ storeId }: { storeId: string; expiresInSeconds: number }) {
     this.check('createImportUpload');
     return `https://uploads.waas.example/imports/${storeId}`;
+  }
+
+  /** Multipart uploads of moved-in sites: id -> store and the parts' sizes. Tests "upload" a part with uploadPart. */
+  readonly importUploads = new Map<string, { storeId: string; parts: Map<number, number> }>();
+
+  uploadPart(uploadId: string, number: number, bytes: number) {
+    this.importUploads.get(uploadId)!.parts.set(number, bytes);
+  }
+
+  async startImportParts({ storeId }: { storeId: string }) {
+    this.check('startImportParts');
+    const id = `upload-${this.importUploads.size + 1}`;
+    this.importUploads.set(id, { storeId, parts: new Map() });
+    return id;
+  }
+
+  async importPartUrls({ storeId, uploadId, parts }: { storeId: string; uploadId: string; parts: number[]; expiresInSeconds: number }) {
+    this.check('importPartUrls');
+    return Object.fromEntries(parts.map((n) => [n, `https://uploads.waas.example/imports/${storeId}?partNumber=${n}&uploadId=${uploadId}`]));
+  }
+
+  async importParts({ storeId, uploadId }: { storeId: string; uploadId: string }) {
+    this.check('importParts');
+    const upload = this.importUploads.get(uploadId);
+    if (!upload || upload.storeId !== storeId) return null;
+    return [...upload.parts].sort(([a], [b]) => a - b).map(([number, size]) => ({ number, size }));
+  }
+
+  async finishImportParts({ storeId, uploadId }: { storeId: string; uploadId: string }) {
+    this.check('finishImportParts');
+    const parts = await this.importParts({ storeId, uploadId });
+    if (!parts) throw new ImportPartsError('This upload is no longer known. Upload the export again.');
+    if (parts.length === 0 || parts.some((p, i) => p.number !== i + 1)) throw new ImportPartsError('Some parts of the export are missing. Upload them, then finish.');
+    this.imports.set(storeId, parts.reduce((sum, p) => sum + p.size, 0));
+    this.importUploads.delete(uploadId);
   }
 
   async importSize({ storeId }: { storeId: string }) {

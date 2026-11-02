@@ -18,8 +18,10 @@ const sha256 = (data: string | Uint8Array) => createHash('sha256').update(data).
 const hmac = (key: Buffer | string, data: string) => createHmac('sha256', key).update(data).digest();
 
 /** RFC 3986 encoding, as SigV4 wants it; `/` kept in paths. */
-const encode = (s: string, keepSlash = false) =>
-  encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`).replace(keepSlash ? /%2F/g : /$^/, '/');
+const encode = (s: string, keepSlash = false) => {
+  const out = encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return keepSlash ? out.replace(/%2F/g, '/') : out;
+};
 
 const unescapeXml = (s: string) =>
   s.replace(/&(lt|gt|quot|apos|amp);/g, (_, e: string) => ({ lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' })[e]!);
@@ -63,11 +65,12 @@ export class S3 {
     return { amzDate, date: amzDate.slice(0, 8) };
   }
 
-  /** A URL anyone can GET or PUT for `expiresIn` seconds. */
-  presign(method: 'GET' | 'PUT', key: string, expiresIn = 900): string {
+  /** A URL anyone can GET or PUT for `expiresIn` seconds. `extra` adds signed query parameters (a part's partNumber and uploadId). */
+  presign(method: 'GET' | 'PUT', key: string, expiresIn = 900, extra: Record<string, string> = {}): string {
     const { amzDate, date } = this.stamp();
     const path = this.path(key);
     const query: Record<string, string> = {
+      ...extra,
       'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
       'X-Amz-Credential': `${this.config.accessKeyId}/${this.scope(date)}`,
       'X-Amz-Date': amzDate,
@@ -182,6 +185,55 @@ export class S3 {
   async copy(sourceKey: string, targetKey: string): Promise<void> {
     const res = await this.request('PUT', targetKey, { 'x-amz-copy-source': `/${encode(this.config.bucket)}/${encode(sourceKey, true)}` });
     await S3.check(res, `copy to ${targetKey}`);
+  }
+
+  /** Starts a multipart upload to `key`; answers its upload id. Parts are PUT to presign('PUT', key, s, { partNumber, uploadId }). */
+  async createMultipart(key: string, contentType = 'application/octet-stream'): Promise<string> {
+    const res = await this.request('POST', key, { 'content-type': contentType }, { query: { uploads: '' } });
+    await S3.check(res, `start upload of ${key}`);
+    const id = /<UploadId>([\s\S]*?)<\/UploadId>/.exec(await res.text())?.[1];
+    if (!id) throw new Error(`S3 start upload of ${key} failed: no UploadId`);
+    return unescapeXml(id);
+  }
+
+  /** The parts uploaded so far, in order, or null when the upload is unknown (finished, aborted or never started). */
+  async listParts(key: string, uploadId: string): Promise<{ number: number; size: number; etag: string }[] | null> {
+    const parts: { number: number; size: number; etag: string }[] = [];
+    let marker: string | undefined;
+    do {
+      const res = await this.request('GET', key, {}, { query: { uploadId, ...(marker ? { 'part-number-marker': marker } : {}) } });
+      if (res.status === 404) return null;
+      await S3.check(res, `list parts of ${key}`);
+      const xml = await res.text();
+      for (const [, part] of xml.matchAll(/<Part>([\s\S]*?)<\/Part>/g)) {
+        parts.push({
+          number: Number(/<PartNumber>(\d+)<\/PartNumber>/.exec(part!)?.[1] ?? 0),
+          size: Number(/<Size>(\d+)<\/Size>/.exec(part!)?.[1] ?? 0),
+          etag: unescapeXml(/<ETag>([\s\S]*?)<\/ETag>/.exec(part!)?.[1] ?? ''),
+        });
+      }
+      marker = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? /<NextPartNumberMarker>(\d+)<\/NextPartNumberMarker>/.exec(xml)?.[1] : undefined;
+    } while (marker);
+    return parts.sort((a, b) => a.number - b.number);
+  }
+
+  /** Joins the parts into the object at `key`. */
+  async completeMultipart(key: string, uploadId: string, parts: { number: number; etag: string }[]): Promise<void> {
+    const xml = `<CompleteMultipartUpload>${parts
+      .map((p) => `<Part><PartNumber>${p.number}</PartNumber><ETag>${p.etag.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</ETag></Part>`)
+      .join('')}</CompleteMultipartUpload>`;
+    const res = await this.request('POST', key, { 'content-type': 'application/xml' }, { body: new TextEncoder().encode(xml), query: { uploadId } });
+    await S3.check(res, `finish upload of ${key}`);
+    // S3 can answer 200 with an error in the body when joining fails late.
+    const code = /<Error>[\s\S]*?<Code>([A-Za-z]{1,64})<\/Code>/.exec(await res.text())?.[1];
+    if (code) throw new Error(`S3 finish upload of ${key} failed: ${code}`);
+  }
+
+  /** Throws away an unfinished multipart upload and its parts. An unknown upload succeeds. */
+  async abortMultipart(key: string, uploadId: string): Promise<void> {
+    const res = await this.request('DELETE', key, {}, { query: { uploadId } });
+    if (res.status === 404) return;
+    await S3.check(res, `abort upload of ${key}`);
   }
 
   /** Creates the bucket (for MinIO and tests; R2 buckets are made in the dashboard). Succeeds if it exists. */

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { importCode, importFailureReason, importWarnings, maxImportBytes, purgeExpiredImports, tokenFromCode } from '../src/imports.ts';
+import { importCode, importFailureReason, importPartSize, importWarnings, maxImportBytes, purgeExpiredImports, tokenFromCode } from '../src/imports.ts';
 import { Status } from '../src/status.ts';
 import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
@@ -117,6 +117,56 @@ describe('moving a site in', () => {
       body: { uploadUrl: `https://uploads.waas.example/imports/${body.id}`, maxBytes: 5 * 1024 ** 3, store: { name: 'Moved in', size: 'medium', domain: body.baseDomain } },
     });
     expect((await plugin('status', { code: body.importCode })).body.status).toBe('waiting');
+  });
+
+  it('uploads in parts: picks the part size, hands out links for missing parts, resumes, joins them and starts', async () => {
+    const { body } = await createImport();
+    const bytes = 40 * 1024 ** 2;
+    const started = await plugin('upload/parts/start', { code: body.importCode, bytes });
+    expect(started.status).toBe(200);
+    expect(started.body).toMatchObject({ partSize: 16 * 1024 ** 2, partCount: 3, maxBytes: 5 * 1024 ** 3, store: { name: 'Moved in' } });
+    const uploadId = started.body.uploadId as string;
+    const first = await plugin('upload/parts', { code: body.importCode, uploadId, parts: [1, 2, 3] });
+    expect(first.body).toEqual({
+      done: [],
+      bytes: 0,
+      urls: Object.fromEntries([1, 2, 3].map((n) => [n, `https://uploads.waas.example/imports/${body.id}?partNumber=${n}&uploadId=${uploadId}`])),
+    });
+    // Parts 1 and 3 arrive, the connection drops; asking again says which are there.
+    t.provisioner.uploadPart(uploadId, 1, 16 * 1024 ** 2);
+    t.provisioner.uploadPart(uploadId, 3, 8 * 1024 ** 2);
+    const again = await plugin('upload/parts', { code: body.importCode, uploadId, parts: [2] });
+    expect(again.body).toMatchObject({ done: [1, 3], bytes: 24 * 1024 ** 2 });
+    expect(Object.keys(again.body.urls as object)).toEqual(['2']);
+    const early = await plugin('upload/parts/finish', { code: body.importCode, uploadId });
+    expect(early.status).toBe(400);
+    expect(early.body.message).toMatch(/Some parts of the export are missing/);
+    t.provisioner.uploadPart(uploadId, 2, 16 * 1024 ** 2);
+    const finished = await plugin('upload/parts/finish', { code: body.importCode, uploadId });
+    expect(finished.body).toMatchObject({ bytes: bytes });
+    expect((await plugin('upload/parts', { code: body.importCode, uploadId })).status).toBe(404);
+    expect((await plugin('start', { code: body.importCode })).body.status).toBe('moving');
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect((await plugin('upload/parts/start', { code: body.importCode, bytes })).status).toBe(409);
+  });
+
+  it('refuses a parts upload larger than the store, and bad part numbers or upload ids', async () => {
+    const { body } = await createImport();
+    const tooBig = await plugin('upload/parts/start', { code: body.importCode, bytes: 6 * 1024 ** 3 });
+    expect(tooBig.status).toBe(400);
+    expect(tooBig.body.message).toMatch(/more than a small store holds/);
+    expect((await plugin('upload/parts/start', { code: body.importCode })).status).toBe(400);
+    const { uploadId } = (await plugin('upload/parts/start', { code: body.importCode, bytes: 1024 })).body as { uploadId: string };
+    expect((await plugin('upload/parts', { code: body.importCode, uploadId, parts: [0] })).status).toBe(400);
+    expect((await plugin('upload/parts', { code: body.importCode, uploadId, parts: Array.from({ length: 101 }, (_, i) => i + 1) })).status).toBe(400);
+    expect((await plugin('upload/parts', { code: body.importCode })).status).toBe(400);
+    expect((await plugin('upload/parts', { code: body.importCode, uploadId: 'nope' })).status).toBe(404);
+  });
+
+  it('sizes parts so a big archive fits in 10,000 of them', () => {
+    expect(importPartSize(1024)).toBe(16 * 1024 ** 2);
+    expect(importPartSize(5 * 1024 ** 3)).toBe(16 * 1024 ** 2);
+    expect(Math.ceil(5 * 1024 ** 4 / importPartSize(5 * 1024 ** 4))).toBeLessThanOrEqual(10_000);
   });
 
   it('refuses to start before anything is uploaded, or with an archive larger than the store', async () => {
