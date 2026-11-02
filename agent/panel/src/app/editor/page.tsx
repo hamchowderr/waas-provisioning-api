@@ -1,4 +1,4 @@
-import { signedIn } from '@/lib/site-session';
+import { address, signedIn } from '@/lib/site-session';
 import { EditorAssistant, EditorSignIn } from './editor-assistant';
 
 /**
@@ -8,6 +8,8 @@ import { EditorAssistant, EditorSignIn } from './editor-assistant';
  */
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const { error } = await searchParams;
-  if (!(await signedIn())) return <EditorSignIn error={error} />;
-  return <EditorAssistant />;
+  // Framed at the panel's own address only by WaaS Client before 2.12.
+  const older = (await address()).own;
+  if (!(await signedIn())) return <EditorSignIn error={error} older={older} />;
+  return <EditorAssistant older={older} />;
 }

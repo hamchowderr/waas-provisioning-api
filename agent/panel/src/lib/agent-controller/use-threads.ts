@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { withBase } from '@/lib/base-path';
 
 /**
  * Conversation-history data for a chat shell — the `/api/agent-controller/threads*`
@@ -72,7 +73,7 @@ export function useThreads({ refreshSignal = 0 }: { refreshSignal?: number } = {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-controller/threads', { cache: 'no-store' });
+      const res = await fetch(withBase('/api/agent-controller/threads'), { cache: 'no-store' });
       const data = (await res.json()) as { threads?: ThreadItem[] };
       setThreads(data.threads ?? []);
     } catch {
@@ -94,7 +95,7 @@ export function useThreads({ refreshSignal = 0 }: { refreshSignal?: number } = {
     }
     let cancelled = false;
     setSearching(true);
-    fetch(`/api/agent-controller/threads/search?q=${encodeURIComponent(debouncedSearch)}`, {
+    fetch(withBase(`/api/agent-controller/threads/search?q=${encodeURIComponent(debouncedSearch)}`), {
       cache: 'no-store',
     })
       .then((r) => r.json())
@@ -120,7 +121,7 @@ export function useThreads({ refreshSignal = 0 }: { refreshSignal?: number } = {
     async (id: string, body: Record<string, unknown>, optimistic: Partial<ThreadItem>) => {
       setThreads((prev) => prev.map((x) => (x.id === id ? { ...x, ...optimistic } : x)));
       try {
-        const res = await fetch(`/api/agent-controller/threads/${id}`, {
+        const res = await fetch(withBase(`/api/agent-controller/threads/${id}`), {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
@@ -162,7 +163,7 @@ export function useThreads({ refreshSignal = 0 }: { refreshSignal?: number } = {
     async (t: ThreadItem) => {
       setThreads((prev) => prev.filter((x) => x.id !== t.id));
       try {
-        const res = await fetch(`/api/agent-controller/threads/${t.id}`, { method: 'DELETE' });
+        const res = await fetch(withBase(`/api/agent-controller/threads/${t.id}`), { method: 'DELETE' });
         if (!res.ok) throw new Error(String(res.status));
         return true;
       } catch {

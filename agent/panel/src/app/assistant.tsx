@@ -3,6 +3,7 @@
 import { LogOutIcon } from 'lucide-react';
 import { ChatPanel } from '@/components/chat-panel/chat-panel';
 import type { ApprovalViews } from '@/components/chat/approval-view';
+import { withBase } from '@/lib/base-path';
 import { Button } from '@/components/ui/button';
 
 /** The server sends a plain sentence with each change that waits (e.g. "Publish page 14"). */
@@ -44,7 +45,7 @@ export function Assistant() {
       approvalViews={approvalViews}
       toolTitles={toolTitles}
       actions={
-        <form method="post" action="/signout">
+        <form method="post" action={withBase('/signout')}>
           <Button type="submit" variant="ghost" size="icon" aria-label="Sign out" title="Sign out">
             <LogOutIcon />
           </Button>

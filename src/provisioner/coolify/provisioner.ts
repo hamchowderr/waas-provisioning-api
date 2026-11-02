@@ -160,13 +160,15 @@ export interface StoreMeta {
  * 10: the agent container is held to half a core, the database to the plan's cores, and each cron command stops
  *    after CRON_LIMIT seconds.
  * 11: the agent script travels gzipped (WAAS_AGENT_GZ), as plain base64 it no longer fit in one environment variable.
+ * 12: https://<each store domain>/assistant goes to the website assistant's panel (assistantLabels in compose.ts).
  */
-export const STORE_SETUP = 11;
+export const STORE_SETUP = 12;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
 const https = (domain: string) => `https://${domain}`;
 const urlsFor = (domains: string[]) => [{ name: 'wordpress', url: domains.map(https).join(',') }];
+const assistantFor = (storeId: string, domains: string[]) => ({ router: `${storeName(storeId)}-assistant`, domains });
 const b64 = (s: string) => Buffer.from(s).toString('base64');
 
 /** Object keys in the bucket. */
@@ -249,9 +251,24 @@ export class CoolifyProvisioner implements Provisioner {
     return meta;
   }
 
-  /** A store's compose file, from its version's WordPress and PHP and its size, as the Service's docker_compose_raw. */
-  private async storeCompose(meta: StoreMeta): Promise<string> {
-    return b64(renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size }));
+  /**
+   * A store's compose file, from its version's WordPress and PHP, its size and its domains, as the Service's
+   * docker_compose_raw. Without `domains`, the ones the Service has now.
+   */
+  private async storeCompose(storeId: string, meta: StoreMeta, uuid: string, domains?: string[]): Promise<string> {
+    const hosts = domains ?? (await this.serviceDomains(uuid));
+    return b64(renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, assistant: assistantFor(storeId, hosts) }));
+  }
+
+  /** The domains a store's Service answers on (its wordpress URLs). */
+  private async serviceDomains(uuid: string): Promise<string[]> {
+    const service = await this.coolify.getService(uuid);
+    const fqdn = service.applications?.find((a) => a.name === 'wordpress')?.fqdn ?? '';
+    return fqdn
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean)
+      .map((url) => new URL(url).hostname);
   }
 
   private storeMeta(store: CoolifyService): StoreMeta {
@@ -280,7 +297,9 @@ export class CoolifyProvisioner implements Provisioner {
         project_uuid: this.config.projectUuid,
         environment_name: input.envName,
         server_uuid: this.config.serverUuid,
-        docker_compose_raw: b64(renderCompose(input)),
+        docker_compose_raw: b64(
+          renderCompose({ ...input, assistant: input.meta.kind === 'store' ? { router: `${input.name}-assistant`, domains: input.domains } : undefined }),
+        ),
         urls: urlsFor(input.domains),
         // Variables first, then start.
         instant_deploy: false,
@@ -599,7 +618,7 @@ export class CoolifyProvisioner implements Provisioner {
     const meta = this.storeMeta(store);
     if ((meta.setup ?? 1) >= STORE_SETUP && meta.size === size) return 'unchanged';
     const want: StoreMeta = { ...meta, setup: STORE_SETUP, size };
-    await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(want) });
+    await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(storeId, want, store.uuid) });
     const siteKey = this.siteKeyEnvs(storeId);
     if (Object.keys(siteKey).length) await this.coolify.setEnvs(store.uuid, siteKey);
     await this.restart(store.uuid);
@@ -715,7 +734,7 @@ export class CoolifyProvisioner implements Provisioner {
     const want = await this.mailChange(storeId, current, from);
     if (!want) return 'unchanged';
     const meta = parseMeta(store.description);
-    if (!had) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(this.storeMeta(store)) });
+    if (!had) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(storeId, this.storeMeta(store), store.uuid) });
     await this.coolify.setEnvs(store.uuid, want);
     if (meta?.kind === 'store' && (meta.setup ?? 1) < STORE_SETUP) {
       await this.ensureStoreSetup({ storeId, size: meta.size });
@@ -734,7 +753,11 @@ export class CoolifyProvisioner implements Provisioner {
 
   async setDomains({ storeId, mainDomain, redirectDomains, mail }: Parameters<Provisioner['setDomains']>[0]) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    await this.coolify.updateService(store.uuid, { urls: urlsFor([mainDomain, ...redirectDomains]) });
+    const domains = [mainDomain, ...redirectDomains];
+    // The website assistant's router follows the store's domains (assistantLabels), on the same restart.
+    const meta = parseMeta(store.description);
+    const compose = meta?.kind === 'store' ? await this.storeCompose(storeId, meta, store.uuid, domains) : undefined;
+    await this.coolify.updateService(store.uuid, { urls: urlsFor(domains), ...(compose ? { docker_compose_raw: compose } : {}) });
     // The new sender rides on this restart. A store that never had mail settings needs a new compose
     // for them first, which ensureStoreMail gives it.
     const current = mail && this.config.mail ? await this.coolify.listEnvs(store.uuid) : [];
@@ -750,7 +773,7 @@ export class CoolifyProvisioner implements Provisioner {
     // A new size is a new compose file (resources and quotas). With the restart and configure below the store also
     // has the current setup; the description says both once the store runs them.
     const resized: StoreMeta | undefined = size && { ...this.storeMeta(store), setup: STORE_SETUP, size };
-    if (resized) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(resized) });
+    if (resized) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(storeId, resized, store.uuid) });
     if (phpConstants) {
       // The complete set (see Provisioner.updateStore); Coolify's API does not hand values back to merge with.
       await this.coolify.setEnvs(store.uuid, { WAAS_CONSTANTS_B64: encodeConstants(phpConstants) });

@@ -5,5 +5,5 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const result = await finishSignIn(url.searchParams);
   const next = 'back' in result ? result.back : `/?error=${encodeURIComponent(result.error)}`;
-  return Response.redirect(panelLink(next), 303);
+  return Response.redirect(await panelLink(next), 303);
 }

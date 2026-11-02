@@ -103,7 +103,8 @@ class FakeCloud {
           r.down--;
           status = 'exited';
         } else service.restarting = undefined;
-        return json(200, { ...service, envs: undefined, applications: [{ name: 'wordpress', status }, { name: 'agent', status }], databases: [{ name: 'db', status }] });
+        const fqdn = service.urls?.find((u: { name: string }) => u.name === 'wordpress')?.url ?? null;
+        return json(200, { ...service, envs: undefined, applications: [{ name: 'wordpress', status, fqdn }, { name: 'agent', status }], databases: [{ name: 'db', status }] });
       }
       if (rest === '' && method === 'PATCH') {
         if (body.urls) service.urls = body.urls;
@@ -294,6 +295,11 @@ describe('CoolifyProvisioner', () => {
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
     expect(compose.services.wordpress.mem_limit).toBe('512m');
     expect(compose.services.agent.image).toBe('wordpress:cli-php8.3');
+    // Each of the store's domains sends /assistant to the website assistant's panel.
+    expect(compose.services.wordpress.labels).toContain(
+      `traefik.http.routers.store-${STORE_ID}-assistant.rule=(Host(\`shop.example.com\`) || Host(\`t-0b8f6a0e.stores.example.com\`)) && (Path(\`/assistant\`) || PathPrefix(\`/assistant/\`))`,
+    );
+    expect(compose.services.wordpress.labels).toContain(`traefik.http.routers.store-${STORE_ID}-assistant.service=website-assistant-panel@docker`);
     // The agent loads WordPress with every plugin for the store's cron each minute.
     expect(compose.services.agent.mem_limit).toBe('256m');
     // Created without deploying, so the variables are in place before the first start.
@@ -407,6 +413,8 @@ describe('CoolifyProvisioner', () => {
     const wordpress = parse(store.compose).services.wordpress;
     expect(wordpress.environment.WORDPRESS_CONFIG_EXTRA).toContain("define('WP_CACHE', true)");
     expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 8');
+    // The assistant's router, for the domains the Service has.
+    expect(wordpress.labels.find((l: string) => l.includes('.rule='))).toContain('Host(`shop.example.com`) || Host(`t-0b8f6a0e.stores.example.com`)');
     expect(store.started).toBe(starts + 1);
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: {} });
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
@@ -939,6 +947,10 @@ describe('CoolifyProvisioner', () => {
     await p.setDomains({ storeId: STORE_ID, mainDomain: 'new-shop.example.com', redirectDomains: ['shop.example.com'] });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(store.urls).toEqual([{ name: 'wordpress', url: 'https://new-shop.example.com,https://shop.example.com' }]);
+    // The assistant's router follows, on the same restart.
+    const rule = parse(store.compose).services.wordpress.labels.find((l: string) => l.includes('.rule='));
+    expect(rule).toContain('(Host(`new-shop.example.com`) || Host(`shop.example.com`)) &&');
+    expect(rule).not.toContain('t-0b8f6a0e');
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: { home: 'https://new-shop.example.com' } });
   });
 
@@ -1120,6 +1132,12 @@ describe('Store compose file', () => {
 
   it('rejects versions that would not make a valid image tag', () => {
     expect(() => renderCompose({ wordPressVersion: 'latest; rm -rf /', phpVersion: '8.3' })).toThrow(/Unsupported/);
+    // A domain goes into a proxy rule, so only a plain hostname gets there.
+    for (const bad of ['shop.example.com`) || Host(`evil.com', 'shop', '-shop.example.com']) {
+      expect(() => renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3', size: 'small', assistant: { router: 'store-x-assistant', domains: [bad] } })).toThrow(/Invalid store domain/);
+    }
+    // A version site has no assistant router.
+    expect(parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.labels).toBeUndefined();
   });
 });
 

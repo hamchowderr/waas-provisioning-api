@@ -6,7 +6,7 @@ export interface CoolifyService {
   description?: string | null;
   environment_id?: number;
   status?: string;
-  applications?: { name: string; status?: string }[];
+  applications?: { name: string; status?: string; fqdn?: string | null }[];
   databases?: { name: string; status?: string }[];
 }
 

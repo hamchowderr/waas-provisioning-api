@@ -10,6 +10,7 @@ import {
   uiMessagesToAgentController,
 } from './events';
 import { reduceAgentControllerEvent, reduceAgentControllerEvents } from './reduce';
+import { withBase } from '@/lib/base-path';
 
 export type AgentControllerStatus = 'ready' | 'streaming' | 'error';
 
@@ -110,7 +111,7 @@ export function browserTimeZone(): string | undefined {
  */
 export function useAgentControllerChat(options: string | UseAgentControllerChatOptions = {}) {
   const {
-    endpoint = '/api/agent-controller/stream',
+    endpoint = withBase('/api/agent-controller/stream'),
     onToolEnd,
     extra,
   } = typeof options === 'string' ? { endpoint: options } : options;
@@ -143,7 +144,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/agent-controller/goal', { cache: 'no-store' });
+        const res = await fetch(withBase('/api/agent-controller/goal'), { cache: 'no-store' });
         const data = (await res.json()) as {
           objective?: {
             objective?: string;
@@ -178,7 +179,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
   // state — the live token windows still fill in from `om_status` on the next run.
   const refreshMemory = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-controller/om', { cache: 'no-store' });
+      const res = await fetch(withBase('/api/agent-controller/om'), { cache: 'no-store' });
       const data = (await res.json()) as { observations?: string | null };
       if (!data.observations) return;
       setTranscript((s) => ({
@@ -203,7 +204,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
   // after each run settles, so a schedule the agent just created/paused shows up.
   const refreshSchedules = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-controller/schedules', { cache: 'no-store' });
+      const res = await fetch(withBase('/api/agent-controller/schedules'), { cache: 'no-store' });
       const data = (await res.json()) as { schedules?: AgentControllerSchedule[] };
       setSchedules(Array.isArray(data.schedules) ? data.schedules : []);
     } catch {
@@ -354,7 +355,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
         }));
       let res: Response;
       try {
-        res = await fetch('/api/agent-controller/approve', {
+        res = await fetch(withBase('/api/agent-controller/approve'), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           // The thread names which Session holds the gate (a work thread has its own).
@@ -404,7 +405,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
       setStatus('streaming');
       const run = startRun(running);
       try {
-        const res = await fetch('/api/agent-controller/answer', {
+        const res = await fetch(withBase('/api/agent-controller/answer'), {
           method: 'POST',
           signal: run.signal,
           headers: { 'content-type': 'application/json' },
@@ -481,8 +482,8 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
       let running = false;
       try {
         const [res, pending] = await Promise.all([
-          fetch(`/api/agent-controller/threads/${id}/messages`, { cache: 'no-store' }),
-          fetch(`/api/agent-controller/threads/${id}/pending`, { cache: 'no-store' }).then(
+          fetch(withBase(`/api/agent-controller/threads/${id}/messages`), { cache: 'no-store' }),
+          fetch(withBase(`/api/agent-controller/threads/${id}/pending`), { cache: 'no-store' }).then(
             async (r) =>
               r.ok ? ((await r.json()) as { running?: boolean; events?: ControllerEvent[] }) : {},
             () => ({}) as { running?: boolean; events?: ControllerEvent[] },
@@ -541,7 +542,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
     const run = running.current;
     if (!run) return;
     running.current = null;
-    void fetch('/api/agent-controller/abort', {
+    void fetch(withBase('/api/agent-controller/abort'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(threadRef.current ? { threadId: threadRef.current } : {}),
@@ -556,7 +557,7 @@ export function useAgentControllerChat(options: string | UseAgentControllerChatO
   const clearGoal = useCallback(async () => {
     setTranscript((s) => ({ ...s, goal: null }));
     try {
-      await fetch('/api/agent-controller/goal', { method: 'DELETE' });
+      await fetch(withBase('/api/agent-controller/goal'), { method: 'DELETE' });
     } catch {
       // The optimistic clear stands even if the server call fails.
     }

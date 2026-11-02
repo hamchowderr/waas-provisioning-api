@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Website assistant',
-  description: 'Change your AnyPress website in plain words.',
+  description: 'Change your website in plain words.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

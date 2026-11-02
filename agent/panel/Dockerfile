@@ -11,4 +11,7 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3200
 COPY --from=build /app ./
 EXPOSE 3200
+# The proxy service every store's /assistant router points at (assistantLabels in src/provisioner/coolify/compose.ts).
+# Docker gives the container its image's labels, so the panel declares it wherever it runs.
+LABEL traefik.http.services.website-assistant-panel.loadbalancer.server.port="3200"
 CMD ["npx", "next", "start"]

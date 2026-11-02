@@ -1,3 +1,4 @@
+import { withBase } from '@/lib/base-path';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -7,7 +8,7 @@ const MESSAGES: Record<string, string> = { address: 'Type your website’s addre
 export function SignIn({ site, error }: { site?: string; error?: string }) {
   return (
     <main className="flex flex-1 items-center justify-center p-6">
-      <form method="post" action="/signin" className="flex w-full max-w-sm flex-col gap-4">
+      <form method="post" action={withBase('/signin')} className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-lg font-semibold">Website assistant</h1>
           <p className="text-sm text-muted-foreground">
