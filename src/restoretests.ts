@@ -28,6 +28,8 @@ const STALE_AFTER_HOURS = 50;
 const INTERRUPTED_AFTER_HOURS = 3;
 /** No test started this long: queue one on startup (first deploy, or the API was down at night). */
 const DUE_AFTER_HOURS = 26;
+/** The last test failed and started this long ago: queue one on startup, so a deployed fix is checked the same day. */
+const RETRY_FAILED_AFTER_HOURS = 2;
 
 /** On unless RESTORE_TEST=off. Nightly at 11:00 UTC, two hours after the store backups. */
 export function loadRestoreTestConfig(env: NodeJS.ProcessEnv): RestoreTestConfig | undefined {
@@ -140,12 +142,23 @@ export async function restoreTestStatus(pool: Pool, enabled: boolean): Promise<R
   return { ok: row.status !== 'failed' && (row.status === 'running' || !row.stale), status: row.status, lastPassedAt };
 }
 
-/** True when there are live stores and no test started in the last 26 hours. */
+/** The newest test, for the startup log line and the catch-up decision. */
+async function lastRestoreTest(pool: Pool): Promise<{ id: string; status: string; error: string | null; started_at: Date } | undefined> {
+  const { rows } = await pool.query('SELECT id, status, error, started_at FROM restore_tests ORDER BY started_at DESC LIMIT 1');
+  return rows[0];
+}
+
+/**
+ * True when there are live stores and either no test started in the last 26 hours, or the last test failed
+ * and started over 2 hours ago (so the next deploy checks a fix instead of waiting for the night).
+ */
 async function restoreTestDue(pool: Pool): Promise<boolean> {
   const { rows } = await pool.query(
     `SELECT EXISTS (SELECT 1 FROM tenants WHERE status = $1 AND NOT is_suspended)
-        AND NOT EXISTS (SELECT 1 FROM restore_tests WHERE started_at > now() - make_interval(hours => $2)) AS due`,
-    [Status.Done, DUE_AFTER_HOURS],
+        AND (NOT EXISTS (SELECT 1 FROM restore_tests WHERE started_at > now() - make_interval(hours => $2))
+             OR EXISTS (SELECT 1 FROM (SELECT status, started_at FROM restore_tests ORDER BY started_at DESC LIMIT 1) l
+                         WHERE l.status = 'failed' AND l.started_at < now() - make_interval(hours => $3))) AS due`,
+    [Status.Done, DUE_AFTER_HOURS, RETRY_FAILED_AFTER_HOURS],
   );
   return rows[0].due;
 }
@@ -184,5 +197,9 @@ export async function startRestoreTests(
     else log.error(`restore test ${outcome.id}: failed (store ${outcome.tenantId}, backup ${outcome.backupId}): ${outcome.error}`);
   });
 
-  if (await restoreTestDue(pool)) await boss.send(RESTORE_TEST_QUEUE, {}, { singletonKey: 'catch-up', singletonSeconds: 3600 });
+  // The API's log is the one place the reason shows without database access, and it starts over on each deploy.
+  const last = await lastRestoreTest(pool);
+  if (last?.status === 'failed') log.error(`restore test ${last.id} (${last.started_at.toISOString()}) failed: ${last.error}`);
+
+  if (await restoreTestDue(pool)) await boss.send(RESTORE_TEST_QUEUE, {}, { singletonKey: last?.status === 'failed' ? 'retry-failed' : 'catch-up', singletonSeconds: 3600 });
 }

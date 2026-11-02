@@ -138,4 +138,16 @@ describe('nightly restore test', () => {
     await startRestoreTests(t.boss, t.pool, t.provisioner, undefined);
     expect((await t.boss.getSchedules()).map((s) => s.name)).not.toContain(RESTORE_TEST_QUEUE);
   }, 30000);
+
+  it('logs the last failure on start and tests again when it failed over two hours ago', async () => {
+    await t.pool.query('DELETE FROM restore_tests');
+    const tenant = await newTenant('Failed Last Night');
+    const backupId = await nightlyBackup(tenant);
+    await t.pool.query("INSERT INTO restore_tests (tenant_id, backup_id, status, error, started_at, finished_at) VALUES ($1, $2, 'failed', 'boom', now() - interval '8 hours', now() - interval '8 hours')", [tenant.id, backupId]);
+    const errors: string[] = [];
+    await startRestoreTests(t.boss, t.pool, t.provisioner, { schedule: '0 11 * * *' }, {}, { pollingIntervalSeconds: 0.5, log: { log: () => {}, error: (m: string) => void errors.push(m) } });
+    expect(errors.some((m) => m.includes('failed: boom'))).toBe(true);
+    await waitFor(async () => (await tests()).some((r) => r.status === 'passed'), 20000);
+    await startRestoreTests(t.boss, t.pool, t.provisioner, undefined);
+  }, 30000);
 });
