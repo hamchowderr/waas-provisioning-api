@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const site = String(form.get('site') ?? '').trim();
   const back = String(form.get('back') ?? '/');
-  if (!site) return Response.redirect(panelLink('/?error=address'), 303);
+  if (!site) return Response.redirect(await panelLink('/?error=address'), 303);
   const { action, fields } = await startSignIn(site, back.startsWith('/') ? back : '/');
   const inputs = Object.entries(fields)
     .map(([name, value]) => `<input type="hidden" name="${escape(name)}" value="${escape(value)}">`)

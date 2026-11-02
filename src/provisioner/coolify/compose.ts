@@ -108,10 +108,41 @@ export const AGENT_COMMAND = [
 const HEALTH = { interval: '60s', timeout: '5s', retries: 3, start_period: '180s', start_interval: '2s' };
 
 /**
- * The Docker Compose file of one store (or version site): WordPress, MariaDB and the WP-CLI agent. A store has a
- * size (plans.ts); a version site has none and runs as small, without quotas.
+ * The Traefik service the website assistant's chat panel declares on its own container (a label in
+ * agent/panel/Dockerfile): every store's /assistant router sends its requests there.
  */
-export function renderCompose(input: { wordPressVersion: string; phpVersion: string; size?: Size }): string {
+export const ASSISTANT_PANEL_SERVICE = 'website-assistant-panel';
+
+const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * The labels that send https://<each of the store's domains>/assistant to the website assistant's panel, so the
+ * store's owner opens it on their own website. The proxy does it, not WordPress: a reply streams for a while, and
+ * passing it through would hold one of the store's few Apache workers the whole time. The rule is longer than
+ * Coolify's own Host(...) && PathPrefix(`/`), so Traefik tries it first; plain http is sent to https by Coolify's
+ * router as for every other path. Each domain's certificate is the one the store already has.
+ */
+export function assistantLabels(router: string, domains: string[]): string[] {
+  if (!/^[a-z0-9-]+$/.test(router)) throw new Error(`Invalid router name: ${router}`);
+  const hosts = domains.map((d) => d.toLowerCase());
+  for (const host of hosts) if (!DOMAIN.test(host)) throw new Error(`Invalid store domain: ${host}`);
+  if (!hosts.length) return [];
+  const name = `traefik.http.routers.${router}`;
+  return [
+    `${name}.entryPoints=https`,
+    `${name}.rule=(${hosts.map((h) => `Host(\`${h}\`)`).join(' || ')}) && (Path(\`/assistant\`) || PathPrefix(\`/assistant/\`))`,
+    `${name}.service=${ASSISTANT_PANEL_SERVICE}@docker`,
+    `${name}.tls=true`,
+    `${name}.tls.certresolver=letsencrypt`,
+  ];
+}
+
+/**
+ * The Docker Compose file of one store (or version site): WordPress, MariaDB and the WP-CLI agent. A store has a
+ * size (plans.ts); a version site has none and runs as small, without quotas. A store also has `assistant`: its
+ * router name and domains for the website assistant on its own domain (assistantLabels).
+ */
+export function renderCompose(input: { wordPressVersion: string; phpVersion: string; size?: Size; assistant?: { router: string; domains: string[] } }): string {
   const image = wordpressImage(input.wordPressVersion, input.phpVersion);
   const size = SIZES[input.size ?? DEFAULT_SIZE];
   // The plan's quotas, read by the waas-plan mu-plugin (agent.php). Literal values, not Coolify variables: a new
@@ -146,6 +177,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         mem_limit: size.mem,
         cpus: size.cpus,
         healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], ...HEALTH },
+        ...(input.assistant ? { labels: assistantLabels(input.assistant.router, input.assistant.domains) } : {}),
       },
       db: {
         image: 'mariadb:11',

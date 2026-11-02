@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { withBase } from '@/lib/base-path';
 
 /**
  * The agent's workspace as data — `/api/workspace/*` (the real `WORKSPACE_ROOT`
@@ -43,7 +44,7 @@ export function useWorkspaceFiles({ status }: { status?: string } = {}) {
   const loadTree = useCallback(async () => {
     setLoadingTree(true);
     try {
-      const res = await fetch('/api/workspace/files');
+      const res = await fetch(withBase('/api/workspace/files'));
       if (res.ok) {
         const data = (await res.json()) as { tree?: FileNode[] };
         setTree(data.tree ?? []);
@@ -79,7 +80,7 @@ export function useWorkspaceFiles({ status }: { status?: string } = {}) {
       setContent(null);
       setLoadingFile(true);
       try {
-        const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(p)}`);
+        const res = await fetch(withBase(`/api/workspace/file?path=${encodeURIComponent(p)}`));
         setContent(res.ok ? ((await res.json()) as { content: string }).content : null);
       } catch {
         setContent(null);
@@ -122,7 +123,7 @@ export function useGeneratedImage({
   useEffect(() => {
     if (data || !imageId) return;
     let active = true;
-    fetch(`/api/images/${imageId}`)
+    fetch(withBase(`/api/images/${imageId}`))
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (active && d?.base64) {
@@ -150,7 +151,7 @@ export function useWorkspaceFile(path: string | undefined) {
     setContent(null);
     if (!path) return;
     let active = true;
-    fetch(`/api/workspace/file?path=${encodeURIComponent(path)}`)
+    fetch(withBase(`/api/workspace/file?path=${encodeURIComponent(path)}`))
       .then((r) => (r.ok ? (r.json() as Promise<{ content?: string }>) : null))
       .then((d) => {
         if (active && typeof d?.content === 'string') setContent(d.content);

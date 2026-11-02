@@ -11,6 +11,6 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const back = BACK.has(url.searchParams.get('back') ?? '') ? url.searchParams.get('back')! : '/';
   const started = await startShopSignIn(url.searchParams.get('handoff') ?? '', back);
-  if ('error' in started) return Response.redirect(panelLink(`${back}?error=${encodeURIComponent(started.error)}`), 303);
+  if ('error' in started) return Response.redirect(await panelLink(`${back}?error=${encodeURIComponent(started.error)}`), 303);
   return Response.redirect(started.next, 303);
 }
