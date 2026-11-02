@@ -57,8 +57,10 @@ const editorPage = (older: boolean) => {
 const panelOrigin = ${JSON.stringify(new URL(panelBase).origin)};
 const view = { screen: 'post', postType: 'page', postId: 2, title: 'Home', blocks: [{ clientId: 'hero-1', name: 'core/heading', markup: ${JSON.stringify(HERO)} }], selected: { clientId: 'hero-1', name: 'core/heading', markup: ${JSON.stringify(HERO)} } };
 window.applied = [];
+window.told = [];
 addEventListener('message', async (event) => {
   if (event.origin !== panelOrigin || event.data?.source !== ${JSON.stringify(names.from)}) return;
+  window.told.push(event.data.type);
   const frame = document.getElementById('panel');
   if (event.data.type === 'sign-in') {
     const { url } = await (await fetch('/assistant-handoff${older ? '?older=1' : ''}', { method: 'POST' })).json();
@@ -321,9 +323,26 @@ describe('chat panel', () => {
       // The chat box shows before the panel has heard what the editor has open; a message sent sooner carries no
       // view, so editor_change refuses it (as it should) and nothing reaches the editor.
       await page.waitForFunction(() => (window as unknown as { viewSent?: boolean }).viewSent === true, undefined, { timeout: 30_000 });
+      // The chat shows what "this" is, ideas that fit a heading, and the month's messages left.
+      await chat.getByText('Selected:').waitFor({ timeout: 10_000 });
+      await expect(chat.getByText('Heading', { exact: true }).isVisible()).resolves.toBe(true);
+      await expect(chat.getByRole('button', { name: 'Make it shorter' }).isVisible()).resolves.toBe(true);
+      await chat.getByText(/\d+ messages left this month/).waitFor({ timeout: 10_000 });
+      expect(await box.getAttribute('placeholder')).toBe('Ask about this heading…');
+      await page.screenshot({ path: `test-results/editor-selected-${label.replace(/\W+/g, '-')}.png` });
       await box.fill(`Make this heading warmer ${label}`);
       await box.press('Enter');
       await chat.getByText('Done. Press Save to keep it.').waitFor({ timeout: 30_000 });
+      // The message box keeps the focus, so the owner can type the next one straight away.
+      await expect(box.evaluate((el) => el === document.activeElement)).resolves.toBe(true);
+      // The × on the chip clears the selection in the editor too.
+      await chat.getByRole('button', { name: 'Clear the selection' }).click();
+      await page.waitForFunction(() => (window as unknown as { told: string[] }).told.includes('clear-selection'));
+      await expect(chat.getByText('Selected:').count()).resolves.toBe(0);
+      if (width > 800) {
+        await chat.getByRole('button', { name: 'Wider panel' }).click();
+        await page.waitForFunction(() => (window as unknown as { told: string[] }).told.includes('width'));
+      }
       // The change went to the editor, with no approval card, and never to the website itself.
       await page.getByText('Bread baked at dawn').waitFor();
       expect(await page.evaluate(() => (window as unknown as { applied: unknown[] }).applied)).toEqual([change]);

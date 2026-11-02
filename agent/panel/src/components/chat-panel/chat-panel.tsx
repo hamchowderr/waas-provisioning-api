@@ -1,7 +1,7 @@
 'use client';
 
 import { HistoryIcon, SquarePenIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { Conversation, ConversationContent } from '@/components/ai-elements/conversation';
 import { Message, MessageContent } from '@/components/ai-elements/message';
 import { Shimmer } from '@/components/ai-elements/shimmer';
@@ -70,6 +70,10 @@ export type ChatPanelProps = {
   toolTitles?: Record<string, string>;
   /** Host fields sent with every turn and answer, read at send time (useAgentControllerChat's `extra`). */
   extra?: () => Record<string, unknown> | undefined;
+  /** Shown inside the message box, above the text (e.g. the selected block). */
+  composerHeader?: ReactNode;
+  /** Called when an answer finishes (e.g. refresh a messages-left count). */
+  onTurnEnd?: () => void;
 };
 
 /**
@@ -99,6 +103,8 @@ export function ChatPanel({
   approvalViews,
   toolTitles,
   extra,
+  composerHeader,
+  onTurnEnd,
 }: ChatPanelProps) {
   const controller = useAgentControllerChat({ onToolEnd, extra });
   const { transcript, status, sendMessage, answerQuestion, pendingSuspension } = controller;
@@ -106,6 +112,11 @@ export function ChatPanel({
   // Archived chats stay out of the menu, as they do in the full shell's sidebar.
   const recent = threads.filter((t) => !t.archived);
   const busy = status === 'streaming';
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy) onTurnEnd?.();
+    wasBusy.current = busy;
+  }, [busy, onTurnEnd]);
   // Nothing to show yet. A parked approval or question is something to show, even with
   // no messages, so it is never hidden behind the greeting.
   const empty =
@@ -133,6 +144,13 @@ export function ChatPanel({
   const send = (text: string) => {
     if (text.trim() && !busy) void sendMessage(text.trim(), { mode });
   };
+  // Try again sends the owner's last message once more.
+  const lastAsked = [...transcript.messages]
+    .reverse()
+    .find((m) => m.role === 'user')
+    ?.content.map((part) => (part.type === 'text' ? part.text : ''))
+    .join('')
+    .trim();
 
   return (
     <ChatLinkProvider onNavigate={onNavigate}>
@@ -235,9 +253,14 @@ export function ChatPanel({
         {/* A failed turn says so, as the full shell does. Above the composer, so it shows on
           the empty state too (a first message can fail before any transcript exists). */}
         {transcript.error && (
-          <p role="alert" className={`mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 text-sm ${transcript.notice ? 'text-muted-foreground' : 'text-destructive'}`}>
-            {transcript.notice ? transcript.error : `Something went wrong: ${transcript.error}`}
-          </p>
+          <div role="alert" className={`mx-auto flex w-full max-w-3xl shrink-0 items-center gap-2 px-4 pt-2 text-sm ${transcript.notice ? 'text-muted-foreground' : 'text-destructive'}`}>
+            <p className="min-w-0 flex-1">{transcript.notice ? transcript.error : `That didn’t work: ${transcript.error}`}</p>
+            {!transcript.notice && lastAsked && !busy && (
+              <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={() => send(lastAsked)}>
+                Try again
+              </Button>
+            )}
+          </div>
         )}
 
         {/* The kit's shared composer: Plan and attach on the left, dictate beside the send
@@ -249,6 +272,7 @@ export function ChatPanel({
             models={false}
             webSearch={false}
             placeholder={placeholder}
+            header={composerHeader}
             toolsExtra={
               plan ? <PlanModeToggle on={planMode.on} onToggle={planMode.toggle} /> : undefined
             }

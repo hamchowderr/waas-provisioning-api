@@ -187,6 +187,19 @@ export function createServer(deps: ServerDeps) {
   // The signed-in website's address. The panel beside the page editor only talks to an editor there.
   app.get('/agent-controller/site', (c) => c.json({ url: c.get('siteUrl' as never) as string }));
 
+  // This month's messages for the website ({ used, limit, resetsAt }), for the panel's "messages left". Empty when
+  // the API can't be reached: the panel then shows nothing rather than a wrong number.
+  app.get('/agent-controller/usage', async (c) => {
+    try {
+      const res = await fetchImpl(new URL('/oauth/site/assistant-usage', deps.apiUrl), { headers: { Authorization: `Bearer ${bearer(c)}` } });
+      if (!res.ok) return c.json({});
+      const usage = (await res.json()) as { used?: number; limit?: number; resetsAt?: string };
+      return c.json({ used: usage.used, limit: usage.limit, resetsAt: usage.resetsAt });
+    } catch {
+      return c.json({});
+    }
+  });
+
   // Goals, observational memory, schedules, workspace and browser are Chat Kit features the
   // assistant doesn't use; only the chat, its threads and its approvals are served.
   const SERVED = /^\/agent-controller\/(stream|approve|answer|abort|threads)/;

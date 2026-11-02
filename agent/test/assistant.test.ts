@@ -219,4 +219,15 @@ describe('the monthly allowance', () => {
     h.script('Good morning', 'get_site', {}, 'Morning.');
     expect(await h.send(h.stores[0]!, { text: 'Good morning' }).text()).toBe('Morning.');
   });
+
+  it('tells the panel how many messages are used this month, without counting one', async () => {
+    const [, b] = h.stores;
+    const month = new Date().toISOString().slice(0, 7) + '-01';
+    await h.t.pool.query('UPDATE assistant_usage SET messages = 40 WHERE tenant_id = $1 AND month = $2', [b!.id, month]);
+    const first = await (await h.get('/agent-controller/usage', b!)).json();
+    expect(first).toMatchObject({ used: 40, limit: 150 });
+    expect(Date.parse(first.resetsAt)).toBeGreaterThan(Date.now());
+    expect(await (await h.get('/agent-controller/usage', b!)).json()).toMatchObject({ used: 40 });
+    expect((await h.get('/agent-controller/usage', null)).status).toBe(401);
+  });
 });
