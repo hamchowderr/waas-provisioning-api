@@ -90,6 +90,12 @@ const AGENT = 'php /tmp/waas-agent.php';
 /** Coolify stores a scheduled task's command in a varchar(255). */
 const MAX_COMMAND = 255;
 const STAGE_CHUNK = 200;
+/** What a task's output says when Coolify ran it in the database or WordPress container: the agent never started. */
+const WRONG_CONTAINER = /php: not found|Could not open input file: \/tmp\/waas-agent\.php/;
+/** Tries per agent command when it keeps landing in the wrong container. */
+const WRONG_CONTAINER_ATTEMPTS = 4;
+
+class WrongContainerError extends Error {}
 /**
  * WP-CLI for the cron task. The CLI image's PHP allows 128 MB, and a store with every template plugin needs about
  * that just to load them in WP-CLI (no opcache), so cron died there. 192 MB fits the agent's 256 MB. No --path: the
@@ -373,7 +379,34 @@ export class CoolifyProvisioner implements Provisioner {
     return this.runTask(uuid, op, `${AGENT} ${op} @${id}`);
   }
 
+  /**
+   * Runs one agent command, again when Coolify ran it in the wrong container. Coolify runs a task in whichever
+   * container is the only one it has as running, whatever the task's container name, and its statuses lag just
+   * after a start: a new store's command then lands in MariaDB (`php: not found`) or WordPress (no agent
+   * script), where nothing runs. Each time, wait until every container is up again and send it once more.
+   */
   private async runTask(uuid: string, op: string, command: string): Promise<Record<string, unknown>> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.runTaskOnce(uuid, op, command);
+      } catch (err) {
+        if (!(err instanceof WrongContainerError) || attempt >= WRONG_CONTAINER_ATTEMPTS) throw err;
+        await this.sleep(this.pollMs);
+        await this.waitRunning(uuid);
+      }
+    }
+  }
+
+  /** Waits until Coolify has every container of the Service as running, without the agent ping waitHealthy sends. */
+  private async waitRunning(uuid: string): Promise<void> {
+    const deadline = Date.now() + (this.config.deployTimeoutMs ?? 10 * 60_000);
+    while (!allHealthy(await this.statuses(uuid))) {
+      if (Date.now() > deadline) return;
+      await this.sleep(this.pollMs);
+    }
+  }
+
+  private async runTaskOnce(uuid: string, op: string, command: string): Promise<Record<string, unknown>> {
     const timeout = this.config.taskTimeoutSeconds ?? 1800;
     const task = await this.coolify.createTask(uuid, {
       name: `waas-${op}-${randomBytes(4).toString('hex')}`,
@@ -399,6 +432,7 @@ export class CoolifyProvisioner implements Provisioner {
           const result = /^WAAS_RESULT (.*)$/m.exec(output);
           if (finished.status === 'success' && result) return JSON.parse(result[1]!);
           const error = /^WAAS_ERROR (.*)$/m.exec(output)?.[1] ?? output.slice(-300);
+          if (!result && WRONG_CONTAINER.test(output)) throw new WrongContainerError(`Store agent ${op} ran outside the agent container: ${error}`);
           throw new Error(`Store agent ${op} failed (${finished.status}): ${error}`);
         }
         if (Date.now() > deadline) throw new Error(`Store agent ${op} timed out`);
