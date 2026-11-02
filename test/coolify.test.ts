@@ -1162,6 +1162,42 @@ describe('S3', () => {
     expect(s3.presign('GET', 'k')).toBe(s3.presign('GET', 'k'));
     expect(s3.presign('GET', 'k')).not.toBe(s3.presign('PUT', 'k'));
   });
+
+  it('signs a part link with its part number and upload id', () => {
+    const url = new URL(s3.presign('PUT', 'imports/x', 900, { partNumber: '3', uploadId: 'u/1' }));
+    expect(url.searchParams.get('partNumber')).toBe('3');
+    expect(url.searchParams.get('uploadId')).toBe('u/1');
+    expect(url.toString()).not.toBe(s3.presign('PUT', 'imports/x', 900, { partNumber: '4', uploadId: 'u/1' }));
+  });
+
+  it('starts, lists (all pages), finishes and aborts multipart uploads', async () => {
+    const calls: { method: string; url: string; body?: string }[] = [];
+    const answers: Response[] = [
+      new Response('<InitiateMultipartUploadResult><UploadId>abc&amp;1</UploadId></InitiateMultipartUploadResult>'),
+      new Response('<ListPartsResult><IsTruncated>true</IsTruncated><NextPartNumberMarker>1</NextPartNumberMarker><Part><PartNumber>1</PartNumber><ETag>"e1"</ETag><Size>10</Size></Part></ListPartsResult>'),
+      new Response('<ListPartsResult><IsTruncated>false</IsTruncated><Part><PartNumber>2</PartNumber><ETag>"e2"</ETag><Size>4</Size></Part></ListPartsResult>'),
+      new Response('<CompleteMultipartUploadResult/>'),
+      new Response('<Error><Code>NoSuchUpload</Code></Error>', { status: 404 }),
+      new Response(null, { status: 204 }),
+      new Response('<Error><Code>InternalError</Code></Error>'),
+    ];
+    const fetchMock = (async (url: string, init: RequestInit) => {
+      calls.push({ method: init.method!, url, body: init.body ? new TextDecoder().decode(init.body as Uint8Array) : undefined });
+      return answers.shift()!;
+    }) as unknown as typeof fetch;
+    const m = new S3({ endpoint: 'https://acct.r2.cloudflarestorage.com', bucket: 'b', region: 'auto', accessKeyId: 'K', secretAccessKey: 'S' }, fetchMock);
+    expect(await m.createMultipart('imports/x')).toBe('abc&1');
+    expect(calls[0]).toMatchObject({ method: 'POST', url: 'https://acct.r2.cloudflarestorage.com/b/imports/x?uploads=' });
+    const parts = await m.listParts('imports/x', 'abc&1');
+    expect(parts).toEqual([{ number: 1, size: 10, etag: '"e1"' }, { number: 2, size: 4, etag: '"e2"' }]);
+    expect(calls[2]!.url).toContain('part-number-marker=1');
+    await m.completeMultipart('imports/x', 'abc&1', parts!);
+    expect(calls[3]!.body).toBe('<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>"e1"</ETag></Part><Part><PartNumber>2</PartNumber><ETag>"e2"</ETag></Part></CompleteMultipartUpload>');
+    expect(await m.listParts('imports/x', 'gone')).toBeNull();
+    await m.abortMultipart('imports/x', 'abc&1');
+    expect(calls[5]).toMatchObject({ method: 'DELETE' });
+    await expect(m.completeMultipart('imports/x', 'abc&1', parts!)).rejects.toThrow(/InternalError/);
+  });
 });
 
 describe('Provisioner selection', () => {

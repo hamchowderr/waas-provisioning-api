@@ -2370,6 +2370,138 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: getImportUpload
+  /imports/upload/parts/start:
+    post:
+      tags:
+      - SiteImport
+      summary: Start an upload in parts
+      description: 'Called by the AnyPress Export plugin with an import code and the archive''s size, no API key. Starts an upload in parts, so a dropped connection costs one part and the upload can carry on where it stopped. Answers the upload id, the part size AnyPress picked and how many parts to send. Then ask for part links, PUT each part, and finish.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportPartsStartParams'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportPartsStartResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '404':
+          description: The import code is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '409':
+          description: The move has already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '410':
+          description: The import code expired before the move started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: startImportParts
+  /imports/upload/parts:
+    post:
+      tags:
+      - SiteImport
+      summary: Get links for parts
+      description: 'Answers which parts are uploaded already and a link (valid for 12 hours) to `PUT` each part asked for, at most 100 at a time. Part numbers start at 1; every part but the last is exactly the part size.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportPartsParams'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportPartsResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '404':
+          description: The import code is not valid, or the upload is no longer known
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '409':
+          description: The move has already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '410':
+          description: The import code expired before the move started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getImportParts
+  /imports/upload/parts/finish:
+    post:
+      tags:
+      - SiteImport
+      summary: Finish an upload in parts
+      description: 'Joins the uploaded parts into the archive. Every part from 1 to the last must be uploaded. Then start the move.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportPartsFinishParams'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportPartsFinishResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '404':
+          description: The import code is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '409':
+          description: The move has already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '410':
+          description: The import code expired before the move started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: finishImportParts
   /imports/start:
     post:
       tags:
@@ -3432,6 +3564,98 @@ components:
           type: string
           description: The store's main domain, where the site will be
           example: old-site.anypress.site
+      additionalProperties: false
+    ImportPartsStartParams:
+      required:
+      - code
+      - bytes
+      type: object
+      properties:
+        code:
+          type: string
+          description: The import code, as AnyPress showed it
+        bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The archive's size in bytes
+    ImportPartsStartResult:
+      type: object
+      properties:
+        uploadId:
+          type: string
+          description: Names this upload in the calls that follow
+        partSize:
+          type: integer
+          format: int64
+          description: Bytes in every part but the last (16 MiB, or more for very large archives)
+        partCount:
+          type: integer
+          description: How many parts to send
+        maxBytes:
+          type: integer
+          format: int64
+          description: The largest archive the store takes
+        store:
+          $ref: '#/components/schemas/ImportStore'
+      additionalProperties: false
+    ImportPartsParams:
+      required:
+      - code
+      - uploadId
+      type: object
+      properties:
+        code:
+          type: string
+          description: The import code, as AnyPress showed it
+        uploadId:
+          type: string
+        parts:
+          type: array
+          maxItems: 100
+          items:
+            type: integer
+            minimum: 1
+            maximum: 10000
+          description: Part numbers to get links for
+    ImportPartsResult:
+      type: object
+      properties:
+        done:
+          type: array
+          items:
+            type: integer
+          description: Part numbers uploaded so far
+        bytes:
+          type: integer
+          format: int64
+          description: Bytes uploaded so far
+        urls:
+          type: object
+          additionalProperties:
+            type: string
+          description: Part number to the link to PUT that part to
+      additionalProperties: false
+    ImportPartsFinishParams:
+      required:
+      - code
+      - uploadId
+      type: object
+      properties:
+        code:
+          type: string
+          description: The import code, as AnyPress showed it
+        uploadId:
+          type: string
+    ImportPartsFinishResult:
+      type: object
+      properties:
+        bytes:
+          type: integer
+          format: int64
+          description: The archive's size
+        store:
+          $ref: '#/components/schemas/ImportStore'
       additionalProperties: false
     ImportUploadResult:
       type: object

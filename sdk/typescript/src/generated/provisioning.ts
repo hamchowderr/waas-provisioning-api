@@ -768,6 +768,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/imports/upload/parts/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start an upload in parts
+         * @description Called by the AnyPress Export plugin with an import code and the archive's size, no API key. Starts an upload in parts, so a dropped connection costs one part and the upload can carry on where it stopped. Answers the upload id, the part size AnyPress picked and how many parts to send. Then ask for part links, PUT each part, and finish.
+         */
+        post: operations["startImportParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/imports/upload/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get links for parts
+         * @description Answers which parts are uploaded already and a link (valid for 12 hours) to `PUT` each part asked for, at most 100 at a time. Part numbers start at 1; every part but the last is exactly the part size.
+         */
+        post: operations["getImportParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/imports/upload/parts/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish an upload in parts
+         * @description Joins the uploaded parts into the archive. Every part from 1 to the last must be uploaded. Then start the move.
+         */
+        post: operations["finishImportParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/imports/start": {
         parameters: {
             query?: never;
@@ -1667,6 +1727,65 @@ export interface components {
              * @example old-site.anypress.site
              */
             domain?: string;
+        };
+        ImportPartsStartParams: {
+            /** @description The import code, as AnyPress showed it */
+            code: string;
+            /**
+             * Format: int64
+             * @description The archive's size in bytes
+             */
+            bytes: number;
+        };
+        ImportPartsStartResult: {
+            /** @description Names this upload in the calls that follow */
+            uploadId?: string;
+            /**
+             * Format: int64
+             * @description Bytes in every part but the last (16 MiB, or more for very large archives)
+             */
+            partSize?: number;
+            /** @description How many parts to send */
+            partCount?: number;
+            /**
+             * Format: int64
+             * @description The largest archive the store takes
+             */
+            maxBytes?: number;
+            store?: components["schemas"]["ImportStore"];
+        };
+        ImportPartsParams: {
+            /** @description The import code, as AnyPress showed it */
+            code: string;
+            uploadId: string;
+            /** @description Part numbers to get links for */
+            parts?: number[];
+        };
+        ImportPartsResult: {
+            /** @description Part numbers uploaded so far */
+            done?: number[];
+            /**
+             * Format: int64
+             * @description Bytes uploaded so far
+             */
+            bytes?: number;
+            /** @description Part number to the link to PUT that part to */
+            urls?: {
+                [key: string]: string;
+            };
+        };
+        ImportPartsFinishParams: {
+            /** @description The import code, as AnyPress showed it */
+            code: string;
+            uploadId: string;
+        };
+        ImportPartsFinishResult: {
+            /**
+             * Format: int64
+             * @description The archive's size
+             */
+            bytes?: number;
+            store?: components["schemas"]["ImportStore"];
         };
         ImportUploadResult: {
             /** @description Where to PUT the archive, in one request */
@@ -4213,6 +4332,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportUploadResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code is not valid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The move has already started */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code expired before the move started */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    startImportParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ImportPartsStartParams"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPartsStartResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code is not valid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The move has already started */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code expired before the move started */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getImportParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ImportPartsParams"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPartsResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code is not valid, or the upload is no longer known */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The move has already started */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The import code expired before the move started */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    finishImportParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ImportPartsFinishParams"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPartsFinishResult"];
                 };
             };
             /** @description The validation of the request failed. See the message in the response to see why */

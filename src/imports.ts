@@ -6,7 +6,7 @@ import { badRequest, HttpError } from './errors.ts';
 import { channelKey, parseManifest } from './releases.ts';
 import { readJson } from './http.ts';
 import { SIZES, type Size } from './plans.ts';
-import type { MoveReport, Provisioner, SiteCheck } from './provisioner/provisioner.ts';
+import { ImportPartsError, type MoveReport, type Provisioner, type SiteCheck } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
 import { siteReport, type SiteReport } from './sitereport.ts';
 import { Status } from './status.ts';
@@ -27,6 +27,14 @@ export const IMPORT_DAYS = 7;
 const UPLOAD_SECONDS = 12 * 3600;
 /** One PUT to object storage (R2, S3) takes at most 5 GiB. */
 export const MAX_IMPORT_BYTES = 5 * 1024 ** 3;
+
+/** S3 takes at most 10,000 parts of at least 5 MiB (the last may be smaller). */
+const MAX_PARTS = 10_000;
+const PART_MIB = 16;
+const GONE = 'This upload is no longer known. Upload the export again.';
+
+/** The part size for an archive of `bytes`: 16 MiB (small enough to send within one slow web request), or larger in whole MiB so it fits in 10,000 parts. */
+export const importPartSize = (bytes: number) => Math.max(PART_MIB, Math.ceil(bytes / MAX_PARTS / 1024 ** 2)) * 1024 ** 2;
 
 const CODE_PREFIX = 'AP1.';
 
@@ -292,6 +300,53 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     return c.json({ uploadUrl, maxBytes: maxImportBytes(found.size), store: store(found) });
   });
 
+  // Uploading in parts, so a dropped connection costs one part and an upload can carry on where it stopped. The plugin
+  // says how big the archive is; AnyPress picks the part size. Then: links for the parts still missing, then finish,
+  // then start.
+  app.post('/upload/parts/start', async (c) => {
+    const body = await readJson(c);
+    const found = await findImport(body);
+    notStarted(found);
+    const bytes = (body as { bytes?: unknown }).bytes;
+    if (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes < 1) throw badRequest('bytes is required: the size of the export');
+    const max = maxImportBytes(found.size);
+    if (bytes > max) throw badRequest(`The export is ${gb(bytes)} GB, more than a ${found.size} store holds (${gb(max)} GB). Choose a larger size.`);
+    const partSize = importPartSize(bytes);
+    const uploadId = await provisioner.startImportParts({ storeId: found.tenant_id });
+    return c.json({ uploadId, partSize, partCount: Math.ceil(bytes / partSize), maxBytes: max, store: store(found) });
+  });
+
+  // Which parts are uploaded already, and links for the parts asked for (at most 100 at a time).
+  app.post('/upload/parts', async (c) => {
+    const body = await readJson(c);
+    const found = await findImport(body);
+    notStarted(found);
+    const uploadId = partsUploadId(body);
+    const asked = (body as { parts?: unknown }).parts ?? [];
+    if (!Array.isArray(asked) || asked.length > 100 || asked.some((n) => !Number.isInteger(n) || n < 1 || n > MAX_PARTS)) {
+      throw badRequest(`parts must be a list of at most 100 part numbers from 1 to ${MAX_PARTS}`);
+    }
+    const done = await provisioner.importParts({ storeId: found.tenant_id, uploadId });
+    if (!done) throw new HttpError(404, GONE);
+    const urls = await provisioner.importPartUrls({ storeId: found.tenant_id, uploadId, parts: [...new Set(asked as number[])], expiresInSeconds: UPLOAD_SECONDS });
+    return c.json({ done: done.map((p) => p.number), bytes: done.reduce((sum, p) => sum + p.size, 0), urls });
+  });
+
+  // Every part is uploaded: join them into the archive. Start the move next.
+  app.post('/upload/parts/finish', async (c) => {
+    const body = await readJson(c);
+    const found = await findImport(body);
+    notStarted(found);
+    const uploadId = partsUploadId(body);
+    try {
+      await provisioner.finishImportParts({ storeId: found.tenant_id, uploadId });
+    } catch (e) {
+      if (e instanceof ImportPartsError) throw badRequest(e.message);
+      throw e;
+    }
+    return c.json({ bytes: await provisioner.importSize({ storeId: found.tenant_id }), store: store(found) });
+  });
+
   // The archive is uploaded: build the store from it.
   app.post('/start', async (c) => {
     const body = await readJson(c);
@@ -338,6 +393,12 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
   });
 
   return app;
+
+  function partsUploadId(body: unknown) {
+    const id = (body as { uploadId?: unknown } | null)?.uploadId;
+    if (typeof id !== 'string' || !id || id.length > 1024) throw badRequest('uploadId is required');
+    return id;
+  }
 
   function gb(bytes: number) {
     return (bytes / 1024 ** 3).toFixed(1);
