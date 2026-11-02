@@ -73,7 +73,7 @@ describe('MCP server', () => {
 
   it('offers about 20 tools, with actions and read-only and destructive hints', async () => {
     const { tools } = await mcp.listTools();
-    expect(tools.length).toBe(22);
+    expect(tools.length).toBe(23);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     expect(byName.get('get_stores')?.annotations?.readOnlyHint).toBe(true);
     expect(byName.get('store_status')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });

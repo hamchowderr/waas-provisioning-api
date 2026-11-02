@@ -35,8 +35,22 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   // The website's address is the stand-in editor's, so the panel beside it trusts that page.
   if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `${editorUrl}/`, theme: 'anypress' });
   if (/^\/pages\/\d+$/.test(path)) return Response.json({ id: Number(path.split('/')[2]), status: 'publish' });
+  if (path === '/business') {
+    if (method === 'PATCH') business.about = { ...business.about, ...(JSON.parse(String(init?.body)) as { about: Record<string, string> }).about };
+    return Response.json(business);
+  }
   return Response.json({ ok: true });
 }) as typeof fetch;
+
+/** The bakery's business profile, as WaaS Client answers /site/business. */
+const business = {
+  site: {
+    name: 'Bakery', language: 'en_US', timezone: 'America/Chicago', currency: 'USD',
+    owner: { name: 'Rosa Diaz', phone: '555-0100', city: 'Austin', state: 'TX', country: 'United States' },
+    products: [{ name: 'Sourdough loaf', price: '9' }, { name: 'Birthday cake', price: '45–80' }], forms: ['Contact us'],
+  },
+  about: { what: 'A small bakery: sourdough and cakes to order.' } as Record<string, string>,
+};
 
 const HERO = '<!-- wp:heading --><h2 class="wp-block-heading">Fresh bread</h2><!-- /wp:heading -->';
 const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at dawn</h2><!-- /wp:heading -->';
@@ -57,8 +71,10 @@ const editorPage = (older: boolean) => {
 const panelOrigin = ${JSON.stringify(new URL(panelBase).origin)};
 const view = { screen: 'post', postType: 'page', postId: 2, title: 'Home', blocks: [{ clientId: 'hero-1', name: 'core/heading', markup: ${JSON.stringify(HERO)} }], selected: { clientId: 'hero-1', name: 'core/heading', markup: ${JSON.stringify(HERO)} } };
 window.applied = [];
+window.told = [];
 addEventListener('message', async (event) => {
   if (event.origin !== panelOrigin || event.data?.source !== ${JSON.stringify(names.from)}) return;
+  window.told.push(event.data.type);
   const frame = document.getElementById('panel');
   if (event.data.type === 'sign-in') {
     const { url } = await (await fetch('/assistant-handoff${older ? '?older=1' : ''}', { method: 'POST' })).json();
@@ -321,9 +337,26 @@ describe('chat panel', () => {
       // The chat box shows before the panel has heard what the editor has open; a message sent sooner carries no
       // view, so editor_change refuses it (as it should) and nothing reaches the editor.
       await page.waitForFunction(() => (window as unknown as { viewSent?: boolean }).viewSent === true, undefined, { timeout: 30_000 });
+      // The chat shows what "this" is, ideas that fit a heading, and the month's messages left.
+      await chat.getByText('Selected:').waitFor({ timeout: 10_000 });
+      await expect(chat.getByText('Heading', { exact: true }).isVisible()).resolves.toBe(true);
+      await expect(chat.getByRole('button', { name: 'Make it shorter' }).isVisible()).resolves.toBe(true);
+      await chat.getByText(/\d+ messages left this month/).waitFor({ timeout: 10_000 });
+      expect(await box.getAttribute('placeholder')).toBe('Ask about this heading…');
+      await page.screenshot({ path: `test-results/editor-selected-${label.replace(/\W+/g, '-')}.png` });
       await box.fill(`Make this heading warmer ${label}`);
       await box.press('Enter');
       await chat.getByText('Done. Press Save to keep it.').waitFor({ timeout: 30_000 });
+      // The message box keeps the focus, so the owner can type the next one straight away.
+      await expect(box.evaluate((el) => el === document.activeElement)).resolves.toBe(true);
+      // The × on the chip clears the selection in the editor too.
+      await chat.getByRole('button', { name: 'Clear the selection' }).click();
+      await page.waitForFunction(() => (window as unknown as { told: string[] }).told.includes('clear-selection'));
+      await expect(chat.getByText('Selected:').count()).resolves.toBe(0);
+      if (width > 800) {
+        await chat.getByRole('button', { name: 'Wider panel' }).click();
+        await page.waitForFunction(() => (window as unknown as { told: string[] }).told.includes('width'));
+      }
       // The change went to the editor, with no approval card, and never to the website itself.
       await page.getByText('Bread baked at dawn').waitFor();
       expect(await page.evaluate(() => (window as unknown as { applied: unknown[] }).applied)).toEqual([change]);
@@ -336,6 +369,31 @@ describe('chat panel', () => {
       await page.screenshot({ path: `test-results/editor-${label.replace(/\W+/g, '-')}.png` });
       await context.close();
     }, 90_000);
+  }
+
+  for (const [label, width, height] of [['desktop', 1280, 800], ['phone', 390, 844]] as const) {
+    it(`shows what it knows about the business, and saves the owner’s corrections (${label})`, async () => {
+      const page = await signedInPage(width, height);
+      await page.goto(panelUrl);
+      await page.getByRole('button', { name: 'About your business' }).click();
+      const dialog = page.getByRole('dialog', { name: 'About your business' });
+      await dialog.getByText('Sourdough loaf (9 USD), Birthday cake (45–80 USD)').waitFor({ timeout: 15_000 });
+      await expect(dialog.getByText('Austin, TX, United States').isVisible()).resolves.toBe(true);
+      const what = dialog.getByRole('textbox', { name: 'What your business does' });
+      expect(await what.inputValue()).toBe('A small bakery: sourdough and cakes to order.');
+      const save = dialog.getByRole('button', { name: 'Save' });
+      expect(await save.isDisabled()).toBe(true);
+      await dialog.getByRole('textbox', { name: 'Opening hours' }).fill(`Tue to Sat, 7 to 3 (${label})`);
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `test-results/business-${label}.png` });
+      await save.click();
+      await dialog.getByRole('status').filter({ hasText: 'Saved' }).waitFor({ timeout: 15_000 });
+      expect(business.about.hours).toBe(`Tue to Sat, 7 to 3 (${label})`);
+      // Only what changed is sent.
+      expect(JSON.parse(writes().at(-1)!.body)).toEqual({ about: { hours: `Tue to Sat, 7 to 3 (${label})` } });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.context().close();
+    }, 60_000);
   }
 
   it('refuses a made-up or used handoff', async () => {
