@@ -109,14 +109,14 @@ const HEALTH = { interval: '60s', timeout: '5s', retries: 3, start_period: '180s
 
 /**
  * The Traefik service the website assistant's chat panel declares on its own container (a label in
- * agent/panel/Dockerfile): every store's /assistant router sends its requests there.
+ * agent/panel/Dockerfile): every store's /.assistant router sends its requests there.
  */
 export const ASSISTANT_PANEL_SERVICE = 'website-assistant-panel';
 
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 /**
- * The labels that send https://<each of the store's domains>/assistant to the website assistant's panel, so the
+ * The labels that send https://<each of the store's domains>/.assistant to the website assistant's panel, so the
  * store's owner opens it on their own website. The proxy does it, not WordPress: a reply streams for a while, and
  * passing it through would hold one of the store's few Apache workers the whole time. The rule is longer than
  * Coolify's own Host(...) && PathPrefix(`/`), so Traefik tries it first; plain http is sent to https by Coolify's
@@ -130,7 +130,7 @@ export function assistantLabels(router: string, domains: string[]): string[] {
   const name = `traefik.http.routers.${router}`;
   return [
     `${name}.entryPoints=https`,
-    `${name}.rule=(${hosts.map((h) => `Host(\`${h}\`)`).join(' || ')}) && (Path(\`/assistant\`) || PathPrefix(\`/assistant/\`))`,
+    `${name}.rule=(${hosts.map((h) => `Host(\`${h}\`)`).join(' || ')}) && (Path(\`/.assistant\`) || PathPrefix(\`/.assistant/\`))`,
     `${name}.service=${ASSISTANT_PANEL_SERVICE}@docker`,
     `${name}.tls=true`,
     `${name}.tls.certresolver=letsencrypt`,

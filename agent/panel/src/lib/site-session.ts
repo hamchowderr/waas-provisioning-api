@@ -3,9 +3,9 @@
 // opened at; the browser never sees them. The chat routes send the access token on to the assistant
 // (lib/mastra-proxy.ts), which asks the API which website it is for.
 //
-// The panel answers on two kinds of address. On a website's own domain (https://mybakery.com/assistant,
+// The panel answers on two kinds of address. On a website's own domain (https://mybakery.com/.assistant,
 // which the server's proxy sends here) it is part of that website: its cookies are first-party and its
-// sign-in returns to https://mybakery.com/assistant/callback. On its own address (PANEL_URL) it keeps
+// sign-in returns to https://mybakery.com/.assistant/callback. On its own address (PANEL_URL) it keeps
 // the sign-in return of before (PANEL_URL/callback, which now redirects under BASE_PATH), so handoffs
 // made by older WaaS Client and WaaS Host versions still trade.
 import { createHash, randomBytes } from 'node:crypto';
@@ -19,7 +19,7 @@ const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 const HOST = /^[a-z0-9.-]+(:\d+)?$|^\[::1\](:\d+)?$/;
 
 type Address = {
-  /** Where the panel's pages are, as the owner's browser reaches them (…/assistant). */
+  /** Where the panel's pages are, as the owner's browser reaches them (…/.assistant). */
   base: string;
   /** The OAuth return address on this address. */
   redirectUri: string;

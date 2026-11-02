@@ -295,9 +295,9 @@ describe('CoolifyProvisioner', () => {
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
     expect(compose.services.wordpress.mem_limit).toBe('512m');
     expect(compose.services.agent.image).toBe('wordpress:cli-php8.3');
-    // Each of the store's domains sends /assistant to the website assistant's panel.
+    // Each of the store's domains sends /.assistant to the website assistant's panel.
     expect(compose.services.wordpress.labels).toContain(
-      `traefik.http.routers.store-${STORE_ID}-assistant.rule=(Host(\`shop.example.com\`) || Host(\`t-0b8f6a0e.stores.example.com\`)) && (Path(\`/assistant\`) || PathPrefix(\`/assistant/\`))`,
+      `traefik.http.routers.store-${STORE_ID}-assistant.rule=(Host(\`shop.example.com\`) || Host(\`t-0b8f6a0e.stores.example.com\`)) && (Path(\`/.assistant\`) || PathPrefix(\`/.assistant/\`))`,
     );
     expect(compose.services.wordpress.labels).toContain(`traefik.http.routers.store-${STORE_ID}-assistant.service=website-assistant-panel@docker`);
     // The agent loads WordPress with every plugin for the store's cron each minute.
