@@ -35,8 +35,22 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   // The website's address is the stand-in editor's, so the panel beside it trusts that page.
   if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `${editorUrl}/`, theme: 'anypress' });
   if (/^\/pages\/\d+$/.test(path)) return Response.json({ id: Number(path.split('/')[2]), status: 'publish' });
+  if (path === '/business') {
+    if (method === 'PATCH') business.about = { ...business.about, ...(JSON.parse(String(init?.body)) as { about: Record<string, string> }).about };
+    return Response.json(business);
+  }
   return Response.json({ ok: true });
 }) as typeof fetch;
+
+/** The bakery's business profile, as WaaS Client answers /site/business. */
+const business = {
+  site: {
+    name: 'Bakery', language: 'en_US', timezone: 'America/Chicago', currency: 'USD',
+    owner: { name: 'Rosa Diaz', phone: '555-0100', city: 'Austin', state: 'TX', country: 'United States' },
+    products: [{ name: 'Sourdough loaf', price: '9' }, { name: 'Birthday cake', price: '45–80' }], forms: ['Contact us'],
+  },
+  about: { what: 'A small bakery: sourdough and cakes to order.' } as Record<string, string>,
+};
 
 const HERO = '<!-- wp:heading --><h2 class="wp-block-heading">Fresh bread</h2><!-- /wp:heading -->';
 const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at dawn</h2><!-- /wp:heading -->';
@@ -355,6 +369,31 @@ describe('chat panel', () => {
       await page.screenshot({ path: `test-results/editor-${label.replace(/\W+/g, '-')}.png` });
       await context.close();
     }, 90_000);
+  }
+
+  for (const [label, width, height] of [['desktop', 1280, 800], ['phone', 390, 844]] as const) {
+    it(`shows what it knows about the business, and saves the owner’s corrections (${label})`, async () => {
+      const page = await signedInPage(width, height);
+      await page.goto(panelUrl);
+      await page.getByRole('button', { name: 'About your business' }).click();
+      const dialog = page.getByRole('dialog', { name: 'About your business' });
+      await dialog.getByText('Sourdough loaf (9 USD), Birthday cake (45–80 USD)').waitFor({ timeout: 15_000 });
+      await expect(dialog.getByText('Austin, TX, United States').isVisible()).resolves.toBe(true);
+      const what = dialog.getByRole('textbox', { name: 'What your business does' });
+      expect(await what.inputValue()).toBe('A small bakery: sourdough and cakes to order.');
+      const save = dialog.getByRole('button', { name: 'Save' });
+      expect(await save.isDisabled()).toBe(true);
+      await dialog.getByRole('textbox', { name: 'Opening hours' }).fill(`Tue to Sat, 7 to 3 (${label})`);
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `test-results/business-${label}.png` });
+      await save.click();
+      await dialog.getByRole('status').filter({ hasText: 'Saved' }).waitFor({ timeout: 15_000 });
+      expect(business.about.hours).toBe(`Tue to Sat, 7 to 3 (${label})`);
+      // Only what changed is sent.
+      expect(JSON.parse(writes().at(-1)!.body)).toEqual({ about: { hours: `Tue to Sat, 7 to 3 (${label})` } });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.context().close();
+    }, 60_000);
   }
 
   it('refuses a made-up or used handoff', async () => {

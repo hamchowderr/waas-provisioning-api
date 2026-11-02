@@ -45,6 +45,7 @@ const TOOLS: Record<string, { area: string; access?: Access; actions?: Record<st
   header_footer: { area: 'site', actions: { get: 'read', update: 'write' } },
   site_menus: { area: 'site', actions: { list: 'read', update: 'write' } },
   add_image: { area: 'site', access: 'write' },
+  business_profile: { area: 'site', actions: { read: 'read', save: 'write', undo: 'write' } },
 };
 /** What the scopes should offer: `tool` or `tool.action`, sorted. */
 const toolsFor = (scopes: readonly string[]) =>

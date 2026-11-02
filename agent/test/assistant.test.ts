@@ -17,8 +17,16 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `https://${url.host}/`, theme: 'anypress' });
   if (path === '/pages' && method === 'POST') return Response.json({ id: 14, status: 'draft', link: `https://${url.host}/?page_id=14&preview=true` });
   if (/^\/pages\/\d+$/.test(path)) return Response.json({ id: Number(path.split('/')[2]), status: 'publish', outline: ['0 Hero', '1 About'] });
+  if (path === '/business' && method === 'GET') return Response.json(profileOf(url.host));
+  if (path === '/business' && method === 'PATCH') return Response.json({ ...profileOf(url.host), about: { ...profileOf(url.host).about, ...JSON.parse(String(init?.body)).about } });
   return Response.json({ ok: true });
 }) as typeof fetch;
+
+/** Each store's business profile, as WaaS Client 2.11 answers /site/business. */
+const profileOf = (host: string) => ({
+  site: { name: 'Bakery', language: 'en_US', timezone: 'America/Chicago', siteType: 'website', owner: { name: 'Rosa Diaz', city: 'Austin', state: 'TX', country: 'United States' }, products: [{ name: 'Sourdough loaf', price: '9' }], forms: ['Contact us'] },
+  about: { what: `Sourdough and cakes to order (${host.split('.')[0]})` },
+});
 
 /** Store writes only; signing in also reads the site once to learn which store it is. */
 const writes = () => seen.filter((s) => s.method !== 'GET');
@@ -54,8 +62,8 @@ describe('website assistant', () => {
     expect(first?.path).toBe('/v1/messages');
     const offered = (first?.body as { tools?: { function: { name: string } }[] }).tools?.map((tool) => tool.function.name).sort();
     expect(offered).toEqual([
-      'add_image', 'ask_user', 'editor_change', 'get_site', 'header_footer', 'header_footer_change', 'page_section', 'site_menus', 'site_menus_change',
-      'site_pages', 'site_pages_change', 'site_patterns', 'site_styles', 'site_styles_change',
+      'add_image', 'ask_user', 'business_profile', 'business_profile_change', 'editor_change', 'get_site', 'header_footer', 'header_footer_change', 'page_section',
+      'site_menus', 'site_menus_change', 'site_pages', 'site_pages_change', 'site_patterns', 'site_styles', 'site_styles_change', 'skill', 'skill_read', 'skill_search',
     ]);
   });
 
@@ -197,6 +205,62 @@ describe('website assistant', () => {
     expect((plain.events.find((event) => event.type === 'tool_end') as { isError?: boolean } | undefined)?.isError).toBe(true);
     expect(JSON.stringify(h.llm.getRequests().at(-1)?.body)).not.toContain('The open editor');
     expect(writes()).toEqual([]);
+  });
+});
+
+describe('what it knows before the owner says a word', () => {
+  it('reads the website’s business profile into its instructions, and its skills', async () => {
+    const [a] = h.stores;
+    h.script('Write my home page intro', 'get_site', {}, 'Here is an intro.');
+    await h.send(a!, { text: 'Write my home page intro' }).done;
+    const system = JSON.stringify(h.llm.getRequests()[0]?.body);
+    expect(system).toContain('## About this business');
+    expect(system).toContain('Sourdough loaf 9');
+    expect(system).toContain('Owner: Rosa Diaz');
+    expect(system).toContain('Where: Austin, TX, United States');
+    expect(system).toContain(`What the business does: Sourdough and cakes to order (${a!.domain.split('.')[0]})`);
+    expect(system).toContain('Not known yet: who it is for');
+    // Skills by name and what they're for; their bodies load only when used.
+    for (const skill of ['site-design', 'pages-and-site-editor', 'how-do-i', 'wp-patterns', 'wp-block-themes']) expect(system).toContain(skill);
+    expect(system).not.toContain('## Colours');
+  });
+
+  it('loads a skill when it needs one, without asking the owner', async () => {
+    const [a] = h.stores;
+    h.script('Make the hero section blue', 'skill', { name: 'site-design' }, 'I checked the design rules.');
+    const turn = h.send(a!, { text: 'Make the hero section blue' });
+    expect(await turn.text()).toBe('I checked the design rules.');
+    expect(turn.gates()).toEqual([]);
+    const result = JSON.stringify(h.llm.getRequests().at(-1)?.body);
+    expect(result).toContain('Tokens only');
+    expect(writes()).toEqual([]);
+  });
+
+  it('asks the owner before it remembers a fact about the business, then saves it on the website', async () => {
+    const [a] = h.stores;
+    const about = { hours: 'Tue to Sat, 7 to 3' };
+    h.script('We open Tuesday to Saturday 7 to 3, remember that', 'business_profile_change', { action: 'save', about }, 'Got it, I’ll remember your hours.');
+    const turn = h.send(a!, { text: 'We open Tuesday to Saturday 7 to 3, remember that' });
+    const gate = await turn.next('tool_approval_required');
+    expect(turn.gates()[0]!.summary).toBe('Remember about your business: Opening hours: Tue to Sat, 7 to 3');
+    expect(writes()).toEqual([]);
+    await h.post('/agent-controller/approve', a!, { decision: 'approve', toolCallId: gate.toolCallId });
+    expect(await turn.text()).toBe('Got it, I’ll remember your hours.');
+    expect(writes()).toEqual([{ domain: a!.domain, method: 'PATCH', path: '/business', body: JSON.stringify({ about }) }]);
+  });
+
+  it('shows the panel the business profile and saves the owner’s corrections', async () => {
+    const [a] = h.stores;
+    const shown = await (await h.get('/agent-controller/business', a!)).json();
+    expect(shown.site.products).toEqual([{ name: 'Sourdough loaf', price: '9' }]);
+    const patch = (body: unknown) =>
+      h.app.request('/agent-controller/business', { method: 'PATCH', headers: { 'content-type': 'application/json', authorization: `Bearer ${a!.token}` }, body: JSON.stringify(body) });
+    const saved = await patch({ about: { who: 'Families nearby', voice: 'warm', sneaky: 'x' } });
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).about.who).toBe('Families nearby');
+    expect(writes()).toEqual([{ domain: a!.domain, method: 'PATCH', path: '/business', body: JSON.stringify({ about: { who: 'Families nearby', voice: 'warm' } }) }]);
+    expect((await patch({ about: { sneaky: 'x' } })).status).toBe(400);
+    expect((await h.get('/agent-controller/business', null)).status).toBe(401);
   });
 });
 

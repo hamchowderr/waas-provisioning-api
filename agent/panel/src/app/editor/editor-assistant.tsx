@@ -3,6 +3,7 @@
 import { Maximize2Icon, Minimize2Icon, XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { BusinessProfileButton } from '@/components/business-profile';
 import { ChatPanel } from '@/components/chat-panel/chat-panel';
 import type { AgentControllerToolEnd } from '@/lib/agent-controller/use-agent-controller-chat';
 import { approvalViews, toolTitles } from '../assistant';
@@ -220,11 +221,14 @@ export function EditorAssistant({ older }: { older: boolean }) {
       // WordPress's panel above already says "Assistant"; the header shows the messages left, history and new chat.
       title={<MessagesLeft usage={usage} />}
       actions={
-        phone ? undefined : (
-          <Button variant="ghost" size="icon" className="size-8" aria-label={wide ? 'Narrower panel' : 'Wider panel'} onClick={toggleWide}>
-            {wide ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
-          </Button>
-        )
+        <>
+          <BusinessProfileButton />
+          {phone ? null : (
+            <Button variant="ghost" size="icon" className="size-8" aria-label={wide ? 'Narrower panel' : 'Wider panel'} onClick={toggleWide}>
+              {wide ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
+            </Button>
+          )}
+        </>
       }
       plan={false}
       placeholder={selected ? `Ask about this ${blockName(selected.name).toLowerCase()}…` : 'Ask for a change…'}
