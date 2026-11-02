@@ -887,6 +887,25 @@ describe('CoolifyProvisioner', () => {
     expect(onDemandTasks(cloud)).toEqual([]);
   });
 
+  it('sends a command again when Coolify ran it in the database or WordPress container, where the agent never started', async () => {
+    await p.createStore(storeInput);
+    cloud.agentOps = [];
+    const wrong = ['sh: 1: php: not found', 'Could not open input file: /tmp/waas-agent.php'];
+    const agent = cloud.agent;
+    cloud.agent = (op, args, service) => (op === 'suspend' && wrong.length ? { status: 'failed', message: wrong.shift()! } : agent(op, args, service));
+    await p.suspendStore({ storeId: STORE_ID });
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['suspend', 'suspend', 'suspend']);
+    expect(onDemandTasks(cloud)).toEqual([]);
+  });
+
+  it('gives up after four tries in the wrong container, saying so', async () => {
+    await p.createStore(storeInput);
+    cloud.agentOps = [];
+    cloud.agent = () => ({ status: 'failed', message: 'sh: 1: php: not found' });
+    await expect(p.suspendStore({ storeId: STORE_ID })).rejects.toThrow('Store agent suspend ran outside the agent container: sh: 1: php: not found');
+    expect(cloud.agentOps).toHaveLength(4);
+  });
+
   it('says the token needs read:sensitive when Coolify hides the task output', async () => {
     cloud.hideOutput = true;
     await expect(p.createStore(storeInput)).rejects.toThrow("Store agent ping: Coolify hid the task output; the API's COOLIFY_TOKEN needs the read:sensitive permission");
