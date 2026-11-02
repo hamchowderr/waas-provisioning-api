@@ -9,8 +9,8 @@ import { withBase } from '@/lib/base-path';
 // Messages between this page and the editor that frames it (WaaS Client's editor-assistant.js).
 // From the editor: { source: 'site-editor', type: 'view', view } with what it has open.
 // To the editor: { source: 'site-assistant', type: 'ready' | 'apply' | 'sign-in', ... }.
-// Only the signed-in website's own address is listened to and written to. WaaS Client before 2.11
-// frames the panel's own address and uses the names of before (`older`); 2.11 understands both.
+// Only the signed-in website's own address is listened to and written to. WaaS Client before 2.12
+// frames the panel's own address and uses the names of before (`older`); 2.12 understands both.
 const FROM_EDITOR = new Set(['site-editor', 'anypress-editor']);
 const toEditor = (older: boolean) => (older ? 'anypress-assistant' : 'site-assistant');
 
@@ -74,7 +74,8 @@ export function EditorAssistant({ older }: { older: boolean }) {
   return (
     <ChatPanel
       className="h-full min-h-0 flex-1"
-      title="Assistant"
+      // WordPress's panel above already says "Assistant"; the header keeps only its history and new-chat buttons.
+      title={null}
       plan={false}
       placeholder="Ask for a change…"
       greeting={{ title: 'What should we change?', description: 'Select a block and ask. Changes show here in the editor; press Save to keep them.' }}

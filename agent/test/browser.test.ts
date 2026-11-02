@@ -43,7 +43,7 @@ const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at d
 
 /**
  * The stand-in editor: the panel framed beside a page, speaking the editor's side of the messages. WaaS Client
- * 2.11 frames the panel at the website's own /assistant; `older` is a version before it, framing the panel's
+ * 2.12 frames the panel at the website's own /assistant; `older` is a version before it, framing the panel's
  * own address and using the message names of before.
  */
 const editorPage = (older: boolean) => {
@@ -308,7 +308,7 @@ describe('chat panel', () => {
     await page.context().close();
   }, 90_000);
 
-  for (const [label, width, height, older] of [['desktop', 1280, 800, false], ['phone', 390, 844, false], ['desktop, WaaS Client before 2.11', 1280, 800, true]] as const) {
+  for (const [label, width, height, older] of [['desktop', 1280, 800, false], ['phone', 390, 844, false], ['desktop, WaaS Client before 2.12', 1280, 800, true]] as const) {
     it(`signs in beside the editor by itself and changes the selected block there (${label})`, async () => {
       const change = { action: 'replace', clientId: 'hero-1', content: WARMER };
       h.script(`Make this heading warmer ${label}`, 'editor_change', change, 'Done. Press Save to keep it.');
