@@ -19,7 +19,7 @@ let api: ServerType;
 let shop: Server;
 let shopUrl: string;
 // The website's own address: a page standing in for its block editor with WaaS Client's Assistant panel, and
-// /assistant passed through to the panel, as the server's proxy does for every store's domain.
+// /.assistant passed through to the panel, as the server's proxy does for every store's domain.
 let editor: Server;
 let editorUrl: string;
 let panel: ChildProcess;
@@ -43,11 +43,11 @@ const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at d
 
 /**
  * The stand-in editor: the panel framed beside a page, speaking the editor's side of the messages. WaaS Client
- * 2.12 frames the panel at the website's own /assistant; `older` is a version before it, framing the panel's
+ * 2.12 frames the panel at the website's own /.assistant; `older` is a version before it, framing the panel's
  * own address and using the message names of before.
  */
 const editorPage = (older: boolean) => {
-  const panelBase = older ? panelUrl : `${editorUrl}/assistant`;
+  const panelBase = older ? panelUrl : `${editorUrl}/.assistant`;
   const names = older ? { from: 'anypress-assistant', to: 'anypress-editor' } : { from: 'site-assistant', to: 'site-editor' };
   return `<!doctype html><meta name="viewport" content="width=device-width">
 <body style="margin:0;display:flex;height:100vh;font-family:sans-serif">
@@ -104,13 +104,13 @@ beforeAll(async () => {
   const apiPort = await freePort();
   api = serve({ fetch: h.t.app.fetch, port: apiPort });
   // The shop's "Ask the website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery":
-  // to the website's own /assistant, or (/older, WaaS Host before 3.0) to the panel's own address.
+  // to the website's own /.assistant, or (/older, WaaS Host before 3.0) to the panel's own address.
   shop = createHttpServer(async (request, response) => {
     const older = request.url?.startsWith('/older');
     const answer = await h.t.app.request('/v1/tenants/site/handoff?externalId=bakery', {
       method: 'POST',
       headers: { Authorization: h.apiAuth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assistantUrl: older ? panelUrl : `${editorUrl}/assistant` }),
+      body: JSON.stringify({ assistantUrl: older ? panelUrl : `${editorUrl}/.assistant` }),
     });
     const { url } = (await answer.json()) as { url: string };
     response.writeHead(303, { Location: url }).end();
@@ -119,7 +119,7 @@ beforeAll(async () => {
   shopUrl = `http://localhost:${(shop.address() as AddressInfo).port}`;
   // The store's own side: WaaS Client asks the API for a handoff, signed with the store's site key.
   editor = createHttpServer(async (request, response) => {
-    if (request.url === '/assistant' || request.url?.startsWith('/assistant/') || request.url?.startsWith('/assistant?')) {
+    if (request.url === '/.assistant' || request.url?.startsWith('/.assistant/') || request.url?.startsWith('/.assistant?')) {
       // The proxy: the request goes on as it came, Host and all.
       const upstream = httpRequest(`${panelUrl}${request.url}`, { method: request.method, headers: request.headers }, (answer) => {
         response.writeHead(answer.statusCode ?? 502, answer.headers);
@@ -131,7 +131,7 @@ beforeAll(async () => {
     if (request.method === 'POST' && request.url?.startsWith('/assistant-handoff')) {
       const store = h.stores[0]!;
       const older = request.url.includes('older=1');
-      const body = JSON.stringify({ site: store.domain, assistantUrl: older ? panelUrl : `${editorUrl}/assistant` });
+      const body = JSON.stringify({ site: store.domain, assistantUrl: older ? panelUrl : `${editorUrl}/.assistant` });
       const answer = await h.t.app.request('/oauth/site/store-handoff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
@@ -266,20 +266,20 @@ describe('chat panel', () => {
       h.script(question, 'get_site', {}, 'Your site is called Bakery.');
       const context = await browser.newContext();
       const page = await context.newPage();
-      await page.goto(`${shopUrl}${older ? '/older' : '/assistant'}`);
+      await page.goto(`${shopUrl}${older ? '/older' : '/.assistant'}`);
       await page.getByRole('textbox').fill(question);
       await page.getByRole('textbox').press('Enter');
       await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
-      // Every redirect lands where the owner opened the panel, under /assistant: the website's own domain, or the
+      // Every redirect lands where the owner opened the panel, under /.assistant: the website's own domain, or the
       // panel's own address (PANEL_URL), never the container's.
       const landed = new URL(page.url());
       expect(landed.origin).toBe(older ? panelUrl : editorUrl);
-      expect(landed.pathname).toMatch(/^\/assistant(\/|$)/);
+      expect(landed.pathname).toMatch(/^\/\.assistant(\/|$)/);
       if (!older) {
         // On the website's own domain the sign-in is a first-party cookie, kept away from the website's WordPress.
-        const cookies = await context.cookies(`${editorUrl}/assistant`);
+        const cookies = await context.cookies(`${editorUrl}/.assistant`);
         expect((await context.cookies(editorUrl)).some((c) => c.name.startsWith('ap_'))).toBe(false);
-        expect(cookies.find((c) => c.name === 'ap_access')).toMatchObject({ path: '/assistant', sameSite: 'Lax', httpOnly: true });
+        expect(cookies.find((c) => c.name === 'ap_access')).toMatchObject({ path: '/.assistant', sameSite: 'Lax', httpOnly: true });
       }
 
       // Reopened, the chat keeps its step card as well as its answer.
