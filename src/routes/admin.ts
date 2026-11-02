@@ -500,11 +500,21 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     const productId = await product(c);
     const body = ((await readJson(c)) ?? {}) as Record<string, unknown>;
     if (typeof body.name !== 'string') throw badRequest('name is required');
+    // The site type (a role in the production version's roles.json) picks which of the version's plugins WaaS Client
+    // switches on, as for a new store; the moved site's own plugins stay as they are.
+    const siteType = typeof body.siteType === 'string' && body.siteType.trim() ? body.siteType.trim() : undefined;
+    if (body.siteType !== undefined && !siteType) throw badRequest('siteType must be a site type name');
+    if (siteType) {
+      const roles = (await versions.productionRoles(productId)) as Record<string, unknown> | null;
+      const names = roles && typeof roles === 'object' ? Object.keys(roles) : [];
+      if (!names.includes(siteType)) throw badRequest(`siteType must be one of: ${names.join(', ')}`);
+    }
     const params = {
       name: body.name,
       uploadCustomSnapshot: true,
       ...(typeof body.size === 'string' && { size: body.size }),
       ...(typeof body.customDomainName === 'string' && body.customDomainName.trim() && { customDomainName: body.customDomainName.trim() }),
+      ...(siteType && { phpConstants: { WAAS_TENANT_ROLES: { value: siteType } } }),
     } as Parameters<typeof createTenant>[2];
     const created = (await createTenant(deps, productId, params, publicBase(c, config.publicUrl))) as { id: string; externalId: string; importCode?: string };
     return c.json({ tenantId: created.id, externalId: created.externalId, importCode: created.importCode, pluginUrl: `${publicBase(c, config.publicUrl)}/imports/plugin.zip` });
@@ -933,6 +943,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     c.json(await versions.list(await product(c), { versionId: uuidQuery(c, 'versionId'), versionName: c.req.query('versionName') || undefined })),
   );
   app.post('/products/:productId/versions', async (c) => c.json(await versions.create(await product(c), await readJson(c))));
+  // The production version's site types (roles.json): what the dashboard offers when a site is moved in.
+  app.get('/products/:productId/versions/production/roles', async (c) => c.json(await versions.productionRoles(await product(c))));
   app.delete('/products/:productId/versions/:id', async (c) => {
     await versions.remove(await product(c), versionId(c));
     return c.body(null, 200);

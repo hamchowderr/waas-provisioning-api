@@ -455,4 +455,27 @@ describe('stores that keep their own code', () => {
     const after = (await (await t.call('GET', `/admin/tenants/${made.tenantId}`, { auth: ADMIN })).json()) as Record<string, any>;
     expect(after.moveIn.source).toMatchObject({ home: 'https://old.example.com', uploadedBytes: 1024 });
   });
+
+  it('the dashboard gives a moved site a site type from the production version, and every moved site keeps its own plugins', async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    t.provisioner.versionRoles.set(versionId, { website: { title: 'Website', plugins: [] }, 'online-store': { title: 'Online store', plugins: [] } });
+    const roles = await t.call('GET', `/admin/products/${t.productId}/versions/production/roles`, { auth: ADMIN });
+    expect(Object.keys((await roles.json()) as object)).toEqual(['website', 'online-store']);
+
+    const refused = await t.call('POST', `/admin/products/${t.productId}/imports`, { auth: ADMIN, body: { name: 'Bad type', siteType: 'shopping' } });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { message: string }).message).toContain('website, online-store');
+
+    const res = await t.call('POST', `/admin/products/${t.productId}/imports`, { auth: ADMIN, body: { name: 'Typed move', siteType: 'online-store' } });
+    const made = (await res.json()) as { tenantId: string; importCode: string };
+    const untyped = (await createImport()).body;
+    for (const id of [made.tenantId, untyped.id]) t.provisioner.imports.set(id, 1024);
+    await plugin('start', { code: made.importCode, source: { home: 'https://old.example.com' } });
+    await plugin('start', { code: untyped.importCode, source: { home: 'https://old.example.com' } });
+    for (const id of [made.tenantId, untyped.id]) await waitFor(async () => (await tenant(id))?.statusCode === Status.Done);
+
+    expect(t.provisioner.stores.get(made.tenantId)?.phpConstants).toMatchObject({ WAAS_TENANT_ROLES: { value: 'online-store' }, WAAS_TENANT_OWN_CODE: { value: 'true' } });
+    expect(t.provisioner.stores.get(untyped.id)?.phpConstants).toMatchObject({ WAAS_TENANT_OWN_CODE: { value: 'true' } });
+    expect(t.provisioner.stores.get(untyped.id)?.phpConstants).not.toHaveProperty('WAAS_TENANT_ROLES');
+  });
 });

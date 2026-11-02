@@ -247,7 +247,9 @@ export async function createTenant(
         snapshot.group_name,
         // A site moved in keeps its own options: none from the create call are written over them, now or on a rollback.
         imported ? {} : storeOptions(body.name, userEmail, body.wpOptions),
-        encodePhpConstants(secrets, body.phpConstants ?? {}),
+        // A site moved in keeps its own plugins: WAAS_TENANT_OWN_CODE tells WaaS Client to switch only the version's
+        // plugins for its site type and leave the rest alone.
+        encodePhpConstants(secrets, imported ? { ...body.phpConstants, WAAS_TENANT_OWN_CODE: { value: 'true' } } : body.phpConstants ?? {}),
         Status.Pending,
         body.size ?? DEFAULT_SIZE,
         imported,
