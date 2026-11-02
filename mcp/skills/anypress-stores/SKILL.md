@@ -18,7 +18,7 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 | Email | `mail_domain` (get, set, remove) |
 | Versions | `manage_versions` (list, snapshots, templates, create, set_production, delete) |
 | Webhooks | `manage_webhooks` (list, get, deliveries, create, update, test, retry, rotate_secret, delete) |
-| Website pages and design | `get_site`, `site_pages` (list, read, revisions, create, update, restore_revision), `page_section` (add, replace, remove), `site_patterns` (find, get), `site_styles` (get, update), `header_footer` (get, update), `site_menus` (list, update), `add_image` |
+| Website pages and design | `get_site`, `site_pages` (list, read, revisions, create, update, restore_revision), `page_section` (add, replace, remove), `site_patterns` (find, get), `site_styles` (get, update), `header_footer` (get, update), `site_menus` (list, update), `add_image`, `business_profile` (read, save, undo) |
 
 ## Rules that apply to everything
 
@@ -77,7 +77,7 @@ A version is a staging WordPress (a PHP and WordPress version) that stores are m
 
 The site tools work on one store's WordPress directly (no waiting needed) and need the store to be Done and not suspended.
 
-1. `get_site`, then `site_pages` list. Before changing a page, `site_pages` read: its outline numbers the sections from 0.
+1. `get_site` and `business_profile` read (what the business does, who it is for, its products, booking types and forms; write copy from these, not placeholders), then `site_pages` list. Before changing a page, `site_pages` read: its outline numbers the sections from 0.
 2. **Build from the theme.** `site_patterns` find (e.g. `search: "hero"`, `"pricing"`, `"testimonial"`, `"contact"`) and `page_section` add with `pattern` give sections that match the site's design. Then `site_pages` read and `page_section` replace to swap the pattern's sample text and images for the user's own.
 3. **Change one part at a time.** To edit text, copy that section's markup from `site_pages` read, change only what was asked, and `page_section` replace. Use `site_pages` update with `content` only to rewrite a whole page.
 4. **Use the theme's tokens.** `site_styles` get lists colour, font-size and spacing slugs; use them in blocks (`"backgroundColor":"primary"`, `"fontSize":"large"`) instead of raw values, so the page follows later style changes.
@@ -85,3 +85,4 @@ The site tools work on one store's WordPress directly (no waiting needed) and ne
 6. **New pages are drafts.** `site_pages` create returns a preview link; share it and publish (`site_pages` update with `status: publish`) only when the user says so. For a whole new page, start from a starter page (`site_patterns` find with `category: "anypress/pages"`). On stores with the AnyPress theme, a kit (Ridge for trades, Hearth for food, Still for wellness, Ledger for professional services, Parcel for shops, Chapter for courses, Gloss for salons, Commons for associations and churches, Rep for gyms, Frame for portfolios, Keystone for real estate, Launch for software, Byline for blogs) is a style plus its own home page and sections in `anypress/kit-*`: apply the style with `site_styles` and use the kit's home page together. AnyPress Blocks are the shared sections that work with any kit (`anypress/blocks-*`: heroes, about, services, proof, calls-to-action, contact, blog, footers). Add the page to the menu if they want it there.
 7. **Undo:** `site_pages` revisions and restore_revision. `page_section` remove needs the user's yes; it can be undone the same way.
 8. Images: `add_image` with a public https link, then use the returned id and address in an image or cover block. Always give `alt` text.
+9. **Business facts:** ask only for what `business_profile` doesn't already say. When the user tells you a lasting fact (opening hours, who they serve, how the site should sound), save it with `business_profile` save after they confirm, so the next conversation knows it; `undo` puts back the last save.

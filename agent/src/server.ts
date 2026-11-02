@@ -13,7 +13,7 @@ import type { Assistant } from './assistant.js';
 import { createControllerRoutes } from './chat-server/routes/controller.js';
 import { createThreadRoutes } from './chat-server/routes/threads.js';
 import type { ChatServerDeps } from './chat-server/routes/types.js';
-import { describeCall } from './site-tools.js';
+import { BUSINESS_FIELDS, describeCall } from './site-tools.js';
 
 export interface ServerDeps {
   /** The assistant, given how its tools reach a website (see `callSite` below). */
@@ -181,11 +181,53 @@ export function createServer(deps: ServerDeps) {
     requestContext.set(MASTRA_RESOURCE_ID_KEY, connection.resource);
     c.set('requestContext' as never, requestContext as never);
     c.set('siteUrl' as never, connection.url as never);
+    c.set('resource' as never, connection.resource as never);
     await next();
   });
 
   // The signed-in website's address. The panel beside the page editor only talks to an editor there.
   app.get('/agent-controller/site', (c) => c.json({ url: c.get('siteUrl' as never) as string }));
+
+  // This month's messages for the website ({ used, limit, resetsAt }), for the panel's "messages left". Empty when
+  // the API can't be reached: the panel then shows nothing rather than a wrong number.
+  app.get('/agent-controller/usage', async (c) => {
+    try {
+      const res = await fetchImpl(new URL('/oauth/site/assistant-usage', deps.apiUrl), { headers: { Authorization: `Bearer ${bearer(c)}` } });
+      if (!res.ok) return c.json({});
+      const usage = (await res.json()) as { used?: number; limit?: number; resetsAt?: string };
+      return c.json({ used: usage.used, limit: usage.limit, resetsAt: usage.resetsAt });
+    } catch {
+      return c.json({});
+    }
+  });
+
+  // What the website and its owner say about the business, for the panel's "About your business", where the owner
+  // checks it and corrects their own facts (business.ts). The owner typing it is their yes, so a save here doesn't
+  // wait for an approval the way the assistant's own business_profile_change does.
+  const business = async (c: Context, args: Record<string, unknown>) => {
+    const resource = c.get('resource' as never) as string;
+    try {
+      const answer = await callSite(resource, 'business_profile', args);
+      if (args.action !== 'read') assistant.forgetBusiness(resource);
+      return c.json(answer as object);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A website whose WaaS Client predates the profile answers 404 for the route.
+      const old = /\b404\b|rest_no_route/i.test(message);
+      return c.json({ error: old ? 'Your website needs an update before it can keep these details.' : 'Your website couldn’t answer just now. Try again in a minute.' }, old ? 409 : 502);
+    }
+  };
+  app.get('/agent-controller/business', (c) => business(c, { action: 'read' }));
+  app.patch('/agent-controller/business', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { about?: Record<string, unknown> } | null;
+    const about = Object.fromEntries(
+      Object.entries(body?.about ?? {})
+        .filter(([key, value]) => key in BUSINESS_FIELDS && typeof value === 'string')
+        .map(([key, value]) => [key, (value as string).slice(0, 1500)]),
+    );
+    if (!Object.keys(about).length) return c.json({ error: `Send about with at least one of: ${Object.keys(BUSINESS_FIELDS).join(', ')}.` }, 400);
+    return business(c, { action: 'save', about });
+  });
 
   // Goals, observational memory, schedules, workspace and browser are Chat Kit features the
   // assistant doesn't use; only the chat, its threads and its approvals are served.

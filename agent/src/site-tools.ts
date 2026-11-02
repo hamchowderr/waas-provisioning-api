@@ -17,9 +17,21 @@ const pageId = z.number().int().positive().describe('The page id, from site_page
 const pattern = z.string().describe('A pattern name from site_patterns, e.g. anypress/hero-statement');
 
 /** Tools that never change what visitors see: reads, a new draft page, an image in the media library. */
-export const SAFE_TOOLS = ['get_site', 'site_pages', 'site_patterns', 'site_styles', 'header_footer', 'site_menus', 'add_image'] as const;
-/** Tools that change the live site. Each call waits for the owner. */
-export const CHANGE_TOOLS = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change'] as const;
+export const SAFE_TOOLS = ['get_site', 'site_pages', 'site_patterns', 'site_styles', 'header_footer', 'site_menus', 'add_image', 'business_profile'] as const;
+/** Tools that change the live site, or what the assistant remembers about the business. Each call waits for the owner. */
+export const CHANGE_TOOLS = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change', 'business_profile_change'] as const;
+
+/** The owner's own facts about the business, as the site keeps them (WaaS Client's /site/business). */
+export const BUSINESS_FIELDS = {
+  what: 'What the business does',
+  who: 'Who it is for',
+  area: 'Where it works or the area it serves',
+  hours: 'Opening hours',
+  contact: 'How customers reach it',
+  voice: 'How its words should sound',
+  notes: 'Anything else worth knowing',
+} as const;
+export type BusinessField = keyof typeof BUSINESS_FIELDS;
 
 export function createSiteTools(call: CallSite) {
   /** A tool that forwards to the API's site tool `remote`, with `fixed` arguments the model can't change. */
@@ -121,6 +133,25 @@ export function createSiteTools(call: CallSite) {
       { menuId: z.number().int().positive(), content: z.string(), title: z.string().optional() },
       () => ({ action: 'update' }),
     ),
+    business_profile: site(
+      'business_profile',
+      'business_profile',
+      'What the site knows about its business: `site` (name, tagline, language, time zone, site type, the owner’s name, phone and place, currency, products and prices, booking types, forms) and `about` (what the owner has told you). It is already in your instructions; read it again after a save.',
+      {},
+      () => ({ action: 'read' }),
+    ),
+    business_profile_change: site(
+      'business_profile_change',
+      'business_profile',
+      'Remember facts about the business the owner told you and agreed to keep, so later conversations know them; waits for the owner. Actions: save (only the fields given change; an empty string clears one); undo (put back the facts as they were before the last save).',
+      {
+        action: z.enum(['save', 'undo']),
+        about: z
+          .object(Object.fromEntries(Object.entries(BUSINESS_FIELDS).map(([key, what]) => [key, z.string().max(1500).optional().describe(what)])) as Record<BusinessField, z.ZodOptional<z.ZodString>>)
+          .optional()
+          .describe('For save: only the facts to change, in the owner’s words, short'),
+      },
+    ),
     add_image: site(
       'add_image',
       'add_image',
@@ -145,6 +176,15 @@ export function describeCall(tool: string, args: Record<string, unknown>): strin
       return `Replace ${section}${page}`;
     case 'page_section:remove':
       return `Remove ${section}${page}`;
+    case 'business_profile_change:save': {
+      const about = (args.about ?? {}) as Record<string, unknown>;
+      const facts = Object.entries(about)
+        .filter(([key]) => key in BUSINESS_FIELDS)
+        .map(([key, value]) => (String(value ?? '') === '' ? `forget ${BUSINESS_FIELDS[key as BusinessField].toLowerCase()}` : `${BUSINESS_FIELDS[key as BusinessField]}: ${String(value)}`));
+      return facts.length ? `Remember about your business: ${facts.join('; ')}` : 'Remember about your business';
+    }
+    case 'business_profile_change:undo':
+      return 'Put back what I knew about your business before the last change';
   }
   switch (tool) {
     case 'site_styles_change':

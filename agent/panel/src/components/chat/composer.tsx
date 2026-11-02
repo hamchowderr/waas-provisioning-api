@@ -154,6 +154,7 @@ export function Composer({
   disabled = false,
   onStop,
   globalDrop = true,
+  header,
 }: {
   /**
    * Send the message. Return (or resolve to) `false` when it was not sent: the composer
@@ -198,6 +199,8 @@ export function Composer({
    * a page: each then takes the files dropped on itself.
    */
   globalDrop?: boolean;
+  /** Shown inside the box, above the text (e.g. what the message is about: the selected block). */
+  header?: ReactNode;
 }) {
   const speechSupported = useSpeechRecognitionSupport();
   const modelList = models === false ? [] : models;
@@ -243,6 +246,8 @@ export function Composer({
       webSearch: showWebSearch && webSearch,
       files: message.files,
     });
+    // The cursor stays in the box, so the next message can be typed straight away.
+    requestAnimationFrame(() => (document.querySelector(`textarea[aria-label="${CSS.escape(label)}"]`) as HTMLTextAreaElement | null)?.focus());
     if (sent === false) {
       // Refused: put the text back (unless something new was typed meanwhile), and
       // throw so PromptInput keeps the attachments instead of clearing them.
@@ -263,6 +268,7 @@ export function Composer({
       onError={(err) => setAttachError(ATTACH_ERRORS[err.code])}
     >
       <PromptInputHeader>
+        {header}
         <AttachmentsDisplay />
         {attachError && (
           <p role="alert" className="w-full px-1 text-destructive text-xs">

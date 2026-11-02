@@ -40,7 +40,7 @@ Each area has a scope to see and a scope to change. The approve page has a box f
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
 | `versions` | `manage_versions` (list, snapshots, templates) | `manage_versions` (create, set_production, delete) |
 | `webhooks` | `manage_webhooks` (list, get, deliveries) | `manage_webhooks` (create, update, test, retry, rotate_secret, delete) |
-| `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (find, get), `site_styles` (get), `header_footer` (get), `site_menus` (list) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update), `header_footer` (update), `site_menus` (update), `add_image` |
+| `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (find, get), `site_styles` (get), `header_footer` (get), `site_menus` (list), `business_profile` (read) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update), `header_footer` (update), `site_menus` (update), `add_image`, `business_profile` (save, undo) |
 
 So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
 
@@ -139,6 +139,7 @@ Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) o
 | | `header_footer` | `get`, `update` |
 | | `site_menus` | `list`, `update` |
 | | `add_image` | Copies an image from a link into the media library |
+| | `business_profile` | `read`, `save`, `undo`: what the site and its owner say about the business (WaaS Client 2.11.0 or newer) |
 
 The site-editing tools change a store's pages and design through its WaaS Client (2.3.0 or newer) and take effect at once; WordPress keeps a revision of every change. How they reach the store: [docs/site-editing.md](../docs/site-editing.md).
 

@@ -5,10 +5,11 @@ import { ChatPanel } from '@/components/chat-panel/chat-panel';
 import type { ApprovalViews } from '@/components/chat/approval-view';
 import { withBase } from '@/lib/base-path';
 import { Button } from '@/components/ui/button';
+import { BusinessProfileButton } from '@/components/business-profile';
 
 /** The server sends a plain sentence with each change that waits (e.g. "Publish page 14"). */
 const summary = ({ preview }: { preview?: unknown }) => (preview as { summary?: string } | undefined)?.summary;
-const CHANGES = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change'];
+const CHANGES = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change', 'business_profile_change'];
 export const approvalViews: ApprovalViews = Object.fromEntries(
   CHANGES.map((tool) => [tool, (approval) => (summary(approval) ? { title: `${summary(approval)}?` } : null)]),
 );
@@ -22,11 +23,16 @@ export const toolTitles: Record<string, string> = {
   header_footer: 'Header and footer',
   site_menus: 'Menus',
   add_image: 'Image',
+  business_profile: 'About your business',
+  skill: 'WordPress know-how',
+  skill_read: 'WordPress know-how',
+  skill_search: 'WordPress know-how',
   site_pages_change: 'Page change',
   page_section: 'Section change',
   site_styles_change: 'Colour and font change',
   header_footer_change: 'Header or footer change',
   site_menus_change: 'Menu change',
+  business_profile_change: 'Remembering about your business',
 };
 
 export function Assistant() {
@@ -45,11 +51,14 @@ export function Assistant() {
       approvalViews={approvalViews}
       toolTitles={toolTitles}
       actions={
-        <form method="post" action={withBase('/signout')}>
-          <Button type="submit" variant="ghost" size="icon" aria-label="Sign out" title="Sign out">
-            <LogOutIcon />
-          </Button>
-        </form>
+        <>
+          <BusinessProfileButton />
+          <form method="post" action={withBase('/signout')}>
+            <Button type="submit" variant="ghost" size="icon" aria-label="Sign out" title="Sign out">
+              <LogOutIcon />
+            </Button>
+          </form>
+        </>
       }
     />
   );

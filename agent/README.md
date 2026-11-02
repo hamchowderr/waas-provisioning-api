@@ -4,6 +4,15 @@ A [Mastra](https://mastra.ai) agent that helps a website owner change their own 
 
 It has no tools of its own. Every request carries the owner's token from **Sign in with your website** (the API's `/mcp/site` login), and the assistant borrows that site's tools from the API with it. The API decides what the token reaches: one website, and only its pages, sections, patterns, styles, header, footer, menus and images. The assistant can't install plugins, change settings, see orders or reach another site, even if it is told to.
 
+## What it knows
+
+Before every reply the assistant reads the website's **business profile** (the site tool `business_profile`, WaaS Client 2.11.0 or newer; [`src/business.ts`](src/business.ts)), so the chat is never the first place it learns what the business is:
+
+- **From the website:** its name, tagline, language and time zone, the plan's kind of site, the business details from the purchase (owner, phone, city, state, country), the shop's currency, and its products and prices, booking types and forms by name. These follow the website as they change.
+- **From the owner:** what the business does (the checkout's optional question fills this in at first), who it is for, where, opening hours, how customers reach it, how the site should sound, and anything else. The assistant asks only about what is missing, and only when a request needs it. When the owner tells it a lasting fact, it offers to remember it and saves it with `business_profile_change`, which waits for the owner's yes like any other change. The owner can check and correct all of it in the chat's **About your business** window (the shop icon), which saves straight to the website.
+
+It knows WordPress through **skills** it loads when a job needs them (Mastra skills, [`src/assistant.ts`](src/assistant.ts)): the official [WordPress agent skills](https://github.com/WordPress/agent-skills) for block patterns and block themes (`wp-patterns`, `wp-block-themes`, pinned in the repository's `.claude/skills`), and three of its own in [`skills/`](skills/): `site-design` (the theme's colour, font, spacing and section tokens, kits and blocks, and the block markup that follows them), `pages-and-site-editor` (what lives where, the open editor, drafts, revisions and menus) and `how-do-i` (plain steps for what the owner does themselves in WordPress: products, bookings, forms, contacts, settings). Loading a skill never waits for the owner.
+
 ## What waits for the owner
 
 Reading never waits. Adding a draft page or an image to the media library happens straight away, because visitors can't see either. Every other change waits for the owner's yes: publishing, editing a page or section, removing a section, changing styles, the header, the footer or a menu, and restoring a revision. If the owner says no, nothing changes. Every change WordPress makes keeps a revision, so the owner can ask for it back later.
@@ -28,6 +37,9 @@ The assistant speaks [Mastra Chat Kit](https://github.com/hamchowderr/mastra-cha
 | `POST /agent-controller/abort` | Stops the current reply |
 | `GET /agent-controller/threads` | The website's conversations, and `/threads/<id>/messages` for one |
 | `GET /agent-controller/site` | The signed-in website's address |
+| `GET /agent-controller/usage` | This month's messages: `{ used, limit, resetsAt }` (empty when the API can't be reached); doesn't count one |
+| `GET /agent-controller/business` | The website's business profile: `{ site, about, updated }` |
+| `PATCH /agent-controller/business` | `{ about: { what?, who?, area?, hours?, contact?, voice?, notes? } }`: the owner's corrections, saved straight to the website (only the fields given change; an empty one clears it). 409 when the website's WaaS Client is older than 2.11.0 |
 
 Each message the owner sends counts against the website's monthly allowance, which the API sets by the store's size (`POST /oauth/site/assistant-usage`, [docs/site-editing.md](../docs/site-editing.md)). When it's used up, `/agent-controller/stream` answers 429 with a plain `error` the chat shows as a notice: how many messages the plan has, when they start again, and that a bigger plan gets more. If the API can't be reached, the message goes ahead.
 
@@ -51,7 +63,7 @@ ASSISTANT_MODEL=<Anthropic model id> ANTHROPIC_API_KEY=... DATABASE_URL=postgres
 | `ALLOWED_ORIGINS` | Optional: comma-separated addresses whose pages may call the assistant from the browser |
 | `PORT` | Default 3100 |
 
-In a container: `docker build -f agent/Dockerfile .` from the repository root (it reads the root `tsconfig.json` and the AnyPress stores skill).
+In a container: `docker build -f agent/Dockerfile .` from the repository root (it reads the root `tsconfig.json`, the AnyPress stores skill and the two official WordPress skills).
 
 ## Tests
 

@@ -3,6 +3,11 @@
 **/test-results
 .git
 .beads
-.claude
+.claude/*
+# Except the official WordPress skills the website assistant loads (agent/Dockerfile).
+!.claude/skills
+.claude/skills/*
+!.claude/skills/wp-patterns
+!.claude/skills/wp-block-themes
 test
 templates

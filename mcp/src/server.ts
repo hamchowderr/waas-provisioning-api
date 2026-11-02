@@ -116,7 +116,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         'Most tools take an action, e.g. manage_domain with action add. ' +
         'Every store write is asynchronous: it returns once scheduled, and the store shows statusCode 0 (Pending) until the work finishes, then 1 (Done) or 2 (Failed). ' +
         'Call get_stores with action wait after creating, restoring, moving or changing domains, and before the next write to the same store. ' +
-        'The site tools (get_site, site_pages, page_section, site_patterns, site_styles, header_footer, site_menus, add_image) edit a store’s pages and design directly and take effect at once: ' +
+        'The site tools (get_site, site_pages, page_section, site_patterns, site_styles, header_footer, site_menus, add_image, business_profile) edit a store’s pages and design directly and take effect at once: ' +
         'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so. ' +
         'For a whole new page, start from a starter page (site_patterns with action find and category anypress/pages: home pages per site type, about, services, contact) and then rewrite its text for the business.' +
         (skill ? ` The skill ${skill} walks through the common jobs step by step.` : '') +
@@ -713,6 +713,37 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     },
     ({ url, alt, ...args }) => site(args, { method: 'POST', path: '/media', body: { url, alt } }),
   );
+
+  const fact = (what: string) => z.string().optional().describe(`${what}; an empty string clears it`);
+  actionTool('business_profile', {
+    title: 'Business profile', area: 'site',
+    description:
+      'What the site knows about the business behind it: `site` is read from the site itself (name, tagline, language, time zone, site type, the owner’s business name, phone and place, currency, products and prices, booking types, forms); `about` is what the owner has said (what the business does, who it is for, where, hours, contact, voice, notes). Read it before writing copy, and save only facts the owner confirmed. Needs WaaS Client 2.11 or later on the store.',
+    input: {
+      ...ref,
+      about: z
+        .object({
+          what: fact('What the business does'),
+          who: fact('Who it is for'),
+          area: fact('Where it works or the area it serves'),
+          hours: fact('Opening hours'),
+          contact: fact('How customers reach it'),
+          voice: fact('How its words should sound, e.g. warm and plain'),
+          notes: fact('Anything else worth knowing'),
+        })
+        .optional()
+        .describe('For save: only the fields to change'),
+    },
+    actions: {
+      read: { access: 'read', does: 'the business profile', run: (args) => site(args, { method: 'GET', path: '/business' }) },
+      save: {
+        access: 'write',
+        does: 'saves the owner’s facts given in about; other fields stay as they are',
+        run: ({ about, ...args }) => site(args, { method: 'PATCH', path: '/business', body: { about: need(about, 'about', 'save') } }),
+      },
+      undo: { access: 'write', does: 'puts back the owner’s facts as they were before the last save', run: (args) => site(args, { method: 'POST', path: '/business/undo' }) },
+    },
+  });
 
   return server;
 }
