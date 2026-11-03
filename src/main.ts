@@ -9,6 +9,7 @@ import { createJobHandlers } from './jobs.ts';
 import { startMailCounts } from './mailcount.ts';
 import { startMailDomainChecks } from './maildomains.ts';
 import { maintainStores } from './maintenance.ts';
+import { pushRenamedConstants } from './constantnames.ts';
 import { S3 } from './provisioner/s3.ts';
 import { startResellerInvoices } from './resellerinvoices.ts';
 import { CpuWatch } from './cpuwatch.ts';
@@ -59,6 +60,9 @@ await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner, conf
 await startMailCounts(boss, pool, config.mailCounter, provisioner);
 // Resellers' monthly wholesale bill as a Stripe invoice (docs/resellers.md), when STRIPE_SECRET_KEY is set.
 await startResellerInvoices(boss, pool, config.resellerInvoices);
+// Sites whose constants moved to their ANYPRESS_ names get them pushed once (src/constantnames.ts).
+const renamed = await pushRenamedConstants(boss, pool);
+if (renamed) console.log(`Pushing renamed constants to ${renamed} site(s)`);
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner, config);
 
