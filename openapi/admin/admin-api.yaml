@@ -149,8 +149,9 @@ paths:
       summary: Find local businesses to contact
       description: >-
         Up to 20 businesses of one kind in one place, from Google Places Text Search ("<query> in <location>"), with
-        their address, phone, website and rating. Businesses that closed for good are left out. Each search counts
-        against the storefront's month; a search Google doesn't answer isn't counted.
+        their address, phone, website, rating, kind of business and opening hours. Businesses that closed for good
+        are left out. Pass the nextPageToken from a search, with the same query and location, for the next 20 (up to
+        60 in all). Each search or page counts against the storefront's month; one Google doesn't answer isn't counted.
       requestBody:
         required: true
         content:
@@ -161,6 +162,7 @@ paths:
               properties:
                 query: { type: string, minLength: 2, maxLength: 100, description: 'The kind of business, such as "church"' }
                 location: { type: string, minLength: 2, maxLength: 100, description: 'Where, such as "Columbus, Ohio"' }
+                pageToken: { type: string, maxLength: 2000, description: 'The nextPageToken of the search before, for its next page' }
       responses:
         '200':
           description: The businesses found, and the month's searches after this one
@@ -168,11 +170,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [prospects, usage]
+                required: [prospects, nextPageToken, usage]
                 properties:
                   prospects:
                     type: array
                     items: { $ref: '#/components/schemas/Prospect' }
+                  nextPageToken: { type: string, nullable: true, description: 'Pass back for the next page; null when there are no more' }
                   usage: { $ref: '#/components/schemas/ProspectUsage' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -2844,7 +2847,7 @@ components:
         resetsAt: { type: string, format: date-time, description: 'The first of next month, UTC' }
     Prospect:
       type: object
-      required: [id, name, address, phone, website, rating, reviews, mapsUrl]
+      required: [id, name, address, phone, website, rating, reviews, mapsUrl, type, hours]
       additionalProperties: false
       properties:
         id: { type: string, description: The Google Places id }
@@ -2855,6 +2858,12 @@ components:
         rating: { type: number, nullable: true }
         reviews: { type: integer, nullable: true }
         mapsUrl: { type: string, nullable: true }
+        type: { type: string, nullable: true, description: 'Google''s name for the kind of business, such as "Church"' }
+        hours:
+          type: array
+          nullable: true
+          description: 'Opening hours, one line a day, such as "Monday: 9:00 AM – 5:00 PM"'
+          items: { type: string }
     Error:
       type: object
       required: [statusCode, message]
