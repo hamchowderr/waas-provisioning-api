@@ -4122,7 +4122,7 @@ components:
           type: string
           format: uri
           maxLength: 500
-          description: The website assistant's address (https), e.g. https://assistant.anypress.io
+          description: The website assistant's address (https), e.g. https://example.com/.assistant
       additionalProperties: false
     SiteHandoffResult:
       type: object

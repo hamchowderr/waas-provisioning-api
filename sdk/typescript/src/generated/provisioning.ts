@@ -2083,7 +2083,7 @@ export interface components {
         SiteHandoffParams: {
             /**
              * Format: uri
-             * @description The website assistant's address (https), e.g. https://assistant.anypress.io
+             * @description The website assistant's address (https), e.g. https://example.com/.assistant
              */
             assistantUrl: string;
         };

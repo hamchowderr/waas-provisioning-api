@@ -55,14 +55,10 @@ const business = {
 const HERO = '<!-- wp:heading --><h2 class="wp-block-heading">Fresh bread</h2><!-- /wp:heading -->';
 const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at dawn</h2><!-- /wp:heading -->';
 
-/**
- * The stand-in editor: the panel framed beside a page, speaking the editor's side of the messages. WaaS Client
- * 2.12 frames the panel at the website's own /.assistant; `older` is a version before it, framing the panel's
- * own address and using the message names of before.
- */
-const editorPage = (older: boolean) => {
-  const panelBase = older ? panelUrl : `${editorUrl}/.assistant`;
-  const names = older ? { from: 'anypress-assistant', to: 'anypress-editor' } : { from: 'site-assistant', to: 'site-editor' };
+/** The stand-in editor: the panel framed at the website's own /.assistant, speaking the editor's side of the messages. */
+const editorPage = () => {
+  const panelBase = `${editorUrl}/.assistant`;
+  const names = { from: 'site-assistant', to: 'site-editor' };
   return `<!doctype html><meta name="viewport" content="width=device-width">
 <body style="margin:0;display:flex;height:100vh;font-family:sans-serif">
 <main style="flex:1"><h2 id="hero">Fresh bread</h2></main>
@@ -77,7 +73,7 @@ addEventListener('message', async (event) => {
   window.told.push(event.data.type);
   const frame = document.getElementById('panel');
   if (event.data.type === 'sign-in') {
-    const { url } = await (await fetch('/assistant-handoff${older ? '?older=1' : ''}', { method: 'POST' })).json();
+    const { url } = await (await fetch('/assistant-handoff', { method: 'POST' })).json();
     frame.src = url + '&back=/editor';
   }
   if (event.data.type === 'ready') {
@@ -120,13 +116,12 @@ beforeAll(async () => {
   const apiPort = await freePort();
   api = serve({ fetch: h.t.app.fetch, port: apiPort });
   // The shop's "Ask the website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery":
-  // to the website's own /.assistant, or (/older, WaaS Host before 3.0) to the panel's own address.
-  shop = createHttpServer(async (request, response) => {
-    const older = request.url?.startsWith('/older');
+  // to the website's own /.assistant.
+  shop = createHttpServer(async (_request, response) => {
     const answer = await h.t.app.request('/v1/tenants/site/handoff?externalId=bakery', {
       method: 'POST',
       headers: { Authorization: h.apiAuth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assistantUrl: older ? panelUrl : `${editorUrl}/.assistant` }),
+      body: JSON.stringify({ assistantUrl: `${editorUrl}/.assistant` }),
     });
     const { url } = (await answer.json()) as { url: string };
     response.writeHead(303, { Location: url }).end();
@@ -146,8 +141,7 @@ beforeAll(async () => {
     }
     if (request.method === 'POST' && request.url?.startsWith('/assistant-handoff')) {
       const store = h.stores[0]!;
-      const older = request.url.includes('older=1');
-      const body = JSON.stringify({ site: store.domain, assistantUrl: older ? panelUrl : `${editorUrl}/.assistant` });
+      const body = JSON.stringify({ site: store.domain, assistantUrl: `${editorUrl}/.assistant` });
       const answer = await h.t.app.request('/oauth/site/store-handoff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
@@ -156,7 +150,7 @@ beforeAll(async () => {
       response.writeHead(answer.status, { 'Content-Type': 'application/json' }).end(await answer.text());
       return;
     }
-    response.writeHead(200, { 'Content-Type': 'text/html' }).end(editorPage(request.url === '/older'));
+    response.writeHead(200, { 'Content-Type': 'text/html' }).end(editorPage());
   }).listen(0);
   await once(editor, 'listening');
   editorUrl = `http://localhost:${(editor.address() as AddressInfo).port}`;
@@ -207,7 +201,7 @@ describe('chat panel', () => {
   it('asks a signed-out owner to sign in with their website', async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(panelUrl);
+    await page.goto(`${panelUrl}/.assistant`);
     await expect(page.getByRole('button', { name: 'Continue with WordPress' }).isVisible()).resolves.toBe(true);
     await context.close();
   });
@@ -216,7 +210,7 @@ describe('chat panel', () => {
     it(`publishes a page only after the owner clicks Approve (${label})`, async () => {
       h.script(`Publish my FAQ page ${label}`, 'site_pages_change', { action: 'update', pageId: 14, status: 'publish' }, 'Your FAQ page is live.');
       const page = await signedInPage(width, height);
-      await page.goto(panelUrl);
+      await page.goto(`${panelUrl}/.assistant`);
       const box = page.getByRole('textbox');
       await box.fill(`Publish my FAQ page ${label}`);
       await box.press('Enter');
@@ -246,7 +240,7 @@ describe('chat panel', () => {
       );
       try {
         const page = await signedInPage(width, height);
-        await page.goto(panelUrl);
+        await page.goto(`${panelUrl}/.assistant`);
         const box = page.getByRole('textbox');
         await box.fill('Change my heading');
         await box.press('Enter');
@@ -266,7 +260,7 @@ describe('chat panel', () => {
   it('changes nothing when the owner clicks Reject', async () => {
     h.script('Remove my second section', 'page_section', { action: 'remove', pageId: 2, section: 1 }, 'Okay, I left it as it is.');
     const page = await signedInPage(1280, 800);
-    await page.goto(panelUrl);
+    await page.goto(`${panelUrl}/.assistant`);
     await page.getByRole('textbox').fill('Remove my second section');
     await page.getByRole('textbox').press('Enter');
     await page.getByText('Remove section 1 on page 2').waitFor({ timeout: 30_000 });
@@ -276,42 +270,37 @@ describe('chat panel', () => {
     await page.context().close();
   }, 90_000);
 
-  for (const older of [false, true]) {
-    it(`opens signed in from the shop’s button, with no sign-in of its own (${older ? 'panel’s own address' : 'website’s own domain'})`, async () => {
-      const question = `What is on my site${older ? ' (older)' : ''}?`;
-      h.script(question, 'get_site', {}, 'Your site is called Bakery.');
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      await page.goto(`${shopUrl}${older ? '/older' : '/.assistant'}`);
-      await page.getByRole('textbox').fill(question);
-      await page.getByRole('textbox').press('Enter');
-      await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
-      // Every redirect lands where the owner opened the panel, under /.assistant: the website's own domain, or the
-      // panel's own address (PANEL_URL), never the container's.
-      const landed = new URL(page.url());
-      expect(landed.origin).toBe(older ? panelUrl : editorUrl);
-      expect(landed.pathname).toMatch(/^\/\.assistant(\/|$)/);
-      if (!older) {
-        // On the website's own domain the sign-in is a first-party cookie, kept away from the website's WordPress.
-        const cookies = await context.cookies(`${editorUrl}/.assistant`);
-        expect((await context.cookies(editorUrl)).some((c) => c.name.startsWith('ap_'))).toBe(false);
-        expect(cookies.find((c) => c.name === 'ap_access')).toMatchObject({ path: '/.assistant', sameSite: 'Lax', httpOnly: true });
-      }
+  it('opens signed in from the shop’s button, with no sign-in of its own', async () => {
+    const question = 'What is on my site?';
+    h.script(question, 'get_site', {}, 'Your site is called Bakery.');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${shopUrl}/.assistant`);
+    await page.getByRole('textbox').fill(question);
+    await page.getByRole('textbox').press('Enter');
+    await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
+    // Every redirect lands on the website's own domain under /.assistant, never the container's address.
+    const landed = new URL(page.url());
+    expect(landed.origin).toBe(editorUrl);
+    expect(landed.pathname).toMatch(/^\/\.assistant(\/|$)/);
+    // On the website's own domain the sign-in is a first-party cookie, kept away from the website's WordPress.
+    const cookies = await context.cookies(`${editorUrl}/.assistant`);
+    expect((await context.cookies(editorUrl)).some((c) => c.name.startsWith('ap_'))).toBe(false);
+    expect(cookies.find((c) => c.name === 'ap_access')).toMatchObject({ path: '/.assistant', sameSite: 'Lax', httpOnly: true });
 
-      // Reopened, the chat keeps its step card as well as its answer.
-      await page.reload();
-      await page.getByRole('button', { name: 'Chat history' }).click();
-      await page.getByRole('menuitem', { name: new RegExp(question.replace(/[()?]/g, '\\$&')) }).click();
-      await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
-      await expect(page.getByText('Reading your website').isVisible()).resolves.toBe(true);
-      await context.close();
-    }, 90_000);
-  }
+    // Reopened, the chat keeps its step card as well as its answer.
+    await page.reload();
+    await page.getByRole('button', { name: 'Chat history' }).click();
+    await page.getByRole('menuitem', { name: new RegExp(question.replace(/[()?]/g, '\\$&')) }).click();
+    await page.getByText('Your site is called Bakery.').waitFor({ timeout: 30_000 });
+    await expect(page.getByText('Reading your website').isVisible()).resolves.toBe(true);
+    await context.close();
+  }, 90_000);
 
   it('keeps the conversation in a centred column on a wide screen', async () => {
     h.script('Hello wide', 'get_site', {}, 'Hello from the middle.');
     const page = await signedInPage(1600, 900);
-    await page.goto(panelUrl);
+    await page.goto(`${panelUrl}/.assistant`);
     await page.getByRole('textbox').fill('Hello wide');
     await page.getByRole('textbox').press('Enter');
     await page.getByText('Hello from the middle.').waitFor({ timeout: 30_000 });
@@ -324,13 +313,13 @@ describe('chat panel', () => {
     await page.context().close();
   }, 90_000);
 
-  for (const [label, width, height, older] of [['desktop', 1280, 800, false], ['phone', 390, 844, false], ['desktop, WaaS Client before 2.12', 1280, 800, true]] as const) {
+  for (const [label, width, height] of [['desktop', 1280, 800], ['phone', 390, 844]] as const) {
     it(`signs in beside the editor by itself and changes the selected block there (${label})`, async () => {
       const change = { action: 'replace', clientId: 'hero-1', content: WARMER };
       h.script(`Make this heading warmer ${label}`, 'editor_change', change, 'Done. Press Save to keep it.');
       const context = await browser.newContext({ viewport: { width, height } });
       const page = await context.newPage();
-      await page.goto(older ? `${editorUrl}/older` : editorUrl);
+      await page.goto(editorUrl);
       const chat = page.frameLocator('#panel');
       const box = chat.getByRole('textbox');
       await box.waitFor({ timeout: 30_000 });
@@ -374,7 +363,7 @@ describe('chat panel', () => {
   for (const [label, width, height] of [['desktop', 1280, 800], ['phone', 390, 844]] as const) {
     it(`shows what it knows about the business, and saves the owner’s corrections (${label})`, async () => {
       const page = await signedInPage(width, height);
-      await page.goto(panelUrl);
+      await page.goto(`${panelUrl}/.assistant`);
       await page.getByRole('button', { name: 'About your business' }).click();
       const dialog = page.getByRole('dialog', { name: 'About your business' });
       await dialog.getByText('Sourdough loaf (9 USD), Birthday cake (45–80 USD)').waitFor({ timeout: 15_000 });
@@ -399,7 +388,7 @@ describe('chat panel', () => {
   it('refuses a made-up or used handoff', async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(`${panelUrl}/from-shop?handoff=made-up`);
+    await page.goto(`${panelUrl}/.assistant/from-shop?handoff=made-up`);
     expect(new URL(page.url()).origin).toBe(panelUrl);
     await expect(page.getByRole('button', { name: 'Continue with WordPress' }).isVisible()).resolves.toBe(true);
     await context.close();
