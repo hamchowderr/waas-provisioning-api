@@ -26,7 +26,11 @@ export type JobData =
     }
   /** `size`: the store's size changed; the job applies the size on record. */
   | { type: 'tenant.update'; tenantId: string; wpOptions?: Record<string, string>; phpConstantNames?: string[]; size?: Size }
-  | { type: 'tenant.move'; tenantId: string; targetVersionId: string }
+  /**
+   * `rollbackVersionId`: the version the store was on, when the move was started for it (a new production version,
+   * src/routes/versions.ts). If the move fails its last retry, the store goes back to that version.
+   */
+  | { type: 'tenant.move'; tenantId: string; targetVersionId: string; rollbackVersionId?: string }
   /** Applies the tenant's current domains from the database (main + redirects). */
   | { type: 'tenant.domains'; tenantId: string }
   | { type: 'tenant.delete'; tenantId: string }

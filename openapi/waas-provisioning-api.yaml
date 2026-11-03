@@ -3965,6 +3965,12 @@ components:
           type: string
           description: Id of the version that should be the Production version
           format: uuid
+        moveStores:
+          type: boolean
+          default: true
+          description: Move every ready store of the product on another version to this one (the default). A store
+            whose move fails goes back to the version it was on, and the failure is reported like any failed job.
+            Send false to leave the stores where they are.
       additionalProperties: false
     RemoveBaseSnapshotCommandResult:
       type: object
@@ -4023,6 +4029,9 @@ components:
           type: string
           description: The Id of the Version
           format: uuid
+        movingStores:
+          type: integer
+          description: How many stores are moving to this version.
       additionalProperties: false
     SetTenantMainDomainCommandResult:
       type: object

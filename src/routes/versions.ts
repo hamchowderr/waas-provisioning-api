@@ -156,15 +156,31 @@ export function versionService(deps: Deps) {
     }
   }
 
-  /** SetProductionVersionCommandResult out. */
-  async function setProduction(productId: string, versionId: string) {
+  /**
+   * SetProductionVersionCommandResult out. Unless `moveStores` is false, every ready store of the product on
+   * another version moves to the new production version, so no store is left behind on an old one. A move that
+   * fails its last retry puts that store back on the version it was on (jobs.ts) and is reported like any failed job.
+   */
+  async function setProduction(productId: string, versionId: string, { moveStores = true }: { moveStores?: boolean } = {}) {
     const version = await findVersion(productId, versionId);
     if (version.status !== Status.Done) throw badRequest(`Version ${version.id} is ${statusName(version.status)}, not Done`);
+    let movingStores = 0;
     await withTransaction(pool, async (client) => {
       await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
       await client.query('UPDATE versions SET is_production = true, date_changed = now() WHERE id = $1', [version.id]);
+      if (!moveStores) return;
+      const { rows } = await client.query(
+        `UPDATE tenants SET status = $3, date_changed = now()
+          WHERE product_id = $1 AND status = $4 AND version_id IS NOT NULL AND version_id <> $2
+          RETURNING id, version_id`,
+        [productId, version.id, Status.Pending, Status.Done],
+      );
+      for (const row of rows) {
+        await enqueue(boss, client, { type: 'tenant.move', tenantId: row.id, targetVersionId: version.id, rollbackVersionId: row.version_id });
+      }
+      movingStores = rows.length;
     });
-    return { id: version.id };
+    return { id: version.id, movingStores };
   }
 
   /**
@@ -199,14 +215,17 @@ export function versionService(deps: Deps) {
   }
 
   /**
-   * Gives a new product a copy of that version and template, as its production version, so stores can
-   * be made at once (the dashboard's New seller). It builds like any version; until it is Done, a new
-   * store is refused as for any version still building.
+   * Gives a product a copy of that version and template, as its production version, so stores can
+   * be made at once (the dashboard's New seller), or so an existing one catches up with its source. It
+   * builds like any version; until it is Done, a new store is refused as for any version still building.
+   * The product's existing stores stay where they are.
    */
   async function copyProduction(productId: string, source: Awaited<ReturnType<typeof productionSource>>) {
     const id = randomUUID();
     const domain = `${dnsSafeLabel(`${slug(source.name)}-${id.slice(0, 8)}`, 'v')}.${config.versionsDomain}`;
     await withTransaction(pool, async (client) => {
+      // A product that has a production version already (catching up with its source) gets the copy instead.
+      await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
       await client.query(
         `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, is_production, status)
          VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
@@ -242,8 +261,8 @@ export function versionRoutes(deps: Deps) {
   app.get('/production/roles', async (c) => c.json(await versions.productionRoles(c.get('productId'))));
 
   app.put('/production', async (c) => {
-    const body = validateBody<{ versionId: string }>('ProductionVersionParams', await readJson(c));
-    return c.json(await versions.setProduction(c.get('productId'), body.versionId));
+    const body = validateBody<{ versionId: string; moveStores?: boolean }>('ProductionVersionParams', await readJson(c));
+    return c.json(await versions.setProduction(c.get('productId'), body.versionId, { moveStores: body.moveStores }));
   });
 
   return app;

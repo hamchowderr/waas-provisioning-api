@@ -179,7 +179,9 @@ export class WaasClient {
     create: (params: BodyOf<'createVersion'>) => this.#call('createVersion', 'POST', '/v1/versions', undefined, params),
     delete: (versionId: string) => this.#call('deleteVersion', 'DELETE', '/v1/versions', { versionId }),
     /** New tenants are created on the production version unless they name another. */
-    setProduction: (versionId: string) => this.#call('setProductionVersion', 'PUT', '/v1/versions/production', undefined, { versionId }),
+    /** Also moves the product's stores to it unless `moveStores` is false. */
+    setProduction: (versionId: string, { moveStores }: { moveStores?: boolean } = {}) =>
+      this.#call('setProductionVersion', 'PUT', '/v1/versions/production', undefined, { versionId, ...(moveStores === undefined ? {} : { moveStores }) }),
   };
 
   readonly snapshots = {

@@ -1981,6 +1981,11 @@ export interface components {
              * @description Id of the version that should be the Production version
              */
             versionId: string;
+            /**
+             * @description Move every ready store of the product on another version to this one (the default). A store whose move fails goes back to the version it was on, and the failure is reported like any failed job. Send false to leave the stores where they are.
+             * @default true
+             */
+            moveStores?: boolean;
         };
         RemoveBaseSnapshotCommandResult: {
             /** Format: uuid */
@@ -2026,6 +2031,8 @@ export interface components {
              * @description The Id of the Version
              */
             id?: string;
+            /** @description How many stores are moving to this version. */
+            movingStores?: number;
         };
         SetTenantMainDomainCommandResult: {
             /**

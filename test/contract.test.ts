@@ -86,7 +86,7 @@ describe('Phase 1 operations', () => {
   });
 
   it('setProductionVersion', async () => {
-    expect(await expectContract('setProductionVersion', await t.call('PUT', '/v1/versions/production', { body: { versionId } }))).toEqual({ id: versionId });
+    expect(await expectContract('setProductionVersion', await t.call('PUT', '/v1/versions/production', { body: { versionId } }))).toEqual({ id: versionId, movingStores: 0 });
     const [version]: any = await (await t.call('GET', '/v1/versions?versionName=v1.0.0')).json();
     expect(version.isProduction).toBe(true);
   });
