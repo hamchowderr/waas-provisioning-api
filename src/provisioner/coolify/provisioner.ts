@@ -172,8 +172,10 @@ export interface StoreMeta {
  *    script travels in the compose file, so a new operation reaches a store only with a new setup or a move.
  * 15: update-plugin also switches the plugin on when its new folder is already there but active_plugins still names
  *    an older folder (a storefront moved onto a version that has AnyPress Host).
+ * 16: the agent's crm-prospects operation, which writes prospect finder results into a storefront's FluentCRM
+ *    (src/prospectcrm.ts).
  */
-export const STORE_SETUP = 15;
+export const STORE_SETUP = 16;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -197,6 +199,8 @@ const keys = {
   backup: (id: string) => `backups/${id}.zip`,
   /** A site being moved in: a zip or a gzipped tar, so no extension. */
   import: (storeId: string) => `imports/${storeId}`,
+  /** Businesses for a store's FluentCRM (addCrmProspects), read once by its agent. */
+  crmBatch: (id: string) => `crm/${id}.json`,
 };
 
 /**
@@ -977,6 +981,20 @@ export class CoolifyProvisioner implements Provisioner {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const { from, unchanged } = await this.exec(store.uuid, 'update-plugin', args);
     return { from: typeof from === 'string' ? from : null, unchanged: unchanged === true };
+  }
+
+  async addCrmProspects({ storeId, contacts }: Parameters<Provisioner['addCrmProspects']>[0]) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    // Too long for a task command: the agent reads them from a signed link instead, which is gone afterwards.
+    const key = keys.crmBatch(randomBytes(8).toString('hex'));
+    await this.s3.put(key, new TextEncoder().encode(JSON.stringify({ contacts })), 'application/json');
+    try {
+      const out = await this.exec(store.uuid, 'crm-prospects', { url: this.s3.presign('GET', key, 900) });
+      const failed = out.failed && typeof out.failed === 'object' && !Array.isArray(out.failed) ? (out.failed as Record<string, string>) : {};
+      return { added: Number(out.added) || 0, updated: Number(out.updated) || 0, failed };
+    } finally {
+      await this.s3.delete(key).catch(() => undefined);
+    }
   }
 
   async deleteStore({ storeId }: { storeId: string }) {

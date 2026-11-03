@@ -63,6 +63,8 @@ export interface Deps {
   auth?: Auth;
   /** Google Places, for the prospect finder (src/prospects.ts); tests replace it. */
   placesFetch?: typeof fetch;
+  /** Posts prospects to sellers' HighLevel webhooks (src/prospectcrm.ts); tests replace it. */
+  crmFetch?: typeof fetch;
 }
 
 /**

@@ -6,6 +6,8 @@ import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from '
 import type { JobData, JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure } from './imports.ts';
+import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
+import type { Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
@@ -194,6 +196,14 @@ export function createJobHandlers(
         case 'storefront.update-host':
           await pushHostUpdate(pool, provisioner, releases, data.tenantId, data.version);
           return;
+        case 'storefront.crm-prospects': {
+          const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
+          if (!rows[0]) return failCrmProspects(pool, data.productId, 'The storefront is gone');
+          // The current store agent first: one from before crm-prospects doesn't have it.
+          await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
+          await pushCrmProspects(pool, (contacts) => provisioner.addCrmProspects({ storeId: data.tenantId, contacts }), data.productId);
+          return;
+        }
         case 'tenant.email-packs': {
           const { rowCount } = await pool.query('SELECT 1 FROM tenants WHERE id = $1', [data.tenantId]);
           if (!rowCount) return;
@@ -249,6 +259,10 @@ export function createJobHandlers(
         case 'tenant.update':
         case 'tenant.domains':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
+        case 'storefront.crm-prospects':
+          // The businesses can be sent again from the finder.
+          await failCrmProspects(pool, data.productId, error);
           return;
         case 'storefront.update-host':
           // The store still works, on the copy it had; the row says why, and POST /admin/host-updates tries again.
