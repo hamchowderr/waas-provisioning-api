@@ -403,17 +403,33 @@ async function notifyOwner(
 ) {
   if (!ownerMail) return console.error(`Store ${tenant.id}: no email set up, so its owner was not told it is ready`);
   try {
-    const passwordLink = await provisioner.passwordLink({ storeId: tenant.id, email: user.email });
-    const mail = await brandedMail(pool, ownerMail, tenant.product_id);
-    await sendWebsiteReady({ ...mail, poweredBy: undefined }, user.email, {
-      site: tenant.name,
-      url: `https://${tenant.main_domain}/`,
-      username: user.name,
-      passwordLink,
-    });
+    await emailWebsiteReady(pool, provisioner, ownerMail, tenant, user.email);
   } catch (err) {
     console.error(`Store ${tenant.id}: the email to its owner failed: ${(err as Error).message}`);
   }
+}
+
+/**
+ * The "your website is ready" email with a fresh set-password link, to the store's WordPress user with `email`:
+ * after a create that asked for it, or later from the dashboard (POST /admin/tenants/:id/notify-owner). Throws
+ * when the store has no such user or the email can't be sent. The username is the one in WordPress's link.
+ */
+export async function emailWebsiteReady(
+  pool: Pool,
+  provisioner: Provisioner,
+  ownerMail: AuthMail,
+  tenant: { id: string; product_id: string; name: string; main_domain: string },
+  email: string,
+) {
+  const passwordLink = await provisioner.passwordLink({ storeId: tenant.id, email });
+  const username = new URL(passwordLink).searchParams.get('login') || email;
+  const mail = await brandedMail(pool, ownerMail, tenant.product_id);
+  await sendWebsiteReady({ ...mail, poweredBy: undefined }, email, {
+    site: tenant.name,
+    url: `https://${tenant.main_domain}/`,
+    username,
+    passwordLink,
+  });
 }
 
 async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, backupId: string) {

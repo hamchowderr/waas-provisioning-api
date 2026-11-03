@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Status } from '../src/status.ts';
-import { setup, waitFor, type TestContext, OWNER } from './helpers.ts';
+import { setup, waitFor, type TestContext, OWNER, TEST_ADMIN_TOKEN } from './helpers.ts';
 
 const MAIL = { key: 'tsend_test_key', from: 'support@app.waas.example', plainFrom: 'no-reply@app.waas.example', brand: 'AnyPress' };
 
@@ -8,14 +8,21 @@ let t: TestContext;
 const sent: { to: string; url: string; body: any }[] = [];
 const realFetch = globalThis.fetch;
 
-async function makeStore(name: string, extra: object = {}) {
+async function makeStore(name: string, extra: object = {}): Promise<string> {
   const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name, ...extra } });
   expect(res.status).toBe(200);
   const { externalId } = (await res.json()) as { externalId: string };
-  await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as { statusCode: number }[])[0]?.statusCode === Status.Done);
+  const done = await waitFor(async () => {
+    const tenant = ((await (await t.call('GET', `/v1/tenants?externalId=${externalId}`)).json()) as { id: string; statusCode: number }[])[0];
+    return tenant?.statusCode === Status.Done ? tenant : null;
+  });
   // The email goes out right after the store is marked done.
   await new Promise((r) => setTimeout(r, 300));
+  return done.id;
 }
+
+const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+const notify = (tenantId: string, body: object) => t.call('POST', `/admin/tenants/${tenantId}/notify-owner`, { auth: ADMIN, body });
 
 beforeAll(async () => {
   t = await setup();
@@ -70,5 +77,39 @@ describe("emailing the owner that their website is ready", () => {
     const res = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Odd', notifyOwner: 'yes' } });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { message: string }).message).toMatch(/notifyOwner/);
+  });
+});
+
+describe('sending the website-ready email later', () => {
+  it('sends it for a store made without it, with a fresh set-password link', async () => {
+    await t.pool.query('DELETE FROM dashboard_brands WHERE product_id = $1', [t.productId]);
+    const tenantId = await makeStore('Later Bakery');
+    sent.splice(0);
+    const res = await notify(tenantId, { email: ' Owner@Example.com ' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ tenantId, email: 'owner@example.com', sent: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.to).toBe('owner@example.com');
+    expect(sent[0]!.body.subject).toBe('Your website Later Bakery is ready');
+    expect(sent[0]!.url).toMatch(/\/wp-login\.php\?action=rp&key=.+&login=owner$/);
+    expect(sent[0]!.body.text).toContain('Your username is owner.');
+  });
+
+  it("refuses an email the store has no WordPress user for, or that isn't an email", async () => {
+    const tenantId = await makeStore('Wrong Owner Shop');
+    sent.splice(0);
+    const wrong = await notify(tenantId, { email: 'someone@example.com' });
+    expect(wrong.status).toBe(400);
+    expect(((await wrong.json()) as { message: string }).message).toMatch(/no WordPress user/);
+    expect((await notify(tenantId, { email: 'nope' })).status).toBe(400);
+    expect((await notify(tenantId, {})).status).toBe(400);
+    expect(sent).toEqual([]);
+  });
+
+  it('refuses a suspended store, and answers 404 for one that does not exist', async () => {
+    const tenantId = await makeStore('Paused Shop');
+    await t.pool.query('UPDATE tenants SET is_suspended = true WHERE id = $1', [tenantId]);
+    expect((await notify(tenantId, { email: 'owner@example.com' })).status).toBe(409);
+    expect((await notify('00000000-0000-4000-8000-000000000000', { email: 'owner@example.com' })).status).toBe(404);
   });
 });
