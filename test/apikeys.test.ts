@@ -24,7 +24,8 @@ async function call(method: string, path: string, { auth, body, status = 200 }: 
   const text = await res.text();
   expect(res.status, `${method} ${path}: ${text}`).toBe(status);
   const [spec, prefix] = path.startsWith('/admin') ? [adminSpec, 'admin'] : [keysSpec, 'keys'];
-  const opPath = Object.keys(spec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path))!;
+  const bare = path.split('?')[0]!;
+  const opPath = Object.keys(spec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(bare))!;
   let responses = spec.paths[opPath][method.toLowerCase()].responses[String(status)];
   if (responses.$ref) responses = spec.components.responses[responses.$ref.split('/').pop()];
   const schema = JSON.parse(
@@ -114,6 +115,20 @@ describe('self-service keys (/v1/keys)', () => {
     expect((await call('DELETE', `/v1/keys/${first.key}`, { auth: auth2 })).body.revokedAt).toBe(revoked.revokedAt);
   });
 
+  it('removes a revoked key from the list for good, but never a working one', async () => {
+    const product = (await t.pool.query("INSERT INTO products (name) VALUES ('Tidy agency') RETURNING id")).rows[0].id;
+    const first = await createApiKey(t.pool, product);
+    const auth = basic(first.key, first.secret);
+    const { body: spare } = await call('POST', '/v1/keys', { auth, status: 201 });
+    await call('DELETE', `/v1/keys/${spare.id}?forever=true`, { auth, status: 409 });
+    await call('DELETE', `/v1/keys/${spare.id}`, { auth, status: 200 });
+    const { body: gone } = await call('DELETE', `/v1/keys/${spare.id}?forever=true`, { auth, status: 200 });
+    expect(gone.id).toBe(spare.id);
+    const { body: list } = await call('GET', '/v1/keys', { auth });
+    expect(list.map((k: any) => k.id)).toEqual([first.key]);
+    await call('DELETE', `/v1/keys/${spare.id}?forever=true`, { auth, status: 404 });
+  });
+
   it('only reaches the storefront\'s own keys', async () => {
     const product = (await t.pool.query("INSERT INTO products (name) VALUES ('Other agency') RETURNING id")).rows[0].id;
     const other = await createApiKey(t.pool, product);
@@ -169,6 +184,9 @@ describe('admin keys and new sellers', () => {
       expect((await call('DELETE', `${base}/${id}`, { auth: ADMIN })).body.state).toBe('revoked');
     }
     expect(await signsIn(basic(rotated.key.id, rotated.key.secret))).toBe(false);
+    // Revoked keys can then be removed from the list.
+    await call('DELETE', `${base}/${extra.id}?forever=true`, { auth: ADMIN });
+    expect((await call('GET', base, { auth: ADMIN })).body.map((k: any) => k.id)).not.toContain(extra.id);
     await call('GET', '/admin/products/00000000-0000-0000-0000-000000000000/keys', { auth: ADMIN, status: 404 });
     await call('DELETE', `/admin/products/${t.productId}/keys/${seller.key.id}`, { auth: ADMIN, status: 404 });
   });

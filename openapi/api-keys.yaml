@@ -81,15 +81,18 @@ paths:
       - $ref: '#/components/parameters/keyId'
     delete:
       operationId: revokeApiKey
-      summary: Revoke a key now
+      summary: Revoke a key now, or remove a revoked key
       description: >-
         The key stops working at once; an expiring key stops early. Revoking a revoked key changes
         nothing. The storefront's last active key can't be revoked (409), so it can't lock itself
         out: create or rotate to a new key first. The key this request signed in with can be
-        revoked when another active key exists.
+        revoked when another active key exists. With forever=true, a key that has already stopped
+        working is removed from the list for good instead (409 for a working key).
+      parameters:
+      - { name: forever, in: query, required: false, schema: { type: boolean }, description: 'true removes a key that already stopped working from the list for good (409 for a working key). Its old calls stay in the API log.' }
       responses:
         '200':
-          description: The revoked key
+          description: The revoked key, or the removed one
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiKeyInfo' }

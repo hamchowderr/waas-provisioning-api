@@ -15,7 +15,7 @@ import { importCode, importDetail, renewImport } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
-import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from '../keys.ts';
+import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey, wantsForever } from '../keys.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { publicBase } from '../oauth.ts';
 import { adminResellerRoutes } from '../resellers.ts';
@@ -886,7 +886,11 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     c.header('Cache-Control', 'no-store');
     return c.json(result, 201);
   });
-  app.delete('/products/:productId/keys/:id', async (c) => c.json(await revokeApiKey(pool, await product(c), c.req.param('id'))));
+  app.delete('/products/:productId/keys/:id', async (c) => {
+    const owner = await product(c);
+    const id = c.req.param('id');
+    return c.json(wantsForever(c.req.query('forever')) ? await forgetApiKey(pool, owner, id) : await revokeApiKey(pool, owner, id));
+  });
 
   // The product's ready-made storefront (src/storefronts.ts): a WordPress site with WaaS Host, already
   // connected. GET answers null when it has none; POST builds it (platform admin only).

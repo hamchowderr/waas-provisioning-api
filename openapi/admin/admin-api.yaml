@@ -217,14 +217,17 @@ paths:
       operationId: adminRevokeApiKey
       summary: Revoke a key now
       description: Like revokeApiKey, except the product's last active key can be revoked, to cut a storefront off.
+      parameters:
+        - { name: forever, in: query, required: false, schema: { type: boolean }, description: 'true removes a key that already stopped working from the list for good (409 for a working key).' }
       responses:
         '200':
-          description: The revoked key
+          description: The revoked key, or the removed one (forever=true)
           content:
             application/json:
               schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/products/{productId}:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -1780,14 +1783,17 @@ paths:
     delete:
       operationId: adminRevokePartnerKey
       summary: Revoke a partner key now
+      parameters:
+        - { name: forever, in: query, required: false, schema: { type: boolean }, description: 'true removes a key that already stopped working from the list for good (409 for a working key).' }
       responses:
         '200':
-          description: The revoked key
+          description: The revoked key, or the removed one (forever=true)
           content:
             application/json:
               schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/resellers/{id}/branding:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2189,14 +2195,17 @@ paths:
     delete:
       operationId: accountRevokePartnerKey
       summary: Revoke a partner key now; owners and admins only
+      parameters:
+        - { name: forever, in: query, required: false, schema: { type: boolean }, description: 'true removes a key that already stopped working from the list for good (409 for a working key).' }
       responses:
         '200':
-          description: The revoked key
+          description: The revoked key, or the removed one (forever=true)
           content:
             application/json:
               schema: { $ref: '../api-keys.yaml#/components/schemas/ApiKeyInfo' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     adminToken: { type: http, scheme: bearer }
