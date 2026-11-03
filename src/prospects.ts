@@ -88,10 +88,19 @@ export async function searchProspects(
       body: JSON.stringify({ textQuery: `${input.query} in ${input.location}`, pageSize: 20, languageCode: 'en' }),
       signal: AbortSignal.timeout(15_000),
     });
-  } catch {
+  } catch (err) {
+    console.error(`Prospect search: Google Places unreachable: ${(err as Error).message}`);
     throw new HttpError(502, "Google didn't answer. Try again in a minute.");
   }
-  if (!res.ok) throw new HttpError(502, "Google didn't answer. Try again in a minute.");
+  if (!res.ok) {
+    // Google's own reason (never the key) goes to the log, so a bad key, billing or a switched-off API can be told apart.
+    const body = (await res.json().catch(() => null)) as { error?: { status?: string; message?: string } } | null;
+    console.error(`Prospect search: Google Places ${res.status} ${body?.error?.status ?? ''}: ${body?.error?.message ?? ''}`.trim());
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      throw new HttpError(503, "The prospect finder isn't working right now. We've been told and are fixing it.");
+    }
+    throw new HttpError(502, "Google didn't answer. Try again in a minute.");
+  }
   const data = (await res.json()) as { places?: Array<Record<string, any>> };
   const prospects: Prospect[] = (data.places ?? [])
     .filter((p) => p.businessStatus !== 'CLOSED_PERMANENTLY')
