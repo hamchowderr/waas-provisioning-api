@@ -943,7 +943,10 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     await versions.remove(await product(c), versionId(c));
     return c.body(null, 200);
   });
-  app.put('/products/:productId/versions/:id/production', async (c) => c.json(await versions.setProduction(await product(c), versionId(c))));
+  // ?moveStores=false leaves the product's stores on their versions; otherwise they all move to it.
+  app.put('/products/:productId/versions/:id/production', async (c) =>
+    c.json(await versions.setProduction(await product(c), versionId(c), { moveStores: c.req.query('moveStores') !== 'false' })),
+  );
 
   app.get('/products/:productId/basesnapshots', async (c) => {
     booleanQuery(c, 'onlyPartnerSpecific');
