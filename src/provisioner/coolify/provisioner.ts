@@ -168,8 +168,10 @@ export interface StoreMeta {
  * 11: the agent script travels gzipped (WAAS_AGENT_GZ), as plain base64 it no longer fit in one environment variable.
  * 12: https://<each store domain>/assistant goes to the website assistant's panel (assistantLabels in compose.ts).
  * 13: at /.assistant instead, an address no WordPress page can have, so no page of the store is hidden behind it.
+ * 14: the agent's update-plugin operation, which pushes AnyPress Host to storefronts (src/hostupdates.ts). The agent
+ *    script travels in the compose file, so a new operation reaches a store only with a new setup or a move.
  */
-export const STORE_SETUP = 13;
+export const STORE_SETUP = 14;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
