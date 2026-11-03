@@ -2731,7 +2731,7 @@ components:
     TenantRow:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, isSuspended, onHold, latestBackupAt, dateCreated]
+      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, siteTypes, isSuspended, onHold, latestBackupAt, dateCreated]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -2745,6 +2745,7 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
+        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its WAAS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         isSuspended: { type: boolean }
         onHold: { type: boolean, description: A site moved in, held until it goes live. }
         latestBackupAt: { type: string, format: date-time, nullable: true }
@@ -2884,7 +2885,7 @@ components:
     TenantDetail:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, keepsOwnCode, isSuspended, onHold, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
+      required: [id, externalId, name, productId, productName, versionId, versionName, statusCode, statusName, size, siteTypes, keepsOwnCode, isSuspended, onHold, domains, backups, recentJobs, failures, wpOptionNames, phpConstantNames]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -2898,6 +2899,7 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
+        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its WAAS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         keepsOwnCode: { type: boolean, description: A site moved in from another host keeps its own plugins and themes; versions don't replace them. }
         moveIn:
           type: object
