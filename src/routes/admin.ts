@@ -72,6 +72,11 @@ function statusQuery(c: Context): number | undefined {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const iso = (d: any) => (d ? new Date(d).toISOString() : null);
+/** A store's owner email: its admin_email option as the create set it, unless it is the template's placeholder. */
+const ownerEmailOf = (options: Record<string, unknown> | null | undefined): string | null => {
+  const email = typeof options?.admin_email === 'string' ? options.admin_email.trim().toLowerCase() : '';
+  return email && !email.endsWith('.invalid') ? email : null;
+};
 
 /** What an admin may see of a job: never its data, which can hold encrypted secrets. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -498,6 +503,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       // When the "your website is ready" email last went to its owner, and to which address; null if never.
       ownerNotifiedAt: iso(t.owner_notified_at),
       ownerNotifiedTo: t.owner_notified_to ?? null,
+      // The owner's sign-in email: the store's administration address, which a create sets to it.
+      ownerEmail: ownerEmailOf(t.wp_options),
       dateCreated: iso(t.date_created),
       dateChanged: iso(t.date_changed),
       // Names only: values can be secret.
@@ -651,21 +658,23 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // "Send the website-ready email": the email a new store's owner can get when it is made (notifyOwner), sent
   // later, with a fresh set-password link. For a store made quietly whose owner is now to be told. Anyone
-  // who may change the store may send it; the owner's email is given, as the API keeps no copy of it.
+  // who may change the store may send it. It goes to the owner email the store was made with unless one is given.
   app.post('/tenants/:id/notify-owner', async (c) => {
     const id = c.req.param('id');
     if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
     const body = ((await readJson(c)) ?? {}) as { email?: unknown };
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw badRequest("email is required: the store owner's email address");
+    if (body.email !== undefined && typeof body.email !== 'string') throw badRequest('email must be a string');
     const { rows } = await pool.query(
-      `SELECT t.id, t.product_id, t.name, t.status, t.is_suspended, t.on_hold,
+      `SELECT t.id, t.product_id, t.name, t.status, t.is_suspended, t.on_hold, t.wp_options,
          (SELECT domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
        FROM tenants t WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`,
       [id, scopedProduct(c)],
     );
     const tenant = rows[0];
     if (!tenant) throw notFound(`Tenant ${id} not found`);
+    // Without one given, the owner's sign-in email the store was made with.
+    const email = ((body.email as string | undefined)?.trim() || ownerEmailOf(tenant.wp_options) || '').toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw badRequest("email is required: this store has no owner's email on record");
     if (tenant.status !== Status.Done) throw conflict(`This site is ${statusName(tenant.status)}; the email can go once it is Done`);
     if (tenant.is_suspended) throw conflict('This site is suspended; resume it first');
     if (tenant.on_hold) throw conflict('This site was moved in and is not live yet; make it live first');
