@@ -1,4 +1,5 @@
 import type { Size } from '../plans.ts';
+import type { OutreachMailbox } from '../outreach.ts';
 import type { CrmContact, CrmWriteResult } from '../prospectcrm.ts';
 import type { SiteInventory } from '../sitereport.ts';
 
@@ -234,6 +235,12 @@ export interface Provisioner {
    * "transactional"; an existing one keeps its status. `failed` names the ones it could not write, by id, with why.
    */
   addCrmProspects(input: { storeId: string; contacts: CrmContact[] }): Promise<CrmWriteResult>;
+
+  /**
+   * Gives the store the seller's own mailbox for prospect emails (src/outreach.ts), or with null takes it away. The
+   * store signs in to it first and keeps it only when that worked; `error` is the mail server's answer when it didn't.
+   */
+  setOutreachMailbox(input: { storeId: string; mailbox: OutreachMailbox | null }): Promise<{ ok: boolean; error?: string }>;
 
   deleteStore(input: { storeId: string }): Promise<void>;
 

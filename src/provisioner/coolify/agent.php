@@ -640,6 +640,8 @@ if (!is_array($waas_mail) || empty($waas_mail['host']) || empty($waas_mail['from
 // under the store's name, and replies go to the address the store meant to send from, else to the
 // site's administrator (nobody reads the store's address on the relay's domain).
 add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
+    // A prospect email goes through the seller's own mailbox instead (waas-outreach.php), never the relay.
+    if (!empty($GLOBALS['anypress_outreach_mailer'])) return;
     $mailer->isSMTP();
     $mailer->Host = $waas_mail['host'];
     $mailer->Port = (int) ($waas_mail['port'] ?? 465);
@@ -775,6 +777,130 @@ add_action('init', function () use ($waas_mail) {
     update_option('waas_mail_senders', ['key' => $key, 'set' => $want], false);
 }, PHP_INT_MAX);
 PHP);
+    file_put_contents(CONTENT . '/mu-plugins/waas-outreach.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: AnyPress outreach mail
+ * Description: Email to prospects (FluentCRM contacts tagged "Prospect" who never signed up) goes only through the seller's own mailbox, within its daily limit, and never through the store's mail relay. Managed by AnyPress; edits are overwritten.
+ */
+// The relay's rules forbid email to people who never asked for it, and one complaint there counts against every store.
+// So a prospect email is sent from the mailbox the seller connected in AnyPress (the anypress_outreach_mail option,
+// set by the outreach-mailbox operation), one prospect at a time, or not at all.
+
+/** The seller's mailbox: host, port, user, pass, from, name, daily. Null until one is connected. */
+function anypress_outreach_config(): ?array
+{
+    $c = get_option('anypress_outreach_mail');
+    return is_array($c) && !empty($c['host']) && !empty($c['from']) ? $c : null;
+}
+
+/** Of these addresses, the FluentCRM contacts tagged "Prospect" who are not subscribed. One query, only when FluentCRM is on. */
+function anypress_outreach_prospects(array $emails): array
+{
+    if (!$emails || !defined('FLUENTCRM')) return [];
+    global $wpdb;
+    $p = $wpdb->prefix;
+    $in = implode(',', array_fill(0, count($emails), '%s'));
+    $wpdb->suppress_errors(true);
+    $found = $wpdb->get_col($wpdb->prepare(
+        "SELECT LOWER(s.email) FROM {$p}fc_subscribers s
+           JOIN {$p}fc_subscriber_pivot sp ON sp.subscriber_id = s.id AND sp.object_type = %s
+           JOIN {$p}fc_tags t ON t.id = sp.object_id AND t.title = %s
+          WHERE s.email IN ($in) AND s.status <> 'subscribed'",
+        array_merge(['FluentCrm\\App\\Models\\Tag', 'Prospect'], $emails)
+    ));
+    $wpdb->suppress_errors(false);
+    return array_values(array_unique((array) $found));
+}
+
+function anypress_outreach_addresses($value): array
+{
+    $text = is_array($value) ? implode(',', $value) : (string) $value;
+    preg_match_all('/[^\s<>,;"\']+@[^\s<>,;"\']+/', $text, $m);
+    return array_values(array_unique(array_map('strtolower', $m[0])));
+}
+
+/** Keeps a count and the last few prospect emails that were not sent, with why, for the admin notice. */
+function anypress_outreach_block(string $why, string $subject): bool
+{
+    $b = get_option('anypress_outreach_blocked');
+    $b = is_array($b) ? $b : [];
+    $recent = (array) ($b['recent'] ?? []);
+    array_unshift($recent, ['at' => gmdate('c'), 'why' => $why, 'subject' => mb_substr($subject, 0, 120)]);
+    update_option('anypress_outreach_blocked', ['count' => (int) ($b['count'] ?? 0) + 1, 'recent' => array_slice($recent, 0, 10)], false);
+    return false;
+}
+
+// After the hold filter (-9999), before any mailer: decides whether this email is to a prospect, and if so how it goes.
+add_filter('pre_wp_mail', function ($return, $atts) {
+    $GLOBALS['anypress_outreach_mailer'] = null;
+    if ($return !== null) return $return;
+    $to = anypress_outreach_addresses($atts['to'] ?? []);
+    $headers = $atts['headers'] ?? [];
+    $lines = is_array($headers) ? $headers : preg_split('/\r?\n/', (string) $headers);
+    foreach ($lines as $line) {
+        if (preg_match('/^\s*(cc|bcc)\s*:(.*)$/i', (string) $line, $m)) $to = array_merge($to, anypress_outreach_addresses($m[2]));
+    }
+    $to = array_values(array_unique($to));
+    $prospects = anypress_outreach_prospects($to);
+    if (!$prospects) return null;
+    $subject = (string) ($atts['subject'] ?? '');
+    $config = anypress_outreach_config();
+    if (!$config) return anypress_outreach_block('no-mailbox', $subject);
+    // One prospect per email: never copied in with anyone else.
+    if (count($to) > 1) return anypress_outreach_block('several', $subject);
+    $day = gmdate('Y-m-d');
+    $sent = get_option('anypress_outreach_sent');
+    $count = is_array($sent) && ($sent['day'] ?? '') === $day ? (int) ($sent['count'] ?? 0) : 0;
+    $limit = max(1, min(200, (int) ($config['daily'] ?? 30)));
+    if ($count >= $limit) return anypress_outreach_block('limit', $subject);
+    $GLOBALS['anypress_outreach_mailer'] = $config;
+    return null;
+}, -9990, 2);
+
+add_action('phpmailer_init', function ($mailer) {
+    $c = $GLOBALS['anypress_outreach_mailer'] ?? null;
+    if (!$c) return;
+    $mailer->isSMTP();
+    $mailer->Host = (string) $c['host'];
+    $mailer->Port = (int) ($c['port'] ?? 587);
+    $mailer->SMTPSecure = $mailer->Port === 465 ? 'ssl' : 'tls';
+    $mailer->SMTPAuth = (string) ($c['user'] ?? '') !== '';
+    $mailer->Username = (string) ($c['user'] ?? '');
+    $mailer->Password = (string) ($c['pass'] ?? '');
+    $name = (string) ($c['name'] ?? '') ?: wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
+    $mailer->clearReplyTos();
+    $mailer->setFrom((string) $c['from'], $name, false);
+    $mailer->Sender = (string) $c['from'];
+}, PHP_INT_MAX);
+
+add_action('wp_mail_succeeded', function () {
+    if (empty($GLOBALS['anypress_outreach_mailer'])) return;
+    $GLOBALS['anypress_outreach_mailer'] = null;
+    $day = gmdate('Y-m-d');
+    $sent = get_option('anypress_outreach_sent');
+    $count = is_array($sent) && ($sent['day'] ?? '') === $day ? (int) ($sent['count'] ?? 0) : 0;
+    update_option('anypress_outreach_sent', ['day' => $day, 'count' => $count + 1], false);
+});
+add_action('wp_mail_failed', function ($error) {
+    if (empty($GLOBALS['anypress_outreach_mailer'])) return;
+    $GLOBALS['anypress_outreach_mailer'] = null;
+    error_log('AnyPress outreach mail: ' . $error->get_error_message());
+});
+
+add_action('admin_notices', function () {
+    if (!current_user_can('manage_options')) return;
+    $b = get_option('anypress_outreach_blocked');
+    $last = is_array($b) ? ($b['recent'][0] ?? null) : null;
+    if (!$last || strtotime((string) $last['at']) < time() - 7 * DAY_IN_SECONDS) return;
+    $why = [
+        'no-mailbox' => 'Emails to prospects go out only from your own mailbox. Connect it in the Sales Kit in your AnyPress dashboard.',
+        'several' => 'An email to a prospect goes to that prospect alone, not with others copied in.',
+        'limit' => "Today's limit for emails to prospects is reached. The rest can go tomorrow.",
+    ][$last['why']] ?? '';
+    printf('<div class="notice notice-warning"><p>%s</p></div>', esc_html(sprintf('%d email%s to prospects %s not sent. %s', (int) $b['count'], (int) $b['count'] === 1 ? '' : 's', (int) $b['count'] === 1 ? 'was' : 'were', $why)));
+});
+PHP) !== false || fail('cannot write the outreach mu-plugin');
     file_put_contents(CONTENT . '/mu-plugins/waas-owner.php', <<<'PHP'
 <?php
 /*
@@ -2073,6 +2199,57 @@ switch ($op) {
         if (strpos($out, 'WAAS_CRM_MISSING') !== false) fail('FluentCRM is not switched on in this store');
         if (!preg_match('/^WAAS_CRM (\{.*\})\s*$/m', $out, $m)) fail('FluentCRM gave no answer: ' . substr(trim(preg_replace('/\s+/', ' ', explode('::', $out, 2)[0])), -300));
         done(json_decode($m[1], true) ?: []);
+    }
+
+    case 'outreach-mailbox': {
+        // The seller's own mailbox for prospect emails (waas-outreach.php), or none (clear). It signs in to it first and
+        // keeps it only when that worked. The mailbox holds a password, so it comes as a signed link, never in the command.
+        if (!empty($args['clear'])) {
+            wpMayFail('option', 'delete', 'anypress_outreach_mail');
+            done(['ok' => true]);
+        }
+        $url = (string) ($args['url'] ?? '');
+        preg_match('#^https://#', $url) || fail('url must be an https address');
+        $tmp = tempDir();
+        curlTransfer($url, "$tmp/in.json", false);
+        $box = json_decode((string) file_get_contents("$tmp/in.json"), true);
+        @unlink("$tmp/in.json");
+        is_array($box) || fail('the mailbox is not an object');
+        foreach (['host', 'from'] as $k) (is_string($box[$k] ?? null) && $box[$k] !== '') || fail("mailbox.$k is required");
+        $want = [
+            'host' => (string) $box['host'], 'port' => (int) ($box['port'] ?? 587), 'user' => (string) ($box['user'] ?? ''),
+            'pass' => (string) ($box['pass'] ?? ''), 'from' => (string) $box['from'], 'name' => (string) ($box['name'] ?? ''),
+            'daily' => max(1, min(200, (int) ($box['daily'] ?? 30))),
+        ];
+        file_put_contents("$tmp/box.json", json_encode($want)) !== false || fail('cannot write the mailbox');
+        file_put_contents("$tmp/check.php", <<<'CHECK'
+<?php
+require_once ABSPATH . WPINC . '/PHPMailer/PHPMailer.php';
+require_once ABSPATH . WPINC . '/PHPMailer/SMTP.php';
+require_once ABSPATH . WPINC . '/PHPMailer/Exception.php';
+$c = json_decode((string) file_get_contents($args[0]), true);
+$m = new PHPMailer\PHPMailer\PHPMailer(true);
+$m->isSMTP();
+$m->Host = $c['host'];
+$m->Port = (int) $c['port'];
+$m->SMTPSecure = $m->Port === 465 ? 'ssl' : 'tls';
+$m->SMTPAuth = $c['user'] !== '';
+$m->Username = $c['user'];
+$m->Password = $c['pass'];
+$m->Timeout = 15;
+try {
+    $ok = $m->smtpConnect();
+    $m->smtpClose();
+    echo $ok ? "WAAS_SMTP ok\n" : "WAAS_SMTP no\tcould not sign in\n";
+} catch (Throwable $e) {
+    echo "WAAS_SMTP no\t" . str_replace(["\n", "\t"], ' ', $e->getMessage()) . "\n";
+}
+CHECK) !== false || fail('cannot write the check');
+        $out = run('timeout 60 wp --path=' . ROOT . ' --skip-plugins --skip-themes eval-file ' . escapeshellarg("$tmp/check.php") . ' ' . escapeshellarg("$tmp/box.json") . ' 2>&1; echo "::$?"', true);
+        if (!preg_match('/^WAAS_SMTP (ok|no)(?:\t(.*))?$/m', $out, $m)) fail('the mailbox check gave no answer: ' . substr(trim(preg_replace('/\s+/', ' ', explode('::', $out, 2)[0])), -300));
+        if ($m[1] !== 'ok') done(['ok' => false, 'error' => substr(trim($m[2] ?? ''), 0, 300) ?: 'could not sign in']);
+        wp('option', 'update', 'anypress_outreach_mail', json_encode($want), '--format=json', '--autoload=no');
+        done(['ok' => true]);
     }
 
     case 'update-db':

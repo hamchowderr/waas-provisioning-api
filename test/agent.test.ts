@@ -390,7 +390,7 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     mkdirSync(join(content(), 'uploads'));
     writeFileSync(join(content(), 'uploads/photo.jpg'), Buffer.alloc(3000));
     mkdirSync(join(content(), 'cache/waas-pages'), { recursive: true });
-    writeFileSync(join(content(), 'cache/waas-pages/a.html'), Buffer.alloc(50000));
+    writeFileSync(join(content(), 'cache/waas-pages/a.html'), Buffer.alloc(200000));
     // Everything in wp-content but the cache: the photo and the files the agent installed.
     const files = readdirSync(content(), { recursive: true, withFileTypes: true })
       .filter((f) => f.isFile() && !join(f.parentPath, f.name).startsWith(join(content(), 'cache')))
@@ -398,7 +398,7 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     const { options } = plan(quotas, {}, `do_action('init'); do_action('waas_plan_measure');`);
     expect(options.cron).toEqual({ waas_plan_measure: 'daily' });
     expect(options.waas_plan_usage.bytes).toBe(files + 1000);
-    expect(files).toBeLessThan(50000);
+    expect(files).toBeLessThan(200000);
   });
 
   it('refuses an upload past the storage, counts the ones it lets through, and warns from 80%', () => {

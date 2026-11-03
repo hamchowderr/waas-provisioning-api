@@ -237,6 +237,57 @@ paths:
               schema: { $ref: '#/components/schemas/ProspectCrm' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/prospects/mailbox:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminGetProspectMailbox
+      summary: The seller's own mailbox for prospect emails
+      description: >-
+        Store email can't be used for cold outreach, so an email from the storefront's FluentCRM to a contact
+        tagged "Prospect" who never subscribed goes out only through this mailbox, one prospect per email, up to
+        its daily limit. Without one, such emails are not sent. Never includes the password.
+      responses:
+        '200':
+          description: The mailbox and whether it's connected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectMailbox' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: adminSetProspectMailbox
+      summary: Connect the seller's own mailbox for prospect emails
+      description: >-
+        Saved at once; the storefront then signs in to it and keeps it only when that works (state goes from
+        checking to connected or failed). Use an app password. The platform's own email service is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProspectMailboxInput' }
+      responses:
+        '202':
+          description: Saved; being checked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectMailbox' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminRemoveProspectMailbox
+      summary: Disconnect the mailbox for prospect emails
+      description: Afterwards no email to a prospect is sent from the storefront.
+      responses:
+        '202':
+          description: Being removed from the storefront
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectMailbox' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/prospects/search:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -3007,6 +3058,38 @@ components:
           additionalProperties: false
           properties:
             connected: { type: boolean, description: Whether a HighLevel webhook is set }
+    ProspectMailboxInput:
+      type: object
+      required: [host, user, pass]
+      additionalProperties: false
+      properties:
+        host: { type: string, maxLength: 253, description: 'The SMTP server, like smtp.gmail.com' }
+        port: { type: integer, minimum: 1, maximum: 65535, default: 587, description: '587 (STARTTLS) or 465 (SSL)' }
+        user: { type: string, maxLength: 254 }
+        pass: { type: string, maxLength: 500, description: An app password for the mailbox }
+        from: { type: string, maxLength: 254, description: The address prospect emails come from; the username when left out }
+        name: { type: string, maxLength: 100, description: The sender name; the storefront's name when left out }
+        daily: { type: integer, minimum: 1, maximum: 200, default: 30, description: At most this many prospect emails a day }
+    ProspectMailbox:
+      type: object
+      required: [state, error, mailbox, unavailable]
+      additionalProperties: false
+      properties:
+        state: { type: string, enum: [none, checking, connected, failed, removing] }
+        error: { type: string, nullable: true, description: 'Why the last check failed, in the mail server''s words' }
+        mailbox:
+          type: object
+          nullable: true
+          required: [host, port, user, from, name, daily]
+          additionalProperties: false
+          properties:
+            host: { type: string }
+            port: { type: integer }
+            user: { type: string }
+            from: { type: string }
+            name: { type: string }
+            daily: { type: integer }
+        unavailable: { type: string, nullable: true, description: Why this storefront can't use a mailbox; null when it can }
     ProspectCrmResult:
       type: object
       required: [fluentcrm, highlevel]

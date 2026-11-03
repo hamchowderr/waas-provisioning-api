@@ -52,7 +52,7 @@ export interface CrmAddResult {
 }
 
 const MAX_PROSPECTS = 60;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+export const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 
 const text = (v: unknown, max: number): string | null => {
   if (typeof v !== 'string') return null;
@@ -149,10 +149,10 @@ export async function setHighLevelWebhook(pool: Pool, secrets: Secrets, productI
   );
 }
 
-type StorefrontLookup = (productId: string) => Promise<{ id: string; statusCode: number } | null>;
+export type StorefrontLookup = (productId: string) => Promise<{ id: string; statusCode: number } | null>;
 
 /** Why the storefront's FluentCRM can't take prospects, or null when it can. */
-async function fluentCrmUnavailable(storefront: StorefrontLookup, productId: string): Promise<{ tenantId: string | null; reason: string | null }> {
+export async function fluentCrmUnavailable(storefront: StorefrontLookup, productId: string): Promise<{ tenantId: string | null; reason: string | null }> {
   const store = await storefront(productId);
   if (!store) return { tenantId: null, reason: 'FluentCRM is on ready-made AnyPress storefronts. This storefront runs on its own website.' };
   if (store.statusCode !== Status.Done) return { tenantId: null, reason: "Your storefront is still being set up. Try again when it's ready." };
