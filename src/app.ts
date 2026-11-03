@@ -61,6 +61,8 @@ export interface Deps {
   siteFetch?: typeof fetch;
   /** Sign-in for people (src/auth.ts); absent when AUTH_URL and AUTH_SECRET are not set. */
   auth?: Auth;
+  /** Google Places, for the prospect finder (src/prospects.ts); tests replace it. */
+  placesFetch?: typeof fetch;
 }
 
 /**
