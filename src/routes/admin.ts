@@ -873,6 +873,17 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json({ product: (await products(productId))[0], key }, 201);
   });
 
+  // Catches a product up with another storefront's production version and template: a copy becomes its
+  // production version (a reseller's storefront started from AnyPress's, when AnyPress publishes a new one).
+  app.post('/products/:productId/versions/from-production', async (c) => {
+    const productId = await product(c);
+    const body = (await readJson(c)) as { startFrom?: unknown };
+    if (!(typeof body?.startFrom === 'string' && isUuid(body.startFrom))) throw badRequest('startFrom must be a storefront id');
+    if (body.startFrom === productId) throw badRequest('startFrom must be another storefront');
+    const id = await versions.copyProduction(productId, await versions.productionSource(body.startFrom));
+    return c.json({ id }, 201);
+  });
+
   // A product's API keys: the same operations as /v1/keys, for any product. Unlike /v1/keys, the
   // last active key can be revoked (to cut a storefront off).
   app.get('/products/:productId/keys', async (c) => c.json(await listApiKeys(pool, await product(c))));

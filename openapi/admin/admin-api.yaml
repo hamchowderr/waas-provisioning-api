@@ -592,12 +592,49 @@ paths:
     put:
       operationId: adminSetProductionVersion
       summary: Make a version the product's production version (as setProductionVersion)
+      description: The product's ready stores on other versions move to it, unless moveStores is false.
+      parameters:
+        - { name: moveStores, in: query, schema: { type: string, enum: ['true', 'false'], default: 'true' } }
       responses:
         '200':
           description: Same response as PUT /v1/versions/production
           content:
             application/json:
               schema: { $ref: '../waas-provisioning-api.yaml#/components/schemas/SetProductionVersionCommandResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/versions/from-production:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    post:
+      operationId: adminCopyProductionVersion
+      summary: Catch a product up with another storefront's production version
+      description: >-
+        A copy of the production version and newest template of startFrom becomes this product's production version
+        (as a new product made with startFrom gets). It builds like any version; new stores wait until it is Done.
+        The product's existing stores stay on their versions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [startFrom]
+              properties:
+                startFrom: { type: string, format: uuid, description: The storefront whose production version is copied }
+              additionalProperties: false
+      responses:
+        '201':
+          description: The new version, building
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string, format: uuid }
+                additionalProperties: false
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

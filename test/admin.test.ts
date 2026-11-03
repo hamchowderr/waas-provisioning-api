@@ -22,7 +22,7 @@ async function admin(method: string, path: string, expected = 200, body?: unknow
   const res = await t.call(method, path, { auth: ADMIN, body });
   expect(res.status, `${method} ${path}`).toBe(expected);
   const text = await res.text();
-  const opPath = Object.keys(adminSpec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path.split('?')[0]!))!;
+  const opPath = Object.keys(adminSpec.paths).find((p) => adminSpec.paths[p][method.toLowerCase()] && new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path.split('?')[0]!))!;
   const responses = adminSpec.paths[opPath][method.toLowerCase()].responses[String(expected)];
   const media = responses.$ref ? adminSpec.components.responses[responses.$ref.split('/').pop()].content : responses.content;
   if (!media) {
@@ -417,4 +417,25 @@ describe('admin versions and templates (any product)', () => {
       expect((await t.call('GET', '/admin/products', { auth })).status).toBe(403);
     }
   });
+});
+
+describe('catching a product up with another storefront', () => {
+  it('copies the production version of startFrom as its own production version', async () => {
+    const made = await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Catch-up storefront' } });
+    expect(made.status).toBe(201);
+    const { product } = (await made.json()) as { product: { id: string } };
+    const base = `/admin/products/${product.id}`;
+    const { id } = await admin('POST', `${base}/versions/from-production`, 201, { startFrom: t.productId });
+    const [source] = (await (await t.call('GET', '/v1/versions')).json()).filter((v: any) => v.isProduction);
+    await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${id}`))[0]?.statusCode === Status.Done);
+    expect(await admin('GET', `${base}/versions`)).toEqual([expect.objectContaining({ id, name: source.name, isProduction: true })]);
+
+    // Again: the newer copy is production, the earlier one is kept but no longer production.
+    const again = await admin('POST', `${base}/versions/from-production`, 201, { startFrom: t.productId });
+    const versions = await admin('GET', `${base}/versions`);
+    expect(versions.filter((v: any) => v.isProduction).map((v: any) => v.id)).toEqual([again.id]);
+
+    await admin('POST', `${base}/versions/from-production`, 400, { startFrom: product.id });
+    await admin('POST', `${base}/versions/from-production`, 400, { startFrom: 'nope' });
+  }, 60000);
 });

@@ -215,14 +215,17 @@ export function versionService(deps: Deps) {
   }
 
   /**
-   * Gives a new product a copy of that version and template, as its production version, so stores can
-   * be made at once (the dashboard's New seller). It builds like any version; until it is Done, a new
-   * store is refused as for any version still building.
+   * Gives a product a copy of that version and template, as its production version, so stores can
+   * be made at once (the dashboard's New seller), or so an existing one catches up with its source. It
+   * builds like any version; until it is Done, a new store is refused as for any version still building.
+   * The product's existing stores stay where they are.
    */
   async function copyProduction(productId: string, source: Awaited<ReturnType<typeof productionSource>>) {
     const id = randomUUID();
     const domain = `${dnsSafeLabel(`${slug(source.name)}-${id.slice(0, 8)}`, 'v')}.${config.versionsDomain}`;
     await withTransaction(pool, async (client) => {
+      // A product that has a production version already (catching up with its source) gets the copy instead.
+      await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
       await client.query(
         `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, is_production, status)
          VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
