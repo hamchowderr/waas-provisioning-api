@@ -74,12 +74,17 @@ export function adminWebhookRoutes(deps: Deps) {
   app.get('/', async (c) => {
     const productId = scopedProduct(c) ?? uuidQuery(c, 'productId') ?? null;
     const { rows } = await pool.query(
-      `SELECT w.*, p.name AS product_name,
-              (SELECT count(*)::int FROM webhook_deliveries d WHERE d.endpoint_id = w.id AND d.date_created > now() - interval '24 hours') AS sent_24h,
-              (SELECT count(*)::int FROM webhook_deliveries d WHERE d.endpoint_id = w.id AND d.date_created > now() - interval '24 hours' AND d.status = 'failed') AS failed_24h,
+      // Each figure reads only what it needs through an index (migration webhook-endpoint-stats),
+      // so the list stays quick across every storefront however many deliveries there are.
+      `SELECT w.*, p.name AS product_name, day.sent_24h, day.failed_24h,
               (SELECT count(*)::int FROM webhook_deliveries d WHERE d.endpoint_id = w.id AND d.status = 'pending') AS pending,
-              (SELECT max(d.last_attempt_at) FROM webhook_deliveries d WHERE d.endpoint_id = w.id) AS last_attempt_at
+              (SELECT d.last_attempt_at FROM webhook_deliveries d
+                WHERE d.endpoint_id = w.id AND d.last_attempt_at IS NOT NULL
+                ORDER BY d.last_attempt_at DESC NULLS LAST LIMIT 1) AS last_attempt_at
          FROM webhook_endpoints w JOIN products p ON p.id = w.product_id
+        CROSS JOIN LATERAL (
+              SELECT count(*)::int AS sent_24h, (count(*) FILTER (WHERE d.status = 'failed'))::int AS failed_24h
+                FROM webhook_deliveries d WHERE d.endpoint_id = w.id AND d.date_created > now() - interval '24 hours') day
         WHERE ($1::uuid IS NULL OR w.product_id = $1) ORDER BY p.name, w.date_created`,
       [productId],
     );
