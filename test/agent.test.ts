@@ -933,6 +933,27 @@ esac
     expect(agent({ ...release('anypress-host', '2.11.1'), replaces: ['waas-host'] })).toEqual({ from: '2.11.1', unchanged: true });
   });
 
+  it('switches the plugin on when its folder is already there but the list still names the old one', () => {
+    // A storefront moved onto a version with AnyPress Host: the old folder is gone, its entry isn't.
+    folder(plugins(), 'anypress-host', '2.11.1');
+    const result = agent({
+      ...release('anypress-host', '2.11.1'),
+      url: 'file:///nowhere.zip',
+      replaces: ['waas-host', 'wpcs-waas-host'],
+    });
+    expect(result).toEqual({ from: '2.11.1', unchanged: false });
+    expect(active()).toEqual(['fluent-cart/fluent-cart.php', 'anypress-host/anypress-host.php']);
+    expect(agent({ ...release('anypress-host', '2.11.1'), replaces: ['waas-host'] })).toEqual({ from: '2.11.1', unchanged: true });
+  });
+
+  it('puts the list back when WordPress does not load after switching the plugin on', () => {
+    folder(plugins(), 'anypress-host', '2.11.1', { broken: true });
+    const result = agent({ ...release('anypress-host', '2.11.1'), replaces: ['waas-host'] });
+    expect(result.error).toContain('WordPress did not load with it');
+    expect(readdirSync(plugins())).toEqual(['anypress-host']);
+    expect(active()).toEqual(['fluent-cart/fluent-cart.php', 'waas-host/index.php']);
+  });
+
   it('updates a plugin in its own folder', () => {
     folder(plugins(), 'anypress-host', '2.11.0');
     writeFileSync(activeFile(), JSON.stringify(['anypress-host/anypress-host.php']));

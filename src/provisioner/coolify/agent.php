@@ -1818,7 +1818,8 @@ switch ($op) {
         // A signed release of one of the platform's plugins, pushed by the API (src/hostupdates.ts), with no WP-Cron
         // or update check involved. The zip replaces the plugin's folder; `replaces` names older folders of the same
         // plugin (from before a rename), which are switched off without running their code and removed, the new
-        // folder taking over their place in active_plugins. Everything replaced is kept aside until WordPress loads
+        // folder taking over their place in active_plugins (also when the new folder is already in place and only
+        // the list still names an old one). Everything replaced is kept aside until WordPress loads
         // with the new copy; if it doesn't, the store gets back what it had and this fails.
         $slug = (string) ($args['slug'] ?? '');
         preg_match('/^[a-z0-9][a-z0-9-]{0,99}$/', $slug) || fail("bad plugin slug $slug");
@@ -1832,44 +1833,50 @@ switch ($op) {
         $dir = CONTENT . '/plugins';
         $old = array_values(array_filter($replaces, fn ($s) => is_dir("$dir/$s")));
         $current = is_dir("$dir/$slug") ? plugin_version($slug) : null;
-        if ($current === $version && !$old) done(['from' => $current, 'unchanged' => true]);
         $from = $current ?? ($old ? plugin_version($old[0]) : null);
-
-        $tmp = tempDir();
-        curlTransfer((string) ($args['url'] ?? ''), "$tmp/plugin.zip", false);
-        hash_file('sha256', "$tmp/plugin.zip") === ($args['sha256'] ?? '') || fail("$slug: the zip does not match its SHA-256");
-        mkdir("$tmp/x");
-        extract_archive("$tmp/plugin.zip", "$tmp/x");
-        is_dir("$tmp/x/$slug") || fail("$slug: the zip has no $slug folder");
-        ($got = plugin_version($slug, "$tmp/x")) === $version || fail("$slug: the zip holds version " . ($got ?? 'none') . ", not $version");
 
         $activeJson = wpMayFail('option', 'get', 'active_plugins', '--format=json');
         $activeJson !== null || fail('cannot read the active plugins');
         $active = array_values(array_filter((array) json_decode($activeJson, true), 'is_string'));
         $isOn = fn (string $s) => (bool) array_filter($active, fn ($f) => str_starts_with($f, "$s/"));
-        $on = $isOn($slug) || array_filter($old, $isOn);
+        // On when it or any older copy is listed, even one whose folder is already gone (a store moved onto a
+        // version with the new folder keeps the old entry until something rewrites it).
+        $on = $isOn($slug) || array_filter($replaces, $isOn);
+        $stale = (bool) array_filter($replaces, $isOn);
+        $installed = $current === $version && !$old;
+        if ($installed && !$stale) done(['from' => $current, 'unchanged' => true]);
 
-        // Aside inside wp-content/plugins (one rename, same disk); WordPress skips folders starting with a dot.
         $aside = [];
-        foreach (array_merge(is_dir("$dir/$slug") ? [$slug] : [], $old) as $s) {
-            $to = "$dir/.waas-aside-$s";
-            if (is_dir($to)) run('rm -rf ' . escapeshellarg($to));
-            rename("$dir/$s", $to) || fail("cannot move $s aside");
-            $aside[$s] = $to;
-        }
-        $putBack = function () use ($dir, $slug, &$aside, $activeJson) {
-            run('rm -rf ' . escapeshellarg("$dir/$slug"), true);
+        $putBack = function () use ($dir, $slug, &$aside, $activeJson, $installed) {
+            if (!$installed) run('rm -rf ' . escapeshellarg("$dir/$slug"), true);
             foreach ($aside as $s => $from) rename($from, "$dir/$s");
             wpMayFail('option', 'update', 'active_plugins', $activeJson, '--format=json');
         };
-        run('cp -a ' . escapeshellarg("$tmp/x/$slug") . ' ' . escapeshellarg("$dir/"), true);
+        if (!$installed) {
+            $tmp = tempDir();
+            curlTransfer((string) ($args['url'] ?? ''), "$tmp/plugin.zip", false);
+            hash_file('sha256', "$tmp/plugin.zip") === ($args['sha256'] ?? '') || fail("$slug: the zip does not match its SHA-256");
+            mkdir("$tmp/x");
+            extract_archive("$tmp/plugin.zip", "$tmp/x");
+            is_dir("$tmp/x/$slug") || fail("$slug: the zip has no $slug folder");
+            ($got = plugin_version($slug, "$tmp/x")) === $version || fail("$slug: the zip holds version " . ($got ?? 'none') . ", not $version");
+
+            // Aside inside wp-content/plugins (one rename, same disk); WordPress skips folders starting with a dot.
+            foreach (array_merge(is_dir("$dir/$slug") ? [$slug] : [], $old) as $s) {
+                $to = "$dir/.waas-aside-$s";
+                if (is_dir($to)) run('rm -rf ' . escapeshellarg($to));
+                rename("$dir/$s", $to) || fail("cannot move $s aside");
+                $aside[$s] = $to;
+            }
+            run('cp -a ' . escapeshellarg("$tmp/x/$slug") . ' ' . escapeshellarg("$dir/"), true);
+        }
         $main = is_dir("$dir/$slug") ? plugin_main_file($slug) : null;
         if (!$main) {
             $putBack();
             fail("$slug: cannot put the new copy in place");
         }
-        if ($old || ($on && !in_array($main, $active, true))) {
-            $next = array_values(array_filter($active, fn ($f) => !str_starts_with($f, "$slug/") && !array_filter($old, fn ($s) => str_starts_with($f, "$s/"))));
+        if ($stale || $old || ($on && !in_array($main, $active, true))) {
+            $next = array_values(array_filter($active, fn ($f) => !str_starts_with($f, "$slug/") && !array_filter($replaces, fn ($s) => str_starts_with($f, "$s/"))));
             if ($on) $next[] = $main;
             if (wpMayFail('option', 'update', 'active_plugins', json_encode($next), '--format=json') === null) {
                 $putBack();

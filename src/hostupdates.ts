@@ -1,5 +1,6 @@
 import type { PgBoss } from 'pg-boss';
 import { withTransaction, type Pool } from './db.ts';
+import type { Size } from './plans.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
 import { channelKey, manifestKey, parseManifest, type PluginSlug, type ReleaseStore } from './releases.ts';
@@ -74,9 +75,15 @@ export async function queueHostUpdates({ pool, boss, releases, storefrontProduct
  * startup, src/constantnames.ts) always finishes before AnyPress Host, which reads only those, replaces the old copy.
  */
 export async function pushHostUpdate(pool: Pool, provisioner: Provisioner, releases: ReleaseStore | undefined, tenantId: string, version: string) {
-  const { rowCount } = await pool.query('SELECT 1 FROM host_updates WHERE tenant_id = $1 AND version = $2', [tenantId, version]);
+  const { rows } = await pool.query<{ size: Size }>(
+    'SELECT t.size FROM host_updates h JOIN tenants t ON t.id = h.tenant_id WHERE h.tenant_id = $1 AND h.version = $2',
+    [tenantId, version],
+  );
   // Deleted, moved (which clears the row) or given a newer release since this was queued: nothing to do.
-  if (!rowCount) return;
+  if (!rows[0]) return;
+  // The current store agent first: one from before a fix to its update-plugin would otherwise do the old thing.
+  // A store already on the current setup costs two lookups (Provisioner.ensureStoreSetup).
+  await provisioner.ensureStoreSetup({ storeId: tenantId, size: rows[0].size });
   if (!releases) throw new Error('Plugin releases are not configured (RELEASES_S3_BUCKET)');
   const manifest = parseManifest(await releases.getJson(manifestKey(HOST_SLUG, version)), HOST_SLUG, version);
   if (!manifest) throw new Error(`Release ${version} of ${HOST_SLUG} not found`);
