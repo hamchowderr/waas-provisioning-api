@@ -60,11 +60,20 @@ function singletonKey(data: JobData): string {
   return 'versionId' in data ? `version:${data.versionId}` : `tenant:${data.tenantId}`;
 }
 
+/**
+ * How often a running job must check in. The worker does it on its own (every half of this); when
+ * the API stops mid-job (a redeploy, a crash) the check-ins stop, and pg-boss's supervisor (every
+ * minute) hands the job back for its next try. Without it the job sat "active", and its store
+ * Pending, until expireInSeconds ran out an hour later.
+ */
+export const HEARTBEAT_SECONDS = 60;
+
 export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } = {}): Promise<PgBoss> {
   const boss = new PgBoss({ connectionString: databaseUrl, schema: 'pgboss' });
   boss.on('error', (err) => console.error('pg-boss:', err));
   await boss.start();
-  if (!(await boss.getQueue(QUEUE))) {
+  const queue = await boss.getQueue(QUEUE);
+  if (!queue) {
     await boss.createQueue(QUEUE, {
       policy: 'key_strict_fifo',
       retryLimit: 3,
@@ -72,7 +81,17 @@ export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } 
       retryBackoff: true,
       expireInSeconds: 3600,
       deleteAfterSeconds: 7 * 24 * 3600,
+      heartbeatSeconds: HEARTBEAT_SECONDS,
     });
+  } else if (queue.heartbeatSeconds !== HEARTBEAT_SECONDS) {
+    // Queues made before the heartbeat: jobs take it from the queue when they are sent, so the
+    // ones already waiting get it here too. Running ones are left alone: an older API may still
+    // be working on them while this one starts, and it does not check in.
+    await boss.updateQueue(QUEUE, { heartbeatSeconds: HEARTBEAT_SECONDS });
+    await boss.getDb().executeSql(
+      `UPDATE pgboss.job SET heartbeat_seconds = $2 WHERE name = $1 AND state IN ('created', 'retry') AND heartbeat_seconds IS NULL`,
+      [QUEUE, HEARTBEAT_SECONDS],
+    );
   }
   if (!(await boss.getQueue(MAINTENANCE_QUEUE))) await boss.createQueue(MAINTENANCE_QUEUE, { retryLimit: 2 });
   await boss.schedule(MAINTENANCE_QUEUE, '17 3 * * *');
