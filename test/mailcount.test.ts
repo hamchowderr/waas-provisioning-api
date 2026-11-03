@@ -111,7 +111,8 @@ describe("a store's own sender address", () => {
     ]);
     // An owner's own domain as the address: back to the base domain's mailbox, which is in use again.
     await admin('PUT', `/admin/tenants/${id}/domains/main`, { domainName: 'acme-shop.example.com' });
-    await waitFor(async () => t.provisioner.stores.get(id)!.mailFrom === `${base}@waas.example`);
+    // The job tells the store first and records the address after, so wait for both.
+    await waitFor(async () => t.provisioner.stores.get(id)!.mailFrom === `${base}@waas.example` && (await senders(id)).some((s) => s.in_use && s.address.startsWith(base)));
     expect(await senders(id)).toEqual([
       { address: `${base}@waas.example`, in_use: true },
       { address: 'acme@waas.example', in_use: false },
