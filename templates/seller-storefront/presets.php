@@ -238,6 +238,100 @@ $pages = [
     'contact' => ['Contact', anypress_hero('Get in touch', 'Ask about the plans, your website or anything else. We will get back to you by email.', [['See the plans', $plans]])
         . anypress_contact_form()],
 ];
+// Who we help: a landing page for each kind of customer the seller's Sales Kit plays to, under one hub page, each
+// written in the seller's own voice from the kit's pitch: their problem, the answer, three things they get, the
+// questions they ask, then the plans. Sellers delete the ones they don't sell to.
+$groups = [
+    'shops' => ['Shops and makers', 'Your own shop, on your own domain',
+        'Stop paying marketplace fees on every sale. Sell from a shop with your name on it, keep every customer and email them again whenever you like.',
+        [
+            ['Paid straight to you', 'Checkout uses your own payment account, so the money goes to you, not through a marketplace.'],
+            ['Your buyers, your list', 'Every buyer lands in your own email list, with follow-up emails already written.'],
+            ['Change it yourself', 'Products, shipping and discounts you can update any time, no developer needed.'],
+        ],
+        [
+            ['I already sell on a marketplace. Do I have to leave?', 'No. Keep it if it works for you. Your own shop sits beside it, and every customer who finds you there is yours to keep.'],
+            ['Can I use my own payment account?', 'Yes. You connect the payment account you already use, and payments go straight to it.'],
+        ]],
+    'specialty' => ['Specialty retailers', 'A shop that stays open',
+        'If big platforms have closed your shop or frozen your payments before, sell from your own site on your own domain, with the payment account you choose.',
+        [
+            ['Bring your own processor', 'Checkout works with the payment account you already have, including processors that accept your industry.'],
+            ['Age check and terms', 'Add an age check and your own terms pages, so the shop fits the rules you sell under.'],
+            ['Your customers stay yours', 'Your customer list and order history stay with you, with follow-up emails ready to go.'],
+        ],
+        [
+            ['Will my shop be closed without warning?', 'Your shop runs on your own site and domain, so it doesn\'t depend on a marketplace\'s product rules.'],
+            ['Which payment processors work?', 'You connect your own account. Ask us about yours before you start and we\'ll tell you how it connects.'],
+        ]],
+    'courses' => ['Course creators', 'Your courses, community and list in one place',
+        'Stop paying for several tools and giving a platform its cut. Teach on a site with your name on it, for one monthly price.',
+        [
+            ['Courses that track progress', 'Lessons, quizzes and progress for every student.'],
+            ['Your own community', 'A members\' area on your own site instead of a separate app.'],
+            ['Email from the same place', 'Write to students and new leads without another tool.'],
+        ],
+        [
+            ['Can I move my courses over?', 'Yes. We can help you move your first course in so you can see how it works.'],
+            ['Do you take a cut of my sales?', 'No. You pay one monthly price and keep what you sell.'],
+        ]],
+    'associations' => ['Chambers and associations', 'Members, events and dues on one site',
+        'Bring your member directory, event sign-ups and dues together on one site your staff can run, without a developer.',
+        [
+            ['Member directory', 'Profiles each member can keep up to date themselves.'],
+            ['Events with sign-up', 'Members sign up and pay for events online.'],
+            ['Dues paid online', 'Renewals paid by card, with reminder emails sent for you.'],
+        ],
+        [
+            ['Can we keep our current domain?', 'Yes. Your site moves to your own domain whenever you are ready.'],
+            ['Can our members get websites too?', 'Yes. You can offer every member business its own website as a member benefit.'],
+        ]],
+    'churches' => ['Churches', 'A church website that runs itself',
+        'Events, online giving, small groups and your weekly email on one simple site, and nobody at church has to run the tech.',
+        [
+            ['Online giving', 'One-time and recurring gifts, paid into your church\'s own account.'],
+            ['Events and groups', 'People sign up for events and small groups online.'],
+            ['Sermons and a weekly email', 'Post sermons and send your weekly email from the same place.'],
+        ],
+        [
+            ['Who keeps it up to date?', 'Anyone on your team can change the words and photos. We look after hosting, updates and backups.'],
+            ['Where does giving go?', 'Straight to your church\'s own payment account.'],
+        ]],
+    'locations' => ['Franchises and multi-location businesses', 'One look for every location',
+        'Give every location the same site, each with its own bookings, hours and domain, all managed from one place.',
+        [
+            ['New locations in minutes', 'Each new location starts from your brand\'s own design.'],
+            ['Bookings per location', 'Every location takes bookings with its own staff and hours.'],
+            ['One bill', 'One monthly bill for every location\'s website.'],
+        ],
+        [
+            ['Can each location change its own site?', 'Yes, within your brand. Locations update their hours, staff and offers; the look stays yours.'],
+            ['Can every location have its own domain?', 'Yes. Each site can use its own domain or a page of yours.'],
+        ]],
+    'agencies' => ['Agencies and freelancers', 'Websites for your clients, under your name',
+        'Say yes when clients ask for a website. We host, update and back them up; you keep the client and add a monthly line to every invoice.',
+        [
+            ['Live in minutes', 'Each client site starts from a ready-made design you make their own.'],
+            ['Looked after for you', 'Updates, security, backups and support are handled.'],
+            ['Your price on top', 'Charge your own price, so every site adds monthly income.'],
+        ],
+        [
+            ['Will my clients see your name?', 'No. Your clients deal with you, and the sites carry your brand.'],
+            ['Do I have to look after the sites?', 'No. Hosting, updates and backups are handled. You stay the person your client talks to.'],
+        ]],
+    'software' => ['Software companies', 'A website for every customer, from inside your product',
+        'When a customer signs up, their website is made automatically under your brand, and removed when they leave.',
+        [
+            ['Made on sign-up', 'Connect our API, Zapier, Make, n8n or HighLevel, and each new customer gets a site.'],
+            ['Tidy when they leave', 'Sites are suspended or removed automatically when a customer cancels.'],
+            ['One bill', 'One monthly bill for every customer\'s website.'],
+        ],
+        [
+            ['How do we connect it?', 'Through our API, or with Zapier, Make, n8n or HighLevel if you\'d rather not write code.'],
+            ['Whose name do customers see?', 'Yours. The websites carry your brand.'],
+        ]],
+];
+$hubSlug = 'who-we-help';
 kses_remove_filters();
 $made = [];
 foreach ($pages as $slug => [$title, $content]) {
@@ -256,6 +350,54 @@ foreach ($pages as $slug => [$title, $content]) {
     }
     $made[$slug] = $id;
 }
+$groupLink = static fn(string $slug): string => $url("$hubSlug/$slug");
+$hubCards = '';
+foreach ($groups as $slug => [$name, , $lead]) {
+    $hubCards .= '<!-- wp:group {"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"default"}} --><div class="wp-block-group">'
+        . '<!-- wp:separator {"className":"is-style-wide"} --><hr class="wp-block-separator has-alpha-channel-opacity is-style-wide"/><!-- /wp:separator -->'
+        . '<!-- wp:heading {"level":3,"fontSize":"medium"} --><h3 class="wp-block-heading has-medium-font-size"><a href="' . esc_url($groupLink($slug)) . '">' . esc_html($name) . '</a></h3><!-- /wp:heading -->'
+        . '<!-- wp:paragraph {"textColor":"secondary"} --><p class="has-secondary-color has-text-color">' . esc_html($lead) . '</p><!-- /wp:paragraph -->'
+        . '</div><!-- /wp:group -->';
+}
+$hub = wp_insert_post([
+    'post_type' => 'page',
+    'post_status' => 'publish',
+    'post_title' => 'Who we help',
+    'post_name' => $hubSlug,
+    'comment_status' => 'closed',
+    'ping_status' => 'closed',
+    'page_template' => 'page-no-title',
+    'post_content' => anypress_hero('Who we help', 'Websites made for the way your kind of business works. Pick yours to see what you get.', [['See the plans', $plans], ['Ask a question', $url('contact')]])
+        . anypress_section('Features', anypress_titles('Find your kind of business')
+            . '<!-- wp:group {"align":"wide","style":{"spacing":{"blockGap":"var:preset|spacing|x-large"}},"layout":{"type":"grid","columnCount":4,"minimumColumnWidth":"15rem"}} --><div class="wp-block-group alignwide">'
+            . $hubCards . '</div><!-- /wp:group -->')
+        . anypress_call_to_action('Don\'t see yours?', 'Tell us about your business and we\'ll say which plan fits.', [['Contact us', $url('contact')]]),
+], true);
+if (is_wp_error($hub)) {
+    throw new RuntimeException($hub->get_error_message());
+}
+$made[$hubSlug] = $hub;
+foreach ($groups as $slug => [$name, $title, $lead, $points, $asks]) {
+    $id = wp_insert_post([
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'post_title' => $name,
+        'post_name' => $slug,
+        'post_parent' => $hub,
+        'comment_status' => 'closed',
+        'ping_status' => 'closed',
+        'page_template' => 'page-no-title',
+        'post_content' => anypress_hero($title, $lead, [['See the plans', '#plans'], ['Talk to us', $url('contact')]])
+            . anypress_features('What you get', $points, 'tint')
+            . anypress_features('How it works', $steps)
+            . anypress_embed('Plans', '[fluent_cart_products per_page="12" paginator="numbers"]', 'plans', 'tint')
+            . anypress_faq('Questions', array_merge($asks, array_slice($questions, 2, 2)))
+            . anypress_call_to_action('Ready to get started?', 'Pick a plan, or tell us about your ' . ($slug === 'churches' ? 'church' : 'business') . ' and we\'ll help you choose.', [['See the plans', '#plans'], ['Talk to us', $url('contact')]]),
+    ], true);
+    if (is_wp_error($id)) {
+        throw new RuntimeException($id->get_error_message());
+    }
+}
 kses_init();
 update_option('show_on_front', 'page');
 update_option('page_on_front', $made['home']);
@@ -269,7 +411,7 @@ $menu = wp_insert_post([
     'post_type' => 'wp_navigation',
     'post_status' => 'publish',
     'post_title' => 'Main menu',
-    'post_content' => $link('How it works', $made['how-it-works']) . $link('Plans', $pageId('plans')) . $link('About', $made['about'])
+    'post_content' => $link('How it works', $made['how-it-works']) . $link('Who we help', $made[$hubSlug]) . $link('Plans', $pageId('plans')) . $link('About', $made['about'])
         . $link('Questions', $made['questions']) . $link('Contact', $made['contact']) . $link('Account', $pageId('account')),
 ], true);
 if (is_wp_error($menu)) {

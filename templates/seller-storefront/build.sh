@@ -180,6 +180,8 @@ EXPECTED=$(printf '%s\n' $SLUGS anypress-host | sort | tr '\n' ' ')
 [ "$(wp eval '$f = wpFluent()->table("fluentform_forms")->find((int) get_option("anypress_crm_contact_form")); echo $f && str_contains($f->form_fields, "\"customer_group\"") ? "ok" : "bad";')" = ok ] || { echo "contact form questions missing" >&2; exit 1; }
 [ "$(wp eval '$c = get_option("_fc_ab_cart_settings"); echo ($c["enabled"] ?? "") === "yes" && \FluentCart\App\Models\Coupon::where("code", "COMEBACK20")->exists() ? "ok" : "bad";')" = ok ] || { echo "abandoned checkout or coupon missing" >&2; exit 1; }
 [ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,how-it-works,questions,contact,plans --format=count)" = 6 ] || { echo "storefront pages missing" >&2; exit 1; }
+HUB=$(wp post list --post_type=page --name=who-we-help --field=ID)
+[ -n "$HUB" ] && [ "$(wp post list --post_type=page --post_status=publish --post_parent="$HUB" --format=count)" = 8 ] || { echo "Who we help pages missing" >&2; exit 1; }
 [ "$(wp eval 'echo var_export(WPF_STAGING_MODE, true), " ", wpf_get_option("crm"), wpf_get_option("connection_configured") ? " connected" : "";')" = "false fluentcrm connected" ] || { echo "WP Fusion must ship connected to FluentCRM and out of staging mode" >&2; exit 1; }
 # Nothing that connects the storefront may ship: each one gets its own when it is created.
 for OPTION in anypress_api_key anypress_api_secret anypress_api_base_url; do
