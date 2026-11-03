@@ -26,7 +26,7 @@ import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
-import { deleteTenant, goLiveTenant, resumeTenant, suspendTenant } from '../tenants.ts';
+import { deleteTenant, goLiveTenant, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
@@ -418,6 +418,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         statusCode: t.status,
         statusName: statusName(t.status),
         size: t.size,
+        siteTypes: siteTypesOf(t.php_constants),
         isSuspended: t.is_suspended,
         onHold: t.on_hold,
         latestBackupAt: iso(t.latest_backup_at),
@@ -465,6 +466,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       statusCode: t.status,
       statusName: statusName(t.status),
       size: t.size,
+      siteTypes: siteTypesOf(t.php_constants),
       keepsOwnCode: t.own_code,
       // A site moved in from another host (docs/site-imports.md): waiting while it has no startedAt.
       ...(moveIn && { moveIn }),

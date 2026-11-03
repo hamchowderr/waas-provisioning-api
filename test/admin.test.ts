@@ -98,7 +98,7 @@ describe('admin endpoints', () => {
   let shop: { id: string; externalId: string };
 
   it('overview: counts, health and products', async () => {
-    shop = await newTenant({ name: 'Admin Shop', customDomainName: 'admin-shop.example.com', wpOptions: { blogname: 'secret-ish value' } });
+    shop = await newTenant({ name: 'Admin Shop', customDomainName: 'admin-shop.example.com', wpOptions: { blogname: 'secret-ish value' }, phpConstants: { WAAS_TENANT_ROLES: { value: 'online-store', isPrivate: false } } });
     await newTenant({ name: 'Other Shop' }, otherAuth);
     const overview = await admin('GET', '/admin/overview');
     expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 }, restoreTest: { ok: true, status: 'off', lastPassedAt: null }, cpu: { ok: true, status: 'off' } });
@@ -117,7 +117,9 @@ describe('admin endpoints', () => {
     const other = await admin('GET', `/admin/tenants?productId=${otherProductId}`);
     expect(other.items.map((x: any) => x.name)).toEqual(['Other Shop']);
     const byDomain = await admin('GET', '/admin/tenants?q=ADMIN-SHOP.example');
-    expect(byDomain.items).toEqual([expect.objectContaining({ id: shop.id, mainDomain: 'admin-shop.example.com', domainCount: 2, productName: 'Example storefront' })]);
+    expect(byDomain.items).toEqual([expect.objectContaining({ id: shop.id, mainDomain: 'admin-shop.example.com', domainCount: 2, productName: 'Example storefront', siteTypes: ['online-store'] })]);
+    // A store the storefront sent no site type for has none.
+    expect(other.items[0].siteTypes).toEqual([]);
     expect((await admin('GET', '/admin/tenants?q=%25')).total).toBe(0); // % is literal, not a wildcard
     expect((await admin('GET', `/admin/tenants?status=${Status.Failed}`)).total).toBe(0);
     expect((await admin('GET', '/admin/tenants?suspended=false&pageSize=1&page=2')).items).toHaveLength(1);
@@ -132,6 +134,7 @@ describe('admin endpoints', () => {
     expect(detail.backups).toHaveLength(1);
     expect(detail.recentJobs.map((j: any) => j.type)).toEqual(expect.arrayContaining(['tenant.create', 'tenant.backup']));
     expect([...detail.wpOptionNames].sort()).toEqual(['admin_email', 'blogname']);
+    expect(detail.siteTypes).toEqual(['online-store']);
     expect(JSON.stringify(detail)).not.toContain('secret-ish value');
     await admin('GET', `/admin/tenants/${crypto.randomUUID()}`, 404);
   });
