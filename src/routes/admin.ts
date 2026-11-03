@@ -26,6 +26,7 @@ import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
+import { loadSetup } from '../setup.ts';
 import { deleteTenant, goLiveTenant, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
@@ -372,6 +373,19 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       jobs,
       products: products.rows.map((p) => ({ id: p.id, name: p.name, tenantCount: p.tenant_count })),
     });
+  });
+
+  // Setup checklists (src/setup.ts): every storefront and reseller for the platform admin; a signed-in customer gets
+  // their own storefront, or, on a reseller's team, the reseller and all its storefronts.
+  app.get('/setup', async (c) => {
+    const scoped = scopedProduct(c);
+    const resellerId = scoped ? (c.get('sessionCaller')?.active?.resellerId ?? null) : null;
+    const scope = !scoped
+      ? { productIds: null, resellerIds: null }
+      : resellerId
+        ? { productIds: [], resellerIds: [resellerId] }
+        : { productIds: [scoped], resellerIds: [] };
+    return c.json(await loadSetup(pool, config, scope));
   });
 
   app.get('/tenants', async (c) => {

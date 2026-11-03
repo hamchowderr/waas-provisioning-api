@@ -652,6 +652,26 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/setup:
+    get:
+      operationId: adminSetup
+      summary: Setup checklists of storefronts and resellers
+      description: |
+        Each storefront's and reseller's setup steps, ticked from data the API holds (docs/setup-checklists.md).
+        The platform admin gets every storefront and reseller. At /account/setup a signed-in customer gets their
+        own storefront, or, on a reseller's team, the reseller and all its storefronts. Steps the storefront's
+        WaaS Host has to report (plans on sale, payments on) read `not-reported` until it does.
+      responses:
+        '200':
+          description: The checklists
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storefronts, resellers]
+                properties:
+                  storefronts: { type: array, items: { $ref: '#/components/schemas/StorefrontSetup' } }
+                  resellers: { type: array, items: { $ref: '#/components/schemas/ResellerSetup' } }
   /admin/tenants:
     get:
       operationId: adminListTenants
@@ -2253,6 +2273,47 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    SetupStep:
+      type: object
+      required: [key, label, state, doneAt, detail]
+      properties:
+        key: { type: string, description: 'Stable id: approved, shop-connected, starting-site, plans, payments, own-domain, brand, team, self-building, first-store; billing, partner-key, storefronts-ready for resellers.' }
+        label: { type: string }
+        state: { type: string, enum: [done, todo, not-reported] }
+        doneAt: { type: string, format: date-time, nullable: true }
+        detail: { type: string, description: What was found, or what to do next. }
+    SetupChecklist:
+      type: object
+      required: [steps, done, total, lastProgressAt, stuck, next]
+      properties:
+        steps: { type: array, items: { $ref: '#/components/schemas/SetupStep' } }
+        done: { type: integer }
+        total: { type: integer }
+        lastProgressAt: { type: string, format: date-time, description: The newest step done, or when the account was made. }
+        stuck: { type: boolean, description: Not finished and no step done for 7 days. }
+        next: { type: string, nullable: true, description: The first step not done. }
+    StorefrontSetup:
+      allOf:
+        - $ref: '#/components/schemas/SetupChecklist'
+        - type: object
+          required: [productId, name, resellerId, shopSite]
+          properties:
+            productId: { type: string, format: uuid }
+            name: { type: string }
+            resellerId: { type: string, format: uuid, nullable: true }
+            shopSite: { type: string, nullable: true, description: The shop's address as its WaaS Host last reported it. }
+    ResellerSetup:
+      allOf:
+        - $ref: '#/components/schemas/SetupChecklist'
+        - type: object
+          required: [resellerId, name, storefronts]
+          properties:
+            resellerId: { type: string, format: uuid }
+            name: { type: string }
+            storefronts:
+              type: object
+              required: [ready, total]
+              properties: { ready: { type: integer }, total: { type: integer } }
     NewApplication:
       type: object
       required: [name, email, business, clients, expectedSites, wantsStorefront]
