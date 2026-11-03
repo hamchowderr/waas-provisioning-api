@@ -3,7 +3,7 @@ import type { AppEnv, Deps } from './app.ts';
 import { withTransaction, type Client, type Pool } from './db.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
-import { addApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey } from './keys.ts';
+import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey, wantsForever } from './keys.ts';
 import { SIZES, type Size } from './plans.ts';
 import { enqueue } from './queue.ts';
 import { invoiceReseller, lastMonth, listResellerInvoices, refreshResellerInvoices } from './resellerinvoices.ts';
@@ -378,7 +378,11 @@ export function accountResellerRoutes(deps: Deps, caller: (c: Context) => Promis
     c.header('Cache-Control', 'no-store');
     return c.json(result, 201);
   });
-  app.delete('/keys/:keyId', async (c) => c.json(await revokeApiKey(pool, { resellerId: (await mine(c, true)).id }, c.req.param('keyId')!)));
+  app.delete('/keys/:keyId', async (c) => {
+    const owner = { resellerId: (await mine(c, true)).id };
+    const id = c.req.param('keyId')!;
+    return c.json(wantsForever(c.req.query('forever')) ? await forgetApiKey(pool, owner, id) : await revokeApiKey(pool, owner, id));
+  });
 
   return app;
 }
@@ -498,7 +502,11 @@ export function adminResellerRoutes(deps: Deps) {
     c.header('Cache-Control', 'no-store');
     return c.json(result, 201);
   });
-  app.delete('/:id/keys/:keyId', async (c) => c.json(await revokeApiKey(pool, { resellerId: (await find(c)).id }, c.req.param('keyId')!)));
+  app.delete('/:id/keys/:keyId', async (c) => {
+    const owner = { resellerId: (await find(c)).id };
+    const id = c.req.param('keyId')!;
+    return c.json(wantsForever(c.req.query('forever')) ? await forgetApiKey(pool, owner, id) : await revokeApiKey(pool, owner, id));
+  });
 
   // Store-days per size between `from` and `to` (default: this calendar month, UTC), per storefront
   // and in total: what the wholesale bill is counted from. A store live all of a 30-day month is 30.

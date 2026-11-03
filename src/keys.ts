@@ -236,3 +236,21 @@ export function revokeApiKey(pool: Pool, keyOwner: KeyOwner, keyId: string, { ke
     return toInfo(rows[0]);
   });
 }
+
+/**
+ * Removes a revoked key from the list for good (?forever=true on the delete routes). Only a revoked key can go, so
+ * nothing that still signs in with it breaks; the API log keeps its calls, which then show no key name.
+ */
+export function forgetApiKey(pool: Pool, keyOwner: KeyOwner, keyId: string): Promise<ApiKeyInfo> {
+  return withTransaction(pool, async (client) => {
+    await lockOwner(client, keyOwner);
+    const key = await keyRow(client, keyOwner, keyId);
+    if (key.state !== 'revoked') throw conflict('Delete the key first: only a key that has stopped working can be removed from the list');
+    await client.query('DELETE FROM api_keys WHERE id = $1', [keyId]);
+    return toInfo(key);
+  });
+}
+
+/** The delete routes: ?forever=true removes a revoked key from the list, anything else revokes it. */
+export const wantsForever = (value: string | undefined) => value === 'true' || value === '1';
+
