@@ -455,7 +455,7 @@ describe('a site moved in is held until it goes live', () => {
     // The version's code, as code-export packs it.
     const code = join(fixtures, 'code');
     const files: Record<string, string> = {
-      'plugins/anypress-client/index.php': pluginFile('AnyPress Client'),
+      'plugins/anypress-client/anypress-client.php': pluginFile('AnyPress Client'),
       'plugins/anypress-client-data/roles.json': '{}',
       'plugins/fluent-crm/fluent-crm.php': pluginFile('FluentCRM'),
       'plugins/contact-form-7/wp-contact-form-7.php': `<?php\n/*\nPlugin Name: Contact Form 7\nVersion: 9.9.9\n*/\n`,

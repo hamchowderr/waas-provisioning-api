@@ -118,7 +118,7 @@ SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | so
 OFF_SLUGS=$(awk 'NF {print $1}' <<<"$OFF_PLUGINS$OFF_VENDORED" | sort | tr '\n' ' ')
 
 echo "== AnyPress Client from $PLUGINS_REPO"
-# Same steps as waas-plugins' scripts/build.sh; the directory must be anypress-client (anypress-client/index.php).
+# Same steps as waas-plugins' scripts/build.sh; the directory must be anypress-client (anypress-client/anypress-client.php).
 CLIENT=$SITE/wp-content/plugins/anypress-client
 cp -a "$PLUGINS_REPO/packages/anypress-client" "$CLIENT"
 rm -rf "$CLIENT/vendor" "$CLIENT/tests" "$CLIENT/phpunit.xml.dist" "$CLIENT/data"

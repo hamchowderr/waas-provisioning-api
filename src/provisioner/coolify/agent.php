@@ -402,14 +402,14 @@ const OLD_CLIENT_OPTIONS = [
 function old_client_moved(): bool
 {
     $active = json_decode((string) wpMayFail('option', 'get', 'active_plugins', '--format=json'), true);
-    if (!is_array($active) || !in_array('waas-client/waas-client.php', $active, true)) return false;
+    if (!is_array($active) || !in_array('waas-client/index.php', $active, true)) return false;
     if (!is_dir(CONTENT . '/plugins/anypress-client')) return false;
     $table = wp('db', 'prefix') . 'options';
     preg_match('/^[A-Za-z0-9_]+$/', $table) || fail('unexpected table prefix');
     foreach (OLD_CLIENT_OPTIONS as $name) {
         wp('db', 'query', "UPDATE IGNORE `$table` SET option_name = 'anypress_$name' WHERE option_name = 'waas_$name'");
     }
-    wp('option', 'update', 'active_plugins', json_encode(array_values(array_diff($active, ['waas-client/waas-client.php']))), '--format=json');
+    wp('option', 'update', 'active_plugins', json_encode(array_values(array_diff($active, ['waas-client/index.php']))), '--format=json');
     wpMayFail('plugin', 'activate', 'anypress-client');
     return true;
 }

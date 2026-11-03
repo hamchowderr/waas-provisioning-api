@@ -65,7 +65,7 @@ unzip -q "$WORK/downloads/$THEME.zip" -d "$SITE/wp-content/themes"
 unzip -q "$WORK/downloads/fluent-cart.zip" -d "$SITE/wp-content/plugins"
 
 echo "== AnyPress Client from $PLUGINS_REPO"
-# Same steps as waas-plugins' scripts/build.sh; the directory must be anypress-client (anypress-client/index.php).
+# Same steps as waas-plugins' scripts/build.sh; the directory must be anypress-client (anypress-client/anypress-client.php).
 CLIENT=$SITE/wp-content/plugins/anypress-client
 cp -a "$PLUGINS_REPO/packages/anypress-client" "$CLIENT"
 rm -rf "$CLIENT/vendor" "$CLIENT/tests" "$CLIENT/phpunit.xml.dist" "$CLIENT/data"

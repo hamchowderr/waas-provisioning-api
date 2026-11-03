@@ -825,7 +825,7 @@ esac
   const calls = () => (existsSync(join(root, 'calls.txt')) ? readFileSync(join(root, 'calls.txt'), 'utf8') : '');
 
   it('moves the old settings to their AnyPress names and switches AnyPress Client on', () => {
-    fakeWp(['waas-client/waas-client.php', 'fluent-crm/fluent-crm.php']);
+    fakeWp(['waas-client/index.php', 'fluent-crm/fluent-crm.php']);
     expect(run(code())).toContain('"client":true');
     const log = calls();
     expect(log).toContain("UPDATE IGNORE `wp_options` SET option_name = 'anypress_brand_name' WHERE option_name = 'waas_brand_name'");
