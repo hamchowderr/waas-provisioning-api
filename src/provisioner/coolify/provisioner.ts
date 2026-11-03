@@ -840,14 +840,18 @@ export class CoolifyProvisioner implements Provisioner {
 
   async moveStore({ storeId, targetVersionId, ownCode }: Parameters<Provisioner['moveStore']>[0]) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    const version = await this.versionMeta(targetVersionId);
     // The agent's files are not reinstalled here, so the store keeps its setup for ensureStoreSetup to finish.
-    // It keeps its size too.
+    // It keeps its size and its domains' website assistant router too.
     const current = parseMeta(store.description);
-    const size = current?.kind === 'store' ? current.size : DEFAULT_SIZE;
+    const want: StoreMeta = {
+      kind: 'store',
+      versionId: targetVersionId,
+      setup: current?.kind === 'store' ? current.setup : 1,
+      size: current?.kind === 'store' ? current.size : DEFAULT_SIZE,
+    };
     await this.coolify.updateService(store.uuid, {
-      description: formatMeta({ kind: 'store', versionId: targetVersionId, setup: current?.kind === 'store' ? current.setup : 1, size }),
-      docker_compose_raw: b64(renderCompose({ ...version, size })),
+      description: formatMeta(want),
+      docker_compose_raw: await this.storeCompose(storeId, want, store.uuid),
     });
     await this.restart(store.uuid);
     // A store with its own code takes only the version's WaaS Client and what it lacks.
