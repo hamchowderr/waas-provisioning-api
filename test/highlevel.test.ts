@@ -73,6 +73,16 @@ describe('signing in', () => {
     expect((await app('GET', '/v1/apps/account', undefined, { ...keyHeaders, 'X-AnyPress-Secret': 'wrong' })).status).toBe(403);
     expect(await (await app('GET', '/v1/apps/storefronts')).json()).toEqual({ options: [{ label: 'Example storefront', value: t.productId }] });
   });
+
+  it('says when the install sent no key, or something that is not a key', async () => {
+    const none = await app('POST', '/v1/apps/actions/create-site', { data: {} }, {});
+    expect(none.status).toBe(403);
+    expect(((await none.json()) as { message: string }).message).toMatch(/has no API key for this account/);
+    const pasted = await app('GET', '/v1/apps/account', undefined, { 'X-AnyPress-Key': '{{userData.api_key}}', 'X-AnyPress-Secret': 'x' });
+    expect(((await pasted.json()) as { message: string }).message).toMatch(/is not an AnyPress API key/);
+    const wrong = await app('GET', '/v1/apps/account', undefined, { ...keyHeaders, 'X-AnyPress-Secret': 'wrong' });
+    expect(((await wrong.json()) as { message: string }).message).toBe('Invalid API key or secret');
+  });
 });
 
 describe('actions', () => {

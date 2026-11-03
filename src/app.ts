@@ -156,7 +156,16 @@ export function createApp(deps: Deps) {
     // as the username (a pasted secret, say) is not.
     if (isUuid(key)) c.set('apiKeyId', key);
     const caller = key ? await authenticateKey(deps.pool, key, decoded.slice(colon + 1)) : null;
-    if (!caller) return c.json({ statusCode: 403, message: 'Invalid API key or secret' }, 403);
+    if (!caller) {
+      // HighLevel shows this message in the workflow's history: say what the install is missing.
+      if (!match && APP_PATHS.test(c.req.path)) {
+        const message = !appKey
+          ? 'The AnyPress app has no API key for this account. Reinstall it from inside the sub-account and enter your AnyPress API key and secret'
+          : 'The API key the AnyPress app was given is not an AnyPress API key. Reinstall the app and paste the key and secret from your AnyPress dashboard';
+        return c.json({ statusCode: 403, message: isUuid(key) ? 'Invalid API key or secret' : message }, 403);
+      }
+      return c.json({ statusCode: 403, message: 'Invalid API key or secret' }, 403);
+    }
     if (caller.productId) {
       // A storefront's own key ignores any productId query (the contract says so).
       c.set('productId', caller.productId);
