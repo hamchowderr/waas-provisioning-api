@@ -505,7 +505,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         run: ({ name, wordPressVersion, phpVersion, snapshotId }) =>
           client.versions.create({ name: need(name, 'name', 'create'), wordPressVersion: need(wordPressVersion, 'wordPressVersion', 'create'), phpVersion: need(phpVersion, 'phpVersion', 'create'), snapshotId }),
       },
-      set_production: { access: 'write', does: 'new stores are made on versionId unless they name another', run: ({ versionId }) => client.versions.setProduction(need(versionId, 'versionId', 'set_production')) },
+      set_production: { access: 'write', does: 'new stores are made on versionId unless they name another, and every ready store moves to it', run: ({ versionId }) => client.versions.setProduction(need(versionId, 'versionId', 'set_production')) },
       delete: { access: 'write', destructive: true, does: 'deletes versionId; stores must be moved off it first', run: ({ versionId }) => client.versions.delete(need(versionId, 'versionId', 'delete')) },
     },
   });

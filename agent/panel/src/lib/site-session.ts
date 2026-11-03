@@ -3,11 +3,9 @@
 // opened at; the browser never sees them. The chat routes send the access token on to the assistant
 // (lib/mastra-proxy.ts), which asks the API which website it is for.
 //
-// The panel answers on two kinds of address. On a website's own domain (https://mybakery.com/.assistant,
-// which the server's proxy sends here) it is part of that website: its cookies are first-party and its
-// sign-in returns to https://mybakery.com/.assistant/callback. On its own address (PANEL_URL) it keeps
-// the sign-in return of before (PANEL_URL/callback, which now redirects under BASE_PATH), so handoffs
-// made by older AnyPress Client and AnyPress Host versions still trade.
+// The panel answers on each website's own domain (https://mybakery.com/.assistant, which the server's
+// proxy sends here). There it is part of that website: its cookies are first-party and its sign-in
+// returns to https://mybakery.com/.assistant/callback.
 import { createHash, randomBytes } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { BASE_PATH } from './base-path';
@@ -23,27 +21,23 @@ type Address = {
   base: string;
   /** The OAuth return address on this address. */
   redirectUri: string;
-  /** Opened at PANEL_URL rather than at a website's own domain. */
-  own: boolean;
 };
 
 /**
  * The address this request reached the panel at. Behind the proxy the request's own URL is the
  * container's (http://localhost:3200), so it comes from the Host header, which the proxy only sends
- * here for the panel's own address and for the websites' domains.
+ * here for the websites' domains. Without a usable one (a direct request to the container), PANEL_URL.
  */
 export async function address(): Promise<Address> {
   const panel = new URL(PANEL_URL());
   const all = await headers();
   const host = (all.get('x-forwarded-host') ?? all.get('host') ?? '').split(',')[0]!.trim().toLowerCase();
-  if (!host || host === panel.host || !HOST.test(host)) {
-    return { base: `${panel.origin}${BASE_PATH}`, redirectUri: `${panel.origin}/callback`, own: true };
-  }
+  if (!host || !HOST.test(host)) return { base: `${panel.origin}${BASE_PATH}`, redirectUri: `${panel.origin}${BASE_PATH}/callback` };
   const forwarded = all.get('x-forwarded-proto')?.split(',')[0]?.trim();
   // Plain http only on this machine (the tests); a website's domain is always https.
   const scheme = LOOPBACK.test(host) ? (forwarded ?? 'http') : 'https';
   const base = `${scheme}://${host}${BASE_PATH}`;
-  return { base, redirectUri: `${base}/callback`, own: false };
+  return { base, redirectUri: `${base}/callback` };
 }
 
 /** A path on this panel as the owner's browser reaches it (under BASE_PATH). Only same-site paths. */
@@ -59,16 +53,8 @@ const EXPIRES = 'ap_expires';
 const CLIENT_COOKIE = 'ap_client';
 const PENDING = 'ap_signin';
 
-/**
- * On the panel's own address it is shown inside other sites' pages (the editor, the shop), so its
- * cookies are third-party there and must say so. On a website's own domain they are first-party, kept
- * to BASE_PATH so the website's WordPress never receives them.
- */
-async function cookieOptions() {
-  return (await address()).own
-    ? { httpOnly: true, secure: true, sameSite: 'none' as const, partitioned: true, path: '/' }
-    : { httpOnly: true, secure: true, sameSite: 'lax' as const, path: BASE_PATH };
-}
+/** First-party cookies on the website's own domain, kept to BASE_PATH so its WordPress never receives them. */
+const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: 'lax' as const, path: BASE_PATH };
 
 const b64url = (buffer: Buffer) => buffer.toString('base64url');
 
@@ -76,11 +62,10 @@ type Holder = { [key: symbol]: Map<string, Promise<string>> | undefined };
 const CLIENTS = Symbol.for('website-assistant-panel.oauth-clients');
 
 /**
- * The OAuth client id for one return address: PANEL_OAUTH_CLIENT_ID on the panel's own address, or
- * one registered with the API on first use. Each website's domain has a return address of its own.
+ * The OAuth client id for one return address, registered with the API on first use. Each website's
+ * domain has a return address of its own.
  */
 export function clientId(redirectUri: string): Promise<string> {
-  if (process.env.PANEL_OAUTH_CLIENT_ID && redirectUri === `${PANEL_URL()}/callback`) return Promise.resolve(process.env.PANEL_OAUTH_CLIENT_ID);
   const holder = globalThis as Holder;
   const clients = (holder[CLIENTS] ??= new Map());
   let client = clients.get(redirectUri);
@@ -131,7 +116,7 @@ async function pendingSignIn(back: string) {
   const state = b64url(randomBytes(16));
   const { redirectUri } = await address();
   const client = await clientId(redirectUri);
-  (await cookies()).set(PENDING, JSON.stringify({ verifier, state, back, redirectUri, client }), { ...(await cookieOptions()), maxAge: 15 * 60 });
+  (await cookies()).set(PENDING, JSON.stringify({ verifier, state, back, redirectUri, client }), { ...COOKIE_OPTIONS, maxAge: 15 * 60 });
   return { clientId: client, redirectUri, state, codeChallenge: b64url(createHash('sha256').update(verifier).digest()) };
 }
 
@@ -158,7 +143,7 @@ type Tokens = { access_token: string; refresh_token?: string; expires_in?: numbe
 /** Keeps the tokens, and the client they were issued to: a refresh must come from that same client. */
 async function keep(tokens: Tokens, client: string) {
   const jar = await cookies();
-  const options = { ...(await cookieOptions()), maxAge: 30 * 24 * 3600 };
+  const options = { ...COOKIE_OPTIONS, maxAge: 30 * 24 * 3600 };
   jar.set(ACCESS, tokens.access_token, options);
   if (tokens.refresh_token) jar.set(REFRESH, tokens.refresh_token, options);
   jar.set(EXPIRES, String(Date.now() + (tokens.expires_in ?? 3600) * 1000), options);
@@ -178,7 +163,7 @@ async function token(body: Record<string, string>, client: string): Promise<Toke
 export async function finishSignIn(params: URLSearchParams): Promise<{ back: string } | { error: string }> {
   const jar = await cookies();
   const pending = jar.get(PENDING)?.value;
-  jar.set(PENDING, '', { ...(await cookieOptions()), maxAge: 0 });
+  jar.set(PENDING, '', { ...COOKIE_OPTIONS, maxAge: 0 });
   if (!pending) return { error: 'This sign-in has expired. Start again.' };
   const { verifier, state, back, redirectUri, client } = JSON.parse(pending) as { verifier: string; state: string; back: string; redirectUri?: string; client?: string };
   if (!redirectUri || !client) return { error: 'This sign-in has expired. Start again.' };
@@ -216,6 +201,6 @@ export async function signedIn(): Promise<boolean> {
 
 export async function signOut() {
   const jar = await cookies();
-  const options = { ...(await cookieOptions()), maxAge: 0 };
+  const options = { ...COOKIE_OPTIONS, maxAge: 0 };
   for (const name of [ACCESS, REFRESH, EXPIRES, CLIENT_COOKIE]) jar.set(name, '', options);
 }

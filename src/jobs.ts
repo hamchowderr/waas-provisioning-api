@@ -37,6 +37,20 @@ export function createJobHandlers(
       onlyFrom === undefined ? [tenantId, status] : [tenantId, status, onlyFrom],
     );
 
+  /** Puts a store whose automatic move failed back on the version it was on. False when that fails too. */
+  const moveBack = async (tenantId: string, versionId: string) => {
+    try {
+      const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [tenantId]);
+      if (!rows[0]) return false;
+      await provisioner.moveStore({ storeId: tenantId, targetVersionId: versionId, ownCode: rows[0].own_code === true });
+      await setTenantStatus(tenantId, Status.Done, Status.Pending);
+      return true;
+    } catch (err) {
+      console.error(`store ${tenantId} could not be moved back to version ${versionId}: ${(err as Error).message}`);
+      return false;
+    }
+  };
+
   return {
     async run(data: JobData) {
       switch (data.type) {
@@ -218,8 +232,11 @@ export function createJobHandlers(
           await recordImportFailure(pool, data.tenantId, error instanceof Error ? error.message : String(error));
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
-        case 'tenant.update':
         case 'tenant.move':
+          if (data.rollbackVersionId && (await moveBack(data.tenantId, data.rollbackVersionId))) return;
+          await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
+        case 'tenant.update':
         case 'tenant.domains':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;

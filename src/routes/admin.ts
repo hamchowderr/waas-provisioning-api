@@ -26,6 +26,7 @@ import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
+import { loadSetup } from '../setup.ts';
 import { deleteTenant, goLiveTenant, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
@@ -372,6 +373,19 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       jobs,
       products: products.rows.map((p) => ({ id: p.id, name: p.name, tenantCount: p.tenant_count })),
     });
+  });
+
+  // Setup checklists (src/setup.ts): every storefront and reseller for the platform admin; a signed-in customer gets
+  // their own storefront, or, on a reseller's team, the reseller and all its storefronts.
+  app.get('/setup', async (c) => {
+    const scoped = scopedProduct(c);
+    const resellerId = scoped ? (c.get('sessionCaller')?.active?.resellerId ?? null) : null;
+    const scope = !scoped
+      ? { productIds: null, resellerIds: null }
+      : resellerId
+        ? { productIds: [], resellerIds: [resellerId] }
+        : { productIds: [scoped], resellerIds: [] };
+    return c.json(await loadSetup(pool, config, scope));
   });
 
   app.get('/tenants', async (c) => {
@@ -873,6 +887,17 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json({ product: (await products(productId))[0], key }, 201);
   });
 
+  // Catches a product up with another storefront's production version and template: a copy becomes its
+  // production version (a reseller's storefront started from AnyPress's, when AnyPress publishes a new one).
+  app.post('/products/:productId/versions/from-production', async (c) => {
+    const productId = await product(c);
+    const body = (await readJson(c)) as { startFrom?: unknown };
+    if (!(typeof body?.startFrom === 'string' && isUuid(body.startFrom))) throw badRequest('startFrom must be a storefront id');
+    if (body.startFrom === productId) throw badRequest('startFrom must be another storefront');
+    const id = await versions.copyProduction(productId, await versions.productionSource(body.startFrom));
+    return c.json({ id }, 201);
+  });
+
   // A product's API keys: the same operations as /v1/keys, for any product. Unlike /v1/keys, the
   // last active key can be revoked (to cut a storefront off).
   app.get('/products/:productId/keys', async (c) => c.json(await listApiKeys(pool, await product(c))));
@@ -943,7 +968,10 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     await versions.remove(await product(c), versionId(c));
     return c.body(null, 200);
   });
-  app.put('/products/:productId/versions/:id/production', async (c) => c.json(await versions.setProduction(await product(c), versionId(c))));
+  // ?moveStores=false leaves the product's stores on their versions; otherwise they all move to it.
+  app.put('/products/:productId/versions/:id/production', async (c) =>
+    c.json(await versions.setProduction(await product(c), versionId(c), { moveStores: c.req.query('moveStores') !== 'false' })),
+  );
 
   app.get('/products/:productId/basesnapshots', async (c) => {
     booleanQuery(c, 'onlyPartnerSpecific');

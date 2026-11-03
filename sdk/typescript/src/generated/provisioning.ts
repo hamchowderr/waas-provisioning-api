@@ -17,7 +17,7 @@ export interface paths {
          *
          *     Gets tenants for a product. Use the ExternalId or TenantId of a tenant to filter the list to a specific tenant
          *
-         *     **Storefront plugin:** the status checker calls `?externalId=` and reads the first item's `statusCode` (0 = still provisioning) and `domainName` (must equal the store's target domain before it moves on). `WPCSService.php:184`, `WPCSTenantStatusService.php:81`.
+         *     **Storefront plugin:** the status checker calls `?externalId=` and reads the first item's `statusCode` (0 = still provisioning) and `domainName` (must equal the store's target domain before it moves on). `ProvisioningApi.php`, `TenantStatusService.php`.
          */
         get: operations["listTenants"];
         /**
@@ -28,7 +28,7 @@ export interface paths {
          *
          *     **`size`:** a size other than the tenant's current one moves it to that size (its CPU, memory, storage and monthly email quota), restarting the store once; the tenant is Pending until it is done. Its current size changes nothing.
          *
-         *     **Storefront plugin:** `?externalId=` with `phpConstants` (updated roles) and/or `wpOptions`. `WPCSService.php:126-141`.
+         *     **Storefront plugin:** `?externalId=` with `phpConstants` (updated roles) and/or `wpOptions`. `ProvisioningApi.php`.
          */
         put: operations["updateTenantOptionsAndConstants"];
         /**
@@ -37,7 +37,7 @@ export interface paths {
          *
          *     Schedule the creation of a new tenant
          *
-         *     **Storefront plugin:** sends `name`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, optional `wordPressUserPassword`, `customDomainName`, `groupName`, and `phpConstants` (`WPCS_TENANT_ROLES`, `WPCS_PUBLIC_KEY`, `WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS`). Release 2.2.7 never sends `externalId`, so **the API must generate one** and return it; the fork sends one chosen when the signup is queued, and looks the store up by it before retrying. Reads `externalId`, `baseDomain`, `customDomain` from the response. `WPCSService.php:100-123`, `TenantsSubscriptionManager.php:68-96`.
+         *     **Storefront plugin:** sends `name`, `wordPressUserName`, `wordPressUserEmail`, `wordPressUserRole`, optional `wordPressUserPassword`, `customDomainName`, `groupName`, and `phpConstants` (`ANYPRESS_TENANT_ROLES`, `ANYPRESS_PUBLIC_KEY`, `ANYPRESS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS`). Release 2.2.7 never sends `externalId`, so **the API must generate one** and return it; the fork sends one chosen when the signup is queued, and looks the store up by it before retrying. Reads `externalId`, `baseDomain`, `customDomain` from the response. `ProvisioningApi.php`, `TenantsSubscriptionManager.php`.
          *
          *     **An `externalId` already in use** by a tenant of the product: a repeat of the create that made it (same `name`, and the same `customDomainName`, `versionId`, `snapshotId` and `groupName` where given) returns 200 with that tenant (`id`, `externalId`, `baseDomain`, and `customDomain` when one was asked for), so a client can safely retry a create whose answer it lost. Anything else returns 409 (`externalId <id> is already in use by another store`), as does a repeat while that tenant is being removed. The existing tenant is never changed and no second tenant is created, also when requests with the same `externalId` arrive at once. A `customDomainName` already used by another store returns 400 (`Domain <domain> is already in use`).
          */
@@ -48,7 +48,7 @@ export interface paths {
          *
          *     Remove the tenant
          *
-         *     **Storefront plugin:** release 2.2.7 sends the external ID as `tenantId` (bug H1 in the review). The fork will send `externalId`; the API should also look up `tenantId` values that aren't UUIDs as external IDs during the transition. `WPCSService.php:145`.
+         *     **Storefront plugin:** release 2.2.7 sends the external ID as `tenantId` (bug H1 in the review). The fork will send `externalId`; the API should also look up `tenantId` values that aren't UUIDs as external IDs during the transition. `ProvisioningApi.php`.
          */
         delete: operations["deleteTenant"];
         options?: never;
@@ -114,11 +114,11 @@ export interface paths {
          * Suspend tenant
          * @description Phase 1 (storefront plugin). Added for AnyPress.
          *
-         *     Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a shared "website unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/waas-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
+         *     Schedule the suspension of the tenant. A suspended tenant keeps its files, database and domains, but is not served: every domain answers with HTTP 503 and a shared "website unavailable" page (no redirect), WordPress cron does not run, and `/wp-json/anypress-client/v1/single_login/verify` is not reachable. `takeBackup` (default true) takes a full backup (files and database) before the tenant goes offline; its id is returned as `backupId`.
          *
          *     Idempotent: suspending a suspended tenant returns 200 and changes nothing (no second backup). Operations on one tenant run in the order they are received, so a later delete waits for the suspension and its backup to finish. Backups outlive the tenant: deleting a tenant does not delete its backups; they are kept for 90 days after the tenant is deleted.
          *
-         *     **Storefront plugin:** called when a subscription is cancelled or expires, before the deletion that follows after the grace period. Sends `{"takeBackup": true}`. `WPCSService::suspend_tenant`, `TenantsSubscriptionManager::suspend_tenant_when_subscription_expired`.
+         *     **Storefront plugin:** called when a subscription is cancelled or expires, before the deletion that follows after the grace period. Sends `{"takeBackup": true}`. `ProvisioningApi::suspend_tenant`, `TenantsSubscriptionManager::suspend_tenant_when_subscription_expired`.
          */
         post: operations["suspendTenant"];
         delete?: never;
@@ -144,7 +144,7 @@ export interface paths {
          *
          *     Idempotent: resuming a tenant that is not suspended returns 200 and changes nothing.
          *
-         *     **Storefront plugin:** called when a subscription becomes active again within the grace period. `WPCSService::resume_tenant`, `TenantsSubscriptionManager::create_tenant_when_subscription_created`.
+         *     **Storefront plugin:** called when a subscription becomes active again within the grace period. `ProvisioningApi::resume_tenant`, `TenantsSubscriptionManager::create_tenant_when_subscription_created`.
          */
         post: operations["resumeTenant"];
         delete?: never;
@@ -336,7 +336,7 @@ export interface paths {
          *
          *     Returns 400 when the tenant is not deleted, or when it has no kept backup (or `backupId` is not one of its Done backups). The storefront treats that 400 as "nothing to restore" only after List tenant backups returned no Done backup; it never creates a second store because of an error.
          *
-         *     **Storefront plugin:** called when a subscription becomes active again after its store was deleted at the end of the grace period. Lists the backups first, sends the newest Done `backupId`, and creates a fresh store only when there is none. `WPCSService::restore_tenant`, `TenantsSubscriptionManager::restore_or_recreate_deleted_tenant`.
+         *     **Storefront plugin:** called when a subscription becomes active again after its store was deleted at the end of the grace period. Lists the backups first, sends the newest Done `backupId`, and creates a fresh store only when there is none. `ProvisioningApi::restore_tenant`, `TenantsSubscriptionManager::restore_or_recreate_deleted_tenant`.
          */
         post: operations["restoreTenant"];
         delete?: never;
@@ -366,7 +366,7 @@ export interface paths {
          *
          *     Schedule a full backup (files and database) of the tenant. Works on a suspended tenant too. Poll List tenant backups for its `statusCode`. No body.
          *
-         *     **Storefront plugin:** called when a subscription that was already suspended on hold (suspended without a backup) is cancelled, before the grace period starts. `WPCSService::create_tenant_backup`.
+         *     **Storefront plugin:** called when a subscription that was already suspended on hold (suspended without a backup) is cancelled, before the grace period starts. `ProvisioningApi::create_tenant_backup`.
          */
         post: operations["createTenantBackup"];
         delete?: never;
@@ -396,7 +396,7 @@ export interface paths {
          *
          *     Schedule the addition of a domain to the tenant. For more info see our [domains section](docs/tenants/domains)
          *
-         *     **Storefront plugin:** `?externalId=` with `{domainName, setAsMainDomain: true}` when the customer sets their own domain. `WPCSService.php:150`.
+         *     **Storefront plugin:** `?externalId=` with `{domainName, setAsMainDomain: true}` when the customer sets their own domain. `ProvisioningApi.php`.
          */
         post: operations["addTenantDomain"];
         /**
@@ -408,7 +408,7 @@ export interface paths {
          *     _Note_: you cannot remove the Main domain as it acts as SiteUrl and Home in your WordPress deploy.
          *     _Note_: you cannot remove the domain that has IsBaseDomain set to true.
          *
-         *     **Storefront plugin:** `?externalId=&domainName=` to drop the old domain. `WPCSService.php:156-160`.
+         *     **Storefront plugin:** `?externalId=&domainName=` to drop the old domain. `ProvisioningApi.php`.
          */
         delete: operations["removeTenantDomain"];
         options?: never;
@@ -453,7 +453,7 @@ export interface paths {
          *
          *     See if a domain is available for a tenant at this point in time
          *
-         *     **Storefront plugin:** at checkout. HTTP 400 means 'invalid domain'; otherwise reads `available`. `WPCSService.php:162-176`.
+         *     **Storefront plugin:** at checkout. HTTP 400 means 'invalid domain'; otherwise reads `available`. `ProvisioningApi.php`.
          */
         get: operations["checkDomainAvailability"];
         put?: never;
@@ -477,7 +477,7 @@ export interface paths {
          *
          *     Gets a list of versions. Use the VersionName or VersionId of a version to filter the list to a specific version.
          *
-         *     **Storefront plugin:** (1) connection test: 200 = connected, **403 = invalid key or secret**, anything else = unreachable, so bad credentials must return 403, not 401. (2) Roles refresh: `GET /v1/versions/production/roles` (AnyPress Host 2.7.3+); older storefronts find the item with `isProduction: true` and fetch `https://{domain}/wp-content/plugins/waas-client-data/roles.json`. `WPCSService.php:47-79`, `RolesController.php:44-51`.
+         *     **Storefront plugin:** (1) connection test: 200 = connected, **403 = invalid key or secret**, anything else = unreachable, so bad credentials must return 403, not 401. (2) Roles refresh: `GET /v1/versions/production/roles` (AnyPress Host 2.7.3+); older storefronts find the item with `isProduction: true` and fetch `https://{domain}/wp-content/plugins/anypress-client-data/roles.json`. `ProvisioningApi.php`, `RolesController.php`.
          */
         get: operations["listVersions"];
         put?: never;
@@ -515,7 +515,7 @@ export interface paths {
         };
         /**
          * Get the production version's site types
-         * @description The site types (the `roles.json` in `waas-client-data`) of the product's production version, as a storefront loads them for its plans and its role choices. They are read from the version's saved code, because the version's own site is stopped once it is built. Storefronts on AnyPress Host 2.7.3 and later read them here first and fall back to `https://{domain}/wp-content/plugins/waas-client-data/roles.json`.
+         * @description The site types (the `roles.json` in `anypress-client-data`) of the product's production version, as a storefront loads them for its plans and its role choices. They are read from the version's saved code, because the version's own site is stopped once it is built. Storefronts on AnyPress Host 2.7.3 and later read them here first and fall back to `https://{domain}/wp-content/plugins/anypress-client-data/roles.json`.
          */
         get: operations["getProductionVersionRoles"];
         put?: never;
@@ -561,7 +561,7 @@ export interface paths {
          *
          *     Gets a list of snapshots. Use the `versionId` to filter the list for the snapshots for a specific version. Use the `snapshotId`, `snapshotName` or `groupName` to filter the list on specific snapshots or groups of snapshots.
          *
-         *     **Storefront plugin:** calls `?onlyProductionVersion=true` and collects the distinct `groupName` values for the product settings dropdown. `WPCSService.php:83-93`.
+         *     **Storefront plugin:** calls `?onlyProductionVersion=true` and collects the distinct `groupName` values for the product settings dropdown. `ProvisioningApi.php`.
          */
         get: operations["listSnapshots"];
         put?: never;
@@ -759,7 +759,7 @@ export interface paths {
         put?: never;
         /**
          * Get an upload link
-         * @description Called by the AnyPress Export plugin with an import code, no API key. Answers a link to `PUT` the site's archive to (a zip or gzipped tar holding `database.sql`, `wp-content/` and `waas.json`), valid for 12 hours, and the most it may hold.
+         * @description Called by the AnyPress Export plugin with an import code, no API key. Answers a link to `PUT` the site's archive to (a zip or gzipped tar holding `database.sql`, `wp-content/` and `anypress.json`), valid for 12 hours, and the most it may hold.
          */
         post: operations["getImportUpload"];
         delete?: never;
@@ -1174,12 +1174,12 @@ export interface components {
              */
             externalId?: string;
             /**
-             * @description The platform domain the tenant is available under. Bare hostname: no scheme, no trailing slash. The storefront plugin adds https:// itself (TenantsSubscriptionManager.php:91-96, SingleLogin.php:60, WPCSTenantStatusService.php:88, Notifications.php:84).
+             * @description The platform domain the tenant is available under. Bare hostname: no scheme, no trailing slash. The storefront plugin adds https:// itself (TenantsSubscriptionManager.php, SingleLogin.php, TenantStatusService.php, Notifications.php).
              * @example t-90b97b83.stores.waas.example
              */
             baseDomain?: string;
             /**
-             * @description The custom domain which was added to the Tenant, if any. Bare hostname: no scheme, no trailing slash. The storefront plugin adds https:// itself (TenantsSubscriptionManager.php:91-96, SingleLogin.php:60, WPCSTenantStatusService.php:88, Notifications.php:84). When the tenant has no custom domain, return null or omit the field. Never an empty string: the plugin uses `customDomain ?? baseDomain`, and PHP only falls back on null.
+             * @description The custom domain which was added to the Tenant, if any. Bare hostname: no scheme, no trailing slash. The storefront plugin adds https:// itself (TenantsSubscriptionManager.php, SingleLogin.php, TenantStatusService.php, Notifications.php). When the tenant has no custom domain, return null or omit the field. Never an empty string: the plugin uses `customDomain ?? baseDomain`, and PHP only falls back on null.
              * @example my-domain.com
              */
             customDomain?: string;
@@ -1637,7 +1637,7 @@ export interface components {
              */
             readonly dateChanged?: string;
             /**
-             * @description The main domain of the tenant. Bare hostname: no scheme, no trailing slash. The storefront plugin adds https:// itself (TenantsSubscriptionManager.php:91-96, SingleLogin.php:60, WPCSTenantStatusService.php:88, Notifications.php:84). Must equal, character for character, the domain returned at creation (customDomain, or baseDomain when there is none): same case, no trailing dot. The plugin compares with !== and waits until they match (WPCSTenantStatusService.php:81).
+             * @description The main domain of the tenant. Bare hostname: no scheme, no trailing slash. The storefront plugin adds https:// itself (TenantsSubscriptionManager.php, SingleLogin.php, TenantStatusService.php, Notifications.php). Must equal, character for character, the domain returned at creation (customDomain, or baseDomain when there is none): same case, no trailing dot. The plugin compares with !== and waits until they match (TenantStatusService.php).
              * @example my-domain.com
              */
             readonly domainName?: string;
@@ -1656,7 +1656,7 @@ export interface components {
              *     Done = 1
              *     Failed = 2
              *     Removing = 3
-             *     Must be a JSON integer, not a string: the plugin compares with === 0 (WPCSTenantStatusService.php:81).
+             *     Must be a JSON integer, not a string: the plugin compares with === 0 (TenantStatusService.php).
              * @example 1
              */
             readonly statusCode?: number;
@@ -1902,7 +1902,7 @@ export interface components {
              * @example 745e1ebd-d00e-4b6b-b6bc-bffd450c0942
              */
             readonly id?: string;
-            /** @description Whether the version is the current production version. Must be a JSON boolean: the plugin compares with === true (WPCSService.php:72). */
+            /** @description Whether the version is the current production version. Must be a JSON boolean: the plugin compares with === true (ProvisioningApi.php). */
             readonly isProduction?: boolean;
             /**
              * @description The name of the version
@@ -1981,6 +1981,11 @@ export interface components {
              * @description Id of the version that should be the Production version
              */
             versionId: string;
+            /**
+             * @description Move every ready store of the product on another version to this one (the default). A store whose move fails goes back to the version it was on, and the failure is reported like any failed job. Send false to leave the stores where they are.
+             * @default true
+             */
+            moveStores?: boolean;
         };
         RemoveBaseSnapshotCommandResult: {
             /** Format: uuid */
@@ -2026,6 +2031,8 @@ export interface components {
              * @description The Id of the Version
              */
             id?: string;
+            /** @description How many stores are moving to this version. */
+            movingStores?: number;
         };
         SetTenantMainDomainCommandResult: {
             /**
@@ -2083,7 +2090,7 @@ export interface components {
         SiteHandoffParams: {
             /**
              * Format: uri
-             * @description The website assistant's address (https), e.g. https://assistant.anypress.io
+             * @description The website assistant's address (https), e.g. https://example.com/.assistant
              */
             assistantUrl: string;
         };
@@ -3695,7 +3702,7 @@ export interface operations {
                 snapshotName?: string;
                 /** @description Specify a `groupName` to filter to a specific group of tenant snapshots. */
                 groupName?: string;
-                /** @description When true, only snapshots of the current Production version. Sent by the storefront plugin (WPCSService.php:85); missing from the original spec. */
+                /** @description When true, only snapshots of the current Production version. Sent by the storefront plugin (ProvisioningApi.php); missing from the original spec. */
                 onlyProductionVersion?: boolean;
                 /** @description Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2. */
                 productId?: string;

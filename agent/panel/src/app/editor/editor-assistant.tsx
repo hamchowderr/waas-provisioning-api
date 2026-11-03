@@ -12,19 +12,18 @@ import { withBase } from '@/lib/base-path';
 // Messages between this page and the editor that frames it (AnyPress Client's editor-assistant.js).
 // From the editor: { source: 'site-editor', type: 'view', view } with what it has open.
 // To the editor: { source: 'site-assistant', type: 'ready' | 'apply' | 'sign-in', ... }.
-// Only the signed-in website's own address is listened to and written to. AnyPress Client before 2.12
-// frames the panel's own address and uses the names of before (`older`); 2.12 understands both.
-const FROM_EDITOR = new Set(['site-editor', 'anypress-editor']);
-const toEditor = (older: boolean) => (older ? 'anypress-assistant' : 'site-assistant');
+// Only the signed-in website's own address is listened to and written to.
+const FROM_EDITOR = 'site-editor';
+const TO_EDITOR = 'site-assistant';
 
 const framed = () => typeof window !== 'undefined' && window.parent !== window;
 
 /** Signed out inside the editor: the editor gets a sign-in from the website and reloads this frame with it. */
-export function EditorSignIn({ error, older }: { error?: string; older: boolean }) {
+export function EditorSignIn({ error }: { error?: string }) {
   useEffect(() => {
     // Nothing private in it, so any parent may hear it; only the website's own editor can answer it.
-    if (framed() && !error) window.parent.postMessage({ source: toEditor(older), type: 'sign-in' }, '*');
-  }, [error, older]);
+    if (framed() && !error) window.parent.postMessage({ source: TO_EDITOR, type: 'sign-in' }, '*');
+  }, [error]);
   return (
     <main className="flex flex-1 items-center justify-center p-6 text-center">
       <p className="max-w-xs text-sm text-muted-foreground">
@@ -113,7 +112,7 @@ function MessagesLeft({ usage }: { usage: Usage | null }) {
 }
 
 /** The chat, sending the editor's view with each message and handing its editor changes back. */
-export function EditorAssistant({ older }: { older: boolean }) {
+export function EditorAssistant() {
   const [site, setSite] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selected>(null);
   const [phone, setPhone] = useState(false);
@@ -144,9 +143,9 @@ export function EditorAssistant({ older }: { older: boolean }) {
 
   const tell = useCallback(
     (message: Record<string, unknown>) => {
-      if (site && framed()) window.parent.postMessage({ source: toEditor(older), ...message }, site);
+      if (site && framed()) window.parent.postMessage({ source: TO_EDITOR, ...message }, site);
     },
-    [site, older],
+    [site],
   );
 
   useEffect(() => {
@@ -154,7 +153,7 @@ export function EditorAssistant({ older }: { older: boolean }) {
     const listen = (event: MessageEvent) => {
       if (event.source !== window.parent || event.origin !== site) return;
       const data = event.data as { source?: string; type?: string; view?: EditorView } | null;
-      if (data?.source && FROM_EDITOR.has(data.source) && data.type === 'view') {
+      if (data?.source === FROM_EDITOR && data.type === 'view') {
         view.current = data.view;
         const next = data.view?.selected ?? null;
         setSelected((now) => (now?.clientId === next?.clientId ? now : next ? { clientId: next.clientId, name: next.name } : null));
@@ -162,9 +161,9 @@ export function EditorAssistant({ older }: { older: boolean }) {
       }
     };
     window.addEventListener('message', listen);
-    window.parent.postMessage({ source: toEditor(older), type: 'ready' }, site);
+    window.parent.postMessage({ source: TO_EDITOR, type: 'ready' }, site);
     return () => window.removeEventListener('message', listen);
-  }, [site, older]);
+  }, [site]);
 
   // Ctrl + . (⌘ + . on a Mac) inside the chat opens and closes the panel, as it does in the editor.
   useEffect(() => {
