@@ -1,4 +1,5 @@
 import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebhook } from '../prospectcrm.ts';
+import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
 import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -1083,6 +1084,23 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     const input = crmInput(await c.req.json().catch(() => null));
     return c.json(await addProspectsToCrm(crmDeps, productId, input), 200, { 'Cache-Control': 'no-store' });
   });
+  // The seller's own mailbox for prospect emails from the storefront's FluentCRM (src/outreach.ts).
+  const mailboxDeps = {
+    pool,
+    secrets: deps.secrets,
+    storefront: storefrontOf,
+    queue: (tenantId: string, productId: string) =>
+      withTransaction(pool, (client) => enqueue(boss, client, { type: 'storefront.outreach-mailbox', tenantId, productId })).then(() => undefined),
+  };
+  app.get('/products/:productId/prospects/mailbox', async (c) =>
+    c.json(await getMailbox(pool, storefrontOf, await product(c)), 200, { 'Cache-Control': 'no-store' }),
+  );
+  app.put('/products/:productId/prospects/mailbox', async (c) => {
+    const productId = await product(c);
+    const mailbox = mailboxInput(await c.req.json().catch(() => null));
+    return c.json(await setMailbox(mailboxDeps, productId, mailbox), 202);
+  });
+  app.delete('/products/:productId/prospects/mailbox', async (c) => c.json(await setMailbox(mailboxDeps, await product(c), null), 202));
 
   // Plugin choices (docs/plugin-choices.md): wordpress.org or uploaded plugins a storefront adds to its stores, or switches off.
   app.get('/products/:productId/plugin-choices/search', async (c) => {

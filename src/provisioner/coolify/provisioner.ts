@@ -174,8 +174,10 @@ export interface StoreMeta {
  *    an older folder (a storefront moved onto a version that has AnyPress Host).
  * 16: the agent's crm-prospects operation, which writes prospect finder results into a storefront's FluentCRM
  *    (src/prospectcrm.ts).
+ * 17: the outreach mu-plugin (an email to a FluentCRM "Prospect" goes only through the seller's own mailbox, never the
+ *    relay) and the agent's outreach-mailbox operation (src/outreach.ts).
  */
-export const STORE_SETUP = 16;
+export const STORE_SETUP = 17;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -201,6 +203,8 @@ const keys = {
   import: (storeId: string) => `imports/${storeId}`,
   /** Businesses for a store's FluentCRM (addCrmProspects), read once by its agent. */
   crmBatch: (id: string) => `crm/${id}.json`,
+  /** The seller's mailbox for setOutreachMailbox, read once by the store's agent: it holds a password. */
+  mailbox: (id: string) => `crm/mailbox-${id}.json`,
 };
 
 /**
@@ -992,6 +996,23 @@ export class CoolifyProvisioner implements Provisioner {
       const out = await this.exec(store.uuid, 'crm-prospects', { url: this.s3.presign('GET', key, 900) });
       const failed = out.failed && typeof out.failed === 'object' && !Array.isArray(out.failed) ? (out.failed as Record<string, string>) : {};
       return { added: Number(out.added) || 0, updated: Number(out.updated) || 0, failed };
+    } finally {
+      await this.s3.delete(key).catch(() => undefined);
+    }
+  }
+
+  async setOutreachMailbox({ storeId, mailbox }: Parameters<Provisioner['setOutreachMailbox']>[0]) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    if (!mailbox) {
+      await this.exec(store.uuid, 'outreach-mailbox', { clear: true });
+      return { ok: true };
+    }
+    // Never in the task command, which Coolify keeps: a signed link the agent reads once, gone afterwards.
+    const key = keys.mailbox(randomBytes(8).toString('hex'));
+    await this.s3.put(key, new TextEncoder().encode(JSON.stringify(mailbox)), 'application/json');
+    try {
+      const out = await this.exec(store.uuid, 'outreach-mailbox', { url: this.s3.presign('GET', key, 300) });
+      return out.ok === true ? { ok: true } : { ok: false, error: typeof out.error === 'string' ? out.error : 'Could not sign in to the mailbox' };
     } finally {
       await this.s3.delete(key).catch(() => undefined);
     }

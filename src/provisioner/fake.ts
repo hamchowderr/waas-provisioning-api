@@ -1,4 +1,5 @@
 import type { Size } from '../plans.ts';
+import type { OutreachMailbox } from '../outreach.ts';
 import type { CrmContact } from '../prospectcrm.ts';
 import { ImportPartsError, storeFromAddress, type Brand, type CreateStoreInput, type MoveReport, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
@@ -18,6 +19,8 @@ interface FakeStore extends CreateStoreInput {
   plugins?: Record<string, string>;
   /** FluentCRM contacts written by addCrmProspects, by email. */
   crm?: Record<string, CrmContact>;
+  /** The seller's mailbox for prospect emails (setOutreachMailbox). */
+  outreachMailbox?: OutreachMailbox;
 }
 
 /**
@@ -353,6 +356,21 @@ export class FakeProvisioner implements Provisioner {
       crm[c.email] = { ...c, tags: [...new Set([...(crm[c.email]?.tags ?? []), ...c.tags])] };
     }
     return { added, updated, failed: {} };
+  }
+
+  /** Mail servers whose sign-in the fake refuses, as a real store's check would. */
+  readonly refusedMailHosts = new Set<string>();
+
+  async setOutreachMailbox({ storeId, mailbox }: Parameters<Provisioner['setOutreachMailbox']>[0]) {
+    this.check('setOutreachMailbox');
+    const store = this.store(storeId);
+    if (!mailbox) {
+      delete store.outreachMailbox;
+      return { ok: true };
+    }
+    if (this.refusedMailHosts.has(mailbox.host)) return { ok: false, error: '535 5.7.8 Username and Password not accepted' };
+    store.outreachMailbox = mailbox;
+    return { ok: true };
   }
 
   async deleteStore({ storeId }: { storeId: string }) {

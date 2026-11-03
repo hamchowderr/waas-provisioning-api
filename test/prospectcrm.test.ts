@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { createAjv } from '../src/openapi.ts';
+import { mailboxInput } from '../src/outreach.ts';
 import { crmInput, highLevelWebhook } from '../src/prospectcrm.ts';
 import { Status } from '../src/status.ts';
 import { OWNER, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
@@ -145,5 +146,64 @@ describe('sending prospects to a CRM', () => {
 
   it('is only for the platform admin and the storefront itself', async () => {
     expect((await t.call('GET', `/admin/products/${sellerProduct}/prospects/crm`)).status).toBe(403);
+    expect((await t.call('GET', `/admin/products/${sellerProduct}/prospects/mailbox`)).status).toBe(403);
+  });
+});
+
+describe("the seller's own mailbox for prospect emails", () => {
+  const BOX = { host: 'smtp.gmail.com', port: 587, user: 'Sam@Seller.example', pass: 'abcd efgh ijkl mnop', name: 'Sam at Seller', daily: 25 };
+  const mailbox = async () => (await t.call('GET', `/admin/products/${sellerProduct}/prospects/mailbox`, { auth: ADMIN })).json() as Promise<any>;
+  const put = (body: unknown) => t.call('PUT', `/admin/products/${sellerProduct}/prospects/mailbox`, { auth: ADMIN, body });
+  const onStore = () => t.provisioner.stores.get(storefrontId)!.outreachMailbox;
+
+  it('checks what it is given, and never takes the store relay', () => {
+    expect(mailboxInput(BOX)).toEqual({ host: 'smtp.gmail.com', port: 587, user: 'Sam@Seller.example', pass: 'abcd efgh ijkl mnop', from: 'sam@seller.example', name: 'Sam at Seller', daily: 25 });
+    expect(mailboxInput({ ...BOX, port: undefined, daily: undefined })).toMatchObject({ port: 587, daily: 30 });
+    for (const bad of [{ host: 'smtp.tosend.com' }, { host: 'not a host' }, { pass: '' }, { user: '' }, { daily: 500 }, { port: 0 }, { from: 'nope' }]) {
+      expect(() => mailboxInput({ ...BOX, ...bad })).toThrow();
+    }
+  });
+
+  it('starts with none', async () => {
+    const box = await mailbox();
+    valid('ProspectMailbox', box);
+    expect(box).toEqual({ state: 'none', error: null, mailbox: null, unavailable: null });
+  });
+
+  it('signs in from the storefront, keeps it there, and forgets the password', async () => {
+    const res = await put(BOX);
+    expect(res.status).toBe(202);
+    valid('ProspectMailbox', await res.json());
+    await waitFor(async () => (await mailbox()).state === 'connected');
+    const box = await mailbox();
+    valid('ProspectMailbox', box);
+    expect(box.mailbox).toEqual({ host: 'smtp.gmail.com', port: 587, user: 'Sam@Seller.example', from: 'sam@seller.example', name: 'Sam at Seller', daily: 25 });
+    expect(JSON.stringify(box)).not.toContain('abcd');
+    expect(onStore()).toMatchObject({ host: 'smtp.gmail.com', pass: 'abcd efgh ijkl mnop', daily: 25 });
+    const row = (await t.pool.query('SELECT mailbox, mailbox_pass FROM prospect_crm_settings WHERE product_id = $1', [sellerProduct])).rows[0];
+    expect(row.mailbox_pass).toBeNull();
+    expect(JSON.stringify(row.mailbox)).not.toContain('abcd');
+  });
+
+  it("says why when the mail server won't let it in, and keeps the old one off the store", async () => {
+    t.provisioner.refusedMailHosts.add('smtp.office365.com');
+    await put({ ...BOX, host: 'smtp.office365.com' });
+    await waitFor(async () => (await mailbox()).state === 'failed');
+    expect((await mailbox()).error).toMatch(/535/);
+    expect(onStore()!.host).toBe('smtp.gmail.com');
+  });
+
+  it('takes it off the storefront', async () => {
+    const res = await t.call('DELETE', `/admin/products/${sellerProduct}/prospects/mailbox`, { auth: ADMIN });
+    expect(res.status).toBe(202);
+    await waitFor(async () => (await mailbox()).state === 'none');
+    expect(onStore()).toBeUndefined();
+  });
+
+  it('is only for ready-made storefronts', async () => {
+    await t.pool.query("UPDATE tenants SET external_id = 'not-a-storefront' WHERE id = $1", [storefrontId]);
+    expect((await mailbox()).unavailable).toMatch(/ready-made/);
+    expect((await put(BOX)).status).toBe(400);
+    await t.pool.query('UPDATE tenants SET external_id = $2 WHERE id = $1', [storefrontId, `storefront-${sellerProduct}`]);
   });
 });

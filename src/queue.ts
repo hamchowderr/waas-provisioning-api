@@ -52,7 +52,9 @@ export type JobData =
   /** A ready-made storefront given this AnyPress Host release (src/hostupdates.ts). */
   | { type: 'storefront.update-host'; tenantId: string; version: string }
   /** Prospect finder results into the storefront's FluentCRM (src/prospectcrm.ts). */
-  | { type: 'storefront.crm-prospects'; tenantId: string; productId: string };
+  | { type: 'storefront.crm-prospects'; tenantId: string; productId: string }
+  /** The seller's own mailbox for prospect emails onto the storefront, or off it (src/outreach.ts). */
+  | { type: 'storefront.outreach-mailbox'; tenantId: string; productId: string };
 
 /** Daily housekeeping (purging expired backups), on its own queue so it never waits behind store work. */
 export const MAINTENANCE_QUEUE = 'maintenance';
