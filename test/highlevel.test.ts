@@ -190,6 +190,26 @@ describe('install and triggers', () => {
     expect((await t.pool.query("SELECT 1 FROM webhook_endpoints WHERE kind = 'highlevel'")).rowCount).toBe(0);
   });
 
+  it('moves a trigger to the new storefront when the same sub-account reinstalls with another key', async () => {
+    const other = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Old storefront') RETURNING id")).rows[0]!.id;
+    const old = await createApiKey(t.pool, other);
+    const oldHeaders = { 'X-AnyPress-Key': old.key, 'X-AnyPress-Secret': old.secret };
+    const subscribe = (headers: Record<string, string>, locationId: string, eventType = 'CREATED') =>
+      app('POST', '/v1/apps/triggers', {
+        triggerData: { id: 'trigger-moved', eventType, targetUrl: `${base}/workflows-marketplace/triggers/execute/abc/trigger-moved`, filters: [] },
+        extras: { locationId, companyId: 'company-1' },
+      }, headers);
+    expect((await subscribe(oldHeaders, 'loc-moved')).status).toBe(200);
+    // Another sub-account can't take it.
+    expect((await subscribe(keyHeaders, 'loc-stranger')).status).toBe(403);
+    // The same sub-account, now on this storefront, takes it over.
+    expect((await subscribe(keyHeaders, 'loc-moved', 'UPDATED')).status).toBe(200);
+    const { rows } = await t.pool.query("SELECT product_id FROM webhook_endpoints WHERE highlevel_trigger_id = 'trigger-moved'");
+    expect(rows).toEqual([{ product_id: t.productId }]);
+    expect((await subscribe(keyHeaders, 'loc-moved', 'DELETED')).status).toBe(200);
+    expect((await t.pool.query("SELECT 1 FROM webhook_endpoints WHERE highlevel_trigger_id = 'trigger-moved'")).rowCount).toBe(0);
+  });
+
   it('never sends the token anywhere but HighLevel', async () => {
     t.deps.config.webhooks!.highlevel = { clientId: 'client-1', clientSecret: 'client-secret', apiUrl: 'https://services.leadconnectorhq.example' };
     received = [];

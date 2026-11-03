@@ -322,7 +322,11 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     if (!id) throw badRequest('triggerData.id is required');
     const productId = await storefront(c, pool);
     if (trigger.eventType === 'DELETED') {
-      await pool.query("DELETE FROM webhook_endpoints WHERE kind = 'highlevel' AND highlevel_trigger_id = $1 AND product_id = $2", [id, productId]);
+      await pool.query(
+        `DELETE FROM webhook_endpoints WHERE kind = 'highlevel' AND highlevel_trigger_id = $1
+           AND (product_id = $2 OR (highlevel_location_id IS NOT NULL AND highlevel_location_id = $3))`,
+        [id, productId, text(body.extras?.locationId) || null],
+      );
       return c.json({ ok: true });
     }
     if (trigger.eventType !== 'CREATED' && trigger.eventType !== 'UPDATED') throw badRequest('triggerData.eventType must be CREATED, UPDATED or DELETED');
@@ -333,8 +337,10 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
        VALUES ($1, $2, $3, $4, $5, $6, 'highlevel', $7, $8, $9)
        ON CONFLICT (highlevel_trigger_id) WHERE kind = 'highlevel' DO UPDATE SET url = EXCLUDED.url, description = EXCLUDED.description,
          event_types = EXCLUDED.event_types, highlevel_location_id = EXCLUDED.highlevel_location_id, highlevel_company_id = EXCLUDED.highlevel_company_id,
-         date_changed = now()
+         product_id = EXCLUDED.product_id, api_key_id = EXCLUDED.api_key_id, date_changed = now()
        WHERE webhook_endpoints.product_id = EXCLUDED.product_id
+          -- The same sub-account, reinstalled with another storefront's key: the trigger moves with it.
+          OR (webhook_endpoints.highlevel_location_id IS NOT NULL AND webhook_endpoints.highlevel_location_id = EXCLUDED.highlevel_location_id)
        RETURNING id`,
       [
         productId,
