@@ -73,6 +73,20 @@ describe('the prospect finder', () => {
     expect((await usage()).used).toBe(1);
   });
 
+  it("says the finder isn't working when Google refuses the key, and logs Google's reason", async () => {
+    answer = () => Response.json({ error: { code: 403, status: 'PERMISSION_DENIED', message: 'Places API (New) has not been used in project 1 before or it is disabled.' } }, { status: 403 });
+    const logged: string[] = [];
+    const original = console.error;
+    console.error = (msg: unknown) => void logged.push(String(msg));
+    try {
+      expect((await search({ query: 'church', location: 'Dayton' })).status).toBe(503);
+    } finally {
+      console.error = original;
+    }
+    expect(logged.join('\n')).toContain('403 PERMISSION_DENIED: Places API (New) has not been used');
+    expect(logged.join('\n')).not.toContain('test-key');
+  });
+
   it('refuses a search once the month is used up', async () => {
     answer = () => Response.json({ places: [] });
     expect((await search({ query: 'church', location: 'Dayton' })).status).toBe(200);
