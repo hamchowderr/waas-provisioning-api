@@ -27,4 +27,4 @@ Every storefront and reseller has a setup checklist. Each step ticks itself from
 
 ## Progress
 
-Each checklist also returns `done`, `total`, `next` (the first step not done) and `lastProgressAt`, which is the newest step done, or when the account was made if none are. A checklist is `stuck` when it isn't finished and no step has been done for 7 days.
+Each checklist also returns `done`, `total`, `next` (the first step left to do, skipping steps WaaS Host hasn't reported yet unless nothing else is left) and `lastProgressAt`, which is the newest step done, or when the account was made if none are. A checklist is `stuck` when it isn't finished and no step has been done for 7 days.

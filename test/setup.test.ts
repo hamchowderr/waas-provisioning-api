@@ -90,6 +90,8 @@ describe('setup checklists', () => {
     expect(stepsOf(mine)['own-domain']).toBe('done');
     expect(mine.shopSite).toBe('https://shop.example.com');
     expect(mine.done).toBe(6);
+    // Plans and payments wait on WaaS Host, so the next step is the first one the seller can do.
+    expect(mine.next).toBe('Brand added');
   });
 
   it('marks a storefront stuck after a week with no progress', async () => {

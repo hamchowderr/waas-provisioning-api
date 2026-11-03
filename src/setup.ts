@@ -29,7 +29,7 @@ export interface Checklist {
   lastProgressAt: string;
   /** No step done for this many days and not finished. */
   stuck: boolean;
-  /** The first step not done, for a "next step" column. */
+  /** The first step to do, for a "next step" column; a step not reported yet only when nothing else is left. */
   next: string | null;
 }
 
@@ -67,7 +67,8 @@ function checklist(steps: SetupStep[], createdAt: Date | string, now = Date.now(
     total: steps.length,
     lastProgressAt: new Date(last).toISOString(),
     stuck: done < steps.length && now - last > STUCK_DAYS * 86_400_000,
-    next: steps.find((s) => s.state !== 'done')?.label ?? null,
+    // A step the shop hasn't reported can't be done here yet, so the next step is the first one that can.
+    next: (steps.find((s) => s.state === 'todo') ?? steps.find((s) => s.state !== 'done'))?.label ?? null,
   };
 }
 

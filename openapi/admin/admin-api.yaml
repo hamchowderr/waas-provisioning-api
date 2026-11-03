@@ -2291,7 +2291,7 @@ components:
         total: { type: integer }
         lastProgressAt: { type: string, format: date-time, description: The newest step done, or when the account was made. }
         stuck: { type: boolean, description: Not finished and no step done for 7 days. }
-        next: { type: string, nullable: true, description: The first step not done. }
+        next: { type: string, nullable: true, description: "The first step left to do; a step the shop hasn't reported yet only when nothing else is left." }
     StorefrontSetup:
       allOf:
         - $ref: '#/components/schemas/SetupChecklist'
