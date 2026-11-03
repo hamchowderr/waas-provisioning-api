@@ -116,7 +116,7 @@ add_action('init', function () {
 
 /*
  * The owner's details. The platform sets the site title and admin email from the purchase when it creates the
- * store, and `waas_store_owner` (JSON: name, country). The plugins keep their own copies of a business name and
+ * store, and `anypress_store_owner` (JSON: name, country). The plugins keep their own copies of a business name and
  * country, so fill those in once per plugin, the first time a real admin email is there and the plugin is on.
  * Owners change them later in each plugin's settings; a step never runs twice. Each plugin's email sender is the
  * provisioner's waas-mail mu-plugin's job: it follows the store's sending address.
@@ -164,7 +164,7 @@ add_action('init', function () {
         return;
     }
     $name = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
-    $owner = json_decode((string) get_option('waas_store_owner', ''), true);
+    $owner = json_decode((string) get_option('anypress_store_owner', ''), true);
     $country = is_array($owner) ? strtoupper(substr((string) ($owner['country'] ?? ''), 0, 2)) : '';
     $steps = [
         // FluentCart: store name and country (tax, address forms).

@@ -44,7 +44,7 @@ export const storefrontDns: { resolve4(name: string): Promise<string[]> } = { re
 async function customDomainRecords(storesDomain: string): Promise<Record<string, string>> {
   const host = `www.${storesDomain}`;
   const ips = await storefrontDns.resolve4(host).catch(() => [] as string[]);
-  return ips.length ? { waas_dns_a_records: ips.join(','), waas_dns_cname_target: host } : {};
+  return ips.length ? { anypress_dns_a_records: ips.join(','), anypress_dns_cname_target: host } : {};
 }
 
 /** The product's ready-made storefront, or null. */
@@ -88,17 +88,17 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         blogname: name,
         admin_email: email,
         // Its customers' websites are named <name>.<platform domain>, like the platform's own.
-        // waas_root_domain for AnyPress Host 2.3.0 and later; the old name for storefront templates with an older one.
-        ...(config.platformDomain ? { waas_root_domain: config.platformDomain, wpcs_host_settings_root_domain: config.platformDomain } : {}),
+        // anypress_root_domain for AnyPress Host 2.3.0 and later; the old name for storefront templates with an older one.
+        ...(config.platformDomain ? { anypress_root_domain: config.platformDomain } : {}),
         // Custom domains point where the stores' own names do, like the platform's own storefront.
         ...(await customDomainRecords(config.storesDomain)),
       },
       phpConstants: {
-        WAAS_API_BASE_URL: { value: apiUrl },
-        WAAS_API_KEY: { value: key.id, isPrivate: true },
-        WAAS_API_SECRET: { value: key.secret, isPrivate: true },
+        ANYPRESS_API_BASE_URL: { value: apiUrl },
+        ANYPRESS_API_KEY: { value: key.id, isPrivate: true },
+        ANYPRESS_API_SECRET: { value: key.secret, isPrivate: true },
         // Encrypts its customers' one-click-login keys (AnyPress Host's PrivateKeyStore); must stay the same.
-        WAAS_HOST_KEY_ENCRYPTION_KEY: { value: randomBytes(36).toString('base64'), isPrivate: true },
+        ANYPRESS_HOST_KEY_ENCRYPTION_KEY: { value: randomBytes(36).toString('base64'), isPrivate: true },
       },
     });
   } catch (err) {

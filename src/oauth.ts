@@ -454,7 +454,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
       [site],
     );
     const tenant = rows[0];
-    const signed = tenant && verifySiteRequest(keyFor(tenant.id), c.req.header('X-Waas-Signature'), 'POST', '/oauth/site/store-handoff', raw);
+    const signed = tenant && verifySiteRequest(keyFor(tenant.id), c.req.header('X-AnyPress-Signature'), 'POST', '/oauth/site/store-handoff', raw);
     if (!tenant || !signed) throw new HttpError(403, 'This request is not signed by that website');
     if (tenant.status !== Status.Done || tenant.is_suspended) throw badRequest('This website is not ready');
     const root = assistant.origin + assistant.pathname.replace(/\/$/, '');

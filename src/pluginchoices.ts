@@ -36,7 +36,7 @@ const BLOCKED: [string, string[]][] = [
 ];
 const BLOCK_REASON = new Map(BLOCKED.flatMap(([reason, slugs]) => slugs.map((slug) => [slug, reason] as const)));
 /** Our own plugins come with the platform. */
-const OWN = new Set(['waas-client', 'waas-host', 'waas-payments']);
+const OWN = new Set(['anypress-client', 'anypress-host', 'anypress-payments']);
 
 export function blockedReason(slug: string): string | null {
   if (OWN.has(slug)) return 'It comes with the platform.';

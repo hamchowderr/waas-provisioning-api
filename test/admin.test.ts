@@ -98,7 +98,7 @@ describe('admin endpoints', () => {
   let shop: { id: string; externalId: string };
 
   it('overview: counts, health and products', async () => {
-    shop = await newTenant({ name: 'Admin Shop', customDomainName: 'admin-shop.example.com', wpOptions: { blogname: 'secret-ish value' }, phpConstants: { WAAS_TENANT_ROLES: { value: 'online-store', isPrivate: false } } });
+    shop = await newTenant({ name: 'Admin Shop', customDomainName: 'admin-shop.example.com', wpOptions: { blogname: 'secret-ish value' }, phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'online-store', isPrivate: false } } });
     await newTenant({ name: 'Other Shop' }, otherAuth);
     const overview = await admin('GET', '/admin/overview');
     expect(overview.health).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 }, restoreTest: { ok: true, status: 'off', lastPassedAt: null }, cpu: { ok: true, status: 'off' } });

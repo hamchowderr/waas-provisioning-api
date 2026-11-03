@@ -117,7 +117,7 @@ describe('Phase 1 operations', () => {
     expect(copies[0]).toMatchObject({ name: 'v1.0.0', versionId: copyVersionId });
   });
 
-  // What the storefront plugin sends (WPCSService.php:100-123): no externalId.
+  // What the storefront plugin sends (AnyPress Host ProvisioningApi::create_tenant): no externalId.
   const storefrontTenant = {
     name: 'Example Store',
     wordPressUserName: 'example-owner',
@@ -126,9 +126,9 @@ describe('Phase 1 operations', () => {
     wordPressUserPassword: 'example-password-1',
     customDomainName: 'shop.example.com',
     phpConstants: {
-      WPCS_TENANT_ROLES: { value: 'shop_manager,editor' },
-      WPCS_PUBLIC_KEY: { value: Buffer.from('example public key').toString('base64') },
-      WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS: { value: 'true' },
+      ANYPRESS_TENANT_ROLES: { value: 'shop_manager,editor' },
+      ANYPRESS_PUBLIC_KEY: { value: Buffer.from('example public key').toString('base64') },
+      ANYPRESS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS: { value: 'true' },
     },
   };
 
@@ -169,17 +169,17 @@ describe('Phase 1 operations', () => {
     const byId: any = await expectContract('listTenants', await t.call('GET', `/v1/tenants?tenantId=${tenant.id}`));
     expect(byId).toEqual([expect.objectContaining({ tenantId: tenant.id, name: 'Example Store' })]);
     const store = t.provisioner.stores.get(tenant.id)!;
-    expect(store.phpConstants.WPCS_TENANT_ROLES!.value).toBe('shop_manager,editor');
+    expect(store.phpConstants.ANYPRESS_TENANT_ROLES!.value).toBe('shop_manager,editor');
     expect(store.user).toMatchObject({ name: 'example-owner', role: 'administrator', password: 'example-password-1' });
   });
 
   it('updateTenantOptionsAndConstants', async () => {
-    const body = { phpConstants: { WPCS_TENANT_ROLES: { value: 'shop_manager' } }, wpOptions: { blogname: 'Example Store' } };
+    const body = { phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'shop_manager' } }, wpOptions: { blogname: 'Example Store' } };
     expect(await expectContract('updateTenantOptionsAndConstants', await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body }))).toEqual({
       tenantId: tenant.id,
       externalId: tenant.externalId,
     });
-    await waitFor(async () => t.provisioner.stores.get(tenant.id)?.phpConstants.WPCS_TENANT_ROLES?.value === 'shop_manager');
+    await waitFor(async () => t.provisioner.stores.get(tenant.id)?.phpConstants.ANYPRESS_TENANT_ROLES?.value === 'shop_manager');
     expect(t.provisioner.stores.get(tenant.id)!.wpOptions.blogname).toBe('Example Store');
     // [] is an empty PUT body.
     expect((await t.call('PUT', `/v1/tenants?externalId=${tenant.externalId}`, { body: [] })).status).toBe(200);
@@ -214,7 +214,7 @@ describe('Phase 1 operations', () => {
   });
 
   it('addTenantDomain: the storefront switching to a new main domain', async () => {
-    // WPCSService.php:150: {domainName, setAsMainDomain: true}, then remove the old one.
+    // AnyPress Host ProvisioningApi: {domainName, setAsMainDomain: true}, then remove the old one.
     expect(
       await expectContract(
         'addTenantDomain',
@@ -329,7 +329,7 @@ describe('Phase 1 operations', () => {
     expect(restored).toMatchObject({ id: tenant.id, domainName: 'www.new-shop.example.com', isSuspended: false, dateSuspended: null });
     const store = t.provisioner.stores.get(tenant.id)!;
     expect(store.mainDomain).toBe('www.new-shop.example.com');
-    expect(store.phpConstants.WPCS_TENANT_ROLES!.value).toBe('shop_manager');
+    expect(store.phpConstants.ANYPRESS_TENANT_ROLES!.value).toBe('shop_manager');
     expect(store.wpOptions.blogname).toBe('Example Store');
     expect(store.suspended).toBe(false);
     // Restoring a live tenant is refused.

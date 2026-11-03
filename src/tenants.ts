@@ -33,11 +33,11 @@ export function decodePhpConstants(secrets: Secrets, stored: StoredPhpConstants,
 
 /**
  * The site types a store was sold as (Website, Bookings, Store...: the keys of the template's roles.json), read from
- * the WAAS_TENANT_ROLES constant the storefront sets (WPCS_TENANT_ROLES on older stores). Empty when the store has
+ * the ANYPRESS_TENANT_ROLES constant the storefront sets. Empty when the store has
  * none, or keeps it private.
  */
 export function siteTypesOf(stored: StoredPhpConstants | null | undefined): string[] {
-  const c = stored?.WAAS_TENANT_ROLES ?? stored?.WPCS_TENANT_ROLES;
+  const c = stored?.ANYPRESS_TENANT_ROLES;
   if (!c || c.isPrivate) return [];
   return c.value
     .split(',')

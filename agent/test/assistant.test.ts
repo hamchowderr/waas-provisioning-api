@@ -11,7 +11,7 @@ let seen: { domain: string; method: string; path: string; body: string }[] = [];
 /** What a store's AnyPress Client answers to the API's signed site requests. */
 const storeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
-  const path = url.pathname.replace(/^\/wp-json\/waas-client\/v1\/site/, '');
+  const path = url.pathname.replace(/^\/wp-json\/anypress-client\/v1\/site/, '');
   const method = init?.method ?? 'GET';
   seen.push({ domain: url.host, method, path, body: typeof init?.body === 'string' ? init.body : '' });
   if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `https://${url.host}/`, theme: 'anypress' });

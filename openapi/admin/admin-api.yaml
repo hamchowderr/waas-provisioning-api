@@ -2745,7 +2745,7 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
-        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its WAAS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
+        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         isSuspended: { type: boolean }
         onHold: { type: boolean, description: A site moved in, held until it goes live. }
         latestBackupAt: { type: string, format: date-time, nullable: true }
@@ -2899,7 +2899,7 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
-        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its WAAS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
+        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         keepsOwnCode: { type: boolean, description: A site moved in from another host keeps its own plugins and themes; versions don't replace them. }
         moveIn:
           type: object
@@ -3025,7 +3025,7 @@ components:
             retriedAt: { type: string, format: date-time, nullable: true }
             retryJobId: { type: string, format: uuid, nullable: true }
             dismissedAt: { type: string, format: date-time, nullable: true }
-    PluginSlug: { type: string, enum: [wpcs-waas-host, wpcs-waas-client, waas-payments] }
+    PluginSlug: { type: string, enum: [anypress-host, anypress-client, anypress-payments] }
     PluginInstall:
       type: object
       additionalProperties: false

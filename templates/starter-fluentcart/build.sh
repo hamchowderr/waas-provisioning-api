@@ -65,17 +65,17 @@ unzip -q "$WORK/downloads/$THEME.zip" -d "$SITE/wp-content/themes"
 unzip -q "$WORK/downloads/fluent-cart.zip" -d "$SITE/wp-content/plugins"
 
 echo "== AnyPress Client from $PLUGINS_REPO"
-# Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
-CLIENT=$SITE/wp-content/plugins/waas-client
-cp -a "$PLUGINS_REPO/packages/waas-client" "$CLIENT"
+# Same steps as waas-plugins' scripts/build.sh; the directory must be anypress-client (anypress-client/index.php).
+CLIENT=$SITE/wp-content/plugins/anypress-client
+cp -a "$PLUGINS_REPO/packages/anypress-client" "$CLIENT"
 rm -rf "$CLIENT/vendor" "$CLIENT/tests" "$CLIENT/phpunit.xml.dist" "$CLIENT/data"
 (cd "$CLIENT" && composer install --no-dev --no-interaction --quiet)
-CLIENT_VERSION=$(sed -n 's/^Version: *//p' "$CLIENT/index.php" | head -1)
+CLIENT_VERSION=$(sed -n 's/^Version: *//p' "$CLIENT/anypress-client.php" | head -1)
 CLIENT_COMMIT=$(git -C "$PLUGINS_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
-# roles.json is what the storefront reads at https://<production version>/wp-content/plugins/waas-client-data/roles.json
+# roles.json is what the storefront reads at https://<production version>/wp-content/plugins/anypress-client-data/roles.json
 # and what the client uses to switch plugins on per role.
-mkdir -p "$SITE/wp-content/plugins/waas-client-data"
-cp "$HERE/roles.json" "$SITE/wp-content/plugins/waas-client-data/roles.json"
+mkdir -p "$SITE/wp-content/plugins/anypress-client-data"
+cp "$HERE/roles.json" "$SITE/wp-content/plugins/anypress-client-data/roles.json"
 
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE"
 
@@ -95,7 +95,7 @@ wp core install --url="$SITE_URL" --title="My Store" --admin_user=waas-admin --a
 wp theme activate "$THEME"
 # Pretty permalinks before any plugin builds rewrite rules from page links.
 wp rewrite structure '/%postname%/'
-wp plugin activate waas-client fluent-cart
+wp plugin activate anypress-client fluent-cart
 
 # Sample content: the post, the page, the privacy policy draft and the comment.
 wp post delete $(wp post list --post_type=post,page --post_status=any --format=ids --post_name__in=hello-world,sample-page,privacy-policy) --force
@@ -128,7 +128,7 @@ wp cache flush 2>/dev/null || true
 echo "== Check"
 wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
-[ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "fluent-cart waas-client " ] || { echo "unexpected active plugins" >&2; exit 1; }
+[ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "fluent-cart anypress-client " ] || { echo "unexpected active plugins" >&2; exit 1; }
 [ "$(wp plugin list --field=name --skip-update-check | wc -l)" = 2 ] || { echo "unexpected installed plugins" >&2; exit 1; }
 
 echo "== Package"
@@ -144,7 +144,7 @@ cat >"$WORK/out/waas-template.json" <<JSON
   "wordPress": "$WP_VERSION",
   "php": "$PHP_VERSION",
   "theme": "$THEME $THEME_VERSION",
-  "plugins": { "waas-client": "$CLIENT_VERSION ($CLIENT_COMMIT)", "fluent-cart": "$FLUENTCART_VERSION" },
+  "plugins": { "anypress-client": "$CLIENT_VERSION ($CLIENT_COMMIT)", "fluent-cart": "$FLUENTCART_VERSION" },
   "siteUrl": "$SITE_URL"
 }
 JSON

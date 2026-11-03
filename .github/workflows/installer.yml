@@ -35,7 +35,7 @@ jobs:
       - name: Templates (what a templates-v* release carries)
         if: ${{ !inputs.release }}
         run: |
-          host=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'waas-host-v*' --sort=-v:refname | head -1 | sed 's/^waas-host-v//')
+          host=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'anypress-host-v*' --sort=-v:refname | head -1 | sed 's/^anypress-host-v//')
           templates/release.sh "$PWD/waas-plugins" "$host" 0.0.0 /tmp/templates
       - name: Bucket (an S3 server on this runner, at an address the stores reach too)
         run: |

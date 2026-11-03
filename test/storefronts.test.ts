@@ -62,21 +62,20 @@ describe('ready-made storefronts', () => {
     expect(store.wpOptions).toEqual({
       blogname: 'Example Agency',
       admin_email: 'owner@agency.example',
-      waas_root_domain: 'waas.example',
-      wpcs_host_settings_root_domain: 'waas.example',
-      waas_dns_a_records: '203.0.113.10',
-      waas_dns_cname_target: storesHost,
+      anypress_root_domain: 'waas.example',
+      anypress_dns_a_records: '203.0.113.10',
+      anypress_dns_cname_target: storesHost,
     });
     const constants = store.phpConstants;
-    expect(constants.WAAS_API_BASE_URL).toEqual({ value: 'http://localhost', isPrivate: false });
-    expect(constants.WAAS_API_KEY!.isPrivate).toBe(true);
-    expect(constants.WAAS_API_SECRET!.isPrivate).toBe(true);
-    expect(constants.WAAS_HOST_KEY_ENCRYPTION_KEY!.value.length).toBeGreaterThanOrEqual(48);
+    expect(constants.ANYPRESS_API_BASE_URL).toEqual({ value: 'http://localhost', isPrivate: false });
+    expect(constants.ANYPRESS_API_KEY!.isPrivate).toBe(true);
+    expect(constants.ANYPRESS_API_SECRET!.isPrivate).toBe(true);
+    expect(constants.ANYPRESS_HOST_KEY_ENCRYPTION_KEY!.value.length).toBeGreaterThanOrEqual(48);
 
     // The key in its wp-config works for the seller's product, and is labelled so the seller can tell it apart.
     const keys = (await (await t.call('GET', `/admin/products/${sellerId}/keys`, { auth: ADMIN })).json()) as any[];
-    expect(keys.find((k) => k.id === constants.WAAS_API_KEY!.value)).toMatchObject({ label: STOREFRONT_KEY_LABEL, state: 'active' });
-    const own = await t.call('GET', '/v1/tenants', { auth: basic(constants.WAAS_API_KEY!.value, constants.WAAS_API_SECRET!.value) });
+    expect(keys.find((k) => k.id === constants.ANYPRESS_API_KEY!.value)).toMatchObject({ label: STOREFRONT_KEY_LABEL, state: 'active' });
+    const own = await t.call('GET', '/v1/tenants', { auth: basic(constants.ANYPRESS_API_KEY!.value, constants.ANYPRESS_API_SECRET!.value) });
     expect(own.status).toBe(200);
     expect(await own.json()).toEqual([]);
   });

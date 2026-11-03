@@ -2,9 +2,9 @@ import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from '
 
 /**
  * Site editing (docs/site-editing.md): the API calls a store's AnyPress Client site routes
- * (/wp-json/waas-client/v1/site/...) on behalf of an AI agent, signing each request with the
+ * (/wp-json/anypress-client/v1/site/...) on behalf of an AI agent, signing each request with the
  * store's site key. The key is derived from SECRETS_KEY and the store's id, so nothing is stored:
- * the provisioner hands it to the store as WAAS_SITE_KEY, and the API derives it again to sign.
+ * the provisioner hands it to the store as ANYPRESS_SITE_KEY, and the API derives it again to sign.
  */
 
 /** The master key site keys are derived from: its own HKDF label, so it is never SECRETS_KEY itself. */
@@ -68,7 +68,7 @@ export function signedRoute(route: string, query: Record<string, string> = {}): 
   return pairs.length ? `${route}?${pairs.join('&')}` : route;
 }
 
-/** The X-Waas-Signature header for one request (AnyPress Client's Core\SignedRequest checks it). */
+/** The X-AnyPress-Signature header for one request (AnyPress Client's Core\SignedRequest checks it). */
 export function signSiteRequest(key: string, method: string, route: string, body: string, now = Date.now()): string {
   const t = String(Math.floor(now / 1000));
   const n = randomBytes(16).toString('hex');
@@ -122,14 +122,14 @@ export async function callSite(
   timeoutMs = 30_000,
 ): Promise<SiteResponse> {
   if (!SITE_PATH.test(request.path)) throw new Error(`Not a site path: ${request.path}`);
-  const route = signedRoute(`/waas-client/v1/site${request.path}`, request.query);
+  const route = signedRoute(`/anypress-client/v1/site${request.path}`, request.query);
   const body = request.body === undefined || request.method === 'GET' ? '' : JSON.stringify(request.body);
   const response = await fetchImpl(`https://${domain}/wp-json${route}`, {
     method: request.method,
     headers: {
       'content-type': 'application/json',
       accept: 'application/json',
-      'x-waas-signature': signSiteRequest(key, request.method, route, body),
+      'x-anypress-signature': signSiteRequest(key, request.method, route, body),
     },
     ...(body ? { body } : {}),
     redirect: 'manual',

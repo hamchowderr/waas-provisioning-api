@@ -6,7 +6,7 @@
 #   templates/release.sh <waas-plugins checkout> <AnyPress Host version> <version> <out dir>
 #
 # The store gets AnyPress Client from the checkout as it is; the storefront gets AnyPress Host from the checkout's
-# waas-host-v<AnyPress Host version> tag. Writes anypress-store.zip, seller-storefront.zip, SHA256SUMS and version.txt.
+# anypress-host-v<AnyPress Host version> tag. Writes anypress-store.zip, seller-storefront.zip, SHA256SUMS and version.txt.
 set -euo pipefail
 
 usage="usage: release.sh <waas-plugins checkout> <AnyPress Host version> <version> <out dir>"
@@ -21,7 +21,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 
 HOST_SRC=$(mktemp -d)
 trap 'git -C "$PLUGINS_REPO" worktree remove --force "$HOST_SRC" 2>/dev/null || rm -rf "$HOST_SRC"' EXIT
-git -C "$PLUGINS_REPO" worktree add --detach "$HOST_SRC" "waas-host-v$HOST_VERSION" >/dev/null
+git -C "$PLUGINS_REPO" worktree add --detach "$HOST_SRC" "anypress-host-v$HOST_VERSION" >/dev/null
 "$HERE/seller-storefront/build.sh" "$HOST_SRC" "$HOST_VERSION"
 
 cp "$HERE/anypress-store/dist/anypress-store.zip" "$HERE/seller-storefront/dist/seller-storefront.zip" "$OUT/"

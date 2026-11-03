@@ -13,7 +13,7 @@ on:
         description: waas-plugins branch or tag AnyPress Client comes from
         default: main
       host_version:
-        description: AnyPress Host version for the storefront. Empty, the newest waas-host release
+        description: AnyPress Host version for the storefront. Empty, the newest anypress-host release
         required: false
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
           if gh release view "templates-v$VERSION" >/dev/null 2>&1; then echo "templates-v$VERSION already exists"; exit 1; fi
           if [ -z "$HOST_VERSION" ]; then
             # Pre-releases sort before their release (2.3.0-beta.16 < 2.3.0).
-            HOST_VERSION=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'waas-host-v*' --sort=-v:refname | head -1 | sed 's/^waas-host-v//')
+            HOST_VERSION=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'anypress-host-v*' --sort=-v:refname | head -1 | sed 's/^anypress-host-v//')
             echo "HOST_VERSION=$HOST_VERSION" >> "$GITHUB_ENV"
           fi
           echo "AnyPress Host $HOST_VERSION"

@@ -7,7 +7,7 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 |---|---|
 | WordPress | 7.1.4 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Theme | The [AnyPress theme](https://github.com/hamchowderr/anypress-theme) (a release pinned by version and checksum in [`theme.sh`](theme.sh)), a block theme with 13 kits (a style and sections for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
-| Plugins | AnyPress Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`) and these free wordpress.org plugins, all active: |
+| Plugins | AnyPress Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/anypress-client`) and these free wordpress.org plugins, all active: |
 
 | Plugin | Slug | Version |
 |---|---|---|
@@ -30,7 +30,7 @@ once installed it updates itself from the vendor.
 
 The FluentCart Migrator add-on 1.1.0-beta (`fluent-cart-migrator`, FluentCart's own importer for WooCommerce shops) is kept
 in [`plugins/`](plugins/) the same way and installed switched off, so it doesn't load on every page. AnyPress Client's shop
-switch (`wp waas shop switch`) turns it on when it runs.
+switch (`wp anypress shop switch`) turns it on when it runs.
 
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
 for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
@@ -129,7 +129,7 @@ upgrade nags off, FluentAffiliate's tracking script only once the store has an a
 request (and after an address change) fresh install dates, a rewrite-rule flush and a Rank Math sitemap cache clear.
 
 Per-store values come from the purchase: AnyPress Host sends the site title (`blogname`), the buyer's email
-(`admin_email`) and `waas_store_owner` (`{"country":"US"}`) as `wpOptions`. On the store's first web request the
+(`admin_email`) and `anypress_store_owner` (`{"country":"US"}`) as `wpOptions`. On the store's first web request the
 mu-plugin copies them into the plugins once: FluentCart store name and country; FluentCRM business name and
 email; FluentAffiliate admin email; FluentBooking default country; Fluent Support's first mailbox; Rank Math's organisation and website name. The template also has a Support Portal
 page. Stores created without these options keep `admin@example.invalid` until the owner changes it.

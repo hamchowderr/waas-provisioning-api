@@ -29,7 +29,7 @@ let seen: { method: string; path: string; body: string }[] = [];
 
 const storeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
-  const path = url.pathname.replace(/^\/wp-json\/waas-client\/v1\/site/, '');
+  const path = url.pathname.replace(/^\/wp-json\/anypress-client\/v1\/site/, '');
   const method = init?.method ?? 'GET';
   seen.push({ method, path, body: typeof init?.body === 'string' ? init.body : '' });
   // The website's address is the stand-in editor's, so the panel beside it trusts that page.
@@ -150,7 +150,7 @@ beforeAll(async () => {
       const body = JSON.stringify({ site: store.domain, assistantUrl: older ? panelUrl : `${editorUrl}/.assistant` });
       const answer = await h.t.app.request('/oauth/site/store-handoff', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
+        headers: { 'Content-Type': 'application/json', 'X-AnyPress-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
         body,
       });
       response.writeHead(answer.status, { 'Content-Type': 'application/json' }).end(await answer.text());

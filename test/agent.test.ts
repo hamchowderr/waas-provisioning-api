@@ -686,7 +686,7 @@ describe.skipIf(!hasPhp)('store agent: plugin choices', () => {
   let root: string;
   let zips: string;
   const plugins = () => join(root, 'wp-content/plugins');
-  const rolesFile = () => join(plugins(), 'waas-client-data/roles.json');
+  const rolesFile = () => join(plugins(), 'anypress-client-data/roles.json');
   const roles = () => JSON.parse(readFileSync(rolesFile(), 'utf8'));
   const agent = (args: unknown) => {
     try {
@@ -712,7 +712,7 @@ describe.skipIf(!hasPhp)('store agent: plugin choices', () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
     zips = mkdtempSync(join(tmpdir(), 'waas-zips-'));
-    mkdirSync(join(plugins(), 'waas-client-data'), { recursive: true });
+    mkdirSync(join(plugins(), 'anypress-client-data'), { recursive: true });
     mkdirSync(join(plugins(), 'wp-fusion-lite'));
     writeFileSync(rolesFile(), JSON.stringify({ website: { title: 'Website', plugins: ['fluentform/fluentform.php', 'wp-fusion-lite/wp-fusion-lite.php'] }, store: { title: 'Store', plugins: ['fluent-cart/fluent-cart.php', 'wp-fusion-lite/wp-fusion-lite.php'] } }));
     execFileSync('chmod', ['-R', '777', root, zips]);
@@ -738,7 +738,7 @@ describe.skipIf(!hasPhp)('store agent: plugin choices', () => {
     expect(existsSync(join(plugins(), 'contact-form-7'))).toBe(false);
     expect(existsSync(join(plugins(), 'wp-fusion-lite'))).toBe(true);
     expect(roles().store.plugins).toEqual(['fluent-cart/fluent-cart.php', 'wp-fusion-lite/wp-fusion-lite.php']);
-    expect(existsSync(join(plugins(), 'waas-client-data/roles.template.json'))).toBe(false);
+    expect(existsSync(join(plugins(), 'anypress-client-data/roles.template.json'))).toBe(false);
   });
 
   it('reads the choices from a file when the build sends one', () => {

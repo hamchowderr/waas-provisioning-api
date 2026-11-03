@@ -17,7 +17,7 @@ import { Status, statusName } from './status.ts';
 /** How long a link works: the store's limit (SignedRequest::MAX_AGE in AnyPress Client). */
 export const LOGIN_LINK_SECONDS = 300;
 
-export type LoginPlugin = 'waas-client' | 'waas-host';
+export type LoginPlugin = 'anypress-client' | 'anypress-host';
 
 export interface WpLogin {
   /** Opens wp-admin signed in when oneClick; else the store's own WordPress login page. */
@@ -72,7 +72,7 @@ export async function wpLogin(deps: Pick<Deps, 'config' | 'siteFetch'>, tenant: 
   if (tenant.status !== Status.Done) throw conflict(`This site is ${statusName(tenant.status)}; you can log in once it is Done`);
   if (tenant.is_suspended) throw conflict('This site is suspended; resume it to log in');
   if (!tenant.main_domain) throw conflict('This site has no address yet');
-  const plugin: LoginPlugin = deps.config.storefrontProductId && tenant.product_id === deps.config.storefrontProductId ? 'waas-host' : 'waas-client';
+  const plugin: LoginPlugin = deps.config.storefrontProductId && tenant.product_id === deps.config.storefrontProductId ? 'anypress-host' : 'anypress-client';
   if (!(await hasLoginRoute(deps.siteFetch ?? fetch, tenant.main_domain, plugin))) {
     return { url: `https://${tenant.main_domain}/wp-admin/`, oneClick: false, expiresAt: null };
   }

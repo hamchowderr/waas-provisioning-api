@@ -48,10 +48,10 @@ Every network call in release 2.2.7 of both plugins was traced from its call sit
 
 Not visible over HTTP, but the AnyPress Client plugin depends on them:
 
-- The environment variable `WPCS_IS_TENANT=true`, visible to PHP.
-- Each `phpConstants` entry written as a `define()`: `WPCS_TENANT_ROLES` (comma-separated role slugs), `WPCS_PUBLIC_KEY` (base64 of the PEM public key), `WPCS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS` (`"true"`).
+- The environment variable `ANYPRESS_IS_TENANT=true`, visible to PHP.
+- Each `phpConstants` entry written as a `define()`: `ANYPRESS_TENANT_ROLES` (comma-separated role slugs), `ANYPRESS_PUBLIC_KEY` (base64 of the PEM public key), `ANYPRESS_TENANT_NO_ADMINISTRATOR_PLUGIN_CAPS` (`"true"`).
 - `wpOptions` applied, and the WordPress user created with the requested role.
 - AnyPress Client active in the version's shared code.
-- `roles.json` served publicly at `https://{production version domain}/wp-content/plugins/waas-client-data/roles.json`.
-- `/wp-json/waas-client/v1/single_login/verify` reachable without signing in.
+- `roles.json` served publicly at `https://{production version domain}/wp-content/plugins/anypress-client-data/roles.json`.
+- `/wp-json/anypress-client/v1/single_login/verify` reachable without signing in.
 - The store's home page answers `HEAD https://{domain}` with **200 and no redirect**, or the storefront never marks it Ready.

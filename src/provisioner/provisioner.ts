@@ -17,7 +17,7 @@ export interface Brand {
 }
 
 /** The WordPress option that holds a reseller's brand on its stores; AnyPress Client 2.13.0+ goes by that name. */
-export const BRAND_OPTION = 'waas_brand_name';
+export const BRAND_OPTION = 'anypress_brand_name';
 
 /**
  * A plugin choice applied while a version builds (docs/plugin-choices.md): a wordpress.org plugin added
@@ -73,7 +73,7 @@ export interface Provisioner {
   deleteVersion(input: { versionId: string }): Promise<void>;
 
   /**
-   * The site types (waas-client-data/roles.json, parsed) in a built version's saved code, or null when it has
+   * The site types (anypress-client-data/roles.json, parsed) in a built version's saved code, or null when it has
    * none. Read from the saved code because the version's site is stopped once it is built.
    */
   readVersionRoles(input: { versionId: string }): Promise<unknown | null>;
@@ -200,7 +200,7 @@ export interface Provisioner {
   /**
    * Stops serving a store while keeping its files, database and domains: every domain answers 503
    * with the shared "website unavailable" page (no redirect), WordPress cron stops, and
-   * /wp-json/waas-client/v1/single_login/verify is unreachable. resumeStore undoes it. `brand`
+   * /wp-json/anypress-client/v1/single_login/verify is unreachable. resumeStore undoes it. `brand`
    * names whose platform the page credits; without it the provisioner's default (AnyPress).
    */
   suspendStore(input: { storeId: string; brand?: Brand }): Promise<void>;
@@ -298,7 +298,7 @@ export interface SiteCheck {
   inventory?: SiteInventory;
 }
 
-/** What the move itself found, from the export's waas.json (AnyPress Export 1.1+), for the warnings after it. */
+/** What the move itself found, from the export's anypress.json (AnyPress Export 1.1+), for the warnings after it. */
 export interface MoveReport {
   /** Tables with fewer rows on the store than the export counted. */
   rows?: { table: string; exported: number; loaded: number }[];

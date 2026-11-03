@@ -20,7 +20,7 @@ paths:
       operationId: checkPluginUpdate
       summary: The release a site should run
       parameters:
-        - { name: slug, in: path, required: true, schema: { type: string, enum: [wpcs-waas-host, wpcs-waas-client, waas-payments] } }
+        - { name: slug, in: path, required: true, schema: { type: string, enum: [anypress-host, anypress-client, anypress-payments] } }
         - { name: version, in: query, required: true, description: The installed version, schema: { type: string, example: 2.2.7 } }
         - { name: channel, in: query, schema: { type: string, enum: [stable, beta], default: stable } }
         - { name: site, in: query, description: The site's home URL, schema: { type: string, format: uri } }

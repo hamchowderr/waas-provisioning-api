@@ -118,17 +118,17 @@ SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | so
 OFF_SLUGS=$(awk 'NF {print $1}' <<<"$OFF_PLUGINS$OFF_VENDORED" | sort | tr '\n' ' ')
 
 echo "== AnyPress Client from $PLUGINS_REPO"
-# Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
-CLIENT=$SITE/wp-content/plugins/waas-client
-cp -a "$PLUGINS_REPO/packages/waas-client" "$CLIENT"
+# Same steps as waas-plugins' scripts/build.sh; the directory must be anypress-client (anypress-client/index.php).
+CLIENT=$SITE/wp-content/plugins/anypress-client
+cp -a "$PLUGINS_REPO/packages/anypress-client" "$CLIENT"
 rm -rf "$CLIENT/vendor" "$CLIENT/tests" "$CLIENT/phpunit.xml.dist" "$CLIENT/data"
 (cd "$CLIENT" && composer install --no-dev --no-interaction --quiet)
-CLIENT_VERSION=$(sed -n 's/^Version: *//p' "$CLIENT/index.php" | head -1)
+CLIENT_VERSION=$(sed -n 's/^Version: *//p' "$CLIENT/anypress-client.php" | head -1)
 CLIENT_COMMIT=$(git -C "$PLUGINS_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
-# roles.json is what the storefront reads at https://<production version>/wp-content/plugins/waas-client-data/roles.json
+# roles.json is what the storefront reads at https://<production version>/wp-content/plugins/anypress-client-data/roles.json
 # and what the client uses to switch plugins on per role.
-mkdir -p "$SITE/wp-content/plugins/waas-client-data"
-cp "$HERE/roles.json" "$SITE/wp-content/plugins/waas-client-data/roles.json"
+mkdir -p "$SITE/wp-content/plugins/anypress-client-data"
+cp "$HERE/roles.json" "$SITE/wp-content/plugins/anypress-client-data/roles.json"
 # Template settings kept in code (see mu-plugins/anypress-store.php).
 mkdir -p "$SITE/wp-content/mu-plugins"
 cp "$HERE/mu-plugins/anypress-store.php" "$HERE/mu-plugins/anypress-patterns.php" "$HERE/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
@@ -151,7 +151,7 @@ wp core install --url="$SITE_URL" --title="My Store" --admin_user=waas-admin --a
 wp theme activate "$THEME"
 # Pretty permalinks before any plugin builds rewrite rules from page links.
 wp rewrite structure '/%postname%/'
-wp plugin activate waas-client $SLUGS
+wp plugin activate anypress-client $SLUGS
 
 # Sample content: the post, the page, the privacy policy draft and the comment.
 wp post delete $(wp post list --post_type=post,page --post_status=any --format=ids --post_name__in=hello-world,sample-page,privacy-policy) --force
@@ -200,9 +200,9 @@ echo "== Check"
 [ "$(wp theme list --status=active --field=name)" = "$THEME" ] || { echo "theme $THEME not active" >&2; exit 1; }
 wp plugin list --fields=name,status,version --skip-update-check
 wp theme list --fields=name,status,version --skip-update-check
-EXPECTED=$(printf '%s\n' $SLUGS waas-client | sort | tr '\n' ' ')
+EXPECTED=$(printf '%s\n' $SLUGS anypress-client | sort | tr '\n' ' ')
 [ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected active plugins" >&2; exit 1; }
-INSTALLED=$(printf '%s\n' $SLUGS $OFF_SLUGS waas-client | sort | tr '\n' ' ')
+INSTALLED=$(printf '%s\n' $SLUGS $OFF_SLUGS anypress-client | sort | tr '\n' ' ')
 [ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$INSTALLED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
 
 # Rank Math's sitemap is only served once its rewrite rules exist. Read the whole list first: grep -q stops at the
@@ -230,7 +230,7 @@ done
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; awk 'NF {print $1, $2 " (off)"}' <<<"$OFF_PLUGINS$OFF_VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
+PLUGINS_JSON=$( (echo "anypress-client $CLIENT_VERSION ($CLIENT_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; awk 'NF {print $1, $2 " (off)"}' <<<"$OFF_PLUGINS$OFF_VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

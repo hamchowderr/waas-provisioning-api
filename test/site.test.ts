@@ -39,7 +39,7 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const url = new URL(String(input));
   const body = typeof init?.body === 'string' ? init.body : '';
   const method = init?.method ?? 'GET';
-  const header = new Headers(init?.headers).get('x-waas-signature');
+  const header = new Headers(init?.headers).get('x-anypress-signature');
   seen.push({ url: String(input), method, body, signatureOk: signatureOk(header, method, url, body) });
   if (storeAnswer instanceof Error) throw storeAnswer;
   return new Response(JSON.stringify(storeAnswer.body), { status: storeAnswer.status, headers: { 'content-type': 'application/json' } });
@@ -92,7 +92,7 @@ describe('POST /v1/tenants/site', () => {
     const answer = await waas.tenants.editSite({ externalId: 'site-1' }, { method: 'GET', path: '/patterns', query: { search: 'hero light', category: 'ollie/hero' } });
     expect(answer).toEqual({ status: 200, body: [{ name: 'ollie/hero-light' }] });
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.url).toBe(`https://${mainDomain}/wp-json/waas-client/v1/site/patterns?category=ollie%2Fhero&search=hero%20light`);
+    expect(seen[0]!.url).toBe(`https://${mainDomain}/wp-json/anypress-client/v1/site/patterns?category=ollie%2Fhero&search=hero%20light`);
     expect(seen[0]!.signatureOk).toBe(true);
   });
 

@@ -247,7 +247,7 @@ function clean_import(): array
 }
 
 /**
- * The tables whose rows didn't all arrive: waas.json's row count per table (AnyPress Export 1.1+), against what the
+ * The tables whose rows didn't all arrive: anypress.json's row count per table (AnyPress Export 1.1+), against what the
  * store's database now holds under the same names. Up to 20, for the warnings after the move.
  */
 function compare_rows(array $exported): array
@@ -744,7 +744,7 @@ PHP);
  * Description: Fills in the owner's business details from the purchase. Managed by the WaaS provisioner; edits are overwritten.
  */
 /*
- * The platform sets `waas_store_owner` (JSON) from the buyer's billing details: name, phone, address_1, address_2,
+ * The platform sets `anypress_store_owner` (JSON) from the buyer's billing details: name, phone, address_1, address_2,
  * city, state, postcode and country. Copy them where the store and its plugins keep their own: the site's time zone,
  * the administrator's name, FluentCart's store address and currency, FluentCRM's business address (the footer of
  * every campaign) and Rank Math's address and phone (the site's business details for search engines).
@@ -802,7 +802,7 @@ add_action('plugins_loaded', function () {
 });
 add_action('init', function () {
     if (defined('WP_CLI') && WP_CLI) return;
-    $owner = json_decode((string) get_option('waas_store_owner', ''), true);
+    $owner = json_decode((string) get_option('anypress_store_owner', ''), true);
     if (!is_array($owner)) return;
     $text = fn (string $key) => trim(wp_specialchars_decode((string) ($owner[$key] ?? ''), ENT_QUOTES));
     $country = strtoupper(substr($text('country'), 0, 2));
@@ -827,7 +827,7 @@ add_action('init', function () {
     $plugins = $GLOBALS['waas_owner_plugins'];
     sort($plugins);
     $key = md5(json_encode([$want, $plugins, get_option('admin_email')]));
-    $last = get_option('waas_owner_details');
+    $last = get_option('anypress_owner_details');
     $last = is_array($last) ? $last : [];
     if (($last['key'] ?? '') === $key) return;
     $was = (array) ($last['set'] ?? []);
@@ -905,7 +905,7 @@ add_action('init', function () {
             error_log("WaaS store owner: $what: " . $e->getMessage());
         }
     }
-    update_option('waas_owner_details', ['key' => $key, 'set' => $want], false);
+    update_option('anypress_owner_details', ['key' => $key, 'set' => $want], false);
 }, PHP_INT_MAX);
 PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
@@ -1529,7 +1529,7 @@ switch ($op) {
 
     case 'restore': {
         // A snapshot, base snapshot, backup or uploaded archive: database.sql and wp-content. `import`:
-        // a site moved in from another host (the AnyPress Export plugin's archive, with a waas.json
+        // a site moved in from another host (the AnyPress Export plugin's archive, with a anypress.json
         // describing it), cleaned up on the way in and held until it goes live (HOLD_FLAG). `hold`: hold
         // the store after the restore too (a held store restored after deletion). A held store stays held.
         $import = !empty($args['import']);
@@ -1544,7 +1544,7 @@ switch ($op) {
         $content = find_content("$tmp/x");
         $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
         if ($import && (!$content || !$sql)) fail('the export must hold database.sql and wp-content');
-        $info = $import && is_file("$tmp/x/waas.json") ? json_decode((string) file_get_contents("$tmp/x/waas.json"), true) : null;
+        $info = $import && is_file("$tmp/x/anypress.json") ? json_decode((string) file_get_contents("$tmp/x/anypress.json"), true) : null;
         $info = is_array($info) ? $info : [];
         $result = [];
         if ($content) {
@@ -1674,7 +1674,7 @@ switch ($op) {
         $zip = new ZipArchive();
         $zip->open("$tmp/snapshot.zip", ZipArchive::CREATE) === true || fail('cannot create zip');
         $zip->addFile("$tmp/database.sql", 'database.sql');
-        $zip->addFromString('waas.json', json_encode(['home' => wpMayFail('option', 'get', 'home'), 'takenAt' => gmdate('c')]));
+        $zip->addFromString('anypress.json', json_encode(['home' => wpMayFail('option', 'get', 'home'), 'takenAt' => gmdate('c')]));
         zip_dir($zip, CONTENT, 'wp-content');
         $zip->close() || fail('cannot write zip');
         $size = filesize("$tmp/snapshot.zip");
@@ -1687,7 +1687,7 @@ switch ($op) {
         // wordpress.org plugins added to wp-content/plugins and to roles.json's site types, or taken out of
         // them. The archive may come from a version or store that already had choices applied, so those are
         // undone first: the plugins they added are removed and roles.json goes back to the template's own.
-        $data = CONTENT . '/plugins/waas-client-data';
+        $data = CONTENT . '/plugins/anypress-client-data';
         $rolesFile = "$data/roles.json";
         $baseFile = "$data/roles.template.json";
         $addedFile = "$data/plugin-choices.json";
@@ -1709,7 +1709,7 @@ switch ($op) {
         }
         if (!$plugins) done(['files' => (object) []]);
 
-        is_file($rolesFile) || fail("the template has no site types (waas-client-data/roles.json), so the plugins chosen can't be switched on");
+        is_file($rolesFile) || fail("the template has no site types (anypress-client-data/roles.json), so the plugins chosen can't be switched on");
         $roles = json_decode((string) file_get_contents($rolesFile), true);
         is_array($roles) && $roles || fail('the template roles.json is not readable');
         $known = array_map('strval', array_keys($roles));
@@ -1802,13 +1802,13 @@ switch ($op) {
                 is_dir(CONTENT . "/$dir") || mkdir(CONTENT . "/$dir", 0755, true) || fail("cannot make wp-content/$dir");
                 foreach (glob("$tmp/x/wp-content/$dir/*", GLOB_ONLYDIR) ?: [] as $from) {
                     $name = basename($from);
-                    $ours = $dir === 'plugins' && in_array($name, ['waas-client', 'waas-client-data'], true);
+                    $ours = $dir === 'plugins' && in_array($name, ['anypress-client', 'anypress-client-data'], true);
                     if (!$ours && file_exists(CONTENT . "/$dir/$name")) continue;
                     if (!$ours) $added[] = "$dir/$name";
                     run('rm -rf ' . escapeshellarg(CONTENT . "/$dir/$name") . ' && cp -a ' . escapeshellarg($from) . ' ' . escapeshellarg(CONTENT . "/$dir/"));
                 }
             }
-            $client = is_dir(CONTENT . '/plugins/waas-client') && wpMayFail('plugin', 'activate', 'waas-client') !== null;
+            $client = is_dir(CONTENT . '/plugins/anypress-client') && wpMayFail('plugin', 'activate', 'anypress-client') !== null;
             done(['added' => $added, 'client' => $client]);
         }
         foreach (['plugins', 'themes'] as $dir) {

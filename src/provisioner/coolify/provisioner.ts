@@ -40,7 +40,7 @@ export interface CoolifyProvisionerConfig {
   /** Who suspended stores' "website unavailable" page credits, unless a suspend names its own. */
   brand?: Brand;
   /**
-   * The store's site key (src/sitekeys.ts), given to it as WAAS_SITE_KEY so AnyPress Client accepts the
+   * The store's site key (src/sitekeys.ts), given to it as ANYPRESS_SITE_KEY so AnyPress Client accepts the
    * API's signed site-editing requests. Unset: stores get none and can't be edited through the API.
    */
   siteKey?: (storeId: string) => string;
@@ -521,7 +521,7 @@ export class CoolifyProvisioner implements Provisioner {
     const size = await this.s3.head(key);
     if (size === null) return null;
     const read = async (start: number, end: number) => Buffer.from(await this.s3.getRange(key, start, end));
-    const bytes = await readZipEntry(read, size, 'wp-content/plugins/waas-client-data/roles.json', 1024 * 1024);
+    const bytes = await readZipEntry(read, size, 'wp-content/plugins/anypress-client-data/roles.json', 1024 * 1024);
     return bytes ? (JSON.parse(bytes.toString('utf8')) as unknown) : null;
   }
 

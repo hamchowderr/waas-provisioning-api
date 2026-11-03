@@ -6,7 +6,7 @@ An AI agent connected to the API's MCP server (`/mcp`, or `/mcp/site` for a webs
 
 1. The agent calls an MCP tool, e.g. `page_section` with action `add` for the store `store-1042`.
 2. The tool calls `POST /v1/tenants/site?externalId=store-1042` with `{ "method": "POST", "path": "/pages/12/sections", "body": { "pattern": "anypress/hero-statement" } }`.
-3. The API checks the caller owns the store and that it is Done and not suspended, signs the request with the store's **site key** and sends it to `https://<main domain>/wp-json/waas-client/v1/site/pages/12/sections`.
+3. The API checks the caller owns the store and that it is Done and not suspended, signs the request with the store's **site key** and sends it to `https://<main domain>/wp-json/anypress-client/v1/site/pages/12/sections`.
 4. AnyPress Client checks the signature and makes the change as the store's first administrator. Its answer comes back as `{ status, body }`.
 
 The routes AnyPress Client answers, the signature format and its safety rules are in waas-plugins' [docs/site-editing-api.md](https://github.com/hamchowderr/waas-plugins/blob/main/docs/site-editing-api.md).
@@ -29,7 +29,7 @@ A storefront that has already signed in the store's owner (its customer account 
 
 ### Signed in by the website itself
 
-The website assistant beside the page editor (AnyPress Client 2.8.0) uses the same handoff, asked for by the store instead of a storefront. AnyPress Client calls `POST /oauth/site/store-handoff` with `{ "site": "<the store's host>", "assistantUrl": "…" }`, signed in `X-Waas-Signature` with the store's site key over the route `/oauth/site/store-handoff` (the same form the API uses to sign its calls to the store, good for 5 minutes either way). The API finds the store by any of its domains, checks the signature, and answers with the assistant's address and a one-time handoff, as above. Only that store's own site key can ask, and AnyPress Client asks only for administrators who can edit the site's design.
+The website assistant beside the page editor (AnyPress Client 2.8.0) uses the same handoff, asked for by the store instead of a storefront. AnyPress Client calls `POST /oauth/site/store-handoff` with `{ "site": "<the store's host>", "assistantUrl": "…" }`, signed in `X-AnyPress-Signature` with the store's site key over the route `/oauth/site/store-handoff` (the same form the API uses to sign its calls to the store, good for 5 minutes either way). The API finds the store by any of its domains, checks the signature, and answers with the assistant's address and a one-time handoff, as above. Only that store's own site key can ask, and AnyPress Client asks only for administrators who can edit the site's design.
 
 `POST /v1/tenants/site/sign-in` (the storefront passes the app's own `clientId`, `redirectUri` and `codeChallenge`, and gets the code back) still works for apps that send the owner to the storefront first.
 
