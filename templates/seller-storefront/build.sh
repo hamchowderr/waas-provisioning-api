@@ -183,7 +183,9 @@ EXPECTED=$(printf '%s\n' $SLUGS anypress-host | sort | tr '\n' ' ')
 [ "$(wp eval 'echo var_export(WPF_STAGING_MODE, true), " ", wpf_get_option("crm"), wpf_get_option("connection_configured") ? " connected" : "";')" = "false fluentcrm connected" ] || { echo "WP Fusion must ship connected to FluentCRM and out of staging mode" >&2; exit 1; }
 # Nothing that connects the storefront may ship: each one gets its own when it is created.
 for OPTION in anypress_api_key anypress_api_secret anypress_api_base_url; do
-    [ -z "$(wp option get "$OPTION" 2>/dev/null || true)" ] || { echo "$OPTION must not ship" >&2; exit 1; }
+    # get_option with an explicit default skips AnyPress Host's registered default (the AnyPress API address), so
+    # this only finds a value that was saved.
+    [ -z "$(wp eval "echo get_option('$OPTION', '');" 2>/dev/null || true)" ] || { echo "$OPTION must not ship" >&2; exit 1; }
 done
 
 echo "== Package"
