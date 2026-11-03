@@ -58,6 +58,57 @@ add_filter('send_site_admin_email_change_email', function ($send, $old_email) {
     return $send && substr((string) $old_email, -8) !== '.invalid';
 }, 10, 2);
 
+// Never send mail to a made-up address. Demo and test stores are often made with addresses such as
+// client@example.com, and WordPress, FluentCart and FluentCRM would mail them (update notices, receipts, campaigns).
+// Those addresses can't receive mail, and every attempt counts against the sending domain's reputation. Reserved
+// domains (RFC 2606 and RFC 6761) are dropped from each email, and an email left with no recipient isn't sent.
+function anypress_is_reserved_address(string $address): bool
+{
+    if (preg_match('/<([^>]+)>/', $address, $m)) {
+        $address = $m[1];
+    }
+    $at = strrpos($address, '@');
+    if ($at === false) {
+        return false;
+    }
+    $domain = strtolower(rtrim(trim(substr($address, $at + 1)), '.'));
+    if (in_array($domain, ['example.com', 'example.net', 'example.org', 'example', 'invalid', 'test', 'localhost'], true)) {
+        return true;
+    }
+    return (bool) preg_match('/\.(example|invalid|test|localhost)$|\.example\.(com|net|org)$/', $domain);
+}
+function anypress_real_recipients($list): array
+{
+    $list = is_array($list) ? $list : explode(',', (string) $list);
+    return array_values(array_filter(array_map('trim', $list), function ($address) {
+        return $address !== '' && !anypress_is_reserved_address($address);
+    }));
+}
+add_filter('pre_wp_mail', function ($short_circuit, $atts) {
+    if ($short_circuit !== null || anypress_real_recipients($atts['to'] ?? []) !== []) {
+        return $short_circuit;
+    }
+    return false;
+}, 10, 2);
+add_filter('wp_mail', function ($atts) {
+    $atts['to'] = anypress_real_recipients($atts['to'] ?? []);
+    if (!empty($atts['headers'])) {
+        $headers = is_array($atts['headers']) ? $atts['headers'] : explode("\n", str_replace("\r\n", "\n", (string) $atts['headers']));
+        foreach ($headers as $i => $header) {
+            if (preg_match('/^\s*(cc|bcc)\s*:(.*)$/i', (string) $header, $m)) {
+                $kept = anypress_real_recipients($m[2]);
+                if ($kept === []) {
+                    unset($headers[$i]);
+                } else {
+                    $headers[$i] = $m[1] . ': ' . implode(', ', $kept);
+                }
+            }
+        }
+        $atts['headers'] = array_values($headers);
+    }
+    return $atts;
+});
+
 // FluentAffiliate's tracking script loads on every page once an integration is on (the template switches on
 // FluentCart's), so hold it back until the store has an active affiliate whose links could bring visitors.
 add_filter('fluent_affiliate/will_load_tracker_js', function ($load) {
