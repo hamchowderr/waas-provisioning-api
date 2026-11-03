@@ -56,7 +56,7 @@ describe.skipIf(!CLIENT)('website assistant on WordPress Playground', () => {
           { step: 'activatePlugin', pluginPath: 'anypress-client/anypress-client.php' },
           { step: 'writeFile', path: '/wordpress/wp-content/mu-plugins/anypress-patterns.php', data: readFileSync(STARTER_PAGES, 'utf8') },
           // Stores get their site key as an environment variable on their container; here a must-use plugin sets it.
-          { step: 'writeFile', path: '/wordpress/wp-content/mu-plugins/waas-site-key.php', data: `<?php putenv('WAAS_SITE_KEY=${siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id)}');\n` },
+          { step: 'writeFile', path: '/wordpress/wp-content/mu-plugins/anypress-site-key.php', data: `<?php putenv('ANYPRESS_SITE_KEY=${siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id)}');\n` },
         ],
       },
     });
