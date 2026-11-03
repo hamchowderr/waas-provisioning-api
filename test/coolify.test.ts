@@ -515,6 +515,10 @@ describe('CoolifyProvisioner', () => {
     await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
     expect(store.description).toBe(`WaaS store, version v9, setup ${STORE_SETUP}, size large`);
     expect(parse(store.compose).services.wordpress.cpus).toBe(4);
+    // The move keeps the store's website assistant router.
+    expect(parse(store.compose).services.wordpress.labels).toContain(
+      `traefik.http.routers.store-${STORE_ID}-assistant.service=website-assistant-panel@docker`,
+    );
 
     store.description = 'WaaS store, version v9, setup 8, size large';
     store.compose = 'old compose';
