@@ -124,6 +124,74 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/prospects/usage:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminProspectUsage
+      summary: The prospect finder's searches this month
+      description: >-
+        How many Google Places searches this storefront's Sales Kit prospect finder has used this calendar month (UTC),
+        out of PROSPECT_SEARCHES_PER_MONTH. available is false until the platform sets GOOGLE_PLACES_API_KEY.
+      responses:
+        '200':
+          description: This month's searches
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectUsage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/prospects/search:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    post:
+      operationId: adminSearchProspects
+      summary: Find local businesses to contact
+      description: >-
+        Up to 20 businesses of one kind in one place, from Google Places Text Search ("<query> in <location>"), with
+        their address, phone, website and rating. Businesses that closed for good are left out. Each search counts
+        against the storefront's month; a search Google doesn't answer isn't counted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, location]
+              properties:
+                query: { type: string, minLength: 2, maxLength: 100, description: 'The kind of business, such as "church"' }
+                location: { type: string, minLength: 2, maxLength: 100, description: 'Where, such as "Columbus, Ohio"' }
+      responses:
+        '200':
+          description: The businesses found, and the month's searches after this one
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [prospects, usage]
+                properties:
+                  prospects:
+                    type: array
+                    items: { $ref: '#/components/schemas/Prospect' }
+                  usage: { $ref: '#/components/schemas/ProspectUsage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429':
+          description: This month's searches are used up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: Google didn't answer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: The prospect finder isn't set up (no GOOGLE_PLACES_API_KEY)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /admin/products/{productId}/storefront:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -2726,6 +2794,28 @@ components:
         invoices:
           type: array
           items: { $ref: '#/components/schemas/ResellerInvoice' }
+    ProspectUsage:
+      type: object
+      required: [available, used, limit, resetsAt]
+      additionalProperties: false
+      properties:
+        available: { type: boolean, description: 'false until the platform sets GOOGLE_PLACES_API_KEY' }
+        used: { type: integer }
+        limit: { type: integer }
+        resetsAt: { type: string, format: date-time, description: 'The first of next month, UTC' }
+    Prospect:
+      type: object
+      required: [id, name, address, phone, website, rating, reviews, mapsUrl]
+      additionalProperties: false
+      properties:
+        id: { type: string, description: The Google Places id }
+        name: { type: string }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        website: { type: string, nullable: true, description: 'null when the business has no website on Google' }
+        rating: { type: number, nullable: true }
+        reviews: { type: integer, nullable: true }
+        mapsUrl: { type: string, nullable: true }
     Error:
       type: object
       required: [statusCode, message]

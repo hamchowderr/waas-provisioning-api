@@ -1,3 +1,4 @@
+import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
@@ -987,6 +988,16 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   });
   app.post('/products/:productId/basesnapshots', async (c) => c.json(await templates.create(await product(c), await readJson(c))));
   app.delete('/products/:productId/basesnapshots', async (c) => c.json(await templates.remove(await product(c), requiredUuidQuery(c, 'id'))));
+
+  // The Sales Kit's prospect finder (src/prospects.ts): Google Places searches, a monthly allowance per storefront.
+  app.get('/products/:productId/prospects/usage', async (c) =>
+    c.json(await prospectUsage(pool, config.prospects ?? { searchesPerMonth: 0 }, await product(c)), 200, { 'Cache-Control': 'no-store' }),
+  );
+  app.post('/products/:productId/prospects/search', async (c) => {
+    const productId = await product(c);
+    const input = searchInput(await c.req.json().catch(() => null));
+    return c.json(await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0 }, productId, input, deps.placesFetch), 200, { 'Cache-Control': 'no-store' });
+  });
 
   // Plugin choices (docs/plugin-choices.md): wordpress.org or uploaded plugins a storefront adds to its stores, or switches off.
   app.get('/products/:productId/plugin-choices/search', async (c) => {

@@ -1,3 +1,4 @@
+import { loadProspectConfig, type ProspectConfig } from './prospects.ts';
 import { loadAuthConfig, type AuthConfig } from './auth.ts';
 import { loadCrmConfig, type CrmConfig } from './crm.ts';
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
@@ -97,6 +98,8 @@ export interface Config {
    * is set, unless RESELLER_INVOICE=off. Unset: bills are only shown, and sent by hand.
    */
   resellerInvoices?: ResellerInvoiceConfig;
+  /** The Sales Kit's prospect finder (src/prospects.ts): GOOGLE_PLACES_API_KEY and PROSPECT_SEARCHES_PER_MONTH (100). */
+  prospects?: ProspectConfig;
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -228,6 +231,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     crm: loadCrmConfig(env),
     jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     resellerInvoices: loadResellerInvoiceConfig(env),
+    prospects: loadProspectConfig(env),
   };
 }
 
