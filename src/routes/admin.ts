@@ -495,6 +495,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       // A site moved in, held until it goes live (POST /admin/tenants/:id/go-live).
       onHold: t.on_hold,
       dateHeld: iso(t.date_held),
+      // When the "your website is ready" email last went to its owner, and to which address; null if never.
+      ownerNotifiedAt: iso(t.owner_notified_at),
+      ownerNotifiedTo: t.owner_notified_to ?? null,
       dateCreated: iso(t.date_created),
       dateChanged: iso(t.date_changed),
       // Names only: values can be secret.
@@ -677,7 +680,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       console.error(`Store ${tenant.id}: the website-ready email failed: ${message}`);
       throw new HttpError(502, 'The email could not be sent; try again in a minute');
     }
-    return c.json({ tenantId: tenant.id, email, sent: true });
+    return c.json({ tenantId: tenant.id, email, sent: true, sentAt: new Date().toISOString() });
   });
 
   // Suspend, resume and delete a store from the dashboard, as the storefront's own calls do (src/tenants.ts).

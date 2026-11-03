@@ -46,10 +46,12 @@ afterAll(async () => {
 });
 
 describe("emailing the owner that their website is ready", () => {
-  it('sends nothing unless asked', async () => {
+  it('sends nothing unless asked, and records that none went', async () => {
     sent.splice(0);
-    await makeStore('Quiet Shop');
+    const tenantId = await makeStore('Quiet Shop');
     expect(sent).toEqual([]);
+    const detail = (await (await t.call('GET', `/admin/tenants/${tenantId}`, { auth: ADMIN })).json()) as { ownerNotifiedAt: string | null };
+    expect(detail.ownerNotifiedAt).toBeNull();
   });
 
   it('sends the owner one email with a link to set their password when notifyOwner is true', async () => {
@@ -61,6 +63,13 @@ describe("emailing the owner that their website is ready", () => {
     expect(sent[0]!.body.from).toEqual({ email: MAIL.from, name: 'AnyPress' });
     expect(sent[0]!.url).toMatch(/\/wp-login\.php\?action=rp&key=.+&login=owner$/);
     expect(sent[0]!.body.text).toContain('Your username is owner.');
+  });
+
+  it('records the email a create sent', async () => {
+    const tenantId = await makeStore('Recorded Florist', { notifyOwner: true });
+    const detail = (await (await t.call('GET', `/admin/tenants/${tenantId}`, { auth: ADMIN })).json()) as { ownerNotifiedTo: string | null; ownerNotifiedAt: string | null };
+    expect(detail.ownerNotifiedTo).toBe('owner@example.com');
+    expect(detail.ownerNotifiedAt).not.toBeNull();
   });
 
   it("sends in the storefront's brand, without the platform's name", async () => {
@@ -87,7 +96,10 @@ describe('sending the website-ready email later', () => {
     sent.splice(0);
     const res = await notify(tenantId, { email: ' Owner@Example.com ' });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ tenantId, email: 'owner@example.com', sent: true });
+    expect(await res.json()).toMatchObject({ tenantId, email: 'owner@example.com', sent: true });
+    const detail = (await (await t.call('GET', `/admin/tenants/${tenantId}`, { auth: ADMIN })).json()) as { ownerNotifiedAt: string | null; ownerNotifiedTo: string | null };
+    expect(detail.ownerNotifiedTo).toBe('owner@example.com');
+    expect(Date.now() - Date.parse(detail.ownerNotifiedAt!)).toBeLessThan(60_000);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.to).toBe('owner@example.com');
     expect(sent[0]!.body.subject).toBe('Your website Later Bakery is ready');

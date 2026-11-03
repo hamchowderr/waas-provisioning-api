@@ -413,6 +413,7 @@ async function notifyOwner(
  * The "your website is ready" email with a fresh set-password link, to the store's WordPress user with `email`:
  * after a create that asked for it, or later from the dashboard (POST /admin/tenants/:id/notify-owner). Throws
  * when the store has no such user or the email can't be sent. The username is the one in WordPress's link.
+ * Records when and to whom it went (ownerNotifiedAt and ownerNotifiedTo on the admin store detail).
  */
 export async function emailWebsiteReady(
   pool: Pool,
@@ -430,6 +431,7 @@ export async function emailWebsiteReady(
     username,
     passwordLink,
   });
+  await pool.query('UPDATE tenants SET owner_notified_at = now(), owner_notified_to = $2 WHERE id = $1', [tenant.id, email]);
 }
 
 async function backUp(pool: Pool, provisioner: Provisioner, tenantId: string, backupId: string) {
