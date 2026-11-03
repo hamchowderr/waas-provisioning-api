@@ -109,6 +109,13 @@ add_filter('wp_mail', function ($atts) {
     return $atts;
 });
 
+// AnyPress keeps WordPress, plugins and themes up to date for every store, so owners don't get WordPress's
+// "your site has updated" emails (or its plugin and theme update emails). A new store can start on the previous
+// WordPress patch and update itself within minutes, which would otherwise email the owner straight away.
+add_filter('auto_core_update_send_email', '__return_false');
+add_filter('auto_plugin_update_send_email', '__return_false');
+add_filter('auto_theme_update_send_email', '__return_false');
+
 // FluentAffiliate's tracking script loads on every page once an integration is on (the template switches on
 // FluentCart's), so hold it back until the store has an active affiliate whose links could bring visitors.
 add_filter('fluent_affiliate/will_load_tracker_js', function ($load) {
