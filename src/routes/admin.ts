@@ -32,6 +32,7 @@ import { loadSetup } from '../setup.ts';
 import { deleteTenant, goLiveTenant, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
+import { emailWebsiteReady } from '../jobs.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 
 /**
@@ -494,6 +495,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       // A site moved in, held until it goes live (POST /admin/tenants/:id/go-live).
       onHold: t.on_hold,
       dateHeld: iso(t.date_held),
+      // When the "your website is ready" email last went to its owner, and to which address; null if never.
+      ownerNotifiedAt: iso(t.owner_notified_at),
+      ownerNotifiedTo: t.owner_notified_to ?? null,
       dateCreated: iso(t.date_created),
       dateChanged: iso(t.date_changed),
       // Names only: values can be secret.
@@ -643,6 +647,40 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     );
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     return c.json(await wpLogin(deps, rows[0]));
+  });
+
+  // "Send the website-ready email": the email a new store's owner can get when it is made (notifyOwner), sent
+  // later, with a fresh set-password link. For a store made quietly whose owner is now to be told. Anyone
+  // who may change the store may send it; the owner's email is given, as the API keeps no copy of it.
+  app.post('/tenants/:id/notify-owner', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const body = ((await readJson(c)) ?? {}) as { email?: unknown };
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw badRequest("email is required: the store owner's email address");
+    const { rows } = await pool.query(
+      `SELECT t.id, t.product_id, t.name, t.status, t.is_suspended, t.on_hold,
+         (SELECT domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
+       FROM tenants t WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`,
+      [id, scopedProduct(c)],
+    );
+    const tenant = rows[0];
+    if (!tenant) throw notFound(`Tenant ${id} not found`);
+    if (tenant.status !== Status.Done) throw conflict(`This site is ${statusName(tenant.status)}; the email can go once it is Done`);
+    if (tenant.is_suspended) throw conflict('This site is suspended; resume it first');
+    if (tenant.on_hold) throw conflict('This site was moved in and is not live yet; make it live first');
+    if (!tenant.main_domain) throw conflict('This site has no address yet');
+    const mail = config.auth?.mail;
+    if (!mail) throw new HttpError(503, 'Email is not set up on this API');
+    try {
+      await emailWebsiteReady(pool, deps.provisioner, mail, tenant, email);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (/has no user/.test(message)) throw badRequest(`This site has no WordPress user with the email ${email}`);
+      console.error(`Store ${tenant.id}: the website-ready email failed: ${message}`);
+      throw new HttpError(502, 'The email could not be sent; try again in a minute');
+    }
+    return c.json({ tenantId: tenant.id, email, sent: true, sentAt: new Date().toISOString() });
   });
 
   // Suspend, resume and delete a store from the dashboard, as the storefront's own calls do (src/tenants.ts).
