@@ -239,6 +239,12 @@ describe('admin', () => {
     const list = await (await t.call('GET', `/admin/webhooks?productId=${t.productId}`, { auth: ADMIN })).json();
     expectValid(validate.adminList, list);
     expect(list).toEqual([expect.objectContaining({ id: endpoint.id, productName: 'Example storefront', last24Hours: { sent: 1, failed: 1 }, pending: 0 })]);
+    const { rows: attempted } = await t.pool.query('SELECT last_attempt_at FROM webhook_deliveries WHERE id = $1', [test.id]);
+    expect((list as { lastAttemptAt: string }[])[0]!.lastAttemptAt).toBe(attempted[0].last_attempt_at.toISOString());
+    // Every storefront at once (the dashboard's All storefronts view) answers the same figures.
+    const all = (await (await t.call('GET', '/admin/webhooks', { auth: ADMIN })).json()) as { id: string }[];
+    expectValid(validate.adminList, all);
+    expect(all.find((e) => e.id === endpoint.id)).toEqual((list as unknown[])[0]);
 
     const deliveries = await (await t.call('GET', `/admin/webhooks/deliveries?status=failed&endpointId=${endpoint.id}`, { auth: ADMIN })).json();
     expectValid(validate.adminDeliveries, deliveries);
