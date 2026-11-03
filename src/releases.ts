@@ -30,7 +30,7 @@ export interface ReleaseManifest {
   /** Bucket key of the zip. */
   zip: string;
   sha256: string;
-  /** base64 ed25519 signature of "waas-release-v1\n<slug>\n<version>\n<sha256>". */
+  /** base64 ed25519 signature of "anypress-release-v1\n<slug>\n<version>\n<sha256>". */
   signature: string;
   requires?: string;
   requiresPhp?: string;

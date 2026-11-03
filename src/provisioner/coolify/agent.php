@@ -387,6 +387,33 @@ function adopt_prefix(?string $from): string
  * not carried over, because their colour, font and size names belong to that theme; WordPress keeps them, so
  * moving back brings them back. A store whose theme is still there is left alone. Returns the active theme.
  */
+/**
+ * A store built before the AnyPress names ran the store plugin as waas-client, with its settings under waas_ names.
+ * When new code replaces it, its settings move to their anypress_ names (unless already there) and AnyPress Client is
+ * switched on. The platform's own waas_ options (plan, mail, cache, hold) stay. Returns whether it moved anything.
+ */
+const OLD_CLIENT_OPTIONS = [
+    'brand_name', 'dns_a_records', 'dns_cname_target', 'owner_details', 'root_domain', 'store_owner', 'host_website_url',
+    'admin_tenant_settings', 'business_profile', 'business_profile_previous', 'removed_administrator_plugin_caps',
+    'tenant_roles', 'sso_admin_url', 'test_storefront', 'client_mcp', 'client_crm_switch', 'client_forms_switch',
+    'client_shop_switch', 'client_forms_conditional',
+];
+
+function old_client_moved(): bool
+{
+    $active = json_decode((string) wpMayFail('option', 'get', 'active_plugins', '--format=json'), true);
+    if (!is_array($active) || !in_array('waas-client/waas-client.php', $active, true)) return false;
+    if (!is_dir(CONTENT . '/plugins/anypress-client')) return false;
+    $table = wp('db', 'prefix') . 'options';
+    preg_match('/^[A-Za-z0-9_]+$/', $table) || fail('unexpected table prefix');
+    foreach (OLD_CLIENT_OPTIONS as $name) {
+        wp('db', 'query', "UPDATE IGNORE `$table` SET option_name = 'anypress_$name' WHERE option_name = 'waas_$name'");
+    }
+    wp('option', 'update', 'active_plugins', json_encode(array_values(array_diff($active, ['waas-client/waas-client.php']))), '--format=json');
+    wpMayFail('plugin', 'activate', 'anypress-client');
+    return true;
+}
+
 function keep_theme(): string
 {
     $out = wpMayFail('eval', <<<'PHP'
@@ -1815,7 +1842,7 @@ switch ($op) {
             if (!is_dir("$tmp/x/wp-content/$dir")) continue;
             run('rm -rf ' . CONTENT . "/$dir && cp -a " . escapeshellarg("$tmp/x/wp-content/$dir") . ' ' . CONTENT . "/$dir");
         }
-        done(['theme' => keep_theme()]);
+        done(['theme' => keep_theme(), 'client' => old_client_moved()]);
     }
 
     case 'usage': {

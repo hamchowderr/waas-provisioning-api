@@ -774,3 +774,72 @@ describe.skipIf(!hasPhp)('store agent: plugin choices', () => {
     expect(agent({ plugins: [add('seo-tool', 'seo-tool.php')] }).error).toContain('has no site types');
   });
 });
+
+describe.skipIf(!hasPhp)('store agent: moving a store off the old Client', () => {
+  let root: string;
+  let bin: string;
+  const content = () => join(root, 'wp-content');
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
+    mkdirSync(join(content(), 'plugins', 'waas-client'), { recursive: true });
+    chmodSync(root, 0o777);
+    chmodSync(bin, 0o755);
+    execFileSync('chmod', ['-R', '777', content()]);
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  });
+
+  /** A version's code archive with AnyPress Client in it. */
+  const code = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'waas-code-'));
+    mkdirSync(join(dir, 'wp-content', 'plugins', 'anypress-client'), { recursive: true });
+    writeFileSync(join(dir, 'wp-content', 'plugins', 'anypress-client', 'anypress-client.php'), '<?php');
+    const file = join(dir, 'code.zip');
+    execFileSync('zip', ['-qr', file, 'wp-content'], { cwd: dir });
+    chmodSync(dir, 0o755);
+    execFileSync('chmod', ['644', file]);
+    return `file://${file}`;
+  };
+  /** A wp that answers active_plugins with what the store runs and writes every call to calls.txt. */
+  const fakeWp = (active: string[]) =>
+    writeFileSync(
+      join(bin, 'wp'),
+      `#!/bin/sh
+echo "$*" >> "$WAAS_ROOT/calls.txt"
+case "$*" in
+  *"option get active_plugins"*) echo '${JSON.stringify(active)}' ;;
+  *"db prefix"*) echo 'wp_' ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+  const run = (url: string) =>
+    execFileSync('php', [AGENT, 'code-import', Buffer.from(JSON.stringify({ url })).toString('base64')], {
+      env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}` },
+      encoding: 'utf8',
+    });
+  const calls = () => (existsSync(join(root, 'calls.txt')) ? readFileSync(join(root, 'calls.txt'), 'utf8') : '');
+
+  it('moves the old settings to their AnyPress names and switches AnyPress Client on', () => {
+    fakeWp(['waas-client/waas-client.php', 'fluent-crm/fluent-crm.php']);
+    expect(run(code())).toContain('"client":true');
+    const log = calls();
+    expect(log).toContain("UPDATE IGNORE `wp_options` SET option_name = 'anypress_brand_name' WHERE option_name = 'waas_brand_name'");
+    expect(log).toContain("UPDATE IGNORE `wp_options` SET option_name = 'anypress_store_owner' WHERE option_name = 'waas_store_owner'");
+    expect(log).not.toContain('waas_plan_');
+    expect(log).toContain('option update active_plugins ["fluent-crm\\/fluent-crm.php"] --format=json');
+    expect(log).toContain('plugin activate anypress-client');
+    expect(existsSync(join(content(), 'plugins', 'waas-client'))).toBe(false);
+  });
+
+  it('leaves a store that already runs AnyPress Client alone', () => {
+    fakeWp(['anypress-client/anypress-client.php']);
+    expect(run(code())).toContain('"client":false');
+    expect(calls()).not.toContain('UPDATE');
+    expect(calls()).not.toContain('plugin activate');
+  });
+});
