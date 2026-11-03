@@ -604,6 +604,42 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/host-updates:
+    get:
+      operationId: adminListHostUpdates
+      summary: AnyPress Host on each ready-made storefront
+      description: >-
+        The last stable AnyPress Host release the API pushed to each ready-made storefront (docs/host-updates.md), the
+        version it had before, and why a push failed. Admin token only.
+      responses:
+        '200':
+          description: One entry per storefront the API has pushed a release to
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HostUpdate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminRunHostUpdates
+      summary: Push the latest AnyPress Host to the storefronts now
+      description: >-
+        What the 15-minute check does, now, and it also tries again the storefronts where the push failed. Answers the
+        stable release and how many storefronts were queued. Admin token only.
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, queued]
+                properties:
+                  version: { type: string, nullable: true, description: The stable release; null when the channel has none }
+                  queued: { type: integer }
+                additionalProperties: false
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /admin/products/{productId}/versions/from-production:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -2310,6 +2346,18 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    HostUpdate:
+      type: object
+      additionalProperties: false
+      required: [tenantId, name, version, fromVersion, status, error, dateChanged]
+      properties:
+        tenantId: { type: string, format: uuid }
+        name: { type: string, nullable: true, description: The storefront's store name }
+        version: { type: string, description: The AnyPress Host release pushed }
+        fromVersion: { type: string, nullable: true, description: The version it had before; null until the push is done or when it had none }
+        status: { type: string, enum: [pending, done, failed] }
+        error: { type: string, nullable: true, description: Why the push failed; the storefront kept the copy it had }
+        dateChanged: { type: string, format: date-time }
     SetupStep:
       type: object
       required: [key, label, state, doneAt, detail]

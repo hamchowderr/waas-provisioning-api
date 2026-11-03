@@ -843,3 +843,122 @@ esac
     expect(calls()).not.toContain('plugin activate');
   });
 });
+
+describe.skipIf(!hasPhp)('store agent: plugin update', () => {
+  let root: string;
+  let work: string;
+  const plugins = () => join(root, 'wp-content/plugins');
+  const activeFile = () => join(root, 'active.json');
+  const active = () => JSON.parse(readFileSync(activeFile(), 'utf8'));
+  const agent = (args: unknown) => {
+    try {
+      const out = execFileSync('php', [AGENT, 'update-plugin', Buffer.from(JSON.stringify(args)).toString('base64')], {
+        env: {
+          ...process.env,
+          WAAS_ROOT: root,
+          PATH: `${join(work, 'bin')}:${process.env.PATH}`,
+        },
+        encoding: 'utf8',
+      });
+      return JSON.parse(/^WAAS_RESULT (.*)$/m.exec(out)![1]!);
+    } catch (err) {
+      return {
+        error: /WAAS_ERROR (.*)/.exec(String((err as { stdout?: string }).stdout))?.[1],
+      };
+    }
+  };
+  /** A plugin folder: its main file with a version, and a file that marks it as breaking WordPress. */
+  const folder = (dir: string, slug: string, version: string, { main = `${slug}.php`, broken = false } = {}) => {
+    mkdirSync(join(dir, slug), { recursive: true });
+    writeFileSync(join(dir, slug, main), `<?php\n/**\n * Plugin Name: Host\n * Version: ${version}\n */`);
+    if (broken) writeFileSync(join(dir, slug, 'BROKEN'), '');
+    // In a store, the agent's own user owns the plugin folders.
+    execFileSync('chmod', ['-R', '777', join(dir, slug)]);
+  };
+  const release = (slug: string, version: string, broken = false) => {
+    const dir = mkdtempSync(join(work, 'src-'));
+    folder(dir, slug, version, { broken });
+    const file = join(work, `${slug}-${version}.zip`);
+    execFileSync('zip', ['-qr', file, slug], { cwd: dir });
+    chmodSync(file, 0o644);
+    return {
+      slug,
+      version,
+      url: `file://${file}`,
+      sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
+    };
+  };
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    work = mkdtempSync(join(tmpdir(), 'waas-work-'));
+    mkdirSync(plugins(), { recursive: true });
+    mkdirSync(join(work, 'bin'));
+    // A stand-in WP-CLI: active_plugins in a file, and a full load that fails while a BROKEN plugin is in place.
+    writeFileSync(
+      join(work, 'bin/wp'),
+      `#!/bin/sh
+root="$WAAS_ROOT"
+for a in "$@"; do case "$a" in --*) ;; *) set -- "$@" "$a" ;; esac; shift; done
+case "$1 $2 $3" in
+  "option get active_plugins") cat "$root/active.json" ;;
+  "option update active_plugins") printf '%s' "$4" > "$root/active.json"; echo "Success" ;;
+  eval*) if ls "$root"/wp-content/plugins/*/BROKEN >/dev/null 2>&1; then echo "PHP Fatal error: Cannot redeclare"; exit 255; fi; echo WAAS_LOADED ;;
+  *) echo "unexpected wp $*" >&2; exit 1 ;;
+esac
+`,
+    );
+    chmodSync(join(work, 'bin/wp'), 0o755);
+    writeFileSync(activeFile(), JSON.stringify(['fluent-cart/fluent-cart.php', 'waas-host/index.php']));
+    execFileSync('chmod', ['-R', '777', root, work]);
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  it('replaces an older folder, keeping the plugin switched on in its place', () => {
+    folder(plugins(), 'waas-host', '2.9.0', { main: 'index.php' });
+    expect(
+      agent({
+        ...release('anypress-host', '2.11.1'),
+        replaces: ['waas-host', 'wpcs-waas-host'],
+      }),
+    ).toEqual({ from: '2.9.0', unchanged: false });
+    expect(existsSync(join(plugins(), 'waas-host'))).toBe(false);
+    expect(readFileSync(join(plugins(), 'anypress-host/anypress-host.php'), 'utf8')).toContain('Version: 2.11.1');
+    expect(active()).toEqual(['fluent-cart/fluent-cart.php', 'anypress-host/anypress-host.php']);
+    expect(readdirSync(plugins())).toEqual(['anypress-host']);
+    // Already there: nothing to do.
+    expect(agent({ ...release('anypress-host', '2.11.1'), replaces: ['waas-host'] })).toEqual({ from: '2.11.1', unchanged: true });
+  });
+
+  it('updates a plugin in its own folder', () => {
+    folder(plugins(), 'anypress-host', '2.11.0');
+    writeFileSync(activeFile(), JSON.stringify(['anypress-host/anypress-host.php']));
+    expect(agent(release('anypress-host', '2.11.1'))).toEqual({
+      from: '2.11.0',
+      unchanged: false,
+    });
+    expect(readFileSync(join(plugins(), 'anypress-host/anypress-host.php'), 'utf8')).toContain('Version: 2.11.1');
+    expect(active()).toEqual(['anypress-host/anypress-host.php']);
+  });
+
+  it('puts the old copy back when WordPress does not load with the new one', () => {
+    folder(plugins(), 'waas-host', '2.9.0', { main: 'index.php' });
+    const result = agent({
+      ...release('anypress-host', '2.11.1', true),
+      replaces: ['waas-host'],
+    });
+    expect(result.error).toContain('WordPress did not load with it, so the store has its old copy back');
+    expect(readdirSync(plugins())).toEqual(['waas-host']);
+    expect(readFileSync(join(plugins(), 'waas-host/index.php'), 'utf8')).toContain('Version: 2.9.0');
+    expect(active()).toEqual(['fluent-cart/fluent-cart.php', 'waas-host/index.php']);
+  });
+
+  it('refuses a zip that does not match or holds another version', () => {
+    expect(agent({ ...release('anypress-host', '2.11.1'), sha256: '0'.repeat(64) }).error).toContain('does not match its SHA-256');
+    expect(agent({ ...release('anypress-host', '2.11.1'), version: '2.12.0' }).error).toContain('holds version 2.11.1, not 2.12.0');
+    expect(agent({ ...release('anypress-host', '2.11.1'), slug: '../x' }).error).toContain('bad plugin slug');
+  });
+});

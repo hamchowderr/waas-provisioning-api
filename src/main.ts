@@ -19,6 +19,7 @@ import { FakeProvisioner } from './provisioner/fake.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import { startBoss, startWorker } from './queue.ts';
 import { S3ReleaseStore } from './releases.ts';
+import { startHostUpdates } from './hostupdates.ts';
 import { Secrets } from './secrets.ts';
 import { siteKey, siteKeyMaster } from './sitekeys.ts';
 import { startStoreBackups } from './storebackups.ts';
@@ -39,7 +40,7 @@ const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
 // A job that fails its last retry is emailed to the admins (src/jobalerts.ts).
 const handlers = withFailureAlerts(
-  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail), pool, boss, webhooks),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases), pool, boss, webhooks),
   pool,
   { mail: config.auth?.mail, to: config.jobAlerts, dashboardUrl: config.auth?.url },
 );
@@ -63,6 +64,8 @@ await startResellerInvoices(boss, pool, config.resellerInvoices);
 // Sites whose constants moved to their ANYPRESS_ names get them pushed once (src/constantnames.ts).
 const renamed = await pushRenamedConstants(boss, pool);
 if (renamed) console.log(`Pushing renamed constants to ${renamed} site(s)`);
+// Each new WaaS Host release pushed to every ready-made storefront (docs/host-updates.md), checked every 15 minutes.
+await startHostUpdates({ pool, boss, releases, storefrontProductId: config.storefrontProductId });
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner, config);
 
