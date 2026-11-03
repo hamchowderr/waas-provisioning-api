@@ -1,4 +1,5 @@
 import type { Size } from '../plans.ts';
+import type { CrmContact } from '../prospectcrm.ts';
 import { ImportPartsError, storeFromAddress, type Brand, type CreateStoreInput, type MoveReport, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
 interface FakeStore extends CreateStoreInput {
@@ -15,6 +16,8 @@ interface FakeStore extends CreateStoreInput {
   mailCount?: { month: string; sent: number };
   /** Plugin versions installed by updatePlugin, by slug. */
   plugins?: Record<string, string>;
+  /** FluentCRM contacts written by addCrmProspects, by email. */
+  crm?: Record<string, CrmContact>;
 }
 
 /**
@@ -336,6 +339,20 @@ export class FakeProvisioner implements Provisioner {
     const store = this.store(storeId);
     if (store.user?.email !== email) throw new Error(`FakeProvisioner: store ${storeId} has no user ${email}`);
     return `https://${store.mainDomain}/wp-login.php?action=rp&key=fake-key&login=${encodeURIComponent(store.user.name)}`;
+  }
+
+  async addCrmProspects({ storeId, contacts }: Parameters<Provisioner['addCrmProspects']>[0]) {
+    this.check('addCrmProspects');
+    const store = this.store(storeId);
+    const crm = (store.crm ??= {});
+    let added = 0;
+    let updated = 0;
+    for (const c of contacts) {
+      if (crm[c.email]) updated++;
+      else added++;
+      crm[c.email] = { ...c, tags: [...new Set([...(crm[c.email]?.tags ?? []), ...c.tags])] };
+    }
+    return { added, updated, failed: {} };
   }
 
   async deleteStore({ storeId }: { storeId: string }) {

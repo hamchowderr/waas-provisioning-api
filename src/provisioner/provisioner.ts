@@ -1,4 +1,5 @@
 import type { Size } from '../plans.ts';
+import type { CrmContact, CrmWriteResult } from '../prospectcrm.ts';
 import type { SiteInventory } from '../sitereport.ts';
 
 /**
@@ -226,6 +227,13 @@ export interface Provisioner {
    * `from` is the version it had (null when it had none); unchanged when it was on this version already.
    */
   updatePlugin(input: { storeId: string; slug: string; version: string; url: string; sha256: string; replaces?: string[] }): Promise<{ from: string | null; unchanged: boolean }>;
+
+  /**
+   * Writes businesses from the prospect finder into the store's FluentCRM (src/prospectcrm.ts): each contact is created
+   * or updated by email, gets its tags (made when missing) and a note of what was found. A new contact is
+   * "transactional"; an existing one keeps its status. `failed` names the ones it could not write, by id, with why.
+   */
+  addCrmProspects(input: { storeId: string; contacts: CrmContact[] }): Promise<CrmWriteResult>;
 
   deleteStore(input: { storeId: string }): Promise<void>;
 

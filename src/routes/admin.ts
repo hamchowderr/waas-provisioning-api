@@ -1,3 +1,4 @@
+import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebhook } from '../prospectcrm.ts';
 import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -1043,7 +1044,44 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.post('/products/:productId/prospects/search', async (c) => {
     const productId = await product(c);
     const input = searchInput(await c.req.json().catch(() => null));
-    return c.json(await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0 }, productId, input, deps.placesFetch), 200, { 'Cache-Control': 'no-store' });
+    const found = await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0 }, productId, input, deps.placesFetch);
+    // Which of them are in the seller's CRM already (src/prospectcrm.ts).
+    const marks = await crmMarks(pool, productId, found.prospects.map((p) => p.id));
+    return c.json({ ...found, prospects: found.prospects.map((p) => ({ ...p, inCrm: marks[p.id] ?? [] })) }, 200, { 'Cache-Control': 'no-store' });
+  });
+
+  // Sending prospects into the storefront's FluentCRM or the seller's HighLevel (src/prospectcrm.ts).
+  const storefrontOf = async (productId: string) => {
+    const store = await getStorefront(deps, productId);
+    return store ? { id: store.id, statusCode: store.statusCode } : null;
+  };
+  const crmDeps = {
+    pool,
+    secrets: deps.secrets,
+    storefront: storefrontOf,
+    queueFluentCrm: (tenantId: string, productId: string) =>
+      withTransaction(pool, (client) => enqueue(boss, client, { type: 'storefront.crm-prospects', tenantId, productId })).then(() => undefined),
+    // Looked up on each call, so tests can replace it after the app is made.
+    fetchFn: ((input: Parameters<typeof fetch>[0], init?: RequestInit) => (deps.crmFetch ?? fetch)(input, init)) as typeof fetch,
+  };
+  app.get('/products/:productId/prospects/crm', async (c) =>
+    c.json(await getCrmSettings(pool, deps.secrets, storefrontOf, await product(c)), 200, { 'Cache-Control': 'no-store' }),
+  );
+  app.put('/products/:productId/prospects/crm/highlevel', async (c) => {
+    const productId = await product(c);
+    const body = ((await c.req.json().catch(() => null)) ?? {}) as { webhook?: unknown };
+    await setHighLevelWebhook(pool, deps.secrets, productId, body.webhook ?? null);
+    return c.json(await getCrmSettings(pool, deps.secrets, storefrontOf, productId));
+  });
+  app.delete('/products/:productId/prospects/crm/highlevel', async (c) => {
+    const productId = await product(c);
+    await setHighLevelWebhook(pool, deps.secrets, productId, null);
+    return c.json(await getCrmSettings(pool, deps.secrets, storefrontOf, productId));
+  });
+  app.post('/products/:productId/prospects/crm', async (c) => {
+    const productId = await product(c);
+    const input = crmInput(await c.req.json().catch(() => null));
+    return c.json(await addProspectsToCrm(crmDeps, productId, input), 200, { 'Cache-Control': 'no-store' });
   });
 
   // Plugin choices (docs/plugin-choices.md): wordpress.org or uploaded plugins a storefront adds to its stores, or switches off.

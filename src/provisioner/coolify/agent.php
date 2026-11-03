@@ -1533,6 +1533,72 @@ function site_inventory(string $home): array
     return ['error' => substr(trim(str_replace(ROOT . '/', '', preg_replace('/\s+/', ' ', $text))), -300) ?: 'no answer'];
 }
 
+/**
+ * Writes prospect finder results into the store's FluentCRM (the crm-prospects operation, src/prospectcrm.ts). Run by
+ * `wp eval-file <this> <contacts.json>` with plugins loaded, since it uses FluentCRM's own API. A new contact is
+ * "transactional", so no newsletter or campaign reaches a business that never signed up; an existing one keeps its
+ * status. Each contact fails on its own and says why, by its finder id.
+ */
+const CRM_PROSPECTS = <<<'PHP'
+<?php
+if (!function_exists('FluentCrmApi') || !class_exists('\FluentCrm\App\Models\Tag')) { echo "WAAS_CRM_MISSING\n"; return; }
+$data = json_decode((string) file_get_contents($args[0]), true);
+$contacts = is_array($data['contacts'] ?? null) ? $data['contacts'] : [];
+$api = FluentCrmApi('contacts');
+$tagIds = [];
+$tagId = function (string $title) use (&$tagIds) {
+    if (isset($tagIds[$title])) return $tagIds[$title];
+    $tag = \FluentCrm\App\Models\Tag::where('title', $title)->first();
+    if (!$tag) $tag = \FluentCrm\App\Models\Tag::create(['title' => $title, 'slug' => sanitize_title($title)]);
+    return $tagIds[$title] = (int) $tag->id;
+};
+$esc = fn ($v) => esc_html((string) $v);
+$out = ['added' => 0, 'updated' => 0, 'failed' => []];
+foreach ($contacts as $c) {
+    $id = (string) ($c['id'] ?? '');
+    try {
+        $email = sanitize_email((string) ($c['email'] ?? ''));
+        if (!is_email($email)) throw new RuntimeException('no usable email');
+        $existing = $api->getContact($email);
+        $fields = [
+            'email' => $email,
+            'first_name' => mb_substr(sanitize_text_field((string) ($c['name'] ?? '')), 0, 190),
+            'phone' => sanitize_text_field((string) ($c['phone'] ?? '')),
+            'address_line_1' => mb_substr(sanitize_text_field((string) ($c['address'] ?? '')), 0, 190),
+            'source' => 'Prospect finder',
+            'contact_type' => 'lead',
+            'tags' => array_map($tagId, array_map('strval', (array) ($c['tags'] ?? []))),
+        ];
+        if (!$existing) $fields['status'] = 'transactional';
+        // Fields a contact already has are kept: the seller may have corrected them.
+        if ($existing) foreach (['first_name', 'phone', 'address_line_1', 'source', 'contact_type'] as $k) if ((string) $existing->{$k} !== '') unset($fields[$k]);
+        $contact = $api->createOrUpdate(array_filter($fields, fn ($v) => $v !== '' && $v !== []));
+        if (!$contact) throw new RuntimeException('FluentCRM did not take the contact');
+        $rows = [];
+        foreach (['Type' => $c['type'] ?? '', 'Website' => $c['website'] ?? '', 'Contact page' => $c['contactPage'] ?? '', 'Google Maps' => $c['mapsUrl'] ?? ''] as $label => $v) {
+            if ($v === '' || $v === null) continue;
+            $rows[] = '<li>' . $esc($label) . ': ' . (preg_match('#^https?://#', (string) $v) ? '<a href="' . esc_url((string) $v) . '">' . $esc($v) . '</a>' : $esc($v)) . '</li>';
+        }
+        if (isset($c['rating']) && $c['rating'] !== null) $rows[] = '<li>Google rating: ' . $esc($c['rating']) . (isset($c['reviews']) && $c['reviews'] !== null ? ' (' . $esc($c['reviews']) . ' reviews)' : '') . '</li>';
+        foreach ((array) ($c['socials'] ?? []) as $s) $rows[] = '<li>' . $esc(ucfirst((string) ($s['network'] ?? ''))) . ': <a href="' . esc_url((string) ($s['url'] ?? '')) . '">' . $esc($s['url'] ?? '') . '</a></li>';
+        if (!empty($c['hours'])) $rows[] = '<li>Hours:<br>' . implode('<br>', array_map($esc, (array) $c['hours'])) . '</li>';
+        \FluentCrm\App\Models\SubscriberNote::create([
+            'subscriber_id' => $contact->id,
+            'type' => 'note',
+            'title' => 'Found with the prospect finder',
+            'description' => '<ul>' . implode('', $rows) . '</ul>',
+            'created_by' => 0,
+            'created_at' => current_time('mysql'),
+        ]);
+        $existing ? $out['updated']++ : $out['added']++;
+    } catch (Throwable $e) {
+        $out['failed'][$id] = substr(preg_replace('/\s+/', ' ', $e->getMessage()), 0, 200);
+    }
+}
+$out['failed'] = (object) $out['failed'];
+echo 'WAAS_CRM ' . wp_json_encode($out) . "\n";
+PHP;
+
 // Commands run as root in the container; drop to www-data so WordPress can manage its files.
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
     posix_setgid(WWW_UID) && posix_setuid(WWW_UID) || fail('could not drop privileges');
@@ -1993,6 +2059,20 @@ switch ($op) {
         if (!is_int($sent) || $sent < 0) fail('sent must be a whole number');
         wp('option', 'update', 'waas_plan_mail_platform', json_encode(['month' => $month, 'sent' => $sent]), '--format=json', '--autoload=no');
         done(['month' => $month, 'sent' => $sent]);
+    }
+
+    case 'crm-prospects': {
+        // Prospect finder results into the store's FluentCRM (CRM_PROSPECTS). The list is too long for a task command,
+        // so it comes as a signed link.
+        $url = (string) ($args['url'] ?? '');
+        preg_match('#^https://#', $url) || fail('url must be an https address');
+        $tmp = tempDir();
+        curlTransfer($url, "$tmp/contacts.json", false);
+        file_put_contents("$tmp/crm.php", CRM_PROSPECTS) !== false || fail('cannot write the CRM script');
+        $out = run('timeout 300 wp --path=' . ROOT . ' --skip-themes eval-file ' . escapeshellarg("$tmp/crm.php") . ' ' . escapeshellarg("$tmp/contacts.json") . ' 2>&1; echo "::$?"', true);
+        if (strpos($out, 'WAAS_CRM_MISSING') !== false) fail('FluentCRM is not switched on in this store');
+        if (!preg_match('/^WAAS_CRM (\{.*\})\s*$/m', $out, $m)) fail('FluentCRM gave no answer: ' . substr(trim(preg_replace('/\s+/', ' ', explode('::', $out, 2)[0])), -300));
+        done(json_decode($m[1], true) ?: []);
     }
 
     case 'update-db':

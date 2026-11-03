@@ -141,6 +141,102 @@ paths:
               schema: { $ref: '#/components/schemas/ProspectUsage' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/prospects/crm:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminProspectCrm
+      summary: Where prospects can go
+      description: >-
+        Whether the storefront's FluentCRM can take prospects (ready-made AnyPress storefronts that are built), and
+        whether a HighLevel webhook is set.
+      responses:
+        '200':
+          description: The CRMs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectCrm' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminAddProspectsToCrm
+      summary: Send prospects into FluentCRM or HighLevel
+      description: >-
+        Sends up to 60 businesses from the prospect finder into the storefront's FluentCRM, the seller's HighLevel, or
+        both. FluentCRM contacts are written by a job shortly after, tagged "Prospect" and "Prospect: <group>", with a
+        note of what was found, and are added as "transactional" so no newsletter reaches them; businesses without an
+        email are left out of FluentCRM. HighLevel gets each business posted to the webhook now. A business already
+        sent to a CRM is not sent again; a failed one can be.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prospects, targets]
+              properties:
+                prospects:
+                  type: array
+                  minItems: 1
+                  maxItems: 60
+                  items: { $ref: '#/components/schemas/CrmProspect' }
+                group: { type: string, maxLength: 80, nullable: true, description: 'The customer group they were found for, such as "Churches"' }
+                targets:
+                  type: array
+                  minItems: 1
+                  items: { type: string, enum: [fluentcrm, highlevel] }
+      responses:
+        '200':
+          description: What happened in each CRM
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectCrmResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502':
+          description: HighLevel took none of them
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /admin/products/{productId}/prospects/crm/highlevel:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    put:
+      operationId: adminSetProspectHighLevel
+      summary: Set the HighLevel webhook for prospects
+      description: >-
+        The address of the "Inbound Webhook" trigger in the seller's HighLevel workflow
+        (https://services.leadconnectorhq.com/hooks/...). Kept encrypted; never shown again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [webhook]
+              properties:
+                webhook: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: The CRMs after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectCrm' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminRemoveProspectHighLevel
+      summary: Remove the HighLevel webhook for prospects
+      responses:
+        '200':
+          description: The CRMs after the change
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectCrm' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/prospects/search:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -2847,7 +2943,7 @@ components:
         resetsAt: { type: string, format: date-time, description: 'The first of next month, UTC' }
     Prospect:
       type: object
-      required: [id, name, address, phone, website, rating, reviews, mapsUrl, type, hours]
+      required: [id, name, address, phone, website, rating, reviews, mapsUrl, type, hours, inCrm]
       additionalProperties: false
       properties:
         id: { type: string, description: The Google Places id }
@@ -2864,6 +2960,76 @@ components:
           nullable: true
           description: 'Opening hours, one line a day, such as "Monday: 9:00 AM – 5:00 PM"'
           items: { type: string }
+        inCrm:
+          type: array
+          description: The CRMs the business was sent to already (or is on its way to)
+          items: { type: string, enum: [fluentcrm, highlevel] }
+    CrmProspect:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, maxLength: 300, description: The Google Places id }
+        name: { type: string, maxLength: 200 }
+        type: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true, description: 'Found on its website; FluentCRM needs one' }
+        website: { type: string, nullable: true }
+        contactPage: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        mapsUrl: { type: string, nullable: true }
+        rating: { type: number, nullable: true }
+        reviews: { type: integer, nullable: true }
+        hours: { type: array, nullable: true, items: { type: string } }
+        socials:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [network, url]
+            properties:
+              network: { type: string, enum: [facebook, instagram, linkedin, x, youtube, tiktok] }
+              url: { type: string }
+    ProspectCrm:
+      type: object
+      required: [fluentcrm, highlevel]
+      additionalProperties: false
+      properties:
+        fluentcrm:
+          type: object
+          required: [available, reason]
+          additionalProperties: false
+          properties:
+            available: { type: boolean }
+            reason: { type: string, nullable: true, description: Why FluentCRM can't take prospects; null when it can }
+        highlevel:
+          type: object
+          required: [connected]
+          additionalProperties: false
+          properties:
+            connected: { type: boolean, description: Whether a HighLevel webhook is set }
+    ProspectCrmResult:
+      type: object
+      required: [fluentcrm, highlevel]
+      additionalProperties: false
+      properties:
+        fluentcrm:
+          type: object
+          required: [queued, already, noEmail, unavailable]
+          additionalProperties: false
+          properties:
+            queued: { type: integer, description: Going into FluentCRM now }
+            already: { type: integer, description: Sent before }
+            noEmail: { type: integer, description: Left out because no email was found }
+            unavailable: { type: string, nullable: true, description: Why none went; null when FluentCRM was not asked or could take them }
+        highlevel:
+          type: object
+          required: [sent, already, failed, unavailable]
+          additionalProperties: false
+          properties:
+            sent: { type: integer }
+            already: { type: integer }
+            failed: { type: integer }
+            unavailable: { type: string, nullable: true }
     Error:
       type: object
       required: [statusCode, message]
