@@ -265,7 +265,7 @@ const storeInput = {
   snapshotId: 'snap-1',
   mainDomain: 'shop.example.com',
   redirectDomains: ['t-0b8f6a0e.stores.example.com'],
-  phpConstants: { WPCS_TENANT_ROLES: { value: 'shop_manager' }, API_SECRET: { value: 'private-constant-value', isPrivate: true } },
+  phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'shop_manager' }, API_SECRET: { value: 'private-constant-value', isPrivate: true } },
   wpOptions: { blogname: 'Example Store' },
   size: 'small' as const,
   user: { name: 'owner', email: 'owner@example.com', role: 'administrator', password: 'example-password-123' },
@@ -317,7 +317,7 @@ describe('CoolifyProvisioner', () => {
     });
 
     const constants = JSON.parse(Buffer.from(store.envs.get('WAAS_CONSTANTS_B64')!.value, 'base64').toString());
-    expect(constants).toEqual({ WPCS_TENANT_ROLES: 'shop_manager', API_SECRET: 'private-constant-value' });
+    expect(constants).toEqual({ ANYPRESS_TENANT_ROLES: 'shop_manager', API_SECRET: 'private-constant-value' });
     // The password went in as a variable only, never in a command, and is gone afterwards.
     expect(store.envs.has('WAAS_INIT_PASSWORD')).toBe(false);
     const commands = cloud.agentOps.map((o) => JSON.stringify(o.args)).join('\n');
@@ -431,7 +431,7 @@ describe('CoolifyProvisioner', () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(store.envs.get('WAAS_SITE_KEY')?.value).toBe(`site-key-for-${STORE_ID}`);
-    expect(parse(store.compose).services.wordpress.environment.WAAS_SITE_KEY).toBe('${WAAS_SITE_KEY:-}');
+    expect(parse(store.compose).services.wordpress.environment.ANYPRESS_SITE_KEY).toBe('${WAAS_SITE_KEY:-}');
 
     store.envs.delete('WAAS_SITE_KEY');
     store.description = `WaaS store, version ${VERSION_ID}, setup 3, size small`;
@@ -836,7 +836,7 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'update-db', 'code-import', 'configure', 'check-site']);
     expect(cloud.agentOps[1]!.args).toMatchObject({ import: true, home: 'https://shop.example.com' });
     expect(cloud.agentOps[1]!.args).not.toHaveProperty('hold');
-    // It keeps its own plugins and themes and gets the version's WaaS Client and what it lacks.
+    // It keeps its own plugins and themes and gets the version's AnyPress Client and what it lacks.
     expect(cloud.agentOps[3]!.args).toMatchObject({ add: true, url: expect.stringContaining(`versions/${storeInput.versionId}/code.zip`) });
     // The moved site keeps its own options; its owner still gets its email while it is held.
     expect(cloud.agentOps[4]!.args).toMatchObject({ options: {}, holdAllow: ['owner@example.com'] });
@@ -958,9 +958,9 @@ describe('CoolifyProvisioner', () => {
     await p.createStore(storeInput);
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     const starts = store.started;
-    await p.updateStore({ storeId: STORE_ID, phpConstants: { ...storeInput.phpConstants, WPCS_TENANT_ROLES: { value: 'editor' } }, wpOptions: { blogdescription: 'New' } });
+    await p.updateStore({ storeId: STORE_ID, phpConstants: { ...storeInput.phpConstants, ANYPRESS_TENANT_ROLES: { value: 'editor' } }, wpOptions: { blogdescription: 'New' } });
     const constants = JSON.parse(Buffer.from(store.envs.get('WAAS_CONSTANTS_B64')!.value, 'base64').toString());
-    expect(constants).toEqual({ WPCS_TENANT_ROLES: 'editor', API_SECRET: 'private-constant-value' });
+    expect(constants).toEqual({ ANYPRESS_TENANT_ROLES: 'editor', API_SECRET: 'private-constant-value' });
     expect(store.started).toBe(starts + 1);
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: { options: { blogdescription: 'New' } } });
   });

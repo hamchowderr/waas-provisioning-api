@@ -7,11 +7,11 @@ Every storefront and reseller has a setup checklist. Each step ticks itself from
 | Key | Step | Done when |
 |---|---|---|
 | `approved` | Application approved | The seller's application was approved. It is also done for a storefront made without an application. |
-| `shop-connected` | Shop connected | One of the storefront's API keys has been used, which means WaaS Host on the shop has signed in. |
+| `shop-connected` | Shop connected | One of the storefront's API keys has been used, which means AnyPress Host on the shop has signed in. |
 | `starting-site` | Starting site picked | The storefront has a production version. |
-| `plans` | Plans on sale | The shop's WaaS Host reports a published plan. Reads `not-reported` until WaaS Host sends it. |
-| `payments` | Payments on | The shop's WaaS Host reports a live payment method. Reads `not-reported` until WaaS Host sends it. |
-| `own-domain` | Own domain | The shop address WaaS Host last reported is not a platform address (the stores domain, the platform domain, sslip.io or an IP address). |
+| `plans` | Plans on sale | The shop's AnyPress Host reports a published plan. Reads `not-reported` until AnyPress Host sends it. |
+| `payments` | Payments on | The shop's AnyPress Host reports a live payment method. Reads `not-reported` until AnyPress Host sends it. |
+| `own-domain` | Own domain | The shop address AnyPress Host last reported is not a platform address (the stores domain, the platform domain, sslip.io or an IP address). |
 | `brand` | Brand added | The storefront, or its reseller, has a name or logo on Branding. |
 | `team` | Team invited | Someone besides the first member has joined the storefront's team, or its reseller's team. |
 | `self-building` | Stores build themselves | A store was made through the storefront's own key, so an order on the shop built it with nobody involved. This step reads from the request log, so it only sees stores made within the log's retention (`REQUEST_LOG_DAYS`). |
@@ -27,4 +27,4 @@ Every storefront and reseller has a setup checklist. Each step ticks itself from
 
 ## Progress
 
-Each checklist also returns `done`, `total`, `next` (the first step left to do, skipping steps WaaS Host hasn't reported yet unless nothing else is left) and `lastProgressAt`, which is the newest step done, or when the account was made if none are. A checklist is `stuck` when it isn't finished and no step has been done for 7 days.
+Each checklist also returns `done`, `total`, `next` (the first step left to do, skipping steps AnyPress Host hasn't reported yet unless nothing else is left) and `lastProgressAt`, which is the newest step done, or when the account was made if none are. A checklist is `stuck` when it isn't finished and no step has been done for 7 days.

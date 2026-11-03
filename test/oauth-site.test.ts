@@ -1,5 +1,5 @@
 // "Sign in with your website" (src/oauth.ts): a store owner types their site's address on the approve
-// page, presses Allow in their own wp-admin (WaaS Client's connect page, played here by signing its
+// page, presses Allow in their own wp-admin (AnyPress Client's connect page, played here by signing its
 // answer with the store's key), and the app gets a token that only edits that store's site.
 import { Client, StreamableHTTPClientTransport, UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -66,7 +66,7 @@ async function typeAddress(site: string) {
   return { p, response };
 }
 
-/** What WaaS Client does when the owner presses a button: answer at `back`, signed with the store's key. */
+/** What AnyPress Client does when the owner presses a button: answer at `back`, signed with the store's key. */
 function storeAnswers(link: URL, answer: ConnectAnswer, key = keyOf(tenantId)) {
   const back = new URL(link.searchParams.get('back')!);
   const request = link.searchParams.get('request')!;
@@ -135,7 +135,7 @@ describe('Sign in with your website', () => {
     seen = [];
     const result = await client.callTool({ name: 'get_site', arguments: { externalId: 'someone-else' } });
     expect(result.isError).toBeFalsy();
-    expect(seen).toEqual([`https://${mainDomain}/wp-json/waas-client/v1/site`]);
+    expect(seen).toEqual([`https://${mainDomain}/wp-json/anypress-client/v1/site`]);
     await client.close();
   });
 
@@ -318,7 +318,7 @@ describe('The website hands its own admin to the website assistant', () => {
   const ask = (body: Record<string, string>, key: string | null = keyOf(tenantId), now = Date.now()) => {
     const raw = JSON.stringify(body);
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (key) headers['X-Waas-Signature'] = signSiteRequest(key, 'POST', ROUTE, raw, now);
+    if (key) headers['X-AnyPress-Signature'] = signSiteRequest(key, 'POST', ROUTE, raw, now);
     return t.app.request(ROUTE, { method: 'POST', headers, body: raw });
   };
 
@@ -334,7 +334,7 @@ describe('The website hands its own admin to the website assistant', () => {
     const raw = JSON.stringify(body);
     const forged = await t.app.request(ROUTE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(keyOf(tenantId), 'POST', ROUTE, raw) },
+      headers: { 'Content-Type': 'application/json', 'X-AnyPress-Signature': signSiteRequest(keyOf(tenantId), 'POST', ROUTE, raw) },
       body: JSON.stringify({ ...body, assistantUrl: 'https://evil.example' }),
     });
     expect(forged.status).toBe(403);

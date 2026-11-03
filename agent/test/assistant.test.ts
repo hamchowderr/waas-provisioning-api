@@ -1,4 +1,4 @@
-// The website assistant against the real API in-process and fake stores that answer like WaaS Client.
+// The website assistant against the real API in-process and fake stores that answer like AnyPress Client.
 // AIMock plays the model, so each test scripts exactly which tool the model calls, and the test checks
 // what reached which store. The assistant speaks the Chat Kit's chat routes (/agent-controller/*).
 // Needs TEST_DATABASE_URL, like the API's own tests.
@@ -8,10 +8,10 @@ import { startHarness, type Harness } from './harness.ts';
 let h: Harness;
 let seen: { domain: string; method: string; path: string; body: string }[] = [];
 
-/** What a store's WaaS Client answers to the API's signed site requests. */
+/** What a store's AnyPress Client answers to the API's signed site requests. */
 const storeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
-  const path = url.pathname.replace(/^\/wp-json\/waas-client\/v1\/site/, '');
+  const path = url.pathname.replace(/^\/wp-json\/anypress-client\/v1\/site/, '');
   const method = init?.method ?? 'GET';
   seen.push({ domain: url.host, method, path, body: typeof init?.body === 'string' ? init.body : '' });
   if (path === '' && method === 'GET') return Response.json({ name: 'Bakery', url: `https://${url.host}/`, theme: 'anypress' });
@@ -22,7 +22,7 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   return Response.json({ ok: true });
 }) as typeof fetch;
 
-/** Each store's business profile, as WaaS Client 2.11 answers /site/business. */
+/** Each store's business profile, as AnyPress Client 2.11 answers /site/business. */
 const profileOf = (host: string) => ({
   site: { name: 'Bakery', language: 'en_US', timezone: 'America/Chicago', siteType: 'website', owner: { name: 'Rosa Diaz', city: 'Austin', state: 'TX', country: 'United States' }, products: [{ name: 'Sourdough loaf', price: '9' }], forms: ['Contact us'] },
   about: { what: `Sourdough and cakes to order (${host.split('.')[0]})` },

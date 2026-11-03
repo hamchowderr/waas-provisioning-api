@@ -919,7 +919,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json(wantsForever(c.req.query('forever')) ? await forgetApiKey(pool, owner, id) : await revokeApiKey(pool, owner, id));
   });
 
-  // The product's ready-made storefront (src/storefronts.ts): a WordPress site with WaaS Host, already
+  // The product's ready-made storefront (src/storefronts.ts): a WordPress site with AnyPress Host, already
   // connected. GET answers null when it has none; POST builds it (platform admin only).
   app.get('/products/:productId/storefront', async (c) => c.json(await getStorefront(deps, await product(c))));
   app.post('/products/:productId/storefront', async (c) => {

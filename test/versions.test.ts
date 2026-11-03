@@ -96,7 +96,7 @@ describe('versions', () => {
   it("serves the production version's site types from its saved code, and keeps them", async () => {
     const [prod] = ((await (await t.call('GET', '/v1/versions')).json()) as { id: string; isProduction: boolean }[]).filter((v) => v.isProduction);
     expect((await t.call('GET', '/v1/versions/production/roles')).status).toBe(404); // no roles.json in its code
-    const roles = { 'website-small': { name: 'Website (Small)', plugins: ['waas-client/waas-client.php'] } };
+    const roles = { 'website-small': { name: 'Website (Small)', plugins: ['anypress-client/anypress-client.php'] } };
     t.provisioner.versionRoles.set(prod!.id, roles);
     const res = await t.call('GET', '/v1/versions/production/roles');
     expect(res.status).toBe(200);

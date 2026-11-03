@@ -52,7 +52,7 @@ describe('request log', () => {
     const tenantId = randomUUID();
     const res = await t.call('GET', `/v1/tenants?tenantId=${tenantId}`, {
       auth: basic(key, secret),
-      headers: { 'User-Agent': 'WaaS Client/2.3.0', 'X-Forwarded-For': '203.0.113.9, 10.0.0.2' },
+      headers: { 'User-Agent': 'AnyPress Client/2.3.0', 'X-Forwarded-For': '203.0.113.9, 10.0.0.2' },
     });
     expect(res.status).toBe(200);
 
@@ -71,7 +71,7 @@ describe('request log', () => {
       tenantId,
       tenantName: null,
       ip: '203.0.113.9',
-      userAgent: 'WaaS Client/2.3.0',
+      userAgent: 'AnyPress Client/2.3.0',
       error: null,
     });
     const row = JSON.stringify((await t.pool.query('SELECT * FROM api_requests')).rows);

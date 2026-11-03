@@ -12,14 +12,14 @@ function ranged(zip: Uint8Array) {
 }
 
 describe('readZipEntry', () => {
-  const roles = JSON.stringify({ 'website-small': { plugins: ['waas-client/waas-client.php'] } });
-  const files = { 'wp-content/plugins/a/a.php': '<?php // a', 'wp-content/plugins/waas-client-data/roles.json': roles, 'wp-content/themes/t/style.css': 'x'.repeat(5000) };
+  const roles = JSON.stringify({ 'website-small': { plugins: ['anypress-client/anypress-client.php'] } });
+  const files = { 'wp-content/plugins/a/a.php': '<?php // a', 'wp-content/plugins/anypress-client-data/roles.json': roles, 'wp-content/themes/t/style.css': 'x'.repeat(5000) };
 
   for (const deflate of [true, false]) {
     it(`reads one file (${deflate ? 'deflated' : 'stored'})`, async () => {
       const zip = makeZip(files, { deflate });
       const { read } = ranged(zip);
-      const bytes = await readZipEntry(read, zip.length, 'wp-content/plugins/waas-client-data/roles.json', 1024 * 1024);
+      const bytes = await readZipEntry(read, zip.length, 'wp-content/plugins/anypress-client-data/roles.json', 1024 * 1024);
       expect(bytes?.toString('utf8')).toBe(roles);
     });
   }

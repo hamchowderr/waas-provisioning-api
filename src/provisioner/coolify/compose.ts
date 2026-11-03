@@ -158,11 +158,10 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
     WAAS_CONSTANTS_B64: '${WAAS_CONSTANTS_B64:-}',
     // The mail relay's settings, read by the waas-mail mu-plugin (agent.php); empty on version sites.
     WAAS_MAIL_B64: '${WAAS_MAIL_B64:-}',
-    // The store's site key: WaaS Client accepts site-editing requests signed with it (src/sitekeys.ts).
-    WAAS_SITE_KEY: '${WAAS_SITE_KEY:-}',
-    WAAS_IS_TENANT: 'true',
-    // The same flag under the old platform's prefix, for template versions with WaaS Client before 2.4.0.
-    WPCS_IS_TENANT: 'true',
+    // The store's site key: AnyPress Client accepts site-editing requests signed with it (src/sitekeys.ts).
+    ANYPRESS_SITE_KEY: '${WAAS_SITE_KEY:-}',
+    // Tells AnyPress Client it runs on a customer's store.
+    ANYPRESS_IS_TENANT: 'true',
     ...quotas,
   };
   const compose = {

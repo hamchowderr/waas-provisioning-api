@@ -8,10 +8,10 @@ The platform is three repositories:
 |---|---|---|
 | [waas-provisioning-api](https://github.com/hamchowderr/waas-provisioning-api) | The provisioning API (Hono + pg-boss on Postgres). Creates, changes, backs up and deletes stores. | A container, next to Postgres 16 |
 | [waas-dashboard](https://github.com/hamchowderr/waas-dashboard) | The admin dashboard (Next.js). Reads and changes everything through the API's `/admin/*`. | Vercel, or any Node host |
-| [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins: **WaaS Host** (turns a WordPress shop into the storefront that sells stores), **WaaS Client** (inside every store), **WaaS Payments** (Authorize.Net for FluentCart) | Your storefront WordPress, and each store |
+| [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins: **AnyPress Host** (turns a WordPress shop into the storefront that sells stores), **AnyPress Client** (inside every store), **AnyPress Payments** (Authorize.Net for FluentCart) | Your storefront WordPress, and each store |
 
 ```
- customer ──► storefront (WordPress + WaaS Host)
+ customer ──► storefront (WordPress + AnyPress Host)
                  │  /v1 calls, Basic auth (API key + secret)
                  ▼
             provisioning API ──► Postgres (state + job queue)
@@ -36,9 +36,9 @@ docker compose exec api npm run create-key -- --product-name "Local storefront"
 curl -u <key>:<secret> http://localhost:4111/v1/versions
 ```
 
-Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with WaaS Host, WaaS Payments, FluentCart, WooCommerce and Subscriptions for WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the same `ADMIN_TOKEN`. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
+Point a local storefront at it with `scripts/test-env.sh up` in waas-plugins (WordPress at http://127.0.0.1 with AnyPress Host, AnyPress Payments, FluentCart, WooCommerce and Subscriptions for WooCommerce), and the dashboard with `WAAS_API_URL=http://localhost:4111` and the same `ADMIN_TOKEN`. For UI work alone the dashboard also runs on sample data (`WAAS_API_FIXTURES=1`).
 
-The fake provisioner builds no real stores, so a test order on the storefront never reaches **Ready**: WaaS Host waits until the store's address answers over HTTPS. Use Stage 0 to try the API, the dashboard and the storefront's settings, and Stage 1 to see a store go live.
+The fake provisioner builds no real stores, so a test order on the storefront never reaches **Ready**: AnyPress Host waits until the store's address answers over HTTPS. Use Stage 0 to try the API, the dashboard and the storefront's settings, and Stage 1 to see a store go live.
 
 ## Stage 1: one VPS with Coolify
 
@@ -151,7 +151,7 @@ Stores are copies of a template version. Three templates ship in `templates/`, e
 
 | Template | What it is |
 |---|---|
-| [`starter-fluentcart`](../templates/starter-fluentcart/README.md) | The smallest store: WordPress, WaaS Client, FluentCart, Twenty Twenty-Five |
+| [`starter-fluentcart`](../templates/starter-fluentcart/README.md) | The smallest store: WordPress, AnyPress Client, FluentCart, Twenty Twenty-Five |
 | [`anypress-store`](../templates/anypress-store/README.md) | The full store AnyPress sells: the Fluent plugins, SEO and automation on the AnyPress theme, with one role per site type (website, bookings, store, community and courses, everything) in `roles.json` |
 | [`seller-storefront`](../templates/seller-storefront/README.md) | Not a store: the ready-made storefront (section 6) |
 
@@ -161,13 +161,13 @@ Prebuilt archives of `anypress-store` and `seller-storefront`, with their checks
 
 ### 6. The storefront
 
-Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** with WP Swings' Subscriptions for WooCommerce. Install **WaaS Host** (and **WaaS Payments** for Authorize.Net on FluentCart). Then:
+Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** with WP Swings' Subscriptions for WooCommerce. Install **AnyPress Host** (and **AnyPress Payments** for Authorize.Net on FluentCart). Then:
 
 1. In `wp-config.php`, set `WAAS_HOST_KEY_ENCRYPTION_KEY` (`openssl rand -base64 48`) and keep it stable.
 2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`. Use the same domain as the API's `PLATFORM_DOMAIN`.
 3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role (site type), size and snapshot group.
 
-**Or let the API build the storefront.** Publish `templates/seller-storefront` as the production version of a product of its own, set `STOREFRONT_PRODUCT_ID` to that product's id (and `PUBLIC_URL`), and `POST /admin/products/{productId}/storefront` builds a store that is already a connected storefront for that product: WaaS Host installed, the API key and encryption key in wp-config, the website domain set, and the owner made an administrator. Its owner then connects a payment method in FluentCart and makes the subscription products. Details in [the template's README](../templates/seller-storefront/README.md).
+**Or let the API build the storefront.** Publish `templates/seller-storefront` as the production version of a product of its own, set `STOREFRONT_PRODUCT_ID` to that product's id (and `PUBLIC_URL`), and `POST /admin/products/{productId}/storefront` builds a store that is already a connected storefront for that product: AnyPress Host installed, the API key and encryption key in wp-config, the website domain set, and the owner made an administrator. Its owner then connects a payment method in FluentCart and makes the subscription products. Details in [the template's README](../templates/seller-storefront/README.md).
 
 The storefront needs a real cron: FluentCart creates stores in the background through Action Scheduler, which otherwise waits for the next page visit. Define `DISABLE_WP_CRON` and run `wp action-scheduler run` and `wp cron event run --due-now` every minute (a Coolify scheduled task works).
 
@@ -202,7 +202,7 @@ With Domain Connect, customers whose DNS host supports it add these records (and
 
 ### Plugin updates
 
-Storefronts update WaaS Host and WaaS Payments from the API (`/v1/plugins/{slug}/update`), never from wordpress.org. Each release is signed with ed25519 and the plugins only install releases signed by a key built into them (`Updater::PUBLIC_KEYS` in waas-plugins). If you run your own channel, generate your own release key, put its public half in `Updater::PUBLIC_KEYS`, sign with the private half (`WAAS_RELEASE_SIGNING_KEY` in the release workflow), and set `RELEASES_S3_BUCKET` on the API. Otherwise set `WAAS_UPDATE_CHANNEL` to `off` in the storefront's `wp-config.php` and install release zips by hand. waas-plugins' `docs/releases.md` has the details.
+Storefronts update AnyPress Host and AnyPress Payments from the API (`/v1/plugins/{slug}/update`), never from wordpress.org. Each release is signed with ed25519 and the plugins only install releases signed by a key built into them (`Updater::PUBLIC_KEYS` in waas-plugins). If you run your own channel, generate your own release key, put its public half in `Updater::PUBLIC_KEYS`, sign with the private half (`WAAS_RELEASE_SIGNING_KEY` in the release workflow), and set `RELEASES_S3_BUCKET` on the API. Otherwise set `WAAS_UPDATE_CHANNEL` to `off` in the storefront's `wp-config.php` and install release zips by hand. waas-plugins' `docs/releases.md` has the details.
 
 ## Stage 2: more servers
 

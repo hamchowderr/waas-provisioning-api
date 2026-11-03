@@ -160,6 +160,23 @@ describe('reseller accounts', () => {
     expect(await suspend(partner.auth)).toBeUndefined();
   });
 
+  it("names the store plugin after its brand on its stores, and pushes a new brand to running ones", async () => {
+    const { id: before } = await newTenant(partner.auth);
+    expect(t.provisioner.stores.get(before)!.wpOptions.anypress_brand_name).toBeUndefined();
+
+    await admin('PUT', `/admin/resellers/${resellerId}`, 200, { brandName: 'Partner Sites' });
+    await waitFor(async () => t.provisioner.stores.get(before)!.wpOptions.anypress_brand_name === 'Partner Sites');
+    const { id: after } = await newTenant(partner.auth);
+    expect(t.provisioner.stores.get(after)!.wpOptions.anypress_brand_name).toBe('Partner Sites');
+    // Not on a storefront outside the reseller, and not kept as the store's own option.
+    const { id: own } = await newTenant((await newProduct('Unbranded storefront')).auth);
+    expect(t.provisioner.stores.get(own)!.wpOptions.anypress_brand_name).toBeUndefined();
+    expect((await t.pool.query('SELECT wp_options FROM tenants WHERE id = $1', [after])).rows[0].wp_options.anypress_brand_name).toBeUndefined();
+
+    await admin('PUT', `/admin/resellers/${resellerId}`, 200, { brandName: null });
+    await waitFor(async () => t.provisioner.stores.get(after)!.wpOptions.anypress_brand_name === '');
+  });
+
   it('refuses to delete a reseller with storefronts', async () => {
     await admin('DELETE', `/admin/resellers/${resellerId}`, 409);
   });

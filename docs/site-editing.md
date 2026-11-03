@@ -1,15 +1,15 @@
 # Site editing
 
-An AI agent connected to the API's MCP server (`/mcp`, or `/mcp/site` for a website's own owner) can change a store's pages and design: add a page, put a ready-made section on it, rewrite its text, change the site's colours and fonts, edit the header, footer and menus, and undo through revisions. The store's own plugin, WaaS Client (2.3.0 or newer), does the work in WordPress; the API passes each request on, signed for that store only.
+An AI agent connected to the API's MCP server (`/mcp`, or `/mcp/site` for a website's own owner) can change a store's pages and design: add a page, put a ready-made section on it, rewrite its text, change the site's colours and fonts, edit the header, footer and menus, and undo through revisions. The store's own plugin, AnyPress Client (2.3.0 or newer), does the work in WordPress; the API passes each request on, signed for that store only.
 
 ## How a request reaches the store
 
 1. The agent calls an MCP tool, e.g. `page_section` with action `add` for the store `store-1042`.
 2. The tool calls `POST /v1/tenants/site?externalId=store-1042` with `{ "method": "POST", "path": "/pages/12/sections", "body": { "pattern": "anypress/hero-statement" } }`.
-3. The API checks the caller owns the store and that it is Done and not suspended, signs the request with the store's **site key** and sends it to `https://<main domain>/wp-json/waas-client/v1/site/pages/12/sections`.
-4. WaaS Client checks the signature and makes the change as the store's first administrator. Its answer comes back as `{ status, body }`.
+3. The API checks the caller owns the store and that it is Done and not suspended, signs the request with the store's **site key** and sends it to `https://<main domain>/wp-json/anypress-client/v1/site/pages/12/sections`.
+4. AnyPress Client checks the signature and makes the change as the store's first administrator. Its answer comes back as `{ status, body }`.
 
-The routes WaaS Client answers, the signature format and its safety rules are in waas-plugins' [docs/site-editing-api.md](https://github.com/hamchowderr/waas-plugins/blob/main/docs/site-editing-api.md).
+The routes AnyPress Client answers, the signature format and its safety rules are in waas-plugins' [docs/site-editing-api.md](https://github.com/hamchowderr/waas-plugins/blob/main/docs/site-editing-api.md).
 
 ## Site keys
 
@@ -21,7 +21,7 @@ Changing `SECRETS_KEY` changes every store's site key; stores then refuse site r
 
 A store owner who isn't on a product's team can still connect an AI app to their own site. On the connector's approve page (`/oauth/authorize`) they type the website's address. The API finds the store by any of its domains and sends them to `https://<main domain>/wp-admin/admin.php?page=waas-connect` with a link signed with the store's site key, naming the app, where it returns to and the API's answer URL.
 
-WaaS Client's page (2.3.0) shows that to the website's administrators, and Allow or Cancel goes back to `/oauth/site/answer` signed with the same key. The API checks the signature, uses the request once, and gives the app a code for that store only (`oauth_tokens.tenant_id`), with the scope `site:read`, plus `site:write` when the owner allowed changes. That connection gets only the site tools, and every call goes to its own store whatever store the agent names. The token stops working when the store is deleted.
+AnyPress Client's page (2.3.0) shows that to the website's administrators, and Allow or Cancel goes back to `/oauth/site/answer` signed with the same key. The API checks the signature, uses the request once, and gives the app a code for that store only (`oauth_tokens.tenant_id`), with the scope `site:read`, plus `site:write` when the owner allowed changes. That connection gets only the site tools, and every call goes to its own store whatever store the agent names. The token stops working when the store is deleted.
 
 ### Signed in by the storefront
 
@@ -29,7 +29,7 @@ A storefront that has already signed in the store's owner (its customer account 
 
 ### Signed in by the website itself
 
-The website assistant beside the page editor (WaaS Client 2.8.0) uses the same handoff, asked for by the store instead of a storefront. WaaS Client calls `POST /oauth/site/store-handoff` with `{ "site": "<the store's host>", "assistantUrl": "…" }`, signed in `X-Waas-Signature` with the store's site key over the route `/oauth/site/store-handoff` (the same form the API uses to sign its calls to the store, good for 5 minutes either way). The API finds the store by any of its domains, checks the signature, and answers with the assistant's address and a one-time handoff, as above. Only that store's own site key can ask, and WaaS Client asks only for administrators who can edit the site's design.
+The website assistant beside the page editor (AnyPress Client 2.8.0) uses the same handoff, asked for by the store instead of a storefront. AnyPress Client calls `POST /oauth/site/store-handoff` with `{ "site": "<the store's host>", "assistantUrl": "…" }`, signed in `X-AnyPress-Signature` with the store's site key over the route `/oauth/site/store-handoff` (the same form the API uses to sign its calls to the store, good for 5 minutes either way). The API finds the store by any of its domains, checks the signature, and answers with the assistant's address and a one-time handoff, as above. Only that store's own site key can ask, and AnyPress Client asks only for administrators who can edit the site's design.
 
 `POST /v1/tenants/site/sign-in` (the storefront passes the app's own `clientId`, `redirectUri` and `codeChallenge`, and gets the code back) still works for apps that send the owner to the storefront first.
 
@@ -51,6 +51,6 @@ Most site tools take an `action`; read actions need the `site:read` scope and wr
 | `header_footer` | `get`, `update`: the header and footer every page shows |
 | `site_menus` | `list`, `update`: navigation menus |
 | `add_image` | Copies an image from a link into the media library |
-| `business_profile` | `read`, `save`, `undo`: what the site says about its business (name, place, language, products, booking types, forms) and what the owner has said about it (what it does, who it is for, hours, voice). WaaS Client 2.11.0 or newer |
+| `business_profile` | `read`, `save`, `undo`: what the site says about its business (name, place, language, products, booking types, forms) and what the owner has said about it (what it does, who it is for, hours, voice). AnyPress Client 2.11.0 or newer |
 
 The read-only server (`/mcp/read-only`) offers only the actions that read.

@@ -4,7 +4,7 @@
 // themselves with a Client ID Metadata Document, and get tokens with PKCE. Approving a client means
 // signing in as a person on the dashboard (AUTH_URL/connect), picking a storefront and ticking what
 // the app may see and change, area by area (mcp/src/scopes.ts), or, for a store owner, "Sign in with
-// your website": pressing Allow in the store's own wp-admin (WaaS Client), which answers signed with
+// your website": pressing Allow in the store's own wp-admin (AnyPress Client), which answers signed with
 // the store's site key. A code or token belongs to that person and product, or to that one store:
 // once the person leaves the team or the store is deleted, the client is cut off, and a person who
 // may only look gets read-only access whatever they approved. A platform admin may approve for any
@@ -330,7 +330,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
       await pool.query("DELETE FROM oauth_requests WHERE expires_at < now() - interval '1 day'");
       return c.redirect(`${auth.url}/connect/${rows[0]!.id}`, 302);
     }
-    // Sign in with your website: the store's own wp-admin (WaaS Client) asks its admin, then answers at /oauth/site/answer.
+    // Sign in with your website: the store's own wp-admin (AnyPress Client) asks its admin, then answers at /oauth/site/answer.
     if (form.action === 'site' && isSiteResource(request.resource)) {
       const store = await findStoreByAddress(pool, form.site ?? '');
       const retry = (message: string) => page(c, approvePage(request, form, signInBrand(), message), 400);
@@ -363,7 +363,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     return page(c, approvePage(request, form, signInBrand(), undefined, 'Approving with an API key and secret is no longer offered. Sign in instead.'), 400);
   });
 
-  // The store's answer to "Sign in with your website", signed with its site key (WaaS Client's connect page).
+  // The store's answer to "Sign in with your website", signed with its site key (AnyPress Client's connect page).
   app.get('/oauth/site/answer', async (c) => {
     const { request: id, answer, s } = c.req.query();
     if (!id || !isUuid(id) || !['allow', 'allow-read', 'deny'].includes(answer ?? '') || !s) {
@@ -427,7 +427,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     return c.json({ redirectUrl: codeRedirect(redirectUri, code, state || undefined, issuer) }, 200, { 'Cache-Control': 'no-store' });
   });
 
-  // The page editor's assistant (WaaS Client): the store itself, signing with its site key, hands the
+  // The page editor's assistant (AnyPress Client): the store itself, signing with its site key, hands the
   // admin who opened it to the assistant at assistantUrl, for this website only. Same handoff as the
   // storefront's button, so the assistant trades it at /oauth/site/handoff as usual.
   app.post('/oauth/site/store-handoff', async (c) => {
@@ -454,7 +454,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
       [site],
     );
     const tenant = rows[0];
-    const signed = tenant && verifySiteRequest(keyFor(tenant.id), c.req.header('X-Waas-Signature'), 'POST', '/oauth/site/store-handoff', raw);
+    const signed = tenant && verifySiteRequest(keyFor(tenant.id), c.req.header('X-AnyPress-Signature'), 'POST', '/oauth/site/store-handoff', raw);
     if (!tenant || !signed) throw new HttpError(403, 'This request is not signed by that website');
     if (tenant.status !== Status.Done || tenant.is_suspended) throw badRequest('This website is not ready');
     const root = assistant.origin + assistant.pathname.replace(/\/$/, '');

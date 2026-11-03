@@ -15,7 +15,7 @@ import { Status } from './status.ts';
  * Sites moved in from another host. Creating a tenant with uploadCustomSnapshot (POST /v1/tenants)
  * makes a store that waits for its site and answers an import code. The owner pastes that code into
  * the AnyPress Export plugin on the old site, which packages the site (database.sql, wp-content and a
- * waas.json describing it) and, with the code's token and no API key, gets an upload link, uploads,
+ * anypress.json describing it) and, with the code's token and no API key, gets an upload link, uploads,
  * starts the move and follows it here (POST /imports/upload, /imports/start, /imports/status). The
  * store is then built from the archive and keeps the site's own plugins and themes (tenants.own_code).
  * Runbook: docs/site-imports.md.

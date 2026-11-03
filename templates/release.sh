@@ -3,13 +3,13 @@
 # storefront (seller-storefront), into one folder with their checksums: what a templates-v* release
 # carries (.github/workflows/release-templates.yml) and what install/anypress-install.sh publishes.
 #
-#   templates/release.sh <waas-plugins checkout> <WaaS Host version> <version> <out dir>
+#   templates/release.sh <waas-plugins checkout> <AnyPress Host version> <version> <out dir>
 #
-# The store gets WaaS Client from the checkout as it is; the storefront gets WaaS Host from the checkout's
-# waas-host-v<WaaS Host version> tag. Writes anypress-store.zip, seller-storefront.zip, SHA256SUMS and version.txt.
+# The store gets AnyPress Client from the checkout as it is; the storefront gets AnyPress Host from the checkout's
+# anypress-host-v<AnyPress Host version> tag. Writes anypress-store.zip, seller-storefront.zip, SHA256SUMS and version.txt.
 set -euo pipefail
 
-usage="usage: release.sh <waas-plugins checkout> <WaaS Host version> <version> <out dir>"
+usage="usage: release.sh <waas-plugins checkout> <AnyPress Host version> <version> <out dir>"
 PLUGINS_REPO=$(cd "${1:?$usage}" && pwd)
 HOST_VERSION=${2:?$usage}
 VERSION=${3:?$usage}
@@ -21,7 +21,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 
 HOST_SRC=$(mktemp -d)
 trap 'git -C "$PLUGINS_REPO" worktree remove --force "$HOST_SRC" 2>/dev/null || rm -rf "$HOST_SRC"' EXIT
-git -C "$PLUGINS_REPO" worktree add --detach "$HOST_SRC" "waas-host-v$HOST_VERSION" >/dev/null
+git -C "$PLUGINS_REPO" worktree add --detach "$HOST_SRC" "anypress-host-v$HOST_VERSION" >/dev/null
 "$HERE/seller-storefront/build.sh" "$HOST_SRC" "$HOST_VERSION"
 
 cp "$HERE/anypress-store/dist/anypress-store.zip" "$HERE/seller-storefront/dist/seller-storefront.zip" "$OUT/"

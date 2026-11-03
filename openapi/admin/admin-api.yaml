@@ -130,7 +130,7 @@ paths:
     get:
       operationId: adminGetStorefront
       summary: A product's ready-made storefront
-      description: The WordPress site with WaaS Host the platform built for this product, or null when it has none.
+      description: The WordPress site with AnyPress Host the platform built for this product, or null when it has none.
       responses:
         '200':
           description: The storefront (a store of the storefront product), or null
@@ -146,7 +146,7 @@ paths:
       operationId: adminCreateStorefront
       summary: Build a ready-made storefront for a product
       description: >-
-        Platform admin only. Builds a WordPress site with WaaS Host from the storefront product's production version
+        Platform admin only. Builds a WordPress site with AnyPress Host from the storefront product's production version
         (STOREFRONT_PRODUCT_ID) and connects it to this product: a new API key labelled "Ready-made storefront" is made,
         and its key, secret and the API's address are written into the site's wp-config. The secret is never answered.
         The site's owner signs in to WordPress with a password reset. One per product.
@@ -697,7 +697,7 @@ paths:
         Each storefront's and reseller's setup steps, ticked from data the API holds (docs/setup-checklists.md).
         The platform admin gets every storefront and reseller. At /account/setup a signed-in customer gets their
         own storefront, or, on a reseller's team, the reseller and all its storefronts. Steps the storefront's
-        WaaS Host has to report (plans on sale, payments on) read `not-reported` until it does.
+        AnyPress Host has to report (plans on sale, payments on) read `not-reported` until it does.
       responses:
         '200':
           description: The checklists
@@ -837,7 +837,7 @@ paths:
       summary: A one-time link that logs in to the store's WordPress
       description: >-
         "Log in to WordPress": a link that opens the store's wp-admin signed in as its first administrator. It works
-        once, for 5 minutes, and is signed with the store's site key; WaaS Client 2.10.0 or later checks it (WaaS Host
+        once, for 5 minutes, and is signed with the store's site key; AnyPress Client 2.10.0 or later checks it (AnyPress Host
         2.8.0 or later on a ready-made storefront). A store with an older plugin answers oneClick false and its own
         WordPress login page instead. For anyone who may change the store; team members who only look get 403.
         409 when the store isn't Done, is suspended or has no address yet.
@@ -2338,7 +2338,7 @@ components:
             productId: { type: string, format: uuid }
             name: { type: string }
             resellerId: { type: string, format: uuid, nullable: true }
-            shopSite: { type: string, nullable: true, description: The shop's address as its WaaS Host last reported it. }
+            shopSite: { type: string, nullable: true, description: The shop's address as its AnyPress Host last reported it. }
     ResellerSetup:
       allOf:
         - $ref: '#/components/schemas/SetupChecklist'
@@ -2843,7 +2843,7 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
-        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its WAAS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
+        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         isSuspended: { type: boolean }
         onHold: { type: boolean, description: A site moved in, held until it goes live. }
         latestBackupAt: { type: string, format: date-time, nullable: true }
@@ -2997,7 +2997,7 @@ components:
         statusCode: { type: integer, minimum: 0, maximum: 3 }
         statusName: { type: string }
         size: { type: string, enum: [small, medium, large] }
-        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its WAAS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
+        siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         keepsOwnCode: { type: boolean, description: A site moved in from another host keeps its own plugins and themes; versions don't replace them. }
         moveIn:
           type: object
@@ -3123,7 +3123,7 @@ components:
             retriedAt: { type: string, format: date-time, nullable: true }
             retryJobId: { type: string, format: uuid, nullable: true }
             dismissedAt: { type: string, format: date-time, nullable: true }
-    PluginSlug: { type: string, enum: [wpcs-waas-host, wpcs-waas-client, waas-payments] }
+    PluginSlug: { type: string, enum: [anypress-host, anypress-client, anypress-payments] }
     PluginInstall:
       type: object
       additionalProperties: false

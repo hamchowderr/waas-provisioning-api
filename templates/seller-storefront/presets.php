@@ -18,7 +18,7 @@ delete_option('fluent_cart_do_activation_redirect');
 ]);
 // Settings → Email notifications → Settings: a footer that tells customers how to reach the owner (replies go to the
 // site's sending address; waas-mail sets that). The store logo at the top of each email follows the site logo
-// (WaaS Host), so emails carry the owner's brand and nothing of AnyPress.
+// (AnyPress Host), so emails carry the owner's brand and nothing of AnyPress.
 \FluentCart\App\Services\Email\EmailNotifications::updateSettings([
     'email_footer' => '<p>Questions? Just reply to this email.</p>',
 ]);
@@ -28,7 +28,7 @@ foreach (['daily', 'weekly', 'monthly'] as $cadence) {
     $digest[$cadence]['enabled'] = 'no';
 }
 \FluentCart\App\Services\Email\StoreDigestService::saveSettings($digest);
-// Settings → Email notifications: one email per moment. WaaS Host's own emails already cover a cancelled plan
+// Settings → Email notifications: one email per moment. AnyPress Host's own emails already cover a cancelled plan
 // ("stays online until"), websites aren't shipped, and the store-managed renewal emails (renewal invoice, upcoming
 // charge, charge failed, overdue reminders) repeat the card-renewal ones a storefront sends (waas-api-mi4).
 foreach (['order_shipped_customer', 'order_delivered_customer', 'subscription_canceled_customer', 'renewal_created_customer',
@@ -167,7 +167,7 @@ wp_fusion()->settings->set('create_users', 0);
 
 // AnyPress theme. A whole website built from the theme's own sections (the store template's starter-page builders in
 // anypress-patterns.php, copied in for the build only), so a new storefront opens finished-looking and the owner
-// rewrites it in the Site Editor: Home, How it works, Plans (FluentCart's shop: the website plans WaaS Host makes),
+// rewrites it in the Site Editor: Home, How it works, Plans (FluentCart's shop: the website plans AnyPress Host makes),
 // About, Questions and Contact, with the contact form.
 require __DIR__ . '/anypress-patterns.php';
 $pageId = static fn(string $slug): int => (int) get_page_by_path($slug)?->ID;

@@ -212,7 +212,7 @@ export function createServer(deps: ServerDeps) {
       return c.json(answer as object);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // A website whose WaaS Client predates the profile answers 404 for the route.
+      // A website whose AnyPress Client predates the profile answers 404 for the route.
       const old = /\b404\b|rest_no_route/i.test(message);
       return c.json({ error: old ? 'Your website needs an update before it can keep these details.' : 'Your website couldn’t answer just now. Try again in a minute.' }, old ? 409 : 502);
     }

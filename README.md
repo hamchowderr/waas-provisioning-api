@@ -7,7 +7,7 @@ It is written for businesses that sell websites to their own customers (sellers 
 | Repository | What it is |
 |---|---|
 | **waas-provisioning-api** (this one) | The API, plus SDKs for TypeScript and PHP |
-| [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins for the storefront (WaaS Host) and for every store (WaaS Client) |
+| [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins for the storefront (AnyPress Host) and for every store (AnyPress Client) |
 | [waas-dashboard](https://github.com/hamchowderr/waas-dashboard) | The dashboard for everything the API runs |
 
 ## Contents
@@ -28,7 +28,7 @@ It is written for businesses that sell websites to their own customers (sellers 
 | **Store** | One customer's WordPress website. The API calls a store a **tenant**: `/v1/tenants`, `tenantId`. |
 | **Seller** | A business that sells websites to its own customers under its own name, from its own storefront. It pays per website. |
 | **Reseller** | A bigger partner account that runs several storefronts under one team and pays one monthly wholesale bill. Its partner keys work across its storefronts. |
-| **Storefront** | The WordPress shop a seller or reseller sells stores from, running the WaaS Host plugin. The API calls a storefront a **product**: every API key, store, version and webhook belongs to one product. |
+| **Storefront** | The WordPress shop a seller or reseller sells stores from, running the AnyPress Host plugin. The API calls a storefront a **product**: every API key, store, version and webhook belongs to one product. |
 | **API key and secret** | How a storefront signs in. The **key** (a UUID, also called the key id) is the Basic auth username and the **secret** is the password. The secret is shown once, when the key is made. |
 | **externalId** | Your own id for a store, such as an order or subscription id. Every store call accepts `externalId` or `tenantId`. |
 | **Version** | The WordPress setup new stores are copied from: WordPress and PHP versions plus the plugins and themes. One version per product is the **production** version, and new stores use it. |
@@ -207,7 +207,7 @@ The first key comes from `npm run create-key` or from the dashboard. After that,
 | `GET /admin/products` | Products (storefronts) with store and version counts, the production version, and `maxTenants` |
 | `POST /admin/products` `{"name": "Acme Agency", "maxTenants": 10, "keyLabel": "…"}` | A new product and its first API key. The secret is in this answer only |
 | `GET`, `POST /admin/products/{productId}/keys`; `POST …/keys/{id}/rotate`; `DELETE …/keys/{id}` | A product's API keys. Same as `/v1/keys`, except the last active key can be revoked |
-| `GET`, `POST /admin/products/{productId}/storefront` `{"name": "Acme Agency", "email": "owner@acme.example", "subdomain": "acme"}` | The product's ready-made storefront: a WordPress site with WaaS Host, built from [`templates/seller-storefront`](templates/seller-storefront) and already connected with a new key of the product. One per product; needs `STOREFRONT_PRODUCT_ID`. `GET` answers `null` when there is none |
+| `GET`, `POST /admin/products/{productId}/storefront` `{"name": "Acme Agency", "email": "owner@acme.example", "subdomain": "acme"}` | The product's ready-made storefront: a WordPress site with AnyPress Host, built from [`templates/seller-storefront`](templates/seller-storefront) and already connected with a new key of the product. One per product; needs `STOREFRONT_PRODUCT_ID`. `GET` answers `null` when there is none |
 | `GET /admin/applications?status=pending\|approved\|declined`; `GET …/{id}`; `POST …/{id}/approve` `{"maxTenants": 3, "storefront": true}`; `POST …/{id}/decline` | Applications to sell, sent by the public `POST /applications` form. Approving makes the product, invites the applicant as its owner and builds their storefront if they asked ([docs/accounts.md](docs/accounts.md#applications-to-sell)) |
 | `GET`, `POST /admin/resellers` `{"name": "Acme Partners", "productIds": ["…"]}`; `GET`, `PUT`, `DELETE …/{id}`; `PUT`, `DELETE …/{id}/products/{productId}`; `GET …/{id}/usage?from=…&to=…`; `GET …/{id}/bill?month=YYYY-MM`; `GET`, `POST …/{id}/keys`, `POST …/{id}/keys/{keyId}/rotate`, `DELETE …/{id}/keys/{keyId}`; `GET`, `PUT …/{id}/organization`, `POST …/{id}/invitations`, `DELETE …/{id}/invitations/{invitationId}`, `PATCH`, `DELETE …/{id}/members/{memberId}` | Reseller accounts: storefronts grouped under one partner, with limits across them, store-days per size, the monthly wholesale bill, partner keys and the reseller's team, who sign in and reach all its storefronts ([docs/resellers.md](docs/resellers.md)) |
 | `GET`, `PUT /admin/products/{productId}/branding` and `/admin/resellers/{id}/branding`; `PUT`, `DELETE …/branding/logo` and `…/branding/icon` (the image is the body) | A storefront's or reseller's own name, logo, icon, color and support address in the dashboard; a storefront's empty fields come from its reseller's ([docs/branding.md](docs/branding.md)) |
@@ -225,10 +225,10 @@ A job that fails its last retry is recorded in `job_failures` (type, store or ve
 
 The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plugins) get their updates from this API, never from GitHub or wordpress.org. [`openapi/plugin-updates.yaml`](openapi/plugin-updates.yaml) describes it.
 
-- `GET /v1/plugins/{slug}/update?version=&channel=stable|beta&site=&wp=&php=` signs in with the storefront's own API key, like any `/v1` call. `slug` is one of `wpcs-waas-host`, `wpcs-waas-client` or `waas-payments` (the plugins' folder names). It answers the release the channel points at, or the product's pinned release, with `sha256`, the ed25519 `signature`, and a `package` URL that works for 10 minutes. It answers 404 when nothing is released on the channel, and 503 when updates aren't set up or the bucket can't be read.
+- `GET /v1/plugins/{slug}/update?version=&channel=stable|beta&site=&wp=&php=` signs in with the storefront's own API key, like any `/v1` call. `slug` is one of `anypress-host`, `anypress-client` or `anypress-payments` (the plugins' folder names). It answers the release the channel points at, or the product's pinned release, with `sha256`, the ed25519 `signature`, and a `package` URL that works for 10 minutes. It answers 404 when nothing is released on the channel, and 503 when updates aren't set up or the bucket can't be read.
 - Every check records the slug, site, version, channel, WordPress version and PHP version in `plugin_installs` (also on 404 and 503).
 - The API only reads the releases bucket and never signs. The waas-plugins release workflow uploads `releases/<slug>/<version>/<slug>.zip`, its `manifest.json`, and `releases/<slug>/channels/<channel>.json` (a copy of the manifest the channel points at). The plugin checks the sha256 and the signature of `waas-release-v1\n<slug>\n<version>\n<sha256>` against public keys built into it, so a wrong manifest here can't make a site install something the key didn't sign. If you run your own API, the plugins need your own release key: see [Plugin updates](docs/self-hosting.md#plugin-updates) in the self-hosting guide.
-- Stores don't update themselves. WaaS Client comes with the version, and a store moves to a newer version through `POST /v1/tenants/version`.
+- Stores don't update themselves. AnyPress Client comes with the version, and a store moves to a newer version through `POST /v1/tenants/version`.
 
 | Admin endpoint | What it does |
 |---|---|
@@ -240,7 +240,7 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 ## Store templates
 
-`templates/` holds the build scripts for the templates new stores start from. [`templates/starter-fluentcart`](templates/starter-fluentcart/README.md) is the starter store: WordPress, WaaS Client, FluentCart and Twenty Twenty-Five. `build.sh` makes the archive, and `publish.sh` uploads it through the API and creates a version from it.
+`templates/` holds the build scripts for the templates new stores start from. [`templates/starter-fluentcart`](templates/starter-fluentcart/README.md) is the starter store: WordPress, AnyPress Client, FluentCart and Twenty Twenty-Five. `build.sh` makes the archive, and `publish.sh` uploads it through the API and creates a version from it.
 
 ## OpenAPI files
 

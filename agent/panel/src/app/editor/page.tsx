@@ -2,7 +2,7 @@ import { signedIn } from '@/lib/site-session';
 import { EditorAssistant, EditorSignIn } from './editor-assistant';
 
 /**
- * The chat beside the page editor: WaaS Client's Assistant panel in the block editor and the Site
+ * The chat beside the page editor: AnyPress Client's Assistant panel in the block editor and the Site
  * Editor frames this page. Signed out, it asks the editor for a sign-in (the website asks the API for
  * a handoff), which comes back here signed in.
  */

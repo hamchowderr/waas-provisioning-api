@@ -1,6 +1,6 @@
 // "Log in to WordPress" (src/wplogin.ts): POST /admin/tenants/{id}/wp-login and
 // /admin/products/{id}/storefront/wp-login answer a one-time link signed with the store's site key, checked
-// here the way WaaS Client's AdminLogin (and WaaS Host's, on a storefront) check it. A store whose plugin
+// here the way AnyPress Client's AdminLogin (and AnyPress Host's, on a storefront) check it. A store whose plugin
 // is older than the login route gets its plain login page instead.
 import { createHash, createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,8 +41,8 @@ afterAll(async () => {
   await t.close();
 });
 
-/** WaaS Client's check (Api\AdminLogin::link_is_valid): t, n, s over t\nn\nLOGIN\nroute\nsha256(''), with the store's key. */
-function linkIsValid(url: string, storeId: string, plugin: 'waas-client' | 'waas-host'): boolean {
+/** AnyPress Client's check (Api\AdminLogin::link_is_valid): t, n, s over t\nn\nLOGIN\nroute\nsha256(''), with the store's key. */
+function linkIsValid(url: string, storeId: string, plugin: 'anypress-client' | 'anypress-host'): boolean {
   const link = new URL(url);
   const route = `/${plugin}/v1/admin-login`;
   if (link.pathname !== `/wp-json${route}`) return false;
@@ -62,12 +62,12 @@ describe('log in to WordPress', () => {
     const key = 'k3y-k3y-k3y-k3y-k3y-k3y-k3y-k3y-k3y';
     const at = 1_700_000_000_000;
     const nonce = '0123456789abcdef0123456789abcdef';
-    // waas-plugins: packages/waas-client/tests/Unit/Api/AdminLoginTest.php and the same in waas-host.
-    expect(new URL(adminLoginLink(key, 'shop.example', 'waas-client', at, nonce)).searchParams.get('s')).toBe(
-      '6486411be7303040243e70df68d39270a7caefc8ea53b9cf4c1804c6f97ed04a',
+    // waas-plugins: packages/anypress-client/tests/Unit/Api/AdminLoginTest.php and the same in anypress-host.
+    expect(new URL(adminLoginLink(key, 'shop.example', 'anypress-client', at, nonce)).searchParams.get('s')).toBe(
+      'f4d951452eb7ea6d72bd4855ebb9c3d5f5447fd8fe1ec9702b0ac6b5e2cdd8eb',
     );
-    expect(new URL(adminLoginLink(key, 'shop.example', 'waas-host', at, nonce)).searchParams.get('s')).toBe(
-      'a721a0ffe6377f67c3fada1086080e2dfe78b430254aca20cc1ef8465e9c6e5e',
+    expect(new URL(adminLoginLink(key, 'shop.example', 'anypress-host', at, nonce)).searchParams.get('s')).toBe(
+      '650d365b04699cb21cc734e115f86f9430f0abd19bc85a1c36475e7417584248',
     );
   });
 
@@ -77,10 +77,10 @@ describe('log in to WordPress', () => {
     const body = (await res.json()) as { url: string; oneClick: boolean; expiresAt: string };
     expect(body.oneClick).toBe(true);
     expect(new URL(body.url).host).toBe(mainDomain);
-    expect(linkIsValid(body.url, tenantId, 'waas-client')).toBe(true);
-    expect(linkIsValid(body.url, 'another-store', 'waas-client')).toBe(false);
+    expect(linkIsValid(body.url, tenantId, 'anypress-client')).toBe(true);
+    expect(linkIsValid(body.url, 'another-store', 'anypress-client')).toBe(false);
     expect(new Date(body.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(300_000);
-    expect(probes.at(-1)).toBe(`https://${mainDomain}/wp-json/waas-client/v1/admin-login`);
+    expect(probes.at(-1)).toBe(`https://${mainDomain}/wp-json/anypress-client/v1/admin-login`);
     const again = (await (await login(`/admin/tenants/${tenantId}/wp-login`)).json()) as { url: string };
     expect(again.url).not.toBe(body.url);
   });
@@ -107,7 +107,7 @@ describe('log in to WordPress', () => {
     expect((await login('/admin/tenants/00000000-0000-4000-8000-000000000000/wp-login')).status).toBe(404);
   });
 
-  it('logs in to a ready-made storefront through WaaS Host', async () => {
+  it('logs in to a ready-made storefront through AnyPress Host', async () => {
     const seller = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Seller') RETURNING id")).rows[0]!.id;
     expect((await login(`/admin/products/${seller}/storefront/wp-login`)).status).toBe(404);
     // The store above stands in for the seller's storefront: a store of the storefront product named after the seller.
@@ -118,7 +118,7 @@ describe('log in to WordPress', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { url: string; oneClick: boolean };
       expect(body.oneClick).toBe(true);
-      expect(linkIsValid(body.url, tenantId, 'waas-host')).toBe(true);
+      expect(linkIsValid(body.url, tenantId, 'anypress-host')).toBe(true);
     } finally {
       t.deps.config.storefrontProductId = undefined;
     }

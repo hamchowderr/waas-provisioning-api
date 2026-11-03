@@ -53,15 +53,15 @@ const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
 function call(method: string, path: string, auth: string = t.auth, body?: unknown) {
   return app.request(path, { method, headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
-const check = (query: string, slug = 'wpcs-waas-host', auth?: string) => call('GET', `/v1/plugins/${slug}/update?${query}`, auth);
+const check = (query: string, slug = 'anypress-host', auth?: string) => call('GET', `/v1/plugins/${slug}/update?${query}`, auth);
 
 beforeAll(async () => {
   t = await setup();
   app = createApp({ ...t.deps, releases: store });
-  store.objects.set(channelKey('wpcs-waas-host', 'stable'), release('wpcs-waas-host', '2.3.0', { changelog: '* Our own update channel' }));
-  store.objects.set(channelKey('wpcs-waas-host', 'beta'), release('wpcs-waas-host', '2.4.0-beta.1'));
-  store.objects.set(manifestKey('wpcs-waas-host', '2.3.0'), release('wpcs-waas-host', '2.3.0'));
-  store.objects.set(manifestKey('wpcs-waas-host', '2.2.8'), release('wpcs-waas-host', '2.2.8'));
+  store.objects.set(channelKey('anypress-host', 'stable'), release('anypress-host', '2.3.0', { changelog: '* Our own update channel' }));
+  store.objects.set(channelKey('anypress-host', 'beta'), release('anypress-host', '2.4.0-beta.1'));
+  store.objects.set(manifestKey('anypress-host', '2.3.0'), release('anypress-host', '2.3.0'));
+  store.objects.set(manifestKey('anypress-host', '2.2.8'), release('anypress-host', '2.2.8'));
 });
 afterAll(async () => {
   await t.close();
@@ -73,8 +73,8 @@ describe('GET /v1/plugins/{slug}/update', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(validRelease(body), ajv.errorsText(validRelease.errors)).toBe(true);
-    expect(body).toMatchObject({ slug: 'wpcs-waas-host', version: '2.3.0', channel: 'stable', pinned: false, packageExpiresIn: 600, requiresPhp: '8.1', changelog: '* Our own update channel' });
-    expect(body.package).toBe('https://releases.test/releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip?X-Amz-Expires=600');
+    expect(body).toMatchObject({ slug: 'anypress-host', version: '2.3.0', channel: 'stable', pinned: false, packageExpiresIn: 600, requiresPhp: '8.1', changelog: '* Our own update channel' });
+    expect(body.package).toBe('https://releases.test/releases/anypress-host/2.3.0/anypress-host.zip?X-Amz-Expires=600');
   });
 
   it('serves the beta channel when asked', async () => {
@@ -88,7 +88,7 @@ describe('GET /v1/plugins/{slug}/update', () => {
     await check('version=2.3.0&site=https://shop.example.com/&wp=6.8.2&php=8.3.12');
     const { rows } = await t.pool.query("SELECT * FROM plugin_installs WHERE product_id = $1 AND site = 'https://shop.example.com'", [t.productId]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ slug: 'wpcs-waas-host', version: '2.3.0', channel: 'stable', wp_version: '6.8.2', php_version: '8.3.12' });
+    expect(rows[0]).toMatchObject({ slug: 'anypress-host', version: '2.3.0', channel: 'stable', wp_version: '6.8.2', php_version: '8.3.12' });
   });
 
   it('rejects a bad query', async () => {
@@ -101,35 +101,35 @@ describe('GET /v1/plugins/{slug}/update', () => {
 
   it('404s an unknown plugin and a channel with nothing released', async () => {
     expect((await check('version=1.0.0', 'akismet')).status).toBe(404);
-    const res = await check('version=0.1.0', 'waas-payments');
+    const res = await check('version=0.1.0', 'anypress-payments');
     expect(res.status).toBe(404);
-    expect((await res.json()).message).toBe('No stable release of waas-payments');
+    expect((await res.json()).message).toBe('No stable release of anypress-payments');
   });
 
   it('treats a malformed or mismatched manifest as no release', async () => {
-    const key = channelKey('wpcs-waas-client', 'stable');
+    const key = channelKey('anypress-client', 'stable');
     for (const bad of [
-      { ...release('wpcs-waas-client', '2.3.0'), sha256: 'nothex' },
-      { ...release('wpcs-waas-client', '2.3.0'), signature: 'c2hvcnQ=' },
-      release('wpcs-waas-host', '2.3.0'), // another plugin's manifest
-      { ...release('wpcs-waas-client', '2.3.0'), zip: 'releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip' },
-      { ...release('wpcs-waas-client', '2.3.0'), version: 'v2.3' },
+      { ...release('anypress-client', '2.3.0'), sha256: 'nothex' },
+      { ...release('anypress-client', '2.3.0'), signature: 'c2hvcnQ=' },
+      release('anypress-host', '2.3.0'), // another plugin's manifest
+      { ...release('anypress-client', '2.3.0'), zip: 'releases/anypress-host/2.3.0/anypress-host.zip' },
+      { ...release('anypress-client', '2.3.0'), version: 'v2.3' },
     ]) {
       store.objects.set(key, bad);
-      expect((await check('version=2.2.7', 'wpcs-waas-client')).status).toBe(404);
+      expect((await check('version=2.2.7', 'anypress-client')).status).toBe(404);
     }
     store.objects.delete(key);
   });
 
   it('403s bad credentials and never records them', async () => {
     const before = (await t.pool.query('SELECT count(*)::int AS n FROM plugin_installs')).rows[0].n;
-    expect((await check('version=2.2.7', 'wpcs-waas-host', basic(crypto.randomUUID(), 'wrong'))).status).toBe(403);
-    expect((await check('version=2.2.7', 'wpcs-waas-host', ADMIN)).status).toBe(403);
+    expect((await check('version=2.2.7', 'anypress-host', basic(crypto.randomUUID(), 'wrong'))).status).toBe(403);
+    expect((await check('version=2.2.7', 'anypress-host', ADMIN)).status).toBe(403);
     expect((await t.pool.query('SELECT count(*)::int AS n FROM plugin_installs')).rows[0].n).toBe(before);
   });
 
   it('503s when updates are not configured or the store is down, but still records the version', async () => {
-    const res = await t.app.request('/v1/plugins/waas-payments/update?version=0.1.0&site=https://unconfigured.example', { headers: { Authorization: t.auth } });
+    const res = await t.app.request('/v1/plugins/anypress-payments/update?version=0.1.0&site=https://unconfigured.example', { headers: { Authorization: t.auth } });
     expect(res.status).toBe(503);
     expect((await t.pool.query("SELECT version FROM plugin_installs WHERE site = 'https://unconfigured.example'")).rows[0].version).toBe('0.1.0');
 
@@ -152,29 +152,29 @@ describe('pins', () => {
   });
 
   it('holds one product at a release; others follow the channel', async () => {
-    const res = await call('PUT', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN, { version: '2.2.8' });
+    const res = await call('PUT', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN, { version: '2.2.8' });
     expect(res.status).toBe(200);
     const pin = await res.json();
     expect(validPin(pin), ajv.errorsText(validPin.errors)).toBe(true);
-    expect(pin).toMatchObject({ productId: t.productId, slug: 'wpcs-waas-host', version: '2.2.8' });
+    expect(pin).toMatchObject({ productId: t.productId, slug: 'anypress-host', version: '2.2.8' });
 
     const pinned = await (await check('version=2.2.7&channel=beta')).json();
     expect(pinned).toMatchObject({ version: '2.2.8', pinned: true });
-    expect(pinned.package).toContain('/wpcs-waas-host/2.2.8/');
-    expect((await (await check('version=2.2.7', 'wpcs-waas-host', otherAuth)).json()).version).toBe('2.3.0');
+    expect(pinned.package).toContain('/anypress-host/2.2.8/');
+    expect((await (await check('version=2.2.7', 'anypress-host', otherAuth)).json()).version).toBe('2.3.0');
   });
 
   it('refuses a pin to a release that does not exist, or a bad version, slug or product', async () => {
-    expect((await call('PUT', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN, { version: '9.9.9' })).status).toBe(400);
-    expect((await call('PUT', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN, { version: 'latest' })).status).toBe(400);
+    expect((await call('PUT', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN, { version: '9.9.9' })).status).toBe(400);
+    expect((await call('PUT', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN, { version: 'latest' })).status).toBe(400);
     expect((await call('PUT', `/admin/products/${t.productId}/plugins/akismet/pin`, ADMIN, { version: '2.3.0' })).status).toBe(404);
-    expect((await call('PUT', `/admin/products/${crypto.randomUUID()}/plugins/wpcs-waas-host/pin`, ADMIN, { version: '2.3.0' })).status).toBe(404);
-    expect((await call('PUT', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, t.auth, { version: '2.3.0' })).status).toBe(403);
+    expect((await call('PUT', `/admin/products/${crypto.randomUUID()}/plugins/anypress-host/pin`, ADMIN, { version: '2.3.0' })).status).toBe(404);
+    expect((await call('PUT', `/admin/products/${t.productId}/plugins/anypress-host/pin`, t.auth, { version: '2.3.0' })).status).toBe(403);
   });
 
   it('lists installs and pins for the dashboard', async () => {
-    await check('version=2.2.7&site=https://other.example', 'wpcs-waas-host', otherAuth);
-    const res = await call('GET', `/admin/plugins?slug=wpcs-waas-host`, ADMIN);
+    await check('version=2.2.7&site=https://other.example', 'anypress-host', otherAuth);
+    const res = await call('GET', `/admin/plugins?slug=anypress-host`, ADMIN);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(validInstalls(body), ajv.errorsText(validInstalls.errors)).toBe(true);
@@ -187,16 +187,16 @@ describe('pins', () => {
   });
 
   it('unpinning puts the product back on its channel', async () => {
-    expect((await call('DELETE', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN)).status).toBe(200);
-    expect((await call('DELETE', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN)).status).toBe(200);
+    expect((await call('DELETE', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN)).status).toBe(200);
+    expect((await call('DELETE', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN)).status).toBe(200);
     expect(await (await check('version=2.2.7')).json()).toMatchObject({ version: '2.3.0', pinned: false });
   });
 
   it('a pinned release that vanished from the bucket is a 404, not the channel', async () => {
-    await call('PUT', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN, { version: '2.2.8' });
-    store.objects.delete(manifestKey('wpcs-waas-host', '2.2.8'));
+    await call('PUT', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN, { version: '2.2.8' });
+    store.objects.delete(manifestKey('anypress-host', '2.2.8'));
     expect((await check('version=2.2.7')).status).toBe(404);
-    await call('DELETE', `/admin/products/${t.productId}/plugins/wpcs-waas-host/pin`, ADMIN);
+    await call('DELETE', `/admin/products/${t.productId}/plugins/anypress-host/pin`, ADMIN);
   });
 });
 
@@ -215,11 +215,11 @@ describe('S3ReleaseStore', () => {
     }) as typeof fetch;
     let now = 0;
     const s = new S3ReleaseStore(config, fetchImpl, () => now);
-    expect(await s.getJson('releases/wpcs-waas-host/channels/stable.json')).toEqual({ version: '2.3.0' });
-    expect(await s.getJson('releases/wpcs-waas-host/channels/stable.json')).toEqual({ version: '2.3.0' });
-    expect(calls).toEqual(['/waas-releases/releases/wpcs-waas-host/channels/stable.json']);
+    expect(await s.getJson('releases/anypress-host/channels/stable.json')).toEqual({ version: '2.3.0' });
+    expect(await s.getJson('releases/anypress-host/channels/stable.json')).toEqual({ version: '2.3.0' });
+    expect(calls).toEqual(['/waas-releases/releases/anypress-host/channels/stable.json']);
     now = 61_000;
-    await s.getJson('releases/wpcs-waas-host/channels/stable.json');
+    await s.getJson('releases/anypress-host/channels/stable.json');
     expect(calls).toHaveLength(2);
     expect(await s.getJson('releases/x/missing.json')).toBeNull();
     expect(await s.getJson('releases/x/broken.json')).toBeNull();
@@ -227,7 +227,7 @@ describe('S3ReleaseStore', () => {
 
   it('throws when the bucket answers with an error, so the route can 503', async () => {
     const s = new S3ReleaseStore(config, (async () => new Response('', { status: 500 })) as typeof fetch);
-    await expect(s.getJson('releases/wpcs-waas-host/channels/stable.json')).rejects.toThrow('HTTP 500');
+    await expect(s.getJson('releases/anypress-host/channels/stable.json')).rejects.toThrow('HTTP 500');
   });
 
   it('addresses the bucket by hostname when virtualHost is set, as R2 needs for a bucket-scoped key', async () => {
@@ -237,26 +237,26 @@ describe('S3ReleaseStore', () => {
       return new URL(url).searchParams.get('list-type') ? new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>') : new Response('{"version":"2.3.0"}');
     }) as typeof fetch;
     const s3 = new S3({ ...config, virtualHost: true }, fetchImpl);
-    await s3.getIfExists('releases/wpcs-waas-host/channels/beta.json');
+    await s3.getIfExists('releases/anypress-host/channels/beta.json');
     await s3.list('releases/');
     expect(urls.map((u) => `${u.host}${u.pathname}`)).toEqual([
-      'waas-releases.acct.r2.cloudflarestorage.com/releases/wpcs-waas-host/channels/beta.json',
+      'waas-releases.acct.r2.cloudflarestorage.com/releases/anypress-host/channels/beta.json',
       'waas-releases.acct.r2.cloudflarestorage.com/',
     ]);
-    const presigned = new URL(new S3ReleaseStore({ ...config, virtualHost: true }).presignGet('releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip', 600));
-    expect(`${presigned.host}${presigned.pathname}`).toBe('waas-releases.acct.r2.cloudflarestorage.com/releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip');
+    const presigned = new URL(new S3ReleaseStore({ ...config, virtualHost: true }).presignGet('releases/anypress-host/2.3.0/anypress-host.zip', 600));
+    expect(`${presigned.host}${presigned.pathname}`).toBe('waas-releases.acct.r2.cloudflarestorage.com/releases/anypress-host/2.3.0/anypress-host.zip');
   });
 
   it("names the bucket's error code, and only the code, so a wrong key shows which setting it is", async () => {
     const body = '<?xml version="1.0" encoding="UTF-8"?><Error><Code>SignatureDoesNotMatch</Code><Message>Check your secret</Message><StringToSign>AWS4 not-a-secret</StringToSign></Error>';
     const s = new S3ReleaseStore(config, (async () => new Response(body, { status: 403 })) as typeof fetch);
-    const err = await s.getJson('releases/wpcs-waas-host/channels/stable.json').catch((e: Error) => e);
-    expect((err as Error).message).toBe('S3 GET releases/wpcs-waas-host/channels/stable.json failed: HTTP 403 SignatureDoesNotMatch');
+    const err = await s.getJson('releases/anypress-host/channels/stable.json').catch((e: Error) => e);
+    expect((err as Error).message).toBe('S3 GET releases/anypress-host/channels/stable.json failed: HTTP 403 SignatureDoesNotMatch');
   });
 
   it('presigns GETs of the zip without exposing the secret', () => {
-    const url = new URL(new S3ReleaseStore(config).presignGet('releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip', 600));
-    expect(url.pathname).toBe('/waas-releases/releases/wpcs-waas-host/2.3.0/wpcs-waas-host.zip');
+    const url = new URL(new S3ReleaseStore(config).presignGet('releases/anypress-host/2.3.0/anypress-host.zip', 600));
+    expect(url.pathname).toBe('/waas-releases/releases/anypress-host/2.3.0/anypress-host.zip');
     expect(url.searchParams.get('X-Amz-Expires')).toBe('600');
     expect(url.toString()).not.toContain('not-a-secret');
   });
@@ -264,12 +264,12 @@ describe('S3ReleaseStore', () => {
 
 describe('parseManifest', () => {
   it('accepts what the release workflow writes and checks the version it was asked for', () => {
-    const m = release('waas-payments', '0.2.0');
-    expect(parseManifest(m, 'waas-payments')).toMatchObject({ version: '0.2.0' });
-    expect(parseManifest(m, 'waas-payments', '0.2.0')).not.toBeNull();
-    expect(parseManifest(m, 'waas-payments', '0.3.0')).toBeNull();
-    expect(parseManifest(null, 'waas-payments')).toBeNull();
-    expect(parseManifest('x', 'waas-payments')).toBeNull();
+    const m = release('anypress-payments', '0.2.0');
+    expect(parseManifest(m, 'anypress-payments')).toMatchObject({ version: '0.2.0' });
+    expect(parseManifest(m, 'anypress-payments', '0.2.0')).not.toBeNull();
+    expect(parseManifest(m, 'anypress-payments', '0.3.0')).toBeNull();
+    expect(parseManifest(null, 'anypress-payments')).toBeNull();
+    expect(parseManifest('x', 'anypress-payments')).toBeNull();
   });
 });
 

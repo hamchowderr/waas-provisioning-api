@@ -13,7 +13,7 @@ import { S3, type S3Config } from './provisioner/s3.ts';
  * site install a package we didn't sign.
  */
 
-export const PLUGIN_SLUGS = ['wpcs-waas-host', 'wpcs-waas-client', 'waas-payments', 'anypress-export'] as const;
+export const PLUGIN_SLUGS = ['anypress-host', 'anypress-client', 'anypress-payments', 'anypress-export'] as const;
 export type PluginSlug = (typeof PLUGIN_SLUGS)[number];
 export const isPluginSlug = (value: string): value is PluginSlug => (PLUGIN_SLUGS as readonly string[]).includes(value);
 
@@ -30,7 +30,7 @@ export interface ReleaseManifest {
   /** Bucket key of the zip. */
   zip: string;
   sha256: string;
-  /** base64 ed25519 signature of "waas-release-v1\n<slug>\n<version>\n<sha256>". */
+  /** base64 ed25519 signature of "anypress-release-v1\n<slug>\n<version>\n<sha256>". */
   signature: string;
   requires?: string;
   requiresPhp?: string;

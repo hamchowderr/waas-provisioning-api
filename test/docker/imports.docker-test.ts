@@ -11,7 +11,7 @@ import { siteReport } from '../../src/sitereport.ts';
  * Moving a site in, end to end on real containers (npm run test:docker): the store agent's `restore` with `import`
  * against MariaDB, as a store runs it (src/provisioner/coolify/compose.ts): a WordPress container and a WP-CLI agent
  * container sharing the WordPress volume, and a MariaDB one, on their own network. The archives are built here the
- * way the AnyPress Export plugin packs them: database.sql, waas.json and wp-content in one gzipped tar.
+ * way the AnyPress Export plugin packs them: database.sql, anypress.json and wp-content in one gzipped tar.
  *
  * Needs Docker. Without it the suite fails and says so: it is never skipped quietly. The images can be pointed at
  * another registry with WAAS_TEST_MARIADB_IMAGE, WAAS_TEST_WORDPRESS_IMAGE and WAAS_TEST_CLI_IMAGE.
@@ -70,9 +70,9 @@ interface Fixture {
   sql?: string;
   /** Files in wp-content, besides the theme. */
   files?: Record<string, string>;
-  /** waas.json, besides home and tablePrefix. */
+  /** anypress.json, besides home and tablePrefix. */
   info?: Record<string, unknown>;
-  /** The old site's address in waas.json. */
+  /** The old site's address in anypress.json. */
   home?: string;
 }
 
@@ -87,7 +87,7 @@ function archive(name: string, f: Fixture = {}): string {
   dump += `\nSET NAMES utf8mb4;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\nUPDATE \`${prefix}options\` SET option_value = 'plain' WHERE option_name IN ('template', 'stylesheet');\n`;
   dump += (f.sql ?? '').replaceAll('{p}', prefix);
   writeFileSync(join(dir, 'database.sql'), dump);
-  writeFileSync(join(dir, 'waas.json'), JSON.stringify({ home: f.home ?? 'https://old.example.com', tablePrefix: prefix, ...f.info }));
+  writeFileSync(join(dir, 'anypress.json'), JSON.stringify({ home: f.home ?? 'https://old.example.com', tablePrefix: prefix, ...f.info }));
   writeFileSync(join(dir, 'wp-content/themes/plain/style.css'), '/*\nTheme Name: Plain\n*/\n');
   writeFileSync(join(dir, 'wp-content/themes/plain/index.php'), "<!doctype html><html><head><?php wp_head(); ?></head><body><h1><?php bloginfo('name'); ?></h1><?php wp_footer(); ?></body></html>\n");
   for (const [path, body] of Object.entries(f.files ?? {})) {
@@ -450,13 +450,13 @@ describe('a site moved in is held until it goes live', () => {
     expect(sql("SELECT LENGTH(option_value) FROM wp_options WHERE option_name = 'big_row'")).toBe(String(big.length));
   });
 
-  it("gives a moved site WaaS Client, switched on, and the version's plugins and themes it lacks, keeping its own", () => {
+  it("gives a moved site AnyPress Client, switched on, and the version's plugins and themes it lacks, keeping its own", () => {
     moveIn('client', { files: { 'plugins/contact-form-7/wp-contact-form-7.php': pluginFile('Contact Form 7') } });
     // The version's code, as code-export packs it.
     const code = join(fixtures, 'code');
     const files: Record<string, string> = {
-      'plugins/waas-client/index.php': pluginFile('WaaS Client'),
-      'plugins/waas-client-data/roles.json': '{}',
+      'plugins/anypress-client/anypress-client.php': pluginFile('AnyPress Client'),
+      'plugins/anypress-client-data/roles.json': '{}',
       'plugins/fluent-crm/fluent-crm.php': pluginFile('FluentCRM'),
       'plugins/contact-form-7/wp-contact-form-7.php': `<?php\n/*\nPlugin Name: Contact Form 7\nVersion: 9.9.9\n*/\n`,
       'themes/anypress/style.css': '/*\nTheme Name: AnyPress\n*/\n',
@@ -469,7 +469,7 @@ describe('a site moved in is held until it goes live', () => {
     chmodSync(join(fixtures, 'code.tar.gz'), 0o644);
     const added = agent('code-import', { url: 'file:///fixtures/code.tar.gz', add: true });
     expect(added).toEqual({ added: ['plugins/fluent-crm', 'themes/anypress'], client: true });
-    expect(wp('plugin', 'list', '--status=active', '--field=name')).toContain('waas-client');
+    expect(wp('plugin', 'list', '--status=active', '--field=name')).toContain('anypress-client');
     expect(wp('plugin', 'get', 'contact-form-7', '--field=version')).toBe('1.2.3');
     expect(wp('plugin', 'get', 'fluent-crm', '--field=status')).toBe('inactive');
     expect(option('stylesheet')).toBe('plain');

@@ -2,7 +2,7 @@ import { sendWebsiteReady, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { maintainDashboardDomains } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
-import type { Brand, Provisioner, VersionPlugin } from './provisioner/provisioner.ts';
+import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure } from './imports.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
@@ -138,7 +138,7 @@ export function createJobHandlers(
             mainDomain: tenant.main_domain,
             redirectDomains: tenant.redirect_domains,
             phpConstants: decodePhpConstants(secrets, tenant.php_constants),
-            wpOptions: tenant.wp_options,
+            wpOptions: { ...tenant.wp_options, ...(await brandOptions(pool, tenant.id)) },
             size: tenant.size,
             ownCode: tenant.own_code,
             mailbox: restoredMailbox,
@@ -156,7 +156,7 @@ export function createJobHandlers(
           await provisioner.rollbackStore({
             storeId: data.tenantId,
             backupId: data.backupId,
-            wpOptions: rows[0].wp_options,
+            wpOptions: { ...rows[0].wp_options, ...(await brandOptions(pool, data.tenantId)) },
             mainDomain: rows[0].main_domain,
             ownCode: rows[0].own_code,
           });
@@ -279,6 +279,15 @@ async function resellerBrand(pool: Pool, tenantId: string): Promise<Brand | unde
   return rows[0] ? { name: rows[0].brand_name, url: rows[0].brand_url ?? undefined } : undefined;
 }
 
+/**
+ * The option AnyPress Client (2.13.0+) reads to go by the reseller's brand instead of AnyPress (see BRAND_OPTION):
+ * set on a reseller's stores whenever the store's database is written from elsewhere (built, restored, rolled back).
+ */
+async function brandOptions(pool: Pool, tenantId: string): Promise<Record<string, string>> {
+  const brand = await resellerBrand(pool, tenantId);
+  return brand ? { [BRAND_OPTION]: brand.name } : {};
+}
+
 async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'version.create' }>) {
   const { rows } = await pool.query('SELECT * FROM versions WHERE id = $1', [data.versionId]);
   const version = rows[0];
@@ -351,7 +360,7 @@ async function createTenant(
     mainDomain: tenant.main_domain,
     redirectDomains: tenant.redirect_domains,
     phpConstants: decodePhpConstants(secrets, tenant.php_constants),
-    wpOptions: tenant.wp_options,
+    wpOptions: { ...tenant.wp_options, ...(await brandOptions(pool, tenant.id)) },
     size: tenant.size,
     ownCode: tenant.own_code,
     mailbox,

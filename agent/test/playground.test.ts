@@ -1,11 +1,11 @@
-// The website assistant on a real WordPress: WordPress Playground (WordPress and PHP in Node) runs WaaS Client
+// The website assistant on a real WordPress: WordPress Playground (WordPress and PHP in Node) runs AnyPress Client
 // with the store's site key, and the API's signed site requests for the store go to it. AIMock still plays
 // the model; WordPress is real, so drafts, publishing, revisions and undo are checked on actual pages.
 //
-//   WAAS_CLIENT_DIR=../../waas-plugins/packages/waas-client npm run test:playground
+//   ANYPRESS_CLIENT_DIR=../../waas-plugins/packages/anypress-client npm run test:playground
 //
-// Needs Node 24.18+ (Playground's CLI), WaaS Client with its vendor folder (composer install --no-dev),
-// and TEST_DATABASE_URL. Skipped when WAAS_CLIENT_DIR isn't set.
+// Needs Node 24.18+ (Playground's CLI), AnyPress Client with its vendor folder (composer install --no-dev),
+// and TEST_DATABASE_URL. Skipped when ANYPRESS_CLIENT_DIR isn't set.
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -13,7 +13,7 @@ import { callSite, siteKey, siteKeyMaster } from '../../src/sitekeys.ts';
 import { TEST_SECRETS_KEY } from '../../test/helpers.ts';
 import { startHarness, type Harness, type Store } from './harness.ts';
 
-const CLIENT = process.env.WAAS_CLIENT_DIR ? resolve(process.env.WAAS_CLIENT_DIR) : '';
+const CLIENT = process.env.ANYPRESS_CLIENT_DIR ? resolve(process.env.ANYPRESS_CLIENT_DIR) : '';
 const WP = process.env.PLAYGROUND_WP || '7.1.4';
 const STARTER_PAGES = new URL('../../templates/anypress-store/mu-plugins/anypress-patterns.php', import.meta.url);
 
@@ -50,13 +50,13 @@ describe.skipIf(!CLIENT)('website assistant on WordPress Playground', () => {
       php: '8.3',
       port: 0,
       verbosity: 'quiet',
-      mount: [{ hostPath: CLIENT, vfsPath: '/wordpress/wp-content/plugins/waas-client' }],
+      mount: [{ hostPath: CLIENT, vfsPath: '/wordpress/wp-content/plugins/anypress-client' }],
       blueprint: {
         steps: [
-          { step: 'activatePlugin', pluginPath: 'waas-client/index.php' },
+          { step: 'activatePlugin', pluginPath: 'anypress-client/anypress-client.php' },
           { step: 'writeFile', path: '/wordpress/wp-content/mu-plugins/anypress-patterns.php', data: readFileSync(STARTER_PAGES, 'utf8') },
           // Stores get their site key as an environment variable on their container; here a must-use plugin sets it.
-          { step: 'writeFile', path: '/wordpress/wp-content/mu-plugins/waas-site-key.php', data: `<?php putenv('WAAS_SITE_KEY=${siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id)}');\n` },
+          { step: 'writeFile', path: '/wordpress/wp-content/mu-plugins/anypress-site-key.php', data: `<?php putenv('ANYPRESS_SITE_KEY=${siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id)}');\n` },
         ],
       },
     });

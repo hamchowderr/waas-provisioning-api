@@ -193,7 +193,7 @@ export function versionService(deps: Deps) {
     if (!version || version.status !== Status.Done) throw notFound('The product has no production version ready');
     if (version.roles !== null) return version.roles as unknown;
     const roles = await provisioner.readVersionRoles({ versionId: version.id });
-    if (roles === null) throw notFound(`Version ${version.id} has no site types (waas-client-data/roles.json)`);
+    if (roles === null) throw notFound(`Version ${version.id} has no site types (anypress-client-data/roles.json)`);
     await pool.query('UPDATE versions SET roles = $2 WHERE id = $1', [version.id, JSON.stringify(roles)]);
     return roles;
   }

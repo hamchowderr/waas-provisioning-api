@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentCRM, Fluent Forms, FluentAuth,
+# Builds the "Seller storefront" base snapshot: WordPress with AnyPress Host, FluentCart, FluentCRM, Fluent Forms, FluentAuth,
 # FluentKit, WP Fusion Lite, AnyPress Blocks and the AnyPress theme, packaged as the provisioner restores it (see README). A storefront made from it
 # is connected to the API when it is created: the API writes its key, secret and address into wp-config
 # (POST /admin/products/{productId}/storefront).
 #
-#   templates/seller-storefront/build.sh <path to a waas-plugins checkout> <WaaS Host version>
+#   templates/seller-storefront/build.sh <path to a waas-plugins checkout> <AnyPress Host version>
 #
-# The version is stamped into WaaS Host the way a release is (waas-plugins scripts/release/build.sh), so the
+# The version is stamped into AnyPress Host the way a release is (waas-plugins scripts/release/build.sh), so the
 # storefront gets later releases from the update channel. Check out the matching tag first.
 #
 # Output: templates/seller-storefront/dist/seller-storefront.zip (database.sql + wp-content/).
@@ -46,8 +46,8 @@ DB_IMAGE=mirror.gcr.io/library/mariadb:11
 DB_CONTAINER=waas-storefront-template-db
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-PLUGINS_REPO=$(cd "${1:?usage: build.sh <path to a waas-plugins checkout> <WaaS Host version>}" && pwd)
-HOST_VERSION=${2:?usage: build.sh <path to a waas-plugins checkout> <WaaS Host version>}
+PLUGINS_REPO=$(cd "${1:?usage: build.sh <path to a waas-plugins checkout> <AnyPress Host version>}" && pwd)
+HOST_VERSION=${2:?usage: build.sh <path to a waas-plugins checkout> <AnyPress Host version>}
 WORK=$HERE/.work
 DIST=$HERE/dist
 SITE=$WORK/site
@@ -103,10 +103,10 @@ SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | so
 mkdir -p "$SITE/wp-content/mu-plugins"
 cp "$HERE/mu-plugins/seller-storefront.php" "$HERE/../anypress-store/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
 
-echo "== WaaS Host $HOST_VERSION from $PLUGINS_REPO"
-# The release build: production dependencies only, the version stamped, one waas-host/ folder.
-"$PLUGINS_REPO/scripts/release/build.sh" waas-host "$HOST_VERSION" "$WORK/downloads" >/dev/null
-unzip -q "$WORK/downloads/wpcs-waas-host.zip" -d "$SITE/wp-content/plugins"
+echo "== AnyPress Host $HOST_VERSION from $PLUGINS_REPO"
+# The release build: production dependencies only, the version stamped, one anypress-host/ folder.
+"$PLUGINS_REPO/scripts/release/build.sh" anypress-host "$HOST_VERSION" "$WORK/downloads" >/dev/null
+unzip -q "$WORK/downloads/anypress-host.zip" -d "$SITE/wp-content/plugins"
 HOST_COMMIT=$(git -C "$PLUGINS_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE"
@@ -127,7 +127,7 @@ wp core install --url="$SITE_URL" --title="My Storefront" --admin_user=waas-admi
 wp theme activate "$THEME"
 # Pretty permalinks before any plugin builds rewrite rules from page links.
 wp rewrite structure '/%postname%/'
-wp plugin activate waas-host $SLUGS
+wp plugin activate anypress-host $SLUGS
 
 # Sample content: the post, the page, the privacy policy draft and the comment.
 wp post delete $(wp post list --post_type=post,page --post_status=any --format=ids --post_name__in=hello-world,sample-page,privacy-policy) --force
@@ -168,10 +168,10 @@ wp cache flush 2>/dev/null || true
 
 echo "== Check"
 wp plugin list --fields=name,status,version --skip-update-check
-EXPECTED=$(printf '%s\n' $SLUGS waas-host | sort | tr '\n' ' ')
+EXPECTED=$(printf '%s\n' $SLUGS anypress-host | sort | tr '\n' ' ')
 [ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected active plugins" >&2; exit 1; }
 [ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
-[ "$(wp plugin get waas-host --field=version)" = "$HOST_VERSION" ] || { echo "WaaS Host is not $HOST_VERSION" >&2; exit 1; }
+[ "$(wp plugin get anypress-host --field=version)" = "$HOST_VERSION" ] || { echo "AnyPress Host is not $HOST_VERSION" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ "$(wp post get "$(wp option get page_on_front)" --field=post_name)" = home ] || { echo "Home is not the front page" >&2; exit 1; }
 [ "$(wp theme list --status=active --field=name)" = "$THEME" ] || { echo "theme $THEME not active" >&2; exit 1; }
@@ -182,8 +182,10 @@ EXPECTED=$(printf '%s\n' $SLUGS waas-host | sort | tr '\n' ' ')
 [ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,how-it-works,questions,contact,plans --format=count)" = 6 ] || { echo "storefront pages missing" >&2; exit 1; }
 [ "$(wp eval 'echo var_export(WPF_STAGING_MODE, true), " ", wpf_get_option("crm"), wpf_get_option("connection_configured") ? " connected" : "";')" = "false fluentcrm connected" ] || { echo "WP Fusion must ship connected to FluentCRM and out of staging mode" >&2; exit 1; }
 # Nothing that connects the storefront may ship: each one gets its own when it is created.
-for OPTION in wpcs_credentials_api_key_setting wpcs_credentials_api_secret_setting wpcs_credentials_api_base_url_setting; do
-    [ -z "$(wp option get "$OPTION" 2>/dev/null || true)" ] || { echo "$OPTION must not ship" >&2; exit 1; }
+for OPTION in anypress_api_key anypress_api_secret anypress_api_base_url; do
+    # get_option with an explicit default skips AnyPress Host's registered default (the AnyPress API address), so
+    # this only finds a value that was saved.
+    [ -z "$(wp eval "echo get_option('$OPTION', '');" 2>/dev/null || true)" ] || { echo "$OPTION must not ship" >&2; exit 1; }
 done
 
 echo "== Package"
@@ -192,7 +194,7 @@ wp db export /var/www/html/database.sql --add-drop-table --quiet
 mv "$SITE/database.sql" "$WORK/out/database.sql"
 cp -a "$SITE/wp-content" "$WORK/out/wp-content"
 rm -rf "$WORK/out/wp-content/"{cache,upgrade,upgrade-temp-backup,debug.log}
-PLUGINS_JSON=$( (echo "waas-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
+PLUGINS_JSON=$( (echo "anypress-host $HOST_VERSION ($HOST_COMMIT)"; awk 'NF {print $1, $2}' <<<"$PLUGINS$VENDORED"; echo "anypress-blocks $BLOCKS_VERSION") \
     | jq -Rnc '[inputs | capture("^(?<key>[^ ]+) (?<value>.+)$")] | from_entries')
 cat >"$WORK/out/waas-template.json" <<JSON
 {

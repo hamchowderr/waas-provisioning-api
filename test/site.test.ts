@@ -1,6 +1,6 @@
 // Site editing (src/routes/site.ts, src/sitekeys.ts): /v1/tenants/site signs a request with the store's
-// site key and passes it to the store's WaaS Client; the MCP site tools go through it. The store here
-// is a fake that checks signatures the way WaaS Client's Core\SignedRequest does.
+// site key and passes it to the store's AnyPress Client; the MCP site tools go through it. The store here
+// is a fake that checks signatures the way AnyPress Client's Core\SignedRequest does.
 import { createHash, createHmac } from 'node:crypto';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -26,7 +26,7 @@ let storeAnswer: { status: number; body: unknown } | Error = { status: 200, body
 
 const master = siteKeyMaster(TEST_SECRETS_KEY);
 
-/** WaaS Client's check: t, n, s over t\nn\nMETHOD\nroute?sorted query\nsha256(body), with the store's key. */
+/** AnyPress Client's check: t, n, s over t\nn\nMETHOD\nroute?sorted query\nsha256(body), with the store's key. */
 function signatureOk(header: string | null, method: string, url: URL, body: string): boolean {
   const parts = Object.fromEntries((header ?? '').split(',').map((p) => p.split('=') as [string, string]));
   const route = signedRoute(url.pathname.replace(/^\/wp-json/, ''), Object.fromEntries(url.searchParams));
@@ -39,7 +39,7 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const url = new URL(String(input));
   const body = typeof init?.body === 'string' ? init.body : '';
   const method = init?.method ?? 'GET';
-  const header = new Headers(init?.headers).get('x-waas-signature');
+  const header = new Headers(init?.headers).get('x-anypress-signature');
   seen.push({ url: String(input), method, body, signatureOk: signatureOk(header, method, url, body) });
   if (storeAnswer instanceof Error) throw storeAnswer;
   return new Response(JSON.stringify(storeAnswer.body), { status: storeAnswer.status, headers: { 'content-type': 'application/json' } });
@@ -92,7 +92,7 @@ describe('POST /v1/tenants/site', () => {
     const answer = await waas.tenants.editSite({ externalId: 'site-1' }, { method: 'GET', path: '/patterns', query: { search: 'hero light', category: 'ollie/hero' } });
     expect(answer).toEqual({ status: 200, body: [{ name: 'ollie/hero-light' }] });
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.url).toBe(`https://${mainDomain}/wp-json/waas-client/v1/site/patterns?category=ollie%2Fhero&search=hero%20light`);
+    expect(seen[0]!.url).toBe(`https://${mainDomain}/wp-json/anypress-client/v1/site/patterns?category=ollie%2Fhero&search=hero%20light`);
     expect(seen[0]!.signatureOk).toBe(true);
   });
 

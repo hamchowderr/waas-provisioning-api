@@ -139,9 +139,9 @@ Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) o
 | | `header_footer` | `get`, `update` |
 | | `site_menus` | `list`, `update` |
 | | `add_image` | Copies an image from a link into the media library |
-| | `business_profile` | `read`, `save`, `undo`: what the site and its owner say about the business (WaaS Client 2.11.0 or newer) |
+| | `business_profile` | `read`, `save`, `undo`: what the site and its owner say about the business (AnyPress Client 2.11.0 or newer) |
 
-The site-editing tools change a store's pages and design through its WaaS Client (2.3.0 or newer) and take effect at once; WordPress keeps a revision of every change. How they reach the store: [docs/site-editing.md](../docs/site-editing.md).
+The site-editing tools change a store's pages and design through its AnyPress Client (2.3.0 or newer) and take effect at once; WordPress keeps a revision of every change. How they reach the store: [docs/site-editing.md](../docs/site-editing.md).
 
 Uploading custom snapshots and templates and downloading snapshot zips are left to the SDK, since they move files rather than JSON.
 

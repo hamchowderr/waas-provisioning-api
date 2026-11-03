@@ -18,7 +18,7 @@ let assistant: ServerType;
 let api: ServerType;
 let shop: Server;
 let shopUrl: string;
-// The website's own address: a page standing in for its block editor with WaaS Client's Assistant panel, and
+// The website's own address: a page standing in for its block editor with AnyPress Client's Assistant panel, and
 // /.assistant passed through to the panel, as the server's proxy does for every store's domain.
 let editor: Server;
 let editorUrl: string;
@@ -29,7 +29,7 @@ let seen: { method: string; path: string; body: string }[] = [];
 
 const storeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
-  const path = url.pathname.replace(/^\/wp-json\/waas-client\/v1\/site/, '');
+  const path = url.pathname.replace(/^\/wp-json\/anypress-client\/v1\/site/, '');
   const method = init?.method ?? 'GET';
   seen.push({ method, path, body: typeof init?.body === 'string' ? init.body : '' });
   // The website's address is the stand-in editor's, so the panel beside it trusts that page.
@@ -42,7 +42,7 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   return Response.json({ ok: true });
 }) as typeof fetch;
 
-/** The bakery's business profile, as WaaS Client answers /site/business. */
+/** The bakery's business profile, as AnyPress Client answers /site/business. */
 const business = {
   site: {
     name: 'Bakery', language: 'en_US', timezone: 'America/Chicago', currency: 'USD',
@@ -115,7 +115,7 @@ beforeAll(async () => {
   assistant = serve({ fetch: h.app.fetch, port: assistantPort });
   const apiPort = await freePort();
   api = serve({ fetch: h.t.app.fetch, port: apiPort });
-  // The shop's "Ask the website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery":
+  // The shop's "Ask the website assistant" route, as AnyPress Host answers it for its signed-in owner of "bakery":
   // to the website's own /.assistant.
   shop = createHttpServer(async (_request, response) => {
     const answer = await h.t.app.request('/v1/tenants/site/handoff?externalId=bakery', {
@@ -128,7 +128,7 @@ beforeAll(async () => {
   }).listen(0);
   await once(shop, 'listening');
   shopUrl = `http://localhost:${(shop.address() as AddressInfo).port}`;
-  // The store's own side: WaaS Client asks the API for a handoff, signed with the store's site key.
+  // The store's own side: AnyPress Client asks the API for a handoff, signed with the store's site key.
   editor = createHttpServer(async (request, response) => {
     if (request.url === '/.assistant' || request.url?.startsWith('/.assistant/') || request.url?.startsWith('/.assistant?')) {
       // The proxy: the request goes on as it came, Host and all.
@@ -144,7 +144,7 @@ beforeAll(async () => {
       const body = JSON.stringify({ site: store.domain, assistantUrl: `${editorUrl}/.assistant` });
       const answer = await h.t.app.request('/oauth/site/store-handoff', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Waas-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
+        headers: { 'Content-Type': 'application/json', 'X-AnyPress-Signature': signSiteRequest(siteKey(siteKeyMaster(TEST_SECRETS_KEY), store.id), 'POST', '/oauth/site/store-handoff', body) },
         body,
       });
       response.writeHead(answer.status, { 'Content-Type': 'application/json' }).end(await answer.text());

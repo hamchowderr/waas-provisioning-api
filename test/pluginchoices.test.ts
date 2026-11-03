@@ -103,7 +103,7 @@ describe('plugin choices', () => {
     const blocked = await call('PUT', '/v1/plugin-choices/wp-super-cache', {});
     expect(blocked.status).toBe(400);
     expect(((await blocked.json()) as any).message).toContain('Page caching is part of the hosting');
-    expect((await call('PUT', '/v1/plugin-choices/waas-client', {})).status).toBe(400);
+    expect((await call('PUT', '/v1/plugin-choices/anypress-client', {})).status).toBe(400);
     expect((await call('PUT', '/v1/plugin-choices/not-on-wporg', {})).status).toBe(400);
     expect((await call('PUT', '/v1/plugin-choices/Bad_Slug', {})).status).toBe(400);
     expect((await call('PUT', '/v1/plugin-choices/contact-form-7', { siteTypes: ['bad type!'] })).status).toBe(400);

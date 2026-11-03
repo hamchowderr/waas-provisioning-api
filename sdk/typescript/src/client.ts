@@ -41,7 +41,7 @@ export type WebhookEventType = WebhookSchemas['WebhookEventType'];
 /** The body of every webhook request the API sends. */
 export type WebhookEvent = WebhookSchemas['WebhookEvent'];
 
-/** Picks a tenant: by your own `externalId` (what the WaaS Host plugin uses) or by the API's `tenantId`. */
+/** Picks a tenant: by your own `externalId` (what the AnyPress Host plugin uses) or by the API's `tenantId`. */
 export type TenantRef = { externalId: string; tenantId?: never } | { tenantId: string; externalId?: never };
 
 /** Every write is asynchronous: poll the matching list call until `statusCode` leaves Pending. */

@@ -3,7 +3,7 @@
  * ticked from data the API already holds, so nobody ticks a box by hand. The dashboard shows a seller or reseller
  * their own list, and the platform admin everyone's progress and who is stuck.
  *
- * Two steps (plans on sale, payments on) need the storefront's WaaS Host to report them; until it does they are
+ * Two steps (plans on sale, payments on) need the storefront's AnyPress Host to report them; until it does they are
  * listed as not reported yet, so they count against the total but say why.
  */
 import type { Config } from './config.ts';
@@ -37,7 +37,7 @@ export interface StorefrontSetup extends Checklist {
   productId: string;
   name: string;
   resellerId: string | null;
-  /** The shop's own address, as its WaaS Host last reported it. */
+  /** The shop's own address, as its AnyPress Host last reported it. */
   shopSite: string | null;
 }
 
@@ -113,7 +113,7 @@ export async function loadSetup(
     pool.query(`SELECT product_id, date_created AS at, name FROM versions WHERE is_production AND product_id = ANY($1)`, [ids]),
     pool.query(
       `SELECT DISTINCT ON (product_id) product_id, site, first_seen FROM plugin_installs
-        WHERE product_id = ANY($1) AND slug LIKE '%waas-host' ORDER BY product_id, last_seen DESC`,
+        WHERE product_id = ANY($1) AND slug LIKE '%anypress-host' ORDER BY product_id, last_seen DESC`,
       [ids],
     ),
     pool.query(
@@ -165,10 +165,10 @@ export async function loadSetup(
       app
         ? step('approved', 'Application approved', app.at ?? p.created_at, `Approved ${day(app.at ?? p.created_at)}`, '')
         : step('approved', 'Application approved', p.created_at, 'Set up by AnyPress', ''),
-      step('shop-connected', 'Shop connected', key?.at, key ? `WaaS Host last signed in ${day(key.at)}` : '', 'Install WaaS Host on your shop and add your API key'),
+      step('shop-connected', 'Shop connected', key?.at, key ? `AnyPress Host last signed in ${day(key.at)}` : '', 'Install AnyPress Host on your shop and add your API key'),
       step('starting-site', 'Starting site picked', production?.at, production ? `New stores start as ${production.name}` : '', 'Pick a production version on Templates'),
-      { key: 'plans', label: 'Plans on sale', state: 'not-reported', doneAt: null, detail: 'Checked from your shop once WaaS Host reports it' },
-      { key: 'payments', label: 'Payments on', state: 'not-reported', doneAt: null, detail: 'Checked from your shop once WaaS Host reports it' },
+      { key: 'plans', label: 'Plans on sale', state: 'not-reported', doneAt: null, detail: 'Checked from your shop once AnyPress Host reports it' },
+      { key: 'payments', label: 'Payments on', state: 'not-reported', doneAt: null, detail: 'Checked from your shop once AnyPress Host reports it' },
       step('own-domain', 'Own domain', own ? (siteBy.get(p.id)?.first_seen ?? null) : null, own ? `Your shop runs on ${new URL(/^https?:/i.test(site!) ? site! : `https://${site}`).hostname}` : '', site ? 'Your shop still runs on a test address' : 'Connect your shop first'),
       step('brand', 'Brand added', brand?.at, 'Name and logo set', 'Add your name, logo and colour on Branding'),
       step('team', 'Team invited', team?.at, 'Someone else has joined your team', 'Invite someone on Team'),

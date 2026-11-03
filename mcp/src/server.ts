@@ -26,7 +26,7 @@ export interface WaasMcpOptions {
 }
 
 const ref = {
-  externalId: z.string().optional().describe('Your own id for the store (what WaaS Host uses). Give this or tenantId.'),
+  externalId: z.string().optional().describe('Your own id for the store (what AnyPress Host uses). Give this or tenantId.'),
   tenantId: z.string().optional().describe("The API's id for the store. Give this or externalId."),
 };
 
@@ -549,7 +549,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     },
   });
 
-  // Site: the store's pages and design, through its WaaS Client (docs/site-editing.md).
+  // Site: the store's pages and design, through its AnyPress Client (docs/site-editing.md).
 
   siteTools = true;
   type SiteCall = Parameters<WaasClient['tenants']['editSite']>[1];
@@ -718,7 +718,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   actionTool('business_profile', {
     title: 'Business profile', area: 'site',
     description:
-      'What the site knows about the business behind it: `site` is read from the site itself (name, tagline, language, time zone, site type, the owner’s business name, phone and place, currency, products and prices, booking types, forms); `about` is what the owner has said (what the business does, who it is for, where, hours, contact, voice, notes). Read it before writing copy, and save only facts the owner confirmed. Needs WaaS Client 2.11 or later on the store.',
+      'What the site knows about the business behind it: `site` is read from the site itself (name, tagline, language, time zone, site type, the owner’s business name, phone and place, currency, products and prices, booking types, forms); `about` is what the owner has said (what the business does, who it is for, where, hours, contact, voice, notes). Read it before writing copy, and save only facts the owner confirmed. Needs AnyPress Client 2.11 or later on the store.',
     input: {
       ...ref,
       about: z

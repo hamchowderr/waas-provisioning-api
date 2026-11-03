@@ -67,7 +67,7 @@ describe('setup checklists', () => {
     const created = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'First' } })).json()) as { externalId: string };
     await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${created.externalId}`)).json()) as any[])[0]?.statusCode === Status.Done);
     await t.pool.query(
-      `INSERT INTO plugin_installs (product_id, slug, site, version, channel) VALUES ($1, 'wpcs-waas-host', 'https://t-1234abcd.stores.waas.example', '2.8.0', 'stable')`,
+      `INSERT INTO plugin_installs (product_id, slug, site, version, channel) VALUES ($1, 'anypress-host', 'https://t-1234abcd.stores.waas.example', '2.8.0', 'stable')`,
       [t.productId],
     );
 
@@ -83,14 +83,14 @@ describe('setup checklists', () => {
 
     // The shop moves to its own domain.
     await t.pool.query(
-      `INSERT INTO plugin_installs (product_id, slug, site, version, channel, last_seen) VALUES ($1, 'wpcs-waas-host', 'https://shop.example.com', '2.8.0', 'stable', now() + interval '1 minute')`,
+      `INSERT INTO plugin_installs (product_id, slug, site, version, channel, last_seen) VALUES ($1, 'anypress-host', 'https://shop.example.com', '2.8.0', 'stable', now() + interval '1 minute')`,
       [t.productId],
     );
     mine = (await getSetup()).storefronts.find((s: any) => s.productId === t.productId);
     expect(stepsOf(mine)['own-domain']).toBe('done');
     expect(mine.shopSite).toBe('https://shop.example.com');
     expect(mine.done).toBe(6);
-    // Plans and payments wait on WaaS Host, so the next step is the first one the seller can do.
+    // Plans and payments wait on AnyPress Host, so the next step is the first one the seller can do.
     expect(mine.next).toBe('Brand added');
   });
 

@@ -6,7 +6,7 @@ license: GPL-3.0-or-later
 
 # Managing AnyPress stores
 
-The `waas-provisioning` MCP server exposes the store API as tools. A store is called a **tenant** in the API. Pick a store by `externalId` (the user's own id, e.g. an order or subscription id; what the WaaS Host plugin uses) or by `tenantId`. Prefer `externalId` when you have it.
+The `waas-provisioning` MCP server exposes the store API as tools. A store is called a **tenant** in the API. Pick a store by `externalId` (the user's own id, e.g. an order or subscription id; what the AnyPress Host plugin uses) or by `tenantId`. Prefer `externalId` when you have it.
 
 Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tools by area:
 

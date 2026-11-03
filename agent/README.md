@@ -6,7 +6,7 @@ It has no tools of its own. Every request carries the owner's token from **Sign 
 
 ## What it knows
 
-Before every reply the assistant reads the website's **business profile** (the site tool `business_profile`, WaaS Client 2.11.0 or newer; [`src/business.ts`](src/business.ts)), so the chat is never the first place it learns what the business is:
+Before every reply the assistant reads the website's **business profile** (the site tool `business_profile`, AnyPress Client 2.11.0 or newer; [`src/business.ts`](src/business.ts)), so the chat is never the first place it learns what the business is:
 
 - **From the website:** its name, tagline, language and time zone, the plan's kind of site, the business details from the purchase (owner, phone, city, state, country), the shop's currency, and its products and prices, booking types and forms by name. These follow the website as they change.
 - **From the owner:** what the business does (the checkout's optional question fills this in at first), who it is for, where, opening hours, how customers reach it, how the site should sound, and anything else. The assistant asks only about what is missing, and only when a request needs it. When the owner tells it a lasting fact, it offers to remember it and saves it with `business_profile_change`, which waits for the owner's yes like any other change. The owner can check and correct all of it in the chat's **About your business** window (the shop icon), which saves straight to the website.
@@ -21,9 +21,9 @@ The site tools come in two kinds ([`src/site-tools.ts`](src/site-tools.ts)). `si
 
 ## Beside the page editor
 
-WaaS Client's **Assistant** panel in the block editor and the Site Editor frames the chat's [`/editor`](panel/src/app/editor/) page. With each message the editor sends what it has open (the page, its top-level blocks and the selected block), and the assistant changes that open page with `editor_change` ([`src/editor.ts`](src/editor.ts)): replace or remove a block, insert blocks before or after one, or replace the whole page. The change comes back to the editor, shows there at once and can be undone, and it is kept only when the owner presses Save, so it doesn't wait for an approval card. It never reaches the website by itself.
+AnyPress Client's **Assistant** panel in the block editor and the Site Editor frames the chat's [`/editor`](panel/src/app/editor/) page. With each message the editor sends what it has open (the page, its top-level blocks and the selected block), and the assistant changes that open page with `editor_change` ([`src/editor.ts`](src/editor.ts)): replace or remove a block, insert blocks before or after one, or replace the whole page. The change comes back to the editor, shows there at once and can be undone, and it is kept only when the owner presses Save, so it doesn't wait for an approval card. It never reaches the website by itself.
 
-The page and the editor talk with `postMessage`, and the page only listens to and writes to the address the API answers for the signed-in website (`GET /agent-controller/site`). Signed out, it asks the editor to sign it in: WaaS Client asks the API for a handoff signed with the store's own site key (`POST /oauth/site/store-handoff`, [docs/site-editing.md](../docs/site-editing.md)), so the owner never sees a sign-in.
+The page and the editor talk with `postMessage`, and the page only listens to and writes to the address the API answers for the signed-in website (`GET /agent-controller/site`). Signed out, it asks the editor to sign it in: AnyPress Client asks the API for a handoff signed with the store's own site key (`POST /oauth/site/store-handoff`, [docs/site-editing.md](../docs/site-editing.md)), so the owner never sees a sign-in.
 
 ## HTTP
 
@@ -39,7 +39,7 @@ The assistant speaks [Mastra Chat Kit](https://github.com/hamchowderr/mastra-cha
 | `GET /agent-controller/site` | The signed-in website's address |
 | `GET /agent-controller/usage` | This month's messages: `{ used, limit, resetsAt }` (empty when the API can't be reached); doesn't count one |
 | `GET /agent-controller/business` | The website's business profile: `{ site, about, updated }` |
-| `PATCH /agent-controller/business` | `{ about: { what?, who?, area?, hours?, contact?, voice?, notes? } }`: the owner's corrections, saved straight to the website (only the fields given change; an empty one clears it). 409 when the website's WaaS Client is older than 2.11.0 |
+| `PATCH /agent-controller/business` | `{ about: { what?, who?, area?, hours?, contact?, voice?, notes? } }`: the owner's corrections, saved straight to the website (only the fields given change; an empty one clears it). 409 when the website's AnyPress Client is older than 2.11.0 |
 
 Each message the owner sends counts against the website's monthly allowance, which the API sets by the store's size (`POST /oauth/site/assistant-usage`, [docs/site-editing.md](../docs/site-editing.md)). When it's used up, `/agent-controller/stream` answers 429 with a plain `error` the chat shows as a notice: how many messages the plan has, when they start again, and that a bigger plan gets more. If the API can't be reached, the message goes ahead.
 
@@ -69,6 +69,6 @@ In a container: `docker build -f agent/Dockerfile .` from the repository root (i
 
 The tests run the API itself in-process, on the API's test database (`TEST_DATABASE_URL`), with [AIMock](https://aimock.copilotkit.dev) playing the model, so every test decides exactly which tool the model calls and then checks what reached which website.
 
-- `npm test`: stores that answer like WaaS Client. Checks the sign-in, drafts, approve and decline, that one website's owner can't see or answer another's waiting change, and that a model told to use another website still only reaches its own.
-- `npm run test:playground`: a real WordPress on [WordPress Playground](https://wordpress.github.io/wordpress-playground/) with WaaS Client from [waas-plugins](https://github.com/hamchowderr/waas-plugins). Checks a draft page, publishing only after the owner's yes, a section change and its undo, and a decline, on actual pages. Needs Node 24.18+ and `WAAS_CLIENT_DIR` pointing at `waas-plugins/packages/waas-client` with its `vendor` folder (`composer install --no-dev`).
+- `npm test`: stores that answer like AnyPress Client. Checks the sign-in, drafts, approve and decline, that one website's owner can't see or answer another's waiting change, and that a model told to use another website still only reaches its own.
+- `npm run test:playground`: a real WordPress on [WordPress Playground](https://wordpress.github.io/wordpress-playground/) with AnyPress Client from [waas-plugins](https://github.com/hamchowderr/waas-plugins). Checks a draft page, publishing only after the owner's yes, a section change and its undo, and a decline, on actual pages. Needs Node 24.18+ and `ANYPRESS_CLIENT_DIR` pointing at `waas-plugins/packages/anypress-client` with its `vendor` folder (`composer install --no-dev`).
 - `npm run test:browser`: the chat panel in Chromium at desktop and phone width (Playwright). Types a request, checks the change waits on an Approve / Reject card, and that only Approve makes it. Run `npm ci && npm run build` in `panel/` first.

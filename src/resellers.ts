@@ -5,7 +5,9 @@ import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey, wantsForever } from './keys.ts';
 import { SIZES, type Size } from './plans.ts';
+import { BRAND_OPTION } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
+import { Status } from './status.ts';
 import { invoiceReseller, lastMonth, listResellerInvoices, refreshResellerInvoices } from './resellerinvoices.ts';
 import { versionService } from './routes/versions.ts';
 
@@ -387,6 +389,20 @@ export function accountResellerRoutes(deps: Deps, caller: (c: Context) => Promis
   return app;
 }
 
+/**
+ * A new brand name reaches the reseller's stores that are running: AnyPress Client goes by it (BRAND_OPTION), and
+ * by AnyPress again once it is cleared. A store built, restored or rolled back later gets it from its job.
+ */
+async function pushBrand(deps: Deps, resellerId: string, brandName: string | null) {
+  await withTransaction(deps.pool, async (client) => {
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT t.id FROM tenants t JOIN products p ON p.id = t.product_id WHERE p.reseller_id = $1 AND t.status NOT IN ($2, $3)`,
+      [resellerId, Status.Removing, Status.Failed],
+    );
+    for (const t of rows) await enqueue(deps.boss, client, { type: 'tenant.update', tenantId: t.id, wpOptions: { [BRAND_OPTION]: brandName ?? '' } });
+  });
+}
+
 export function adminResellerRoutes(deps: Deps) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
@@ -451,6 +467,7 @@ export function adminResellerRoutes(deps: Deps) {
         ...keys.map((k) => settings[k]),
       ]);
     }
+    if (settings.brandName !== undefined) await pushBrand(deps, id, settings.brandName);
     return c.json((await loadResellers(pool, id))[0]);
   });
 
