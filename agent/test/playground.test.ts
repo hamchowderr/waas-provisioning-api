@@ -1,10 +1,10 @@
-// The website assistant on a real WordPress: WordPress Playground (WordPress and PHP in Node) runs WaaS Client
+// The website assistant on a real WordPress: WordPress Playground (WordPress and PHP in Node) runs AnyPress Client
 // with the store's site key, and the API's signed site requests for the store go to it. AIMock still plays
 // the model; WordPress is real, so drafts, publishing, revisions and undo are checked on actual pages.
 //
 //   WAAS_CLIENT_DIR=../../waas-plugins/packages/waas-client npm run test:playground
 //
-// Needs Node 24.18+ (Playground's CLI), WaaS Client with its vendor folder (composer install --no-dev),
+// Needs Node 24.18+ (Playground's CLI), AnyPress Client with its vendor folder (composer install --no-dev),
 // and TEST_DATABASE_URL. Skipped when WAAS_CLIENT_DIR isn't set.
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

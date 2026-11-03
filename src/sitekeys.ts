@@ -1,7 +1,7 @@
 import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /**
- * Site editing (docs/site-editing.md): the API calls a store's WaaS Client site routes
+ * Site editing (docs/site-editing.md): the API calls a store's AnyPress Client site routes
  * (/wp-json/waas-client/v1/site/...) on behalf of an AI agent, signing each request with the
  * store's site key. The key is derived from SECRETS_KEY and the store's id, so nothing is stored:
  * the provisioner hands it to the store as WAAS_SITE_KEY, and the API derives it again to sign.
@@ -27,7 +27,7 @@ export function siteKeys(secretsKeyBase64: string): (storeId: string) => string 
 
 /**
  * "Sign in with your website" (src/oauth.ts): the API sends the store owner to their wp-admin with a
- * link it signs with the store's key, so WaaS Client knows the app's name and where to answer are
+ * link it signs with the store's key, so AnyPress Client knows the app's name and where to answer are
  * ours; the store answers with a signature of its own, so the API knows the store's admin pressed it.
  */
 export interface ConnectLink {
@@ -52,7 +52,7 @@ export function connectLinkSignature(key: string, link: ConnectLink): string {
   return createHmac('sha256', key).update(['waas-connect', ...CONNECT_FIELDS.map((f) => link[f])].join('\n')).digest('hex');
 }
 
-/** What WaaS Client signs when the owner presses Allow or Cancel. */
+/** What AnyPress Client signs when the owner presses Allow or Cancel. */
 export function connectAnswerSignature(key: string, request: string, answer: ConnectAnswer): string {
   return createHmac('sha256', key).update(['waas-connect-answer', request, answer].join('\n')).digest('hex');
 }
@@ -60,7 +60,7 @@ export function connectAnswerSignature(key: string, request: string, answer: Con
 /** PHP's rawurlencode: encodeURIComponent plus the five characters it leaves alone. */
 const rawurlencode = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
-/** The route as WaaS Client signs it: the REST route, then "?" and the query sorted by name, when there is one. */
+/** The route as AnyPress Client signs it: the REST route, then "?" and the query sorted by name, when there is one. */
 export function signedRoute(route: string, query: Record<string, string> = {}): string {
   const pairs = Object.keys(query)
     .sort()
@@ -68,7 +68,7 @@ export function signedRoute(route: string, query: Record<string, string> = {}): 
   return pairs.length ? `${route}?${pairs.join('&')}` : route;
 }
 
-/** The X-Waas-Signature header for one request (WaaS Client's Core\SignedRequest checks it). */
+/** The X-Waas-Signature header for one request (AnyPress Client's Core\SignedRequest checks it). */
 export function signSiteRequest(key: string, method: string, route: string, body: string, now = Date.now()): string {
   const t = String(Math.floor(now / 1000));
   const n = randomBytes(16).toString('hex');

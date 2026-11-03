@@ -40,7 +40,7 @@ export interface CoolifyProvisionerConfig {
   /** Who suspended stores' "website unavailable" page credits, unless a suspend names its own. */
   brand?: Brand;
   /**
-   * The store's site key (src/sitekeys.ts), given to it as WAAS_SITE_KEY so WaaS Client accepts the
+   * The store's site key (src/sitekeys.ts), given to it as WAAS_SITE_KEY so AnyPress Client accepts the
    * API's signed site-editing requests. Unset: stores get none and can't be edited through the API.
    */
   siteKey?: (storeId: string) => string;
@@ -604,7 +604,7 @@ export class CoolifyProvisioner implements Provisioner {
       if (!input.ownCode && !imported) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)) });
       // A site from elsewhere may come from an older WordPress than the version runs.
       if (imported) await this.exec(uuid, 'update-db', {});
-      // It keeps its own plugins and themes, and gets WaaS Client (switched on) and what else the version has that it lacks.
+      // It keeps its own plugins and themes, and gets AnyPress Client (switched on) and what else the version has that it lacks.
       if (input.ownCode || imported) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)), add: true });
       await this.exec(uuid, 'configure', {
         home,
@@ -854,7 +854,7 @@ export class CoolifyProvisioner implements Provisioner {
       docker_compose_raw: await this.storeCompose(storeId, want, store.uuid),
     });
     await this.restart(store.uuid);
-    // A store with its own code takes only the version's WaaS Client and what it lacks.
+    // A store with its own code takes only the version's AnyPress Client and what it lacks.
     await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(targetVersionId)), ...(ownCode && { add: true }) });
     await this.exec(store.uuid, 'update-db', {});
   }
@@ -883,7 +883,7 @@ export class CoolifyProvisioner implements Provisioner {
     // The agent keeps the suspension flag and page across the restore.
     const home = await this.currentHome(store.uuid, mainDomain);
     await this.exec(store.uuid, 'restore', { url: this.s3.presign('GET', keys.backup(backupId)), home });
-    // The code of the version the store runs now (a store with its own code takes only WaaS Client and what it lacks), and its database brought up to that WordPress.
+    // The code of the version the store runs now (a store with its own code takes only AnyPress Client and what it lacks), and its database brought up to that WordPress.
     await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)), ...(ownCode && { add: true }) });
     await this.exec(store.uuid, 'update-db', {});
     await this.exec(store.uuid, 'configure', { options: wpOptions });

@@ -16,6 +16,9 @@ export interface Brand {
   url?: string;
 }
 
+/** The WordPress option that holds a reseller's brand on its stores; AnyPress Client 2.13.0+ goes by that name. */
+export const BRAND_OPTION = 'waas_brand_name';
+
 /**
  * A plugin choice applied while a version builds (docs/plugin-choices.md): a wordpress.org plugin added
  * (its zip as stored with storePluginPackage) or one switched off, for some or all of the site types in

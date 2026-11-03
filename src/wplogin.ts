@@ -7,14 +7,14 @@ import { Status, statusName } from './status.ts';
 /**
  * "Log in to WordPress" from the dashboard (docs/wordpress-login.md): a link that signs the browser in to a
  * store's wp-admin as its first administrator, once, within a few minutes. The API signs it with the store's
- * site key (src/sitekeys.ts); the store's WaaS Client (2.10.0+), or WaaS Host (2.8.0+) on a ready-made
+ * site key (src/sitekeys.ts); the store's AnyPress Client (2.10.0+), or AnyPress Host (2.8.0+) on a ready-made
  * storefront, checks it at /wp-json/<plugin>/v1/admin-login.
  *
  * The signature is the site requests' form over the method LOGIN (which no site request uses), the route and
  * an empty body, so a signed site request can't be turned into a login, nor a login link into a site request.
  */
 
-/** How long a link works: the store's limit (SignedRequest::MAX_AGE in WaaS Client). */
+/** How long a link works: the store's limit (SignedRequest::MAX_AGE in AnyPress Client). */
 export const LOGIN_LINK_SECONDS = 300;
 
 export type LoginPlugin = 'waas-client' | 'waas-host';

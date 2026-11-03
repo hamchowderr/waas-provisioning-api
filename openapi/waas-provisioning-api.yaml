@@ -36,7 +36,7 @@ info:
     - Accept `Content-Type: application/json` on bodiless GET/DELETE, unencoded query values, and `[]` as an empty PUT body. Any 2xx is success.
 
 
-    **Provisioning requirements (inside each store, not visible in HTTP):** environment variable `WPCS_IS_TENANT=true` visible to PHP; each `phpConstants` entry written as `define()`; `wpOptions` applied; the WordPress user created with the requested role; the WaaS Client plugin active; `roles.json` served publicly at `https://{production version domain}/wp-content/plugins/waas-client-data/roles.json`; `/wp-json/waas-client/v1/single_login/verify` reachable; and the store''s home page answers `HEAD https://{domain}` with 200 and no redirect, or it never reaches Ready.
+    **Provisioning requirements (inside each store, not visible in HTTP):** environment variable `WPCS_IS_TENANT=true` visible to PHP; each `phpConstants` entry written as `define()`; `wpOptions` applied; the WordPress user created with the requested role; the AnyPress Client plugin active; `roles.json` served publicly at `https://{production version domain}/wp-content/plugins/waas-client-data/roles.json`; `/wp-json/waas-client/v1/single_login/verify` reachable; and the store''s home page answers `HEAD https://{domain}` with 200 and no redirect, or it never reaches Ready.
 
 
     History: docs/contract.md.'
@@ -522,7 +522,7 @@ paths:
       description: 'Added for AnyPress.
 
 
-        Passes one request on to the store''s site-editing API (WaaS Client 2.3.0 or newer: pages and their sections, patterns, colours and fonts, header and footer, menus, revisions and images), signed with the store''s own site key, and answers with the store''s reply. `path` is under `/site`: `''''` for the site itself, `/pages`, `/pages/12/sections/0` and so on. The routes are listed in the [site editing guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md).
+        Passes one request on to the store''s site-editing API (AnyPress Client 2.3.0 or newer: pages and their sections, patterns, colours and fonts, header and footer, menus, revisions and images), signed with the store''s own site key, and answers with the store''s reply. `path` is under `/site`: `''''` for the site itself, `/pages`, `/pages/12/sections/0` and so on. The routes are listed in the [site editing guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md).
 
 
         The tenant must be Done and not suspended. A 4xx from the store comes back in `status` and `body` (with 200 here), so the caller can read the store''s explanation.'
@@ -1376,7 +1376,7 @@ paths:
         Gets a list of versions. Use the VersionName or VersionId of a version to filter the list to a specific version.
 
 
-        **Storefront plugin:** (1) connection test: 200 = connected, **403 = invalid key or secret**, anything else = unreachable, so bad credentials must return 403, not 401. (2) Roles refresh: `GET /v1/versions/production/roles` (WaaS Host 2.7.3+); older storefronts find the item with `isProduction: true` and fetch `https://{domain}/wp-content/plugins/waas-client-data/roles.json`. `WPCSService.php:47-79`, `RolesController.php:44-51`.'
+        **Storefront plugin:** (1) connection test: 200 = connected, **403 = invalid key or secret**, anything else = unreachable, so bad credentials must return 403, not 401. (2) Roles refresh: `GET /v1/versions/production/roles` (AnyPress Host 2.7.3+); older storefronts find the item with `isProduction: true` and fetch `https://{domain}/wp-content/plugins/waas-client-data/roles.json`. `WPCSService.php:47-79`, `RolesController.php:44-51`.'
       parameters:
       - name: versionId
         in: query
@@ -1502,7 +1502,7 @@ paths:
       tags:
       - Version
       summary: Get the production version's site types
-      description: 'The site types (the `roles.json` in `waas-client-data`) of the product''s production version, as a storefront loads them for its plans and its role choices. They are read from the version''s saved code, because the version''s own site is stopped once it is built. Storefronts on WaaS Host 2.7.3 and later read them here first and fall back to `https://{domain}/wp-content/plugins/waas-client-data/roles.json`.'
+      description: 'The site types (the `roles.json` in `waas-client-data`) of the product''s production version, as a storefront loads them for its plans and its role choices. They are read from the version''s saved code, because the version''s own site is stopped once it is built. Storefronts on AnyPress Host 2.7.3 and later read them here first and fall back to `https://{domain}/wp-content/plugins/waas-client-data/roles.json`.'
       operationId: getProductionVersionRoles
       parameters:
       - name: productId
@@ -4307,7 +4307,7 @@ tags:
   description: 'Phase 1. Added for AnyPress. Suspend, resume, back up and restore tenants, so a cancelled subscription can keep its store for a grace period before it is deleted, and get it back from a backup after.'
   x-phase: 1
 - name: TenantSite
-  description: 'Added for AnyPress. Edit a store''s pages and design for an AI agent, through the store''s WaaS Client.'
+  description: 'Added for AnyPress. Edit a store''s pages and design for an AI agent, through the store''s AnyPress Client.'
 - name: SiteImport
   description: 'Added for AnyPress. Move an existing WordPress site in from another host: create a tenant with `uploadCustomSnapshot`, paste its import code into the AnyPress Export plugin on the old site, and the plugin uploads the site and starts the move with these calls. They take the import code instead of an API key.'
 - name: Version

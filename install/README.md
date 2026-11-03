@@ -59,7 +59,7 @@ stores; put stores like that on another provider.
 7. Publishes the store template and the storefront template from the newest
    [templates release](https://github.com/hamchowderr/waas-provisioning-api/releases) (checksums checked), and makes
    each the production version. New stores are made from the store template.
-8. Builds your storefront: a WordPress site with WaaS Host and FluentCart, already connected to the API, with you as
+8. Builds your storefront: a WordPress site with AnyPress Host and FluentCart, already connected to the API, with you as
    its administrator.
 9. Deploys the dashboard on `app.<brand domain>`, with you as its admin.
    With `VERCEL_TOKEN`, the dashboard goes to your own Vercel account instead: the installer makes a project

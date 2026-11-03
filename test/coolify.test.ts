@@ -836,7 +836,7 @@ describe('CoolifyProvisioner', () => {
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'update-db', 'code-import', 'configure', 'check-site']);
     expect(cloud.agentOps[1]!.args).toMatchObject({ import: true, home: 'https://shop.example.com' });
     expect(cloud.agentOps[1]!.args).not.toHaveProperty('hold');
-    // It keeps its own plugins and themes and gets the version's WaaS Client and what it lacks.
+    // It keeps its own plugins and themes and gets the version's AnyPress Client and what it lacks.
     expect(cloud.agentOps[3]!.args).toMatchObject({ add: true, url: expect.stringContaining(`versions/${storeInput.versionId}/code.zip`) });
     // The moved site keeps its own options; its owner still gets its email while it is held.
     expect(cloud.agentOps[4]!.args).toMatchObject({ options: {}, holdAllow: ['owner@example.com'] });

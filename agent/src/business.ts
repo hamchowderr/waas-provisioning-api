@@ -1,6 +1,6 @@
 // What the assistant knows about the business behind the website, before the owner says a word: the site's
 // own facts (its name, language, place, products, booking types and forms) and what the owner has told it
-// before, both from the website's business profile (WaaS Client 2.11+, the site tool business_profile).
+// before, both from the website's business profile (AnyPress Client 2.11+, the site tool business_profile).
 // It goes into the instructions of every turn, so the chat is never the first place the assistant learns
 // what the business is; it only asks about what is missing.
 import { BUSINESS_FIELDS, type BusinessField } from './site-tools.js';

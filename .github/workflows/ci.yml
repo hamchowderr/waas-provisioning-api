@@ -54,7 +54,7 @@ jobs:
         run: npx playwright install --with-deps chromium && npm run test:browser
 
   assistant-playground:
-    # The website assistant on a real WordPress: WordPress Playground running WaaS Client from waas-plugins.
+    # The website assistant on a real WordPress: WordPress Playground running AnyPress Client from waas-plugins.
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -87,7 +87,7 @@ jobs:
             package-lock.json
             agent/package-lock.json
       - run: npm ci
-      - name: WaaS Client
+      - name: AnyPress Client
         working-directory: waas-plugins/packages/waas-client
         run: composer install --no-dev --no-interaction --prefer-dist
       - name: Website assistant on Playground

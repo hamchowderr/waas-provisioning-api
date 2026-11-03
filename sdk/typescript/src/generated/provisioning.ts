@@ -166,7 +166,7 @@ export interface paths {
          * Edit the store's site
          * @description Added for AnyPress.
          *
-         *     Passes one request on to the store's site-editing API (WaaS Client 2.3.0 or newer: pages and their sections, patterns, colours and fonts, header and footer, menus, revisions and images), signed with the store's own site key, and answers with the store's reply. `path` is under `/site`: `''` for the site itself, `/pages`, `/pages/12/sections/0` and so on. The routes are listed in the [site editing guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md).
+         *     Passes one request on to the store's site-editing API (AnyPress Client 2.3.0 or newer: pages and their sections, patterns, colours and fonts, header and footer, menus, revisions and images), signed with the store's own site key, and answers with the store's reply. `path` is under `/site`: `''` for the site itself, `/pages`, `/pages/12/sections/0` and so on. The routes are listed in the [site editing guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md).
          *
          *     The tenant must be Done and not suspended. A 4xx from the store comes back in `status` and `body` (with 200 here), so the caller can read the store's explanation.
          */
@@ -477,7 +477,7 @@ export interface paths {
          *
          *     Gets a list of versions. Use the VersionName or VersionId of a version to filter the list to a specific version.
          *
-         *     **Storefront plugin:** (1) connection test: 200 = connected, **403 = invalid key or secret**, anything else = unreachable, so bad credentials must return 403, not 401. (2) Roles refresh: `GET /v1/versions/production/roles` (WaaS Host 2.7.3+); older storefronts find the item with `isProduction: true` and fetch `https://{domain}/wp-content/plugins/waas-client-data/roles.json`. `WPCSService.php:47-79`, `RolesController.php:44-51`.
+         *     **Storefront plugin:** (1) connection test: 200 = connected, **403 = invalid key or secret**, anything else = unreachable, so bad credentials must return 403, not 401. (2) Roles refresh: `GET /v1/versions/production/roles` (AnyPress Host 2.7.3+); older storefronts find the item with `isProduction: true` and fetch `https://{domain}/wp-content/plugins/waas-client-data/roles.json`. `WPCSService.php:47-79`, `RolesController.php:44-51`.
          */
         get: operations["listVersions"];
         put?: never;
@@ -515,7 +515,7 @@ export interface paths {
         };
         /**
          * Get the production version's site types
-         * @description The site types (the `roles.json` in `waas-client-data`) of the product's production version, as a storefront loads them for its plans and its role choices. They are read from the version's saved code, because the version's own site is stopped once it is built. Storefronts on WaaS Host 2.7.3 and later read them here first and fall back to `https://{domain}/wp-content/plugins/waas-client-data/roles.json`.
+         * @description The site types (the `roles.json` in `waas-client-data`) of the product's production version, as a storefront loads them for its plans and its role choices. They are read from the version's saved code, because the version's own site is stopped once it is built. Storefronts on AnyPress Host 2.7.3 and later read them here first and fall back to `https://{domain}/wp-content/plugins/waas-client-data/roles.json`.
          */
         get: operations["getProductionVersionRoles"];
         put?: never;

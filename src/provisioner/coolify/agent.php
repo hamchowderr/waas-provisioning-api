@@ -1794,8 +1794,8 @@ switch ($op) {
         mkdir("$tmp/x");
         extract_archive("$tmp/code.zip", "$tmp/x");
         if (!empty($args['add'])) {
-            // A store with its own code (a site moved in): the version's WaaS Client and its site types, always,
-            // and the version's other plugins and themes the site doesn't have, left off. WaaS Client is switched
+            // A store with its own code (a site moved in): the version's AnyPress Client and its site types, always,
+            // and the version's other plugins and themes the site doesn't have, left off. AnyPress Client is switched
             // on; it turns on what the store's plan runs.
             $added = [];
             foreach (['plugins', 'themes'] as $dir) {

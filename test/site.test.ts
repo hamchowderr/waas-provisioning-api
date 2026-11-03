@@ -1,6 +1,6 @@
 // Site editing (src/routes/site.ts, src/sitekeys.ts): /v1/tenants/site signs a request with the store's
-// site key and passes it to the store's WaaS Client; the MCP site tools go through it. The store here
-// is a fake that checks signatures the way WaaS Client's Core\SignedRequest does.
+// site key and passes it to the store's AnyPress Client; the MCP site tools go through it. The store here
+// is a fake that checks signatures the way AnyPress Client's Core\SignedRequest does.
 import { createHash, createHmac } from 'node:crypto';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -26,7 +26,7 @@ let storeAnswer: { status: number; body: unknown } | Error = { status: 200, body
 
 const master = siteKeyMaster(TEST_SECRETS_KEY);
 
-/** WaaS Client's check: t, n, s over t\nn\nMETHOD\nroute?sorted query\nsha256(body), with the store's key. */
+/** AnyPress Client's check: t, n, s over t\nn\nMETHOD\nroute?sorted query\nsha256(body), with the store's key. */
 function signatureOk(header: string | null, method: string, url: URL, body: string): boolean {
   const parts = Object.fromEntries((header ?? '').split(',').map((p) => p.split('=') as [string, string]));
   const route = signedRoute(url.pathname.replace(/^\/wp-json/, ''), Object.fromEntries(url.searchParams));

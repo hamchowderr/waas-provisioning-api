@@ -78,7 +78,7 @@ export function createAssistant(config: AssistantConfig) {
   function businessOf(resourceId: string): Promise<BusinessProfile | undefined> {
     const known = business.get(resourceId);
     if (known && Date.now() - known.at < BUSINESS_TTL_MS) return known.profile;
-    // A site whose WaaS Client predates the profile, or can't be reached, gives none: the turn goes on without it.
+    // A site whose AnyPress Client predates the profile, or can't be reached, gives none: the turn goes on without it.
     const profile = config
       .callSite(resourceId, 'business_profile', { action: 'read' })
       .then((answer) => (answer && typeof answer === 'object' ? (answer as BusinessProfile) : undefined))

@@ -9,10 +9,10 @@ import type { AgentControllerToolEnd } from '@/lib/agent-controller/use-agent-co
 import { approvalViews, toolTitles } from '../assistant';
 import { withBase } from '@/lib/base-path';
 
-// Messages between this page and the editor that frames it (WaaS Client's editor-assistant.js).
+// Messages between this page and the editor that frames it (AnyPress Client's editor-assistant.js).
 // From the editor: { source: 'site-editor', type: 'view', view } with what it has open.
 // To the editor: { source: 'site-assistant', type: 'ready' | 'apply' | 'sign-in', ... }.
-// Only the signed-in website's own address is listened to and written to. WaaS Client before 2.12
+// Only the signed-in website's own address is listened to and written to. AnyPress Client before 2.12
 // frames the panel's own address and uses the names of before (`older`); 2.12 understands both.
 const FROM_EDITOR = new Set(['site-editor', 'anypress-editor']);
 const toEditor = (older: boolean) => (older ? 'anypress-assistant' : 'site-assistant');

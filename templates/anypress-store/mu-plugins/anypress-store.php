@@ -4,7 +4,7 @@
  * Description: Settings the AnyPress store template keeps in code: telemetry and upgrade nags off, WP Fusion kept out of staging mode, and per-store first-run steps. Part of the store template.
  */
 
-// The plugins that were on when this request started, before WaaS Client switches any on or off for the site type.
+// The plugins that were on when this request started, before AnyPress Client switches any on or off for the site type.
 $GLOBALS['anypress_boot_plugins'] = (array) get_option('active_plugins', []);
 function anypress_boot_plugins(): array
 {
@@ -276,7 +276,7 @@ function anypress_is_bookings_site(array $active): bool
 }
 
 /*
- * Site types. Each store's plan role (roles.json) switches the template's plugins on or off, and WaaS Client does
+ * Site types. Each store's plan role (roles.json) switches the template's plugins on or off, and AnyPress Client does
  * that on `init`. Pages that only work with one plugin (FluentCart's shop, cart and checkout, Fluent Support's
  * portal) carry `_anypress_needs`: they go back to draft while their plugin is off and come back when it's on, so
  * menus and the home page never show an empty shop. With the shop hidden, the home page shows the latest posts.

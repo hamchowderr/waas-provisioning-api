@@ -5,12 +5,12 @@ The first store template: a clean WordPress shop that every new store is created
 | | |
 |---|---|
 | WordPress | 7.1.4 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
-| Plugins | WaaS Client (`waas-client`, built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`), FluentCart 1.7.0 (free, wordpress.org). Nothing else |
+| Plugins | AnyPress Client (`waas-client`, built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/waas-client`), FluentCart 1.7.0 (free, wordpress.org). Nothing else |
 | Theme | Twenty Twenty-Five 1.5, the only theme installed |
 | Pages | FluentCart's own: Shop (the home page), Cart, Checkout, Receipt, Review Your Order, Account. The sample post, sample page, privacy policy draft and comment are removed |
 | Settings | Permalinks `/%postname%/`, timezone UTC, comments and pingbacks closed, registration off, **search engines discouraged** (`blog_public` 0: the store owner turns indexing on at launch) |
 | Users | `waas-admin` (`admin@example.invalid`) with a random password nobody keeps, as on any store the provisioner installs. The store's own user is created by `createTenant` |
-| Roles | `wp-content/plugins/waas-client-data/roles.json` ([`roles.json`](roles.json)): one role, `store`, with FluentCart. The storefront reads it from the production version's domain; WaaS Client switches plugins on and off per role |
+| Roles | `wp-content/plugins/waas-client-data/roles.json` ([`roles.json`](roles.json)): one role, `store`, with FluentCart. The storefront reads it from the production version's domain; AnyPress Client switches plugins on and off per role |
 
 ## Format
 

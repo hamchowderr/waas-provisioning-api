@@ -21,7 +21,7 @@ export const SAFE_TOOLS = ['get_site', 'site_pages', 'site_patterns', 'site_styl
 /** Tools that change the live site, or what the assistant remembers about the business. Each call waits for the owner. */
 export const CHANGE_TOOLS = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change', 'business_profile_change'] as const;
 
-/** The owner's own facts about the business, as the site keeps them (WaaS Client's /site/business). */
+/** The owner's own facts about the business, as the site keeps them (AnyPress Client's /site/business). */
 export const BUSINESS_FIELDS = {
   what: 'What the business does',
   who: 'Who it is for',

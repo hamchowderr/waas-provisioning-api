@@ -2,7 +2,7 @@ import path from "node:path";
 import type { NextConfig } from "next";
 import { BASE_PATH } from "./src/lib/base-path";
 
-/** The panel's addresses before it moved under BASE_PATH; open tabs and older WaaS Client versions still use them. */
+/** The panel's addresses before it moved under BASE_PATH; open tabs and older AnyPress Client versions still use them. */
 const OLD_PATHS = ["/", "/editor", "/from-shop", "/callback", "/signin", "/signout", "/api/:path*"];
 
 const nextConfig: NextConfig = {

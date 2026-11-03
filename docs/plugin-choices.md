@@ -5,7 +5,7 @@ premium plugins uploaded as zips, that its stores get on top of its template, or
 types. They are applied to every version as it builds, so stores get them when they move to that version.
 
 Why on versions and not on single stores: moving a store to a version replaces its plugins and themes with the
-version's code, and WaaS Client turns plugins on and off from the version's `roles.json`. A plugin installed by
+version's code, and AnyPress Client turns plugins on and off from the version's `roles.json`. A plugin installed by
 hand on one store is gone after its next move. A plugin choice is part of every version from then on.
 
 ## Making choices
@@ -15,7 +15,7 @@ hand on one store is gone after its next move. A plugin choice is part of every 
 | `GET /v1/plugin-choices/search?q=forms&page=1` | The wordpress.org directory's own search (the one wp-admin's Add Plugins screen uses), 24 a page, with each plugin's icon, name, rating, active installs, last update, "tested up to" and the PHP it needs. `blocked` says why a plugin can't be added (below) |
 | `GET /v1/plugin-choices` | The storefront's choices and its reseller's. `inProduction` says whether the production version has the choice as it is now. `?checkUpdates=true` adds `latestVersion` for each added plugin |
 | `PUT /v1/plugin-choices/{slug}` `{"siteTypes": ["website"]}` | Adds the plugin, pinned to its newest version (or `"version": "6.0.0"`). Its zip is downloaded now and kept, with its SHA-256, so every version built later gets exactly those files |
-| `PUT /v1/plugin-choices/{slug}` `{"action": "off", "siteTypes": ["store"]}` | Takes a plugin the template has out of those site types. Its files stay; WaaS Client leaves it switched off |
+| `PUT /v1/plugin-choices/{slug}` `{"action": "off", "siteTypes": ["store"]}` | Takes a plugin the template has out of those site types. Its files stay; AnyPress Client leaves it switched off |
 | `DELETE /v1/plugin-choices/{slug}` | Removes the choice. Versions built from now on leave that plugin as the template has it |
 
 `siteTypes` are the template's site types, the keys of its `roles.json` (AnyPress's template: `website`, `bookings`,

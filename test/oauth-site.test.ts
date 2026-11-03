@@ -1,5 +1,5 @@
 // "Sign in with your website" (src/oauth.ts): a store owner types their site's address on the approve
-// page, presses Allow in their own wp-admin (WaaS Client's connect page, played here by signing its
+// page, presses Allow in their own wp-admin (AnyPress Client's connect page, played here by signing its
 // answer with the store's key), and the app gets a token that only edits that store's site.
 import { Client, StreamableHTTPClientTransport, UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -66,7 +66,7 @@ async function typeAddress(site: string) {
   return { p, response };
 }
 
-/** What WaaS Client does when the owner presses a button: answer at `back`, signed with the store's key. */
+/** What AnyPress Client does when the owner presses a button: answer at `back`, signed with the store's key. */
 function storeAnswers(link: URL, answer: ConnectAnswer, key = keyOf(tenantId)) {
   const back = new URL(link.searchParams.get('back')!);
   const request = link.searchParams.get('request')!;

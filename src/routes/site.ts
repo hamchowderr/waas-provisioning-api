@@ -32,7 +32,7 @@ export function siteRoutes(deps: Deps) {
       throw new HttpError(502, `The store did not answer: ${(error as Error).message}`);
     }
     if (answer.status === 401) {
-      throw new HttpError(502, 'The store refused the request: it has no site key yet (it gets one on its next setup) or its WaaS Client is older than 2.3.0');
+      throw new HttpError(502, 'The store refused the request: it has no site key yet (it gets one on its next setup) or its AnyPress Client is older than 2.3.0');
     }
     return c.json({ status: answer.status, body: answer.body });
   });

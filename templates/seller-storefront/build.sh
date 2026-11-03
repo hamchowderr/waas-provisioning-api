@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds the "Seller storefront" base snapshot: WordPress with WaaS Host, FluentCart, FluentCRM, Fluent Forms, FluentAuth,
+# Builds the "Seller storefront" base snapshot: WordPress with AnyPress Host, FluentCart, FluentCRM, Fluent Forms, FluentAuth,
 # FluentKit, WP Fusion Lite, AnyPress Blocks and the AnyPress theme, packaged as the provisioner restores it (see README). A storefront made from it
 # is connected to the API when it is created: the API writes its key, secret and address into wp-config
 # (POST /admin/products/{productId}/storefront).
 #
-#   templates/seller-storefront/build.sh <path to a waas-plugins checkout> <WaaS Host version>
+#   templates/seller-storefront/build.sh <path to a waas-plugins checkout> <AnyPress Host version>
 #
-# The version is stamped into WaaS Host the way a release is (waas-plugins scripts/release/build.sh), so the
+# The version is stamped into AnyPress Host the way a release is (waas-plugins scripts/release/build.sh), so the
 # storefront gets later releases from the update channel. Check out the matching tag first.
 #
 # Output: templates/seller-storefront/dist/seller-storefront.zip (database.sql + wp-content/).
@@ -46,8 +46,8 @@ DB_IMAGE=mirror.gcr.io/library/mariadb:11
 DB_CONTAINER=waas-storefront-template-db
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-PLUGINS_REPO=$(cd "${1:?usage: build.sh <path to a waas-plugins checkout> <WaaS Host version>}" && pwd)
-HOST_VERSION=${2:?usage: build.sh <path to a waas-plugins checkout> <WaaS Host version>}
+PLUGINS_REPO=$(cd "${1:?usage: build.sh <path to a waas-plugins checkout> <AnyPress Host version>}" && pwd)
+HOST_VERSION=${2:?usage: build.sh <path to a waas-plugins checkout> <AnyPress Host version>}
 WORK=$HERE/.work
 DIST=$HERE/dist
 SITE=$WORK/site
@@ -103,7 +103,7 @@ SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | so
 mkdir -p "$SITE/wp-content/mu-plugins"
 cp "$HERE/mu-plugins/seller-storefront.php" "$HERE/../anypress-store/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
 
-echo "== WaaS Host $HOST_VERSION from $PLUGINS_REPO"
+echo "== AnyPress Host $HOST_VERSION from $PLUGINS_REPO"
 # The release build: production dependencies only, the version stamped, one waas-host/ folder.
 "$PLUGINS_REPO/scripts/release/build.sh" waas-host "$HOST_VERSION" "$WORK/downloads" >/dev/null
 unzip -q "$WORK/downloads/wpcs-waas-host.zip" -d "$SITE/wp-content/plugins"
@@ -171,7 +171,7 @@ wp plugin list --fields=name,status,version --skip-update-check
 EXPECTED=$(printf '%s\n' $SLUGS waas-host | sort | tr '\n' ' ')
 [ "$(wp plugin list --status=active --field=name --skip-update-check | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected active plugins" >&2; exit 1; }
 [ "$(wp plugin list --fields=name,status --format=csv --skip-update-check | awk -F, 'NR > 1 && $2 != "must-use" {print $1}' | sort | tr '\n' ' ')" = "$EXPECTED" ] || { echo "unexpected installed plugins" >&2; exit 1; }
-[ "$(wp plugin get waas-host --field=version)" = "$HOST_VERSION" ] || { echo "WaaS Host is not $HOST_VERSION" >&2; exit 1; }
+[ "$(wp plugin get waas-host --field=version)" = "$HOST_VERSION" ] || { echo "AnyPress Host is not $HOST_VERSION" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ "$(wp post get "$(wp option get page_on_front)" --field=post_name)" = home ] || { echo "Home is not the front page" >&2; exit 1; }
 [ "$(wp theme list --status=active --field=name)" = "$THEME" ] || { echo "theme $THEME not active" >&2; exit 1; }

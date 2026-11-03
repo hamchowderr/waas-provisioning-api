@@ -7,7 +7,7 @@
 // which the server's proxy sends here) it is part of that website: its cookies are first-party and its
 // sign-in returns to https://mybakery.com/.assistant/callback. On its own address (PANEL_URL) it keeps
 // the sign-in return of before (PANEL_URL/callback, which now redirects under BASE_PATH), so handoffs
-// made by older WaaS Client and WaaS Host versions still trade.
+// made by older AnyPress Client and AnyPress Host versions still trade.
 import { createHash, randomBytes } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { BASE_PATH } from './base-path';

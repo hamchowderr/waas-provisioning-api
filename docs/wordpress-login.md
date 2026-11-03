@@ -18,7 +18,7 @@ A link works **once** and for **5 minutes**. Pressing the button again makes a n
 
 ## Requirements
 
-- WaaS Client 2.10.0 or later on the store (it comes with the store template), or WaaS Host 2.8.0 or later on a ready-made storefront.
+- AnyPress Client 2.10.0 or later on the store (it comes with the store template), or AnyPress Host 2.8.0 or later on a ready-made storefront.
 - The store is Done, not suspended, and has an address.
 
 On a site whose plugin is older, the API answers `oneClick: false` with the site's login page, and the dashboard opens that and says so.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the "Starter store (FluentCart)" base snapshot: a clean WordPress with the WaaS Client
+# Builds the "Starter store (FluentCart)" base snapshot: a clean WordPress with the AnyPress Client
 # plugin, FluentCart and Twenty Twenty-Five, packaged as the provisioner restores it (see README).
 #
 #   templates/starter-fluentcart/build.sh <path to a waas-plugins checkout>
@@ -64,7 +64,7 @@ rm -rf "$SITE/wp-content/plugins/akismet" "$SITE/wp-content/plugins/hello.php" "
 unzip -q "$WORK/downloads/$THEME.zip" -d "$SITE/wp-content/themes"
 unzip -q "$WORK/downloads/fluent-cart.zip" -d "$SITE/wp-content/plugins"
 
-echo "== WaaS Client from $PLUGINS_REPO"
+echo "== AnyPress Client from $PLUGINS_REPO"
 # Same steps as waas-plugins' scripts/build.sh; the directory must be waas-client (waas-client/index.php).
 CLIENT=$SITE/wp-content/plugins/waas-client
 cp -a "$PLUGINS_REPO/packages/waas-client" "$CLIENT"

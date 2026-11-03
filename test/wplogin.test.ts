@@ -1,6 +1,6 @@
 // "Log in to WordPress" (src/wplogin.ts): POST /admin/tenants/{id}/wp-login and
 // /admin/products/{id}/storefront/wp-login answer a one-time link signed with the store's site key, checked
-// here the way WaaS Client's AdminLogin (and WaaS Host's, on a storefront) check it. A store whose plugin
+// here the way AnyPress Client's AdminLogin (and AnyPress Host's, on a storefront) check it. A store whose plugin
 // is older than the login route gets its plain login page instead.
 import { createHash, createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,7 +41,7 @@ afterAll(async () => {
   await t.close();
 });
 
-/** WaaS Client's check (Api\AdminLogin::link_is_valid): t, n, s over t\nn\nLOGIN\nroute\nsha256(''), with the store's key. */
+/** AnyPress Client's check (Api\AdminLogin::link_is_valid): t, n, s over t\nn\nLOGIN\nroute\nsha256(''), with the store's key. */
 function linkIsValid(url: string, storeId: string, plugin: 'waas-client' | 'waas-host'): boolean {
   const link = new URL(url);
   const route = `/${plugin}/v1/admin-login`;
@@ -107,7 +107,7 @@ describe('log in to WordPress', () => {
     expect((await login('/admin/tenants/00000000-0000-4000-8000-000000000000/wp-login')).status).toBe(404);
   });
 
-  it('logs in to a ready-made storefront through WaaS Host', async () => {
+  it('logs in to a ready-made storefront through AnyPress Host', async () => {
     const seller = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Seller') RETURNING id")).rows[0]!.id;
     expect((await login(`/admin/products/${seller}/storefront/wp-login`)).status).toBe(404);
     // The store above stands in for the seller's storefront: a store of the storefront product named after the seller.

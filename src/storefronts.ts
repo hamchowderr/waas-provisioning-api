@@ -7,11 +7,11 @@ import { createTenant } from './routes/tenants.ts';
 import { TENANT_SELECT, toTenant } from './tenants.ts';
 
 /**
- * Ready-made storefronts: a WordPress site with WaaS Host, built for a product so its owner can sell
+ * Ready-made storefronts: a WordPress site with AnyPress Host, built for a product so its owner can sell
  * without bringing a site of their own. The storefront is a store of the platform's storefront product
  * (STOREFRONT_PRODUCT_ID), made from that product's production version (templates/seller-storefront),
  * and is connected to the API from the start: its own key and secret for the product it sells for, and
- * the API's address, are written into its wp-config as WaaS Host's WAAS_API_* constants.
+ * the API's address, are written into its wp-config as AnyPress Host's WAAS_API_* constants.
  *
  * A product has at most one; it is the storefront product's store with external ID storefront-<product id>.
  */
@@ -37,7 +37,7 @@ const externalId = (productId: string) => `storefront-${productId}`;
 export const storefrontDns: { resolve4(name: string): Promise<string[]> } = { resolve4: (name) => resolve4(name) };
 
 /**
- * The DNS records WaaS Host shows a storefront's customers for their own domain: an A record to the store server and,
+ * The DNS records AnyPress Host shows a storefront's customers for their own domain: an A record to the store server and,
  * for www and other subdomains, a CNAME to a name under the stores' wildcard. Empty when the server's address can't be
  * looked up; the storefront then asks customers to contact it, as before.
  */
@@ -88,7 +88,7 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         blogname: name,
         admin_email: email,
         // Its customers' websites are named <name>.<platform domain>, like the platform's own.
-        // waas_root_domain for WaaS Host 2.3.0 and later; the old name for storefront templates with an older one.
+        // waas_root_domain for AnyPress Host 2.3.0 and later; the old name for storefront templates with an older one.
         ...(config.platformDomain ? { waas_root_domain: config.platformDomain, wpcs_host_settings_root_domain: config.platformDomain } : {}),
         // Custom domains point where the stores' own names do, like the platform's own storefront.
         ...(await customDomainRecords(config.storesDomain)),
@@ -97,7 +97,7 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         WAAS_API_BASE_URL: { value: apiUrl },
         WAAS_API_KEY: { value: key.id, isPrivate: true },
         WAAS_API_SECRET: { value: key.secret, isPrivate: true },
-        // Encrypts its customers' one-click-login keys (WaaS Host's PrivateKeyStore); must stay the same.
+        // Encrypts its customers' one-click-login keys (AnyPress Host's PrivateKeyStore); must stay the same.
         WAAS_HOST_KEY_ENCRYPTION_KEY: { value: randomBytes(36).toString('base64'), isPrivate: true },
       },
     });

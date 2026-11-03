@@ -1,4 +1,4 @@
-// The page editor beside the chat (WaaS Client's Assistant panel in the block editor and the Site
+// The page editor beside the chat (AnyPress Client's Assistant panel in the block editor and the Site
 // Editor). With each message the editor sends what it has open: the page, its top-level blocks and
 // the block the owner selected. The assistant changes that open page with `editor_change`, whose
 // answer the panel hands back to the editor: the change shows there at once, can be undone, and is

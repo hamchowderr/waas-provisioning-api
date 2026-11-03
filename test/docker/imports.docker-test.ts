@@ -450,12 +450,12 @@ describe('a site moved in is held until it goes live', () => {
     expect(sql("SELECT LENGTH(option_value) FROM wp_options WHERE option_name = 'big_row'")).toBe(String(big.length));
   });
 
-  it("gives a moved site WaaS Client, switched on, and the version's plugins and themes it lacks, keeping its own", () => {
+  it("gives a moved site AnyPress Client, switched on, and the version's plugins and themes it lacks, keeping its own", () => {
     moveIn('client', { files: { 'plugins/contact-form-7/wp-contact-form-7.php': pluginFile('Contact Form 7') } });
     // The version's code, as code-export packs it.
     const code = join(fixtures, 'code');
     const files: Record<string, string> = {
-      'plugins/waas-client/index.php': pluginFile('WaaS Client'),
+      'plugins/waas-client/index.php': pluginFile('AnyPress Client'),
       'plugins/waas-client-data/roles.json': '{}',
       'plugins/fluent-crm/fluent-crm.php': pluginFile('FluentCRM'),
       'plugins/contact-form-7/wp-contact-form-7.php': `<?php\n/*\nPlugin Name: Contact Form 7\nVersion: 9.9.9\n*/\n`,

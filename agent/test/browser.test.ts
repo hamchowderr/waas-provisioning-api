@@ -18,7 +18,7 @@ let assistant: ServerType;
 let api: ServerType;
 let shop: Server;
 let shopUrl: string;
-// The website's own address: a page standing in for its block editor with WaaS Client's Assistant panel, and
+// The website's own address: a page standing in for its block editor with AnyPress Client's Assistant panel, and
 // /.assistant passed through to the panel, as the server's proxy does for every store's domain.
 let editor: Server;
 let editorUrl: string;
@@ -42,7 +42,7 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   return Response.json({ ok: true });
 }) as typeof fetch;
 
-/** The bakery's business profile, as WaaS Client answers /site/business. */
+/** The bakery's business profile, as AnyPress Client answers /site/business. */
 const business = {
   site: {
     name: 'Bakery', language: 'en_US', timezone: 'America/Chicago', currency: 'USD',
@@ -56,7 +56,7 @@ const HERO = '<!-- wp:heading --><h2 class="wp-block-heading">Fresh bread</h2><!
 const WARMER = '<!-- wp:heading --><h2 class="wp-block-heading">Bread baked at dawn</h2><!-- /wp:heading -->';
 
 /**
- * The stand-in editor: the panel framed beside a page, speaking the editor's side of the messages. WaaS Client
+ * The stand-in editor: the panel framed beside a page, speaking the editor's side of the messages. AnyPress Client
  * 2.12 frames the panel at the website's own /.assistant; `older` is a version before it, framing the panel's
  * own address and using the message names of before.
  */
@@ -119,8 +119,8 @@ beforeAll(async () => {
   assistant = serve({ fetch: h.app.fetch, port: assistantPort });
   const apiPort = await freePort();
   api = serve({ fetch: h.t.app.fetch, port: apiPort });
-  // The shop's "Ask the website assistant" route, as WaaS Host answers it for its signed-in owner of "bakery":
-  // to the website's own /.assistant, or (/older, WaaS Host before 3.0) to the panel's own address.
+  // The shop's "Ask the website assistant" route, as AnyPress Host answers it for its signed-in owner of "bakery":
+  // to the website's own /.assistant, or (/older, AnyPress Host before 3.0) to the panel's own address.
   shop = createHttpServer(async (request, response) => {
     const older = request.url?.startsWith('/older');
     const answer = await h.t.app.request('/v1/tenants/site/handoff?externalId=bakery', {
@@ -133,7 +133,7 @@ beforeAll(async () => {
   }).listen(0);
   await once(shop, 'listening');
   shopUrl = `http://localhost:${(shop.address() as AddressInfo).port}`;
-  // The store's own side: WaaS Client asks the API for a handoff, signed with the store's site key.
+  // The store's own side: AnyPress Client asks the API for a handoff, signed with the store's site key.
   editor = createHttpServer(async (request, response) => {
     if (request.url === '/.assistant' || request.url?.startsWith('/.assistant/') || request.url?.startsWith('/.assistant?')) {
       // The proxy: the request goes on as it came, Host and all.
@@ -324,7 +324,7 @@ describe('chat panel', () => {
     await page.context().close();
   }, 90_000);
 
-  for (const [label, width, height, older] of [['desktop', 1280, 800, false], ['phone', 390, 844, false], ['desktop, WaaS Client before 2.12', 1280, 800, true]] as const) {
+  for (const [label, width, height, older] of [['desktop', 1280, 800, false], ['phone', 390, 844, false], ['desktop, AnyPress Client before 2.12', 1280, 800, true]] as const) {
     it(`signs in beside the editor by itself and changes the selected block there (${label})`, async () => {
       const change = { action: 'replace', clientId: 'hero-1', content: WARMER };
       h.script(`Make this heading warmer ${label}`, 'editor_change', change, 'Done. Press Save to keep it.');

@@ -598,7 +598,7 @@ templates() {
   rm -rf "$dir"
 }
 
-# The storefront customers buy stores on: a ready-made WordPress site with WaaS Host, already connected to
+# The storefront customers buy stores on: a ready-made WordPress site with AnyPress Host, already connected to
 # the API with its own key (POST /admin/products/{id}/storefront). Its owner adds payments and plans.
 storefront() {
   say "Storefront"
