@@ -959,22 +959,21 @@ paths:
       description: >-
         Sends the email a new store's owner gets when it is made with notifyOwner, at any time later: the store is
         ready, their username, and a fresh WordPress link to set their password (it works once, within a day). In the
-        storefront's brand when it has one. For a store made without the email whose owner is now to be told. The
-        owner's email is given, since the API keeps no copy of it; it must be a WordPress user of the store (400
-        otherwise). Each send is recorded as the store's ownerNotifiedAt and ownerNotifiedTo. For anyone who may change the store; team members who only look get 403. 409 when the store isn't
+        storefront's brand when it has one. For a store made without the email whose owner is now to be told. It goes
+        to the owner's email the store was made with (ownerEmail on the store), or to email when given; that must be a
+        WordPress user of the store (400 otherwise, or when there is neither). Each send is recorded as the store's ownerNotifiedAt and ownerNotifiedTo. For anyone who may change the store; team members who only look get 403. 409 when the store isn't
         Done, is suspended, is a moved-in site not yet live, or has no address. 502 when the email couldn't be sent;
         503 when email isn't set up.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [email]
               properties:
-                email: { type: string, format: email, description: "The store owner's email: a WordPress user of the store." }
+                email: { type: string, format: email, description: "Another WordPress user of the store to send it to; defaults to the store's ownerEmail." }
       responses:
         '200':
           description: The email was sent.
@@ -3232,6 +3231,7 @@ components:
         dateHeld: { type: string, format: date-time, nullable: true }
         ownerNotifiedAt: { type: string, format: date-time, nullable: true, description: 'When the "your website is ready" email last went to the owner (notifyOwner on create, or POST /admin/tenants/{id}/notify-owner); null if never.' }
         ownerNotifiedTo: { type: string, nullable: true, description: The address it went to. }
+        ownerEmail: { type: string, nullable: true, description: "The owner's sign-in email the store was made with (its admin_email option); null for a site moved in or one made without it." }
         dateCreated: { type: string, format: date-time }
         dateChanged: { type: string, format: date-time }
         wpOptionNames: { type: array, items: { type: string }, description: Names only; values can be secret. }

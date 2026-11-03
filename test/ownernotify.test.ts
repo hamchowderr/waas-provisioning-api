@@ -114,8 +114,17 @@ describe('sending the website-ready email later', () => {
     expect(wrong.status).toBe(400);
     expect(((await wrong.json()) as { message: string }).message).toMatch(/no WordPress user/);
     expect((await notify(tenantId, { email: 'nope' })).status).toBe(400);
-    expect((await notify(tenantId, {})).status).toBe(400);
     expect(sent).toEqual([]);
+  });
+
+  it("sends to the owner's email the store was made with when none is given, and shows it on the store", async () => {
+    const tenantId = await makeStore('Default Owner Shop');
+    const before = (await (await t.call('GET', `/admin/tenants/${tenantId}`, { auth: ADMIN })).json()) as { ownerEmail: string | null };
+    expect(before.ownerEmail).toBe('owner@example.com');
+    sent.splice(0);
+    const res = await notify(tenantId, {});
+    expect(res.status).toBe(200);
+    expect(sent.map((m) => m.to)).toEqual(['owner@example.com']);
   });
 
   it('refuses a suspended store, and answers 404 for one that does not exist', async () => {
