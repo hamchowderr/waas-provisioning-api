@@ -218,6 +218,15 @@ export interface Provisioner {
    */
   passwordLink(input: { storeId: string; email: string }): Promise<string>;
 
+  /**
+   * Installs a signed plugin release in the store (src/hostupdates.ts): the zip at `url` is checked against `sha256`
+   * and put in place of the plugin's folder, keeping it switched on, or switching it on when it `replaces` an older
+   * folder of the same plugin that was on (that folder is then switched off, without its own deactivation code, and
+   * removed). If WordPress no longer loads afterwards, the store gets the copy it had back and this fails.
+   * `from` is the version it had (null when it had none); unchanged when it was on this version already.
+   */
+  updatePlugin(input: { storeId: string; slug: string; version: string; url: string; sha256: string; replaces?: string[] }): Promise<{ from: string | null; unchanged: boolean }>;
+
   deleteStore(input: { storeId: string }): Promise<void>;
 
   /**

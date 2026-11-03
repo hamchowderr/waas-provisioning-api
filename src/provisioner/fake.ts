@@ -13,6 +13,8 @@ interface FakeStore extends CreateStoreInput {
   mailFrom?: string;
   /** This month's count the platform told it (setMailCount). */
   mailCount?: { month: string; sent: number };
+  /** Plugin versions installed by updatePlugin, by slug. */
+  plugins?: Record<string, string>;
 }
 
 /**
@@ -316,6 +318,17 @@ export class FakeProvisioner implements Provisioner {
   async goLive({ storeId }: { storeId: string }) {
     this.check('goLive');
     this.store(storeId).held = false;
+  }
+
+  async updatePlugin({ storeId, slug, version, replaces = [] }: Parameters<Provisioner['updatePlugin']>[0]) {
+    this.check('updatePlugin');
+    const store = this.store(storeId);
+    const plugins = (store.plugins ??= {});
+    const from = plugins[slug] ?? replaces.map((old) => plugins[old]).find(Boolean) ?? null;
+    const unchanged = plugins[slug] === version && !replaces.some((old) => old in plugins);
+    for (const old of replaces) delete plugins[old];
+    plugins[slug] = version;
+    return { from, unchanged };
   }
 
   async passwordLink({ storeId, email }: { storeId: string; email: string }) {

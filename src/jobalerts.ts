@@ -38,6 +38,7 @@ export async function describeJob(pool: Pool, data: JobData): Promise<string> {
 }
 
 const VERBS: Record<JobData['type'], string> = {
+  'storefront.update-host': 'Update AnyPress Host on',
   'version.create': 'Build',
   'version.delete': 'Delete',
   'basesnapshot.delete': 'Delete',

@@ -229,6 +229,7 @@ The WordPress plugins in [waas-plugins](https://github.com/hamchowderr/waas-plug
 - Every check records the slug, site, version, channel, WordPress version and PHP version in `plugin_installs` (also on 404 and 503).
 - The API only reads the releases bucket and never signs. The waas-plugins release workflow uploads `releases/<slug>/<version>/<slug>.zip`, its `manifest.json`, and `releases/<slug>/channels/<channel>.json` (a copy of the manifest the channel points at). The plugin checks the sha256 and the signature of `waas-release-v1\n<slug>\n<version>\n<sha256>` against public keys built into it, so a wrong manifest here can't make a site install something the key didn't sign. If you run your own API, the plugins need your own release key: see [Plugin updates](docs/self-hosting.md#plugin-updates) in the self-hosting guide.
 - Stores don't update themselves. AnyPress Client comes with the version, and a store moves to a newer version through `POST /v1/tenants/version`.
+- Ready-made storefronts get each stable AnyPress Host release pushed by the API within 15 minutes, with no update check or WP-Cron involved: see [AnyPress Host updates on storefronts](docs/host-updates.md).
 
 | Admin endpoint | What it does |
 |---|---|

@@ -11,6 +11,7 @@ import { HttpError, badRequest, conflict } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
+import { listHostUpdates, queueHostUpdates } from '../hostupdates.ts';
 import { importCode, importDetail, renewImport } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
@@ -301,6 +302,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.post('/products/:productId/storefront', adminOnly);
   app.use('/db-backups', adminOnly);
   app.use('/plugins', adminOnly);
+  app.use('/host-updates', adminOnly);
   app.use('/products/:productId/plugins/*', adminOnly);
   app.put('/products/:productId/organization', adminOnly);
   app.use('/applications', adminOnly);
@@ -1049,6 +1051,16 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       })),
       pins: pins.rows.map(toPin),
     });
+  });
+
+  // AnyPress Host on the ready-made storefronts (docs/host-updates.md): each one's last push, and a check now that
+  // also tries the failed ones again.
+  app.get('/host-updates', async (c) => c.json(await listHostUpdates(pool)));
+  app.post('/host-updates', async (c) => {
+    if (!releases) throw new HttpError(503, 'Plugin updates are not configured');
+    if (!config.storefrontProductId) throw new HttpError(503, 'Ready-made storefronts are not set up on this API (STOREFRONT_PRODUCT_ID)');
+    const result = await queueHostUpdates({ pool, boss, releases, storefrontProductId: config.storefrontProductId }, { retryFailed: true });
+    return c.json(result, 202);
   });
 
   function pluginSlug(c: Context) {

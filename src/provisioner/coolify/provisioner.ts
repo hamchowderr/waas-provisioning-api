@@ -969,6 +969,12 @@ export class CoolifyProvisioner implements Provisioner {
     return url;
   }
 
+  async updatePlugin({ storeId, ...args }: Parameters<Provisioner['updatePlugin']>[0]) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const { from, unchanged } = await this.exec(store.uuid, 'update-plugin', args);
+    return { from: typeof from === 'string' ? from : null, unchanged: unchanged === true };
+  }
+
   async deleteStore({ storeId }: { storeId: string }) {
     // The store's own relay key goes first: once the Service is gone, so is the record of its id.
     const store = this.config.mailKeys && (await this.findService(STORES_ENV, storeName(storeId)));

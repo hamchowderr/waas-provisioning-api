@@ -4,10 +4,12 @@ import { maintainDashboardDomains } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
+import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure } from './imports.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
+import type { ReleaseStore } from './releases.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, emailPacksBought, TENANT_SELECT } from './tenants.ts';
@@ -28,6 +30,8 @@ export function createJobHandlers(
   dashboardHost: () => DashboardHost | undefined = () => undefined,
   /** Sends the "your website is ready" email a create can ask for (notifyOwner); without it none is sent. */
   ownerMail: () => AuthMail | undefined = () => undefined,
+  /** Plugin releases, for pushing AnyPress Host to storefronts (src/hostupdates.ts). */
+  releases?: ReleaseStore,
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -84,6 +88,7 @@ export function createJobHandlers(
           const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [data.tenantId]);
           await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
           await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
+          await forgetHostUpdate(pool, data.tenantId);
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
@@ -146,6 +151,7 @@ export function createJobHandlers(
             ...(tenant.on_hold && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
           });
           await recordMailSender(pool, provisioner, tenant.id, { mailbox: restoredMailbox });
+          await forgetHostUpdate(pool, tenant.id);
           await setTenantStatus(tenant.id, Status.Done, Status.Pending);
           return;
         }
@@ -165,6 +171,7 @@ export function createJobHandlers(
           if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
           // Its platform email count is an older one too: the next count tells the store again.
           await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
+          await forgetHostUpdate(pool, data.tenantId);
           await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
           return;
         }
@@ -183,6 +190,9 @@ export function createJobHandlers(
           return;
         case 'tenant.backup':
           await backUp(pool, provisioner, data.tenantId, data.backupId);
+          return;
+        case 'storefront.update-host':
+          await pushHostUpdate(pool, provisioner, releases, data.tenantId, data.version);
           return;
         case 'tenant.email-packs': {
           const { rowCount } = await pool.query('SELECT 1 FROM tenants WHERE id = $1', [data.tenantId]);
@@ -239,6 +249,10 @@ export function createJobHandlers(
         case 'tenant.update':
         case 'tenant.domains':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
+          return;
+        case 'storefront.update-host':
+          // The store still works, on the copy it had; the row says why, and POST /admin/host-updates tries again.
+          await failHostUpdate(pool, data.tenantId, data.version, error);
           return;
         case 'tenant.email-packs':
           // The store still works; it just doesn't have its new pack emails yet. The shop's retry sends them again.

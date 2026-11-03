@@ -48,7 +48,9 @@ export type JobData =
    * Rolls a live tenant back to one of its backups in place. Backs up what it holds now first when
    * safetyBackupId is set, so the rollback can be undone.
    */
-  | { type: 'tenant.rollback'; tenantId: string; backupId: string; safetyBackupId?: string };
+  | { type: 'tenant.rollback'; tenantId: string; backupId: string; safetyBackupId?: string }
+  /** A ready-made storefront given this AnyPress Host release (src/hostupdates.ts). */
+  | { type: 'storefront.update-host'; tenantId: string; version: string };
 
 /** Daily housekeeping (purging expired backups), on its own queue so it never waits behind store work. */
 export const MAINTENANCE_QUEUE = 'maintenance';
