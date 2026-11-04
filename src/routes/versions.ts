@@ -5,6 +5,7 @@ import { withTransaction } from '../db.ts';
 import { badRequest, notFound } from '../errors.ts';
 import { compact, readJson, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
+import { promoteVersion } from '../promote.ts';
 import { enqueue } from '../queue.ts';
 import { PRODUCT_TEMPLATES } from './basesnapshots.ts';
 import { forVersion, pluginChoiceService } from '../pluginchoices.ts';
@@ -164,22 +165,19 @@ export function versionService(deps: Deps) {
   async function setProduction(productId: string, versionId: string, { moveStores = true }: { moveStores?: boolean } = {}) {
     const version = await findVersion(productId, versionId);
     if (version.status !== Status.Done) throw badRequest(`Version ${version.id} is ${statusName(version.status)}, not Done`);
-    let movingStores = 0;
-    await withTransaction(pool, async (client) => {
-      await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
-      await client.query('UPDATE versions SET is_production = true, date_changed = now() WHERE id = $1', [version.id]);
-      if (!moveStores) return;
-      const { rows } = await client.query(
-        `UPDATE tenants SET status = $3, date_changed = now()
-          WHERE product_id = $1 AND status = $4 AND version_id IS NOT NULL AND version_id <> $2
-          RETURNING id, version_id`,
-        [productId, version.id, Status.Pending, Status.Done],
+    const movingStores = await withTransaction(pool, async (client) => {
+      // A storefront that publishes a version of its own stops following the one it started from.
+      await client.query(
+        `UPDATE products p SET follows_product_id = NULL
+          WHERE p.id = $1 AND p.follows_product_id IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM snapshots s JOIN snapshots src ON src.id = s.source_snapshot_id
+             WHERE s.version_id = $2 AND src.product_id = p.follows_product_id)`,
+        [productId, version.id],
       );
-      for (const row of rows) {
-        await enqueue(boss, client, { type: 'tenant.move', tenantId: row.id, targetVersionId: version.id, rollbackVersionId: row.version_id });
-      }
-      movingStores = rows.length;
+      return promoteVersion(client, boss, productId, version.id, moveStores);
     });
+    // The storefronts that follow this one get it too. Their copies build afterwards; a failure here doesn't undo this.
+    await catchUpFollowers(productId).catch((err: unknown) => console.error(`Catching up the followers of ${productId} failed: ${(err as Error).message}`));
     return { id: version.id, movingStores };
   }
 
@@ -204,14 +202,14 @@ export function versionService(deps: Deps) {
    */
   async function productionSource(sourceProductId: string) {
     const { rows } = await pool.query(
-      `SELECT v.name, v.wordpress_version, v.php_version, s.id AS snapshot_id, s.name AS snapshot_name, s.group_name
+      `SELECT v.product_id, v.name, v.wordpress_version, v.php_version, s.id AS snapshot_id, s.name AS snapshot_name, s.group_name
          FROM versions v JOIN snapshots s ON s.version_id = v.id AND s.status = $2
         WHERE v.product_id = $1 AND v.is_production AND v.status = $2
         ORDER BY s.date_created DESC LIMIT 1`,
       [sourceProductId, Status.Done],
     );
     if (!rows[0]) throw badRequest('That storefront has no ready production version with a template to start from');
-    return rows[0] as { name: string; wordpress_version: string; php_version: string; snapshot_id: string; snapshot_name: string; group_name: string | null };
+    return rows[0] as { product_id: string; name: string; wordpress_version: string; php_version: string; snapshot_id: string; snapshot_name: string; group_name: string | null };
   }
 
   /**
@@ -219,17 +217,31 @@ export function versionService(deps: Deps) {
    * be made at once (the dashboard's New seller), or so an existing one catches up with its source. It
    * builds like any version; until it is Done, a new store is refused as for any version still building.
    * The product's existing stores stay where they are.
+   *
+   * The product then follows the source (the storefront at the top, when the source follows one itself): each new
+   * production version there is copied here too (catchUpFollowers). With `promoteWhenDone` the copy waits as an
+   * ordinary version and only becomes production, taking the product's stores with it, once it is built.
    */
-  async function copyProduction(productId: string, source: Awaited<ReturnType<typeof productionSource>>) {
+  async function copyProduction(productId: string, source: Awaited<ReturnType<typeof productionSource>>, { promoteWhenDone = false } = {}) {
     const id = randomUUID();
     const domain = `${dnsSafeLabel(`${slug(source.name)}-${id.slice(0, 8)}`, 'v')}.${config.versionsDomain}`;
     await withTransaction(pool, async (client) => {
-      // A product that has a production version already (catching up with its source) gets the copy instead.
-      await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
       await client.query(
-        `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, is_production, status)
-         VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
-        [id, productId, source.name, domain, source.wordpress_version, source.php_version, Status.Pending],
+        `UPDATE products SET follows_product_id = (SELECT coalesce(follows_product_id, id) FROM products WHERE id = $2)
+          WHERE id = $1 AND $1 <> (SELECT coalesce(follows_product_id, id) FROM products WHERE id = $2)`,
+        [productId, source.product_id],
+      );
+      if (promoteWhenDone) {
+        // Only the newest copy takes over; an older one still building stays an ordinary version.
+        await client.query('UPDATE versions SET promote_when_done = false WHERE product_id = $1 AND promote_when_done', [productId]);
+      } else {
+        // A product that has a production version already (catching up with its source) gets the copy instead.
+        await client.query('UPDATE versions SET is_production = false, date_changed = now() WHERE product_id = $1 AND is_production', [productId]);
+      }
+      await client.query(
+        `INSERT INTO versions (id, product_id, name, domain, wordpress_version, php_version, is_production, promote_when_done, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, productId, source.name, domain, source.wordpress_version, source.php_version, !promoteWhenDone, promoteWhenDone, Status.Pending],
       );
       await client.query(
         `INSERT INTO snapshots (product_id, version_id, name, group_name, source_snapshot_id, status) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -240,7 +252,29 @@ export function versionService(deps: Deps) {
     return id;
   }
 
-  return { list, create, remove, setProduction, productionRoles, productionSource, copyProduction };
+  /**
+   * Copies the production version of `productId` to every storefront that follows it and isn't on it (or building
+   * it) already. Answers the storefronts that get a copy.
+   */
+  async function catchUpFollowers(productId: string): Promise<string[]> {
+    const { rows: followers } = await pool.query<{ id: string }>('SELECT id FROM products WHERE follows_product_id = $1 AND id <> $1', [productId]);
+    if (!followers.length) return [];
+    const source = await productionSource(productId);
+    const caughtUp: string[] = [];
+    for (const { id } of followers) {
+      const { rowCount } = await pool.query(
+        `SELECT 1 FROM snapshots s JOIN versions v ON v.id = s.version_id
+          WHERE v.product_id = $1 AND s.source_snapshot_id = $2 AND v.status IN ($3, $4) AND (v.is_production OR v.promote_when_done)`,
+        [id, source.snapshot_id, Status.Pending, Status.Done],
+      );
+      if (rowCount) continue;
+      await copyProduction(id, source, { promoteWhenDone: true });
+      caughtUp.push(id);
+    }
+    return caughtUp;
+  }
+
+  return { list, create, remove, setProduction, productionRoles, productionSource, copyProduction, catchUpFollowers };
 }
 
 export function versionRoutes(deps: Deps) {

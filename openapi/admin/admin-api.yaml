@@ -505,12 +505,13 @@ paths:
       - $ref: '#/components/parameters/productId'
     put:
       operationId: adminUpdateProduct
-      summary: A product's settings (name, maxTenants)
+      summary: A product's settings (name, maxTenants, followsProductId)
       description: >-
-        Send either or both; fields left out stay. name renames the product (1 to 100 characters).
+        Send any of them; fields left out stay. name renames the product (1 to 100 characters).
         maxTenants is the most tenants the product may have (null: no limit). At the limit,
         createTenant and restoreTenant answer 400. Lowering it below the current count deletes
-        nothing; it only stops new tenants.
+        nothing; it only stops new tenants. followsProductId null stops the product following the
+        storefront it started from; versions/from-production makes it follow one again.
       requestBody:
         required: true
         content:
@@ -520,6 +521,7 @@ paths:
               properties:
                 name: { type: string, minLength: 1, maxLength: 100 }
                 maxTenants: { type: integer, minimum: 0, nullable: true }
+                followsProductId: { type: string, format: uuid, nullable: true, description: Only null, to stop following }
       responses:
         '200':
           description: The product
@@ -921,7 +923,9 @@ paths:
       description: >-
         A copy of the production version and newest template of startFrom becomes this product's production version
         (as a new product made with startFrom gets). It builds like any version; new stores wait until it is Done.
-        The product's existing stores stay on their versions.
+        The product's existing stores stay on their versions. From then on the product follows startFrom (or the
+        storefront startFrom follows): each new production version there is copied here, becomes production once
+        built, and moves the product's stores. Publishing a version of its own, or followsProductId null, stops it.
       requestBody:
         required: true
         content:
@@ -1753,7 +1757,9 @@ paths:
         built, the approval stands and storefrontError says why. With reseller true it makes a reseller account
         named after the business instead (maxTenants stores across up to maxProducts storefronts), puts the
         product in it with no store limit of its own, and invites the applicant as the owner of the
-        reseller's team. Needs sign-in on (AUTH_URL), else 503.
+        reseller's team. With STORE_TEMPLATE_PRODUCT_ID set, the product starts with a copy of that storefront's
+        production version and template and follows it; if that fails, the approval stands and templateError
+        says why. Needs sign-in on (AUTH_URL), else 503.
       requestBody:
         content:
           application/json:
@@ -1771,7 +1777,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [application, productId, resellerId, invitation, storefront, storefrontError]
+                required: [application, productId, resellerId, invitation, storefront, storefrontError, templateError]
                 properties:
                   application: { $ref: '#/components/schemas/Application' }
                   productId: { type: string, format: uuid }
@@ -1790,6 +1796,7 @@ paths:
                       - $ref: '../waas-provisioning-api.yaml#/components/schemas/GetTenantQueryResult'
                       - type: 'null'
                   storefrontError: { type: string, nullable: true }
+                  templateError: { type: string, nullable: true, description: Why the store template couldn't be copied; null when it was, or none is set }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -2865,7 +2872,7 @@ components:
     Product:
       type: object
       additionalProperties: false
-      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, dateCreated]
+      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, followsProductId, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2875,6 +2882,11 @@ components:
         productionVersionId: { type: string, format: uuid, nullable: true }
         resellerId: { type: string, format: uuid, nullable: true, description: 'The reseller it belongs to; null for its own' }
         resellerName: { type: string, nullable: true }
+        followsProductId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'The storefront whose new production versions this one gets (it started from it); null for none'
         dateCreated: { type: string, format: date-time }
     StoreDays:
       type: object

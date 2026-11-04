@@ -1,7 +1,9 @@
 import { sendWebsiteReady, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { maintainDashboardDomains } from './dashboarddomains.ts';
-import type { Pool } from './db.ts';
+import { withTransaction, type Pool } from './db.ts';
+import { promoteVersion } from './promote.ts';
+import type { PgBoss } from 'pg-boss';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
@@ -36,6 +38,8 @@ export function createJobHandlers(
   ownerMail: () => AuthMail | undefined = () => undefined,
   /** Plugin releases, for pushing AnyPress Host to storefronts (src/hostupdates.ts). */
   releases?: ReleaseStore,
+  /** For a follower's copied version that takes over once built (promote_when_done, src/promote.ts). */
+  boss?: PgBoss,
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -63,7 +67,7 @@ export function createJobHandlers(
     async run(data: JobData) {
       switch (data.type) {
         case 'version.create':
-          return createVersion(pool, provisioner, secrets, data);
+          return createVersion(pool, provisioner, secrets, data, boss);
         case 'basesnapshot.delete':
           await provisioner.deleteBaseSnapshot({ baseSnapshotId: data.baseSnapshotId });
           return;
@@ -340,7 +344,7 @@ async function brandOptions(pool: Pool, tenantId: string): Promise<Record<string
   return brand ? { [BRAND_OPTION]: brand.name } : {};
 }
 
-async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'version.create' }>) {
+async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'version.create' }>, boss?: PgBoss) {
   const { rows } = await pool.query('SELECT * FROM versions WHERE id = $1', [data.versionId]);
   const version = rows[0];
   if (!version) return; // removed before the build ran
@@ -378,7 +382,19 @@ async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secr
 
   // A delete queued meanwhile has already set Removing; leave that alone.
   // roles: a rebuilt version is read again from its new code.
-  await pool.query('UPDATE versions SET status = $2, roles = NULL, date_changed = now() WHERE id = $1 AND status = $3', [version.id, Status.Done, Status.Pending]);
+  const { rowCount: built } = await pool.query('UPDATE versions SET status = $2, roles = NULL, date_changed = now() WHERE id = $1 AND status = $3', [
+    version.id,
+    Status.Done,
+    Status.Pending,
+  ]);
+
+  // A copy for a storefront that follows another (src/routes/versions.ts) takes over now, with the storefront's stores.
+  if (built && boss) {
+    await withTransaction(pool, async (client) => {
+      const { rows: promote } = await client.query('SELECT 1 FROM versions WHERE id = $1 AND promote_when_done FOR UPDATE', [version.id]);
+      if (promote.length) await promoteVersion(client, boss, version.product_id, version.id);
+    });
+  }
 
   // Its snapshots are taken, so the site isn't needed any more: 18 idle version sites once loaded the server.
   // The version is built either way, so a failed stop is only logged.

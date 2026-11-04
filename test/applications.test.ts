@@ -209,6 +209,28 @@ describe('reviewing', () => {
     }
   });
 
+  it('gives the new storefront the store template it sells, and keeps it following that (STORE_TEMPLATE_PRODUCT_ID)', async () => {
+    const applied = await apply(form({ email: 'margaret@apollo.example', business: 'Apollo Sites' }));
+    t.deps.config.storeTemplateProductId = t.deps.config.storefrontProductId;
+    try {
+      const res = await call('POST', `/admin/applications/${applied.json.id}/approve`, {});
+      expect(res.json.templateError).toBeNull();
+      const products = (await (await t.call('GET', '/admin/products', { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as any[];
+      const made = products.find((p) => p.id === res.json.productId);
+      expect(made).toMatchObject({ followsProductId: t.deps.config.storefrontProductId, productionVersionId: expect.any(String) });
+
+      // Without a production version to copy, the approval stands and says why.
+      const other = await apply(form({ email: 'katherine@nasa.example', business: 'Orbit Sites' }));
+      t.deps.config.storeTemplateProductId = res.json.productId;
+      await t.pool.query('UPDATE versions SET is_production = false WHERE product_id = $1', [res.json.productId]);
+      const failed = await call('POST', `/admin/applications/${other.json.id}/approve`, {});
+      expect(failed.status).toBe(200);
+      expect(failed.json.templateError).toMatch(/no ready production version/);
+    } finally {
+      t.deps.config.storeTemplateProductId = undefined;
+    }
+  });
+
   it('approves as a reseller: an account with the storefront inside, its team owner invited', async () => {
     const applied = await apply(form({ email: 'hedy@partners.example', business: 'Lamarr Partners' }));
     const id = applied.json.id;
