@@ -104,7 +104,13 @@ class FakeCloud {
           status = 'exited';
         } else service.restarting = undefined;
         const fqdn = service.urls?.find((u: { name: string }) => u.name === 'wordpress')?.url ?? null;
-        return json(200, { ...service, envs: undefined, applications: [{ name: 'wordpress', status, fqdn }, { name: 'agent', status }], databases: [{ name: 'db', status }] });
+        return json(200, {
+          ...service,
+          envs: undefined,
+          docker_compose_raw: service.compose,
+          applications: [{ name: 'wordpress', status, fqdn }, { name: 'agent', status }],
+          databases: [{ name: 'db', status }],
+        });
       }
       if (rest === '' && method === 'PATCH') {
         if (body.urls) service.urls = body.urls;
@@ -155,6 +161,14 @@ class FakeCloud {
       if ((m = /^\/scheduled-tasks\/([^/]+)\/execute$/.exec(rest)) && method === 'POST') {
         const task = this.tasks.get(m[1]!)!;
         if (service.restarting) this.execsDuringRestart++;
+        if (task.command.startsWith('base64 -d ')) {
+          // swapAgent's step: the staged PHP, which downloads the agent script from the bucket.
+          const id = /waas-args-([0-9a-f]+)/.exec(task.command)![1]!;
+          const script = Buffer.from(this.staged.get(id)!, 'base64').toString();
+          this.agentOps.push({ op: 'swap-agent', args: { script }, service: service.uuid });
+          task.executions.push({ uuid: `exec-${++this.seq}`, ...this.agent('swap-agent', { script }, service) });
+          return json(200, { message: 'queued' });
+        }
         const [, , op, arg, chunk] = task.command.split(' ');
         if (op === 'stage') {
           this.staged.set(arg!, (this.staged.get(arg!) ?? '') + chunk);
@@ -424,6 +438,70 @@ describe('CoolifyProvisioner', () => {
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
     expect(store.started).toBe(starts + 1);
     expect(cloud.calls.filter((c) => !c.startsWith('GET'))).toEqual([]);
+  });
+
+  it('swaps the new agent script into a store whose compose differs only in the agent, without a restart', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP - 1}, size small`;
+    store.compose = store.compose.replace(/WAAS_AGENT_GZ: \S+/, 'WAAS_AGENT_GZ: H4sIOLDAGENT');
+    const starts = store.started;
+    cloud.agentOps = [];
+
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
+    expect(store.started).toBe(starts);
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['swap-agent', 'configure']);
+    // The script it downloads is the current one, checked by its hash before it replaces the running one.
+    const [key, object] = [...cloud.objects].find(([k]) => k.startsWith('agents/'))!;
+    expect(gunzipSync(object).toString()).toBe(AGENT_SCRIPT);
+    const script = String(cloud.agentOps[0]!.args.script);
+    expect(script).toContain(key.slice('agents/'.length, -'.gz'.length));
+    expect(script).toContain("rename('/tmp/waas-agent.new', '/tmp/waas-agent.php')");
+    expect(cloud.longestCommand).toBeLessThanOrEqual(255);
+    // The compose file is saved for the next restart, and the description last.
+    expect(parse(store.compose).services.agent.environment.WAAS_AGENT_GZ).toBe(AGENT_GZ);
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
+  });
+
+  it('restarts the store as before when the agent swap fails', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP - 1}, size small`;
+    store.compose = store.compose.replace(/WAAS_AGENT_GZ: \S+/, 'WAAS_AGENT_GZ: H4sIOLDAGENT');
+    const starts = store.started;
+    cloud.agent = (op) => (op === 'swap-agent' ? { status: 'success', message: 'WAAS_ERROR the agent script did not download' } : { status: 'success', message: 'WAAS_RESULT {}' });
+
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure' });
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
+  });
+
+  it('restarts a store whose compose changes beyond the agent, or whose size changes', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP - 1}, size small`;
+    store.compose = store.compose.replace('MaxRequestWorkers 8', 'MaxRequestWorkers 4');
+    const starts = store.started;
+    cloud.agentOps = [];
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
+    expect(store.started).toBe(starts + 1);
+    expect(cloud.agentOps.map((o) => o.op)).not.toContain('swap-agent');
+  });
+
+  it('swaps the agent in again when an operation is unknown to the one running (a restart outside Coolify)', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    let swapped = false;
+    cloud.agent = (op) => {
+      if (op === 'swap-agent') swapped = true;
+      if (op === 'usage' && !swapped) return { status: 'failed', message: 'WAAS_ERROR unknown operation usage' };
+      return { status: 'success', message: 'WAAS_RESULT {"ok":true}' };
+    };
+    cloud.agentOps = [];
+    expect(await p.exec(store.uuid, 'usage', {})).toEqual({ ok: true });
+    expect(cloud.agentOps.map((o) => o.op)).toEqual(['usage', 'swap-agent', 'usage']);
   });
 
   it('gives a store its site key, when created and when an older store is brought to the current setup', async () => {
@@ -736,11 +814,12 @@ describe('CoolifyProvisioner', () => {
     await p.setMailCount({ storeId: STORE_ID, month: '2026-10', sent: 42 });
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'mail-count', args: { month: '2026-10', sent: 42 } });
     expect(store.started).toBe(starts);
-    // A store from before the count gets the current setup first, so its agent has the operation.
+    // A store from before the count gets the current setup first, so its agent has the operation: here only its
+    // agent script differs, so the new one is swapped in without a restart.
     store.description = `WaaS store, version ${VERSION_ID}, setup 5, size small`;
     await p.setMailCount({ storeId: STORE_ID, month: '2026-10', sent: 43 });
-    expect(store.started).toBe(starts + 1);
-    expect(cloud.agentOps.slice(-2).map((o) => o.op)).toEqual(['configure', 'mail-count']);
+    expect(store.started).toBe(starts);
+    expect(cloud.agentOps.slice(-3).map((o) => o.op)).toEqual(['swap-agent', 'configure', 'mail-count']);
   });
 
   it('stages arguments too long for one task command, keeping every command within 255 characters', async () => {
@@ -985,6 +1064,7 @@ describe('CoolifyProvisioner', () => {
     await p.moveStore({ storeId: STORE_ID, targetVersionId: 'v9' });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     store.description = 'WaaS store, version v9';
+    store.compose = 'old compose';
     await p.ensureStoreCron({ storeId: STORE_ID });
     expect(cloud.calls.filter((c) => c.endsWith('/restart'))).toHaveLength(4);
     // No agent command ran in the old containers.
