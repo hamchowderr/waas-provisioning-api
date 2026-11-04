@@ -860,7 +860,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   async function products(id: string | null) {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, r.name AS reseller_name,
+      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, r.name AS reseller_name,
          (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
          (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
          (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
@@ -877,6 +877,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       productionVersionId: p.production_version_id,
       resellerId: p.reseller_id,
       resellerName: p.reseller_name,
+      followsProductId: p.follows_product_id,
       dateCreated: iso(p.created_at),
     }));
   }
@@ -885,10 +886,17 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // The product's settings, each optional: its name, and maxTenants, the most tenants it may have, or
   // null for no limit. Lowering maxTenants below the current count deletes nothing; it only stops new ones.
+  // followsProductId null stops it following the storefront it started from (from-production starts it again).
   app.put('/products/:productId', async (c) => {
     const productId = await product(c);
-    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown };
-    if (body?.name === undefined && body?.maxTenants === undefined) throw badRequest('Send name, maxTenants or both');
+    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; followsProductId?: unknown };
+    if (body?.name === undefined && body?.maxTenants === undefined && body?.followsProductId === undefined) {
+      throw badRequest('Send name, maxTenants or followsProductId');
+    }
+    if (body.followsProductId !== undefined) {
+      if (body.followsProductId !== null) throw badRequest('followsProductId can only be null here; POST versions/from-production to follow a storefront');
+      await pool.query('UPDATE products SET follows_product_id = NULL WHERE id = $1', [productId]);
+    }
     if (body.name !== undefined) {
       const name = typeof body.name === 'string' ? body.name.trim() : '';
       if (!name || name.length > 100) throw badRequest('name must be text, at most 100 characters');
@@ -941,7 +949,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   });
 
   // Catches a product up with another storefront's production version and template: a copy becomes its
-  // production version (a reseller's storefront started from AnyPress's, when AnyPress publishes a new one).
+  // production version, and the product follows that storefront from then on (src/routes/versions.ts).
   app.post('/products/:productId/versions/from-production', async (c) => {
     const productId = await product(c);
     const body = (await readJson(c)) as { startFrom?: unknown };

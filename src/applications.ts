@@ -13,6 +13,7 @@ import { tellCrm } from './crm.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { publicBase } from './oauth.ts';
+import { versionService } from './routes/versions.ts';
 import { createStorefront } from './storefronts.ts';
 import { domainInUse } from './tenants.ts';
 
@@ -249,6 +250,17 @@ export function adminApplicationRoutes(deps: Deps) {
     }
     await pool.query('UPDATE seller_applications SET product_id = $2, reseller_id = $3 WHERE id = $1', [application.id, product.id, resellerId]);
 
+    // The store template its storefront sells, followed from then on, so its first sale builds a store.
+    let templateError: string | null = null;
+    if (config.storeTemplateProductId) {
+      try {
+        const versions = versionService(deps);
+        await versions.copyProduction(product.id, await versions.productionSource(config.storeTemplateProductId));
+      } catch (err) {
+        templateError = (err as Error).message;
+      }
+    }
+
     let storefront = null;
     let storefrontError: string | null = null;
     if (wantStorefront) {
@@ -290,6 +302,7 @@ export function adminApplicationRoutes(deps: Deps) {
       invitation: { id: invitation.id, acceptUrl: url, expiresAt: invitation.expiresAt.toISOString(), emailed },
       storefront,
       storefrontError,
+      templateError,
     });
   });
 

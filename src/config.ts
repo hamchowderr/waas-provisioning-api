@@ -80,6 +80,11 @@ export interface Config {
    */
   storefrontProductId?: string;
   /**
+   * The storefront whose store template a newly approved seller's or reseller's storefront starts from and then
+   * follows (STORE_TEMPLATE_PRODUCT_ID, src/applications.ts). Unset: an approved storefront starts with none.
+   */
+  storeTemplateProductId?: string;
+  /**
    * Who is emailed when someone applies to sell (src/applications.ts): APPLICATION_NOTIFY_EMAILS,
    * comma-separated. Empty: applications only show on the dashboard.
    */
@@ -226,7 +231,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhooks: loadWebhookConfig(env),
     auth: loadAuthConfig(env),
     dashboardHost: loadDashboardHost(env),
-    storefrontProductId: loadStorefrontProductId(env.STOREFRONT_PRODUCT_ID),
+    storefrontProductId: loadProductId('STOREFRONT_PRODUCT_ID', env.STOREFRONT_PRODUCT_ID),
+    storeTemplateProductId: loadProductId('STORE_TEMPLATE_PRODUCT_ID', env.STORE_TEMPLATE_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     crm: loadCrmConfig(env),
     jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
@@ -235,10 +241,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-function loadStorefrontProductId(value: string | undefined): string | undefined {
+function loadProductId(name: string, value: string | undefined): string | undefined {
   const id = value?.trim().toLowerCase();
   if (!id) return undefined;
-  if (!isUuid(id)) throw new Error('STOREFRONT_PRODUCT_ID must be a product id (a UUID)');
+  if (!isUuid(id)) throw new Error(`${name} must be a product id (a UUID)`);
   return id;
 }
 
