@@ -67,7 +67,7 @@ stores; put stores like that on another provider.
    the dashboard's source and deploys it to production. Your Vercel account needs no access to GitHub.
    Either way, the API is set up so sellers can give the dashboard their own address (`DASHBOARD_DOMAINS`).
    Several such addresses on Vercel need a Pro plan.
-10. Adds the daily job that keeps Coolify's task history to 7 days.
+10. Adds the daily jobs that keep Coolify's task history to 7 days and refresh the WordPress and MariaDB images new stores start from.
 11. Prints the DNS records to add (without a Cloudflare token) and the storefront's address.
 
 Passwords, keys and the storefront's key go to `/root/anypress/credentials.env` (root only). Keep a copy of

@@ -382,6 +382,15 @@ cleanup_cron() {
 EOF
   chmod 644 /etc/cron.d/anypress-coolify-cleanup
   info "Runs daily at 04:23"
+  # Docker keeps the first copy of a tag such as wordpress:7.1-php8.3-apache, so new stores would start on an old
+  # WordPress patch. Fetch the store images again each night (running stores keep theirs until they restart) and
+  # drop the old copies the new ones replace.
+  cat > /etc/cron.d/anypress-image-pull <<'EOF'
+# AnyPress: refresh the WordPress and MariaDB images new stores start from (docs/self-hosting.md).
+41 3 * * * root docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|mariadb):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
+EOF
+  chmod 644 /etc/cron.d/anypress-image-pull
+  info "Store images refresh daily at 03:41"
 }
 
 storefront_key() {
@@ -689,6 +698,7 @@ check() {
     [ -n "$(container "${DASHBOARD_UUID:-none}")" ]; result $? "The dashboard is running"
   fi
   [ -f /etc/cron.d/anypress-coolify-cleanup ]; result $? "The Coolify cleanup job is set"
+  [ -f /etc/cron.d/anypress-image-pull ]; result $? "The store image refresh job is set"
   [ -n "${STORE_TEMPLATE_RELEASE:-}" ] && [ -n "${STOREFRONT_TEMPLATE_RELEASE:-}" ]; result $? "The store templates are published (${STORE_TEMPLATE_RELEASE:-none})"
   [ -n "${STOREFRONT_DOMAIN:-}" ]; result $? "The storefront is built (${STOREFRONT_DOMAIN:-none})"
   local host
