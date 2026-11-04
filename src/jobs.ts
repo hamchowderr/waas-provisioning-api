@@ -7,6 +7,7 @@ import type { JobData, JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure } from './imports.ts';
 import { failMailbox, pushMailbox } from './outreach.ts';
+import { failAutomations, pushAutomations } from './outreachautomation.ts';
 import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
 import type { Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
@@ -213,6 +214,14 @@ export function createJobHandlers(
           await pushMailbox(pool, secrets, (mailbox) => provisioner.setOutreachMailbox({ storeId: data.tenantId, mailbox }), data.productId);
           return;
         }
+        case 'storefront.outreach-automation': {
+          const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
+          if (!rows[0]) return failAutomations(pool, data.productId, 'The storefront is gone');
+          // The current store agent first: one from before crm-automation doesn't have it, nor the outreach queue.
+          await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
+          await pushAutomations(pool, (automation) => provisioner.addOutreachAutomation({ storeId: data.tenantId, automation }), data.productId);
+          return;
+        }
         case 'tenant.email-packs': {
           const { rowCount } = await pool.query('SELECT 1 FROM tenants WHERE id = $1', [data.tenantId]);
           if (!rowCount) return;
@@ -275,6 +284,9 @@ export function createJobHandlers(
           return;
         case 'storefront.outreach-mailbox':
           await failMailbox(pool, data.productId, error);
+          return;
+        case 'storefront.outreach-automation':
+          await failAutomations(pool, data.productId, error);
           return;
         case 'storefront.update-host':
           // The store still works, on the copy it had; the row says why, and POST /admin/host-updates tries again.

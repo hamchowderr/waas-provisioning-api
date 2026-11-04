@@ -41,6 +41,7 @@ const VERBS: Record<JobData['type'], string> = {
   'storefront.update-host': 'Update AnyPress Host on',
   'storefront.crm-prospects': 'Add prospects to the FluentCRM of',
   'storefront.outreach-mailbox': 'Connect the prospect mailbox of',
+  'storefront.outreach-automation': 'Add an outreach automation to the FluentCRM of',
   'version.create': 'Build',
   'version.delete': 'Delete',
   'basesnapshot.delete': 'Delete',

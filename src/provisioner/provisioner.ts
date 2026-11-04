@@ -1,5 +1,6 @@
 import type { Size } from '../plans.ts';
 import type { OutreachMailbox } from '../outreach.ts';
+import type { AutomationResult, OutreachAutomation } from '../outreachautomation.ts';
 import type { CrmContact, CrmWriteResult } from '../prospectcrm.ts';
 import type { SiteInventory } from '../sitereport.ts';
 
@@ -241,6 +242,12 @@ export interface Provisioner {
    * store signs in to it first and keeps it only when that worked; `error` is the mail server's answer when it didn't.
    */
   setOutreachMailbox(input: { storeId: string; mailbox: OutreachMailbox | null }): Promise<{ ok: boolean; error?: string }>;
+
+  /**
+   * Makes a Sales Kit outreach plan into a draft FluentCRM automation on the store (src/outreachautomation.ts). One
+   * with the same title is left as it is (`created` false): the seller may have edited it.
+   */
+  addOutreachAutomation(input: { storeId: string; automation: OutreachAutomation }): Promise<AutomationResult>;
 
   deleteStore(input: { storeId: string }): Promise<void>;
 

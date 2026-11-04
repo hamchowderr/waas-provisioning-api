@@ -1,5 +1,6 @@
 import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebhook } from '../prospectcrm.ts';
 import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
+import { addAutomation, automationInput, listAutomations } from '../outreachautomation.ts';
 import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -1054,7 +1055,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   // Sending prospects into the storefront's FluentCRM or the seller's HighLevel (src/prospectcrm.ts).
   const storefrontOf = async (productId: string) => {
     const store = await getStorefront(deps, productId);
-    return store ? { id: store.id, statusCode: store.statusCode } : null;
+    return store ? { id: store.id, statusCode: store.statusCode, domain: store.domainName ?? null } : null;
   };
   const crmDeps = {
     pool,
@@ -1101,6 +1102,21 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json(await setMailbox(mailboxDeps, productId, mailbox), 202);
   });
   app.delete('/products/:productId/prospects/mailbox', async (c) => c.json(await setMailbox(mailboxDeps, await product(c), null), 202));
+  // A group's outreach plan as a draft automation in the storefront's FluentCRM (src/outreachautomation.ts).
+  const automationDeps = {
+    pool,
+    storefront: storefrontOf,
+    queue: (tenantId: string, productId: string) =>
+      withTransaction(pool, (client) => enqueue(boss, client, { type: 'storefront.outreach-automation', tenantId, productId })).then(() => undefined),
+  };
+  app.get('/products/:productId/prospects/automations', async (c) =>
+    c.json(await listAutomations(pool, storefrontOf, await product(c)), 200, { 'Cache-Control': 'no-store' }),
+  );
+  app.post('/products/:productId/prospects/automations', async (c) => {
+    const productId = await product(c);
+    await addAutomation(automationDeps, productId, automationInput(await c.req.json().catch(() => null)));
+    return c.json(await listAutomations(pool, storefrontOf, productId), 202);
+  });
 
   // Plugin choices (docs/plugin-choices.md): wordpress.org or uploaded plugins a storefront adds to its stores, or switches off.
   app.get('/products/:productId/plugin-choices/search', async (c) => {

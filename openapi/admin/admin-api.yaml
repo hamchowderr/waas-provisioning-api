@@ -288,6 +288,60 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/prospects/automations:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    get:
+      operationId: adminListProspectAutomations
+      summary: Outreach plans added to the storefront's FluentCRM
+      responses:
+        '200':
+          description: Each group's draft automation and whether it's made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectAutomations' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminAddProspectAutomation
+      summary: Add a group's outreach plan to FluentCRM as a draft automation
+      description: >-
+        Makes "Outreach: <group>" in the storefront's FluentCRM: the emails in order, each on its day, as a draft for
+        the seller to read and switch on. Once on, prospects tagged "Prospect: <group>" start on it a few a day
+        (a fifth of the mailbox's daily limit), only through the seller's own mailbox, and anyone tagged Replied or
+        Customer is taken out. An automation with that title already there is left as it is.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group, emails]
+              additionalProperties: false
+              properties:
+                group: { type: string, maxLength: 80, description: 'The customer group, as in the prospect tag (Prospect: <group>)' }
+                note: { type: string, maxLength: 1000, description: A note shown on the automation in FluentCRM }
+                emails:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [day, subject, body]
+                    additionalProperties: false
+                    properties:
+                      day: { type: integer, minimum: 1, maximum: 120, description: Day of the plan; 1 is the day the prospect starts }
+                      subject: { type: string, maxLength: 200 }
+                      body: { type: string, maxLength: 5000, description: 'Plain text; blank lines make paragraphs. FluentCRM smart codes such as {{contact.first_name}} work.' }
+      responses:
+        '202':
+          description: Being made on the storefront
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectAutomations' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/prospects/search:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -3090,6 +3144,25 @@ components:
             name: { type: string }
             daily: { type: integer }
         unavailable: { type: string, nullable: true, description: Why this storefront can't use a mailbox; null when it can }
+    ProspectAutomations:
+      type: object
+      required: [unavailable, automations]
+      additionalProperties: false
+      properties:
+        unavailable: { type: string, nullable: true, description: Why this storefront can't take one; null when it can }
+        automations:
+          type: array
+          items:
+            type: object
+            required: [group, title, state, error, funnelId, editUrl]
+            additionalProperties: false
+            properties:
+              group: { type: string }
+              title: { type: string }
+              state: { type: string, enum: [adding, added, failed] }
+              error: { type: string, nullable: true }
+              funnelId: { type: integer, nullable: true }
+              editUrl: { type: string, nullable: true, description: Where to open it in the storefront's WordPress }
     ProspectCrmResult:
       type: object
       required: [fluentcrm, highlevel]
