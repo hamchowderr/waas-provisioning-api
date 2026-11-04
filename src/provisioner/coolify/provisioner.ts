@@ -1,10 +1,10 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { DEFAULT_SIZE, isSize, type Size } from '../../plans.ts';
 import { ImportPartsError, storeFromAddress, type Brand, type CreateStoreInput, type Provisioner, type RestoreTestResult, type MoveReport, type SiteCheck, type StoreMailFrom } from '../provisioner.ts';
 import { S3, type S3Config } from '../s3.ts';
 import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
-import { encodeConstants, renderCompose } from './compose.ts';
+import { AGENT_GZ, AGENT_SCRIPT, encodeConstants, renderCompose } from './compose.ts';
 import { readZipEntry } from '../../zipentry.ts';
 
 export interface CoolifyProvisionerConfig {
@@ -209,7 +209,18 @@ const keys = {
   mailbox: (id: string) => `crm/mailbox-${id}.json`,
   /** An outreach plan for addOutreachAutomation, read once by the store's agent. */
   automation: (id: string) => `crm/automation-${id}.json`,
+  /** The current agent script, gzipped, for swapAgent; named by its hash, so it never changes once stored. */
+  agent: (sha: string) => `agents/${sha}.gz`,
 };
+
+/** The agent script's hash: what swapAgent checks the downloaded script against. */
+const AGENT_SHA = createHash('sha256').update(AGENT_SCRIPT).digest('hex');
+
+/** A compose file without the agent's code: two that match differ in nothing but the agent script. */
+const withoutAgent = (compose: string) => compose.replace(/WAAS_AGENT_GZ: \S+/, 'WAAS_AGENT_GZ: -').trim();
+
+/** A PHP single-quoted string. */
+const phpString = (value: string) => `'${value.replace(/[\\']/g, '\\$&')}'`;
 
 /**
  * Runs each store as one Coolify Service (WordPress, MariaDB and a WP-CLI agent) in the
@@ -279,8 +290,12 @@ export class CoolifyProvisioner implements Provisioner {
    * docker_compose_raw. Without `domains`, the ones the Service has now.
    */
   private async storeCompose(storeId: string, meta: StoreMeta, uuid: string, domains?: string[]): Promise<string> {
+    return b64(await this.storeComposeText(storeId, meta, uuid, domains));
+  }
+
+  private async storeComposeText(storeId: string, meta: StoreMeta, uuid: string, domains?: string[]): Promise<string> {
     const hosts = domains ?? (await this.serviceDomains(uuid));
-    return b64(renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, assistant: assistantFor(storeId, hosts) }));
+    return renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, assistant: assistantFor(storeId, hosts) });
   }
 
   /** The domains a store's Service answers on (its wordpress URLs). */
@@ -385,6 +400,16 @@ export class CoolifyProvisioner implements Provisioner {
    * command in 255 characters, so longer arguments are first staged in the container in chunks.
    */
   async exec(uuid: string, op: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    try {
+      return await this.execOnce(uuid, op, args);
+    } catch (err) {
+      // An agent older than this API (its container restarted outside Coolify after a swapAgent): swap again, once.
+      if (!(err instanceof Error && /unknown operation/.test(err.message)) || !(await this.swapAgent(uuid))) throw err;
+      return this.execOnce(uuid, op, args);
+    }
+  }
+
+  private async execOnce(uuid: string, op: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const payload = b64(JSON.stringify(args));
     const direct = `${AGENT} ${op} ${payload}`;
     if (direct.length <= MAX_COMMAND) return this.runTask(uuid, op, direct);
@@ -663,19 +688,70 @@ export class CoolifyProvisioner implements Provisioner {
    * Brings a store set up before STORE_SETUP, or running at another size than its record says, to the
    * current setup at that size: the compose file, one restart, then the agent's files (configure). The
    * description is updated last, so a store that fails part-way is tried again on the next start.
+   *
+   * When the new compose file differs from the Service's only in the agent script (most new setups: new agent
+   * operations and mu-plugins) and the store already has its variables, there is no restart: the new script is
+   * swapped into the running agent (swapAgent) and the compose file saved for the next restart. If the swap
+   * fails, the store is restarted as before.
    */
   async ensureStoreSetup({ storeId, size }: { storeId: string; size: Size }): Promise<'updated' | 'unchanged'> {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const meta = this.storeMeta(store);
     if ((meta.setup ?? 1) >= STORE_SETUP && meta.size === size) return 'unchanged';
     const want: StoreMeta = { ...meta, setup: STORE_SETUP, size };
-    await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(storeId, want, store.uuid) });
+    const compose = await this.storeComposeText(storeId, want, store.uuid);
     const siteKey = this.siteKeyEnvs(storeId);
+    if (await this.onlyAgentChanged(store.uuid, compose, siteKey)) {
+      if (await this.swapAgent(store.uuid)) {
+        await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(compose) });
+        await this.exec(store.uuid, 'configure', {});
+        await this.coolify.updateService(store.uuid, { description: formatMeta(want) });
+        return 'updated';
+      }
+    }
+    await this.coolify.updateService(store.uuid, { docker_compose_raw: b64(compose) });
     if (Object.keys(siteKey).length) await this.coolify.setEnvs(store.uuid, siteKey);
     await this.restart(store.uuid);
     await this.exec(store.uuid, 'configure', {});
     await this.coolify.updateService(store.uuid, { description: formatMeta(want) });
     return 'updated';
+  }
+
+  /** Whether the Service runs `compose` but for the agent script, with these variables already set. */
+  private async onlyAgentChanged(uuid: string, compose: string, envs: Record<string, string>): Promise<boolean> {
+    const current = (await this.coolify.getService(uuid)).docker_compose_raw;
+    if (!current || withoutAgent(current) !== withoutAgent(compose)) return false;
+    if (!Object.keys(envs).length) return true;
+    const have = await this.coolify.listEnvs(uuid);
+    return Object.entries(envs).every(([key, value]) => unquote(envValue(have, key)) === value);
+  }
+
+  /**
+   * Puts the current agent script into the store's running agent container, without a restart. The script goes
+   * through the bucket (far too long for task commands); a small PHP step, staged like long arguments, downloads
+   * it, checks its hash and only then replaces /tmp/waas-agent.php. Any agent can run it: it uses only `stage`.
+   * The container still holds the old script in its variables until Coolify next restarts it, which then starts it
+   * from the saved compose file; a restart outside Coolify (the server rebooting) brings the old script back, and
+   * exec swaps the new one in again when an operation is unknown to it. False when it didn't work.
+   */
+  private async swapAgent(uuid: string): Promise<boolean> {
+    try {
+      const key = keys.agent(AGENT_SHA);
+      if ((await this.s3.head(key)) === null) await this.s3.put(key, Buffer.from(AGENT_GZ, 'base64'), 'application/gzip');
+      const step = [
+        `$s = @gzdecode((string) @file_get_contents(${phpString(this.s3.presign('GET', key, 900))}));`,
+        `if ($s === false || hash('sha256', $s) !== ${phpString(AGENT_SHA)}) { echo "WAAS_ERROR the agent script did not download\n"; exit(1); }`,
+        "if (@file_put_contents('/tmp/waas-agent.new', $s) === false || !@rename('/tmp/waas-agent.new', '/tmp/waas-agent.php')) { echo \"WAAS_ERROR cannot write the agent script\n\"; exit(1); }",
+        "echo 'WAAS_RESULT {\"swapped\":true}', \"\n\";",
+      ].join('\n');
+      const payload = b64(`<?php\n${step}\n`);
+      const id = randomBytes(6).toString('hex');
+      for (let i = 0; i < payload.length; i += STAGE_CHUNK) await this.runTask(uuid, 'stage', `${AGENT} stage ${id} ${payload.slice(i, i + STAGE_CHUNK)}`);
+      await this.runTask(uuid, 'swap-agent', `base64 -d /tmp/waas-args-${id} > /tmp/waas-swap.php && php /tmp/waas-swap.php; rm -f /tmp/waas-args-${id} /tmp/waas-swap.php`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Removes the Service's `wp-cron` tasks: a store on the current setup runs its cron in its agent. */

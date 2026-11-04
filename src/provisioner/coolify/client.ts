@@ -8,6 +8,8 @@ export interface CoolifyService {
   status?: string;
   applications?: { name: string; status?: string; fqdn?: string | null }[];
   databases?: { name: string; status?: string }[];
+  /** The compose file as it was given (GET /services/:uuid). */
+  docker_compose_raw?: string | null;
 }
 
 export interface CoolifyEnv {
