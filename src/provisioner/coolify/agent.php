@@ -888,6 +888,99 @@ add_action('wp_mail_failed', function ($error) {
     error_log('AnyPress outreach mail: ' . $error->get_error_message());
 });
 
+/*
+ * The Sales Kit's outreach automations ("Outreach: <group>", made as drafts by the crm-automation operation). A
+ * prospect tagged "Prospect: <group>" waits in a queue while that automation is on, and the queue starts a few each day:
+ * every prospect gets up to five emails over a month, so a fifth of the daily limit keeps the mailbox under it. Nothing
+ * starts without a mailbox. A prospect tagged Replied or Customer is taken out of every outreach automation.
+ */
+const ANYPRESS_OUTREACH_STOP = ['Replied', 'Customer'];
+
+function anypress_outreach_funnel(string $group)
+{
+    return \FluentCrm\App\Models\Funnel::where('title', "Outreach: $group")->where('status', 'published')->first();
+}
+
+add_action('fluent_crm/contact_added_to_tags', function ($contact, $tagIds) {
+    if (!$contact || !class_exists('\FluentCrm\App\Models\Tag')) return;
+    $titles = \FluentCrm\App\Models\Tag::whereIn('id', (array) $tagIds)->pluck('title')->all();
+    if (array_intersect($titles, ANYPRESS_OUTREACH_STOP)) {
+        $ids = \FluentCrm\App\Models\Funnel::where('title', 'LIKE', 'Outreach: %')->pluck('id')->all();
+        if ($ids) \FluentCrm\App\Models\FunnelSubscriber::whereIn('funnel_id', $ids)->where('subscriber_id', $contact->id)
+            ->whereIn('status', ['active', 'waiting', 'pending'])->update(['status' => 'cancelled']);
+        $queue = (array) get_option('anypress_outreach_queue', []);
+        update_option('anypress_outreach_queue', array_values(array_filter($queue, fn ($q) => (int) $q['contact'] !== (int) $contact->id)), false);
+        return;
+    }
+    foreach ($titles as $title) {
+        if (strpos($title, 'Prospect: ') !== 0) continue;
+        $funnel = anypress_outreach_funnel(substr($title, 10));
+        if (!$funnel) continue;
+        $queue = (array) get_option('anypress_outreach_queue', []);
+        foreach ($queue as $q) if ((int) $q['contact'] === (int) $contact->id && (int) $q['funnel'] === (int) $funnel->id) continue 2;
+        $queue[] = ['contact' => (int) $contact->id, 'funnel' => (int) $funnel->id];
+        update_option('anypress_outreach_queue', array_slice($queue, -2000), false);
+    }
+}, 20, 2);
+
+/** When an outreach automation is switched on, the prospects already tagged for its group join the queue, once. */
+function anypress_outreach_queue_existing(): void
+{
+    $done = (array) get_option('anypress_outreach_queued_funnels', []);
+    $funnels = \FluentCrm\App\Models\Funnel::where('title', 'LIKE', 'Outreach: %')->where('status', 'published')->get(['id', 'title']);
+    foreach ($funnels as $funnel) {
+        if (in_array((int) $funnel->id, $done, true)) continue;
+        $done[] = (int) $funnel->id;
+        $tag = \FluentCrm\App\Models\Tag::where('title', 'Prospect: ' . substr($funnel->title, 10))->first();
+        if (!$tag) continue;
+        $queue = (array) get_option('anypress_outreach_queue', []);
+        $have = array_map(fn ($q) => $q['contact'] . ':' . $q['funnel'], $queue);
+        global $wpdb;
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT s.id FROM {$wpdb->prefix}fc_subscribers s JOIN {$wpdb->prefix}fc_subscriber_pivot sp ON sp.subscriber_id = s.id AND sp.object_type = %s
+              WHERE sp.object_id = %d AND s.status IN ('transactional', 'subscribed') ORDER BY s.id",
+            'FluentCrm\\App\\Models\\Tag', (int) $tag->id
+        ));
+        foreach ((array) $ids as $cid) {
+            if (!in_array("$cid:{$funnel->id}", $have, true)) $queue[] = ['contact' => (int) $cid, 'funnel' => (int) $funnel->id];
+        }
+        update_option('anypress_outreach_queue', array_slice($queue, -2000), false);
+    }
+    update_option('anypress_outreach_queued_funnels', $done, false);
+}
+
+/** Starts the day's share of waiting prospects on their outreach automation. */
+function anypress_outreach_start_queued(): int
+{
+    $config = anypress_outreach_config();
+    if (!$config || !class_exists('\FluentCrm\App\Services\Funnel\FunnelProcessor')) return 0;
+    anypress_outreach_queue_existing();
+    $queue = (array) get_option('anypress_outreach_queue', []);
+    if (!$queue) return 0;
+    $day = gmdate('Y-m-d');
+    $started = get_option('anypress_outreach_started');
+    $count = is_array($started) && ($started['day'] ?? '') === $day ? (int) ($started['count'] ?? 0) : 0;
+    $allowed = max(1, intdiv(max(1, min(200, (int) ($config['daily'] ?? 30))), 5)) - $count;
+    $n = 0;
+    while ($allowed > 0 && $queue) {
+        $q = array_shift($queue);
+        $funnel = \FluentCrm\App\Models\Funnel::where('id', (int) $q['funnel'])->where('status', 'published')->first();
+        $contact = \FluentCrm\App\Models\Subscriber::find((int) $q['contact']);
+        if (!$funnel || !$contact || !in_array($contact->status, ['transactional', 'subscribed'], true)) continue;
+        if (\FluentCrm\App\Models\FunnelSubscriber::where('funnel_id', $funnel->id)->where('subscriber_id', $contact->id)->exists()) continue;
+        $tags = $contact->tags->pluck('title')->all();
+        if (array_intersect($tags, ANYPRESS_OUTREACH_STOP)) continue;
+        (new \FluentCrm\App\Services\Funnel\FunnelProcessor())->startFunnelSequence($funnel, [], ['source_trigger_name' => 'anypress_outreach', 'source_ref_id' => 0], $contact);
+        $allowed--;
+        $n++;
+    }
+    update_option('anypress_outreach_queue', $queue, false);
+    if ($n) update_option('anypress_outreach_started', ['day' => $day, 'count' => $count + $n], false);
+    return $n;
+}
+// FluentCRM's own every-minute tasks, which the store's cron runs; an empty queue costs one option read.
+add_action('fluentcrm_scheduled_minute_tasks', 'anypress_outreach_start_queued', 5);
+
 add_action('admin_notices', function () {
     if (!current_user_can('manage_options')) return;
     $b = get_option('anypress_outreach_blocked');
@@ -1725,6 +1818,71 @@ $out['failed'] = (object) $out['failed'];
 echo 'WAAS_CRM ' . wp_json_encode($out) . "\n";
 PHP;
 
+/**
+ * Makes a Sales Kit outreach plan into a draft FluentCRM automation on the storefront (the crm-automation operation,
+ * src/outreachautomation.ts): a straight line of waits and emails, titled "Outreach: <group>". Run by
+ * `wp eval-file <this> <automation.json>` with plugins loaded. Like the lifecycle automations (crm/setup.php) it is
+ * parked on the registration trigger for a role nobody has, so only the outreach mu-plugin starts it, a few prospects
+ * a day. An automation with the same title is left as it is: the seller may have edited it.
+ */
+const CRM_AUTOMATION = <<<'PHP'
+<?php
+if (!class_exists('\FluentCrm\App\Models\Funnel')) { echo "WAAS_FLOW_MISSING\n"; return; }
+$a = json_decode((string) file_get_contents($args[0]), true);
+$title = sanitize_text_field((string) ($a['title'] ?? ''));
+$emails = is_array($a['emails'] ?? null) ? $a['emails'] : [];
+if ($title === '' || !$emails) { echo "WAAS_FLOW_BAD\n"; return; }
+$found = \FluentCrm\App\Models\Funnel::where('title', $title)->first();
+if ($found) { echo 'WAAS_FLOW ' . wp_json_encode(['id' => (int) $found->id, 'created' => false, 'status' => (string) $found->status]) . "\n"; return; }
+// The tags the outreach mu-plugin starts and stops it by.
+foreach (array_merge([(string) ($a['tag'] ?? '')], ['Replied', 'Customer']) as $t) {
+    if ($t !== '' && !\FluentCrm\App\Models\Tag::where('title', $t)->exists()) \FluentCrm\App\Models\Tag::create(['title' => $t, 'slug' => sanitize_title($t)]);
+}
+$sequences = [];
+$id = 1;
+$day = 1;
+foreach ($emails as $n => $e) {
+    $at = max(1, (int) ($e['day'] ?? 1));
+    if ($at > $day) {
+        $sequences[] = ['id' => $id++, 'type' => 'action', 'action_name' => 'fluentcrm_wait_times', 'title' => 'Wait ' . ($at - $day) . ' days', 'description' => '',
+            'settings' => ['wait_type' => 'unit_wait', 'wait_time_amount' => $at - $day, 'wait_time_unit' => 'days']];
+        $day = $at;
+    }
+    $subject = sanitize_text_field((string) ($e['subject'] ?? ''));
+    $campaign = \FluentCrm\App\Models\FunnelCampaign::getMock();
+    $campaign['title'] = $subject;
+    $campaign['email_subject'] = $subject;
+    $campaign['email_pre_header'] = '';
+    $campaign['email_body'] = wp_kses_post((string) ($e['body'] ?? ''));
+    // A personal note, not a newsletter: no header, images or buttons.
+    $campaign['design_template'] = 'plain';
+    $campaign['settings'] = (array) $campaign['settings'];
+    $campaign['settings']['template_config'] = \FluentCrm\App\Services\Helper::getTemplateConfig('plain');
+    $sequences[] = ['id' => $id++, 'type' => 'action', 'action_name' => 'send_custom_email', 'title' => 'Email ' . ($n + 1) . ': ' . $subject, 'description' => '',
+        'settings' => ['send_email_to_type' => 'contact', 'send_email_custom' => '', 'campaign' => $campaign, 'is_scheduled' => 'no', 'scheduled_at' => '', 'skip_if_overdue' => 'no']];
+}
+$funnel = [
+    'title' => $title,
+    'trigger_name' => 'user_register',
+    'settings' => ['subscription_status' => 'subscribed'],
+    'conditions' => ['update_type' => 'update', 'user_roles' => ['anypress_started_by_code']],
+    'sticky_note' => wp_kses_post((string) ($a['note'] ?? '')),
+];
+$request = new WP_REST_Request('POST', '/fluent-crm/v2/funnels/import');
+$request->set_body_params(['funnel' => $funnel, 'sequences' => wp_json_encode($sequences)]);
+wp_set_current_user((int) (get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID'])[0] ?? 0));
+$response = rest_do_request($request);
+$data = $response->get_data();
+if ($response->is_error() || empty($data['funnel'])) {
+    echo "WAAS_FLOW_FAILED\t" . str_replace(["\n", "\t"], ' ', is_array($data) ? (string) ($data['message'] ?? wp_json_encode($data)) : (string) $data) . "\n";
+    return;
+}
+$made = \FluentCrm\App\Models\Funnel::find((int) (is_array($data['funnel']) ? $data['funnel']['id'] : $data['funnel']->id));
+// Always a draft: the seller reads it and switches it on.
+if ($made && $made->status !== 'draft') { $made->status = 'draft'; $made->save(); }
+echo 'WAAS_FLOW ' . wp_json_encode(['id' => $made ? (int) $made->id : 0, 'created' => true, 'status' => 'draft']) . "\n";
+PHP;
+
 // Commands run as root in the container; drop to www-data so WordPress can manage its files.
 if (function_exists('posix_getuid') && posix_getuid() === 0) {
     posix_setgid(WWW_UID) && posix_setuid(WWW_UID) || fail('could not drop privileges');
@@ -2185,6 +2343,21 @@ switch ($op) {
         if (!is_int($sent) || $sent < 0) fail('sent must be a whole number');
         wp('option', 'update', 'waas_plan_mail_platform', json_encode(['month' => $month, 'sent' => $sent]), '--format=json', '--autoload=no');
         done(['month' => $month, 'sent' => $sent]);
+    }
+
+    case 'crm-automation': {
+        // A Sales Kit outreach plan as a draft FluentCRM automation (CRM_AUTOMATION). It comes as a signed link: too long
+        // for a task command.
+        $url = (string) ($args['url'] ?? '');
+        preg_match('#^https://#', $url) || fail('url must be an https address');
+        $tmp = tempDir();
+        curlTransfer($url, "$tmp/automation.json", false);
+        file_put_contents("$tmp/flow.php", CRM_AUTOMATION) !== false || fail('cannot write the automation script');
+        $out = run('timeout 120 wp --path=' . ROOT . ' --skip-themes eval-file ' . escapeshellarg("$tmp/flow.php") . ' ' . escapeshellarg("$tmp/automation.json") . ' 2>&1; echo "::$?"', true);
+        if (strpos($out, 'WAAS_FLOW_MISSING') !== false) fail('FluentCRM is not on');
+        if (preg_match('/^WAAS_FLOW_FAILED\t(.*)$/m', $out, $m)) fail('FluentCRM did not take the automation: ' . substr($m[1], 0, 300));
+        if (!preg_match('/^WAAS_FLOW (\{.*\})$/m', $out, $m)) fail('the automation script gave no answer: ' . substr(trim(preg_replace('/\s+/', ' ', explode('::', $out, 2)[0])), -300));
+        done(json_decode($m[1], true));
     }
 
     case 'crm-prospects': {

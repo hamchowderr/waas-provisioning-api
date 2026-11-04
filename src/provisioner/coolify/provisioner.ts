@@ -176,8 +176,10 @@ export interface StoreMeta {
  *    (src/prospectcrm.ts).
  * 17: the outreach mu-plugin (an email to a FluentCRM "Prospect" goes only through the seller's own mailbox, never the
  *    relay) and the agent's outreach-mailbox operation (src/outreach.ts).
+ * 18: the outreach mu-plugin starts prospects on the Sales Kit's outreach automations a few a day and stops them when
+ *    tagged Replied or Customer, and the agent's crm-automation operation makes those automations (src/outreachautomation.ts).
  */
-export const STORE_SETUP = 17;
+export const STORE_SETUP = 18;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -205,6 +207,8 @@ const keys = {
   crmBatch: (id: string) => `crm/${id}.json`,
   /** The seller's mailbox for setOutreachMailbox, read once by the store's agent: it holds a password. */
   mailbox: (id: string) => `crm/mailbox-${id}.json`,
+  /** An outreach plan for addOutreachAutomation, read once by the store's agent. */
+  automation: (id: string) => `crm/automation-${id}.json`,
 };
 
 /**
@@ -1013,6 +1017,18 @@ export class CoolifyProvisioner implements Provisioner {
     try {
       const out = await this.exec(store.uuid, 'outreach-mailbox', { url: this.s3.presign('GET', key, 300) });
       return out.ok === true ? { ok: true } : { ok: false, error: typeof out.error === 'string' ? out.error : 'Could not sign in to the mailbox' };
+    } finally {
+      await this.s3.delete(key).catch(() => undefined);
+    }
+  }
+
+  async addOutreachAutomation({ storeId, automation }: Parameters<Provisioner['addOutreachAutomation']>[0]) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const key = keys.automation(randomBytes(8).toString('hex'));
+    await this.s3.put(key, new TextEncoder().encode(JSON.stringify(automation)), 'application/json');
+    try {
+      const out = await this.exec(store.uuid, 'crm-automation', { url: this.s3.presign('GET', key, 900) });
+      return { id: Number(out.id) || 0, created: out.created === true };
     } finally {
       await this.s3.delete(key).catch(() => undefined);
     }

@@ -1,5 +1,6 @@
 import type { Size } from '../plans.ts';
 import type { OutreachMailbox } from '../outreach.ts';
+import type { OutreachAutomation } from '../outreachautomation.ts';
 import type { CrmContact } from '../prospectcrm.ts';
 import { ImportPartsError, storeFromAddress, type Brand, type CreateStoreInput, type MoveReport, type PhpConstant, type Provisioner, type RestoreTestResult, type SiteCheck, type StoreMailFrom, type VersionPlugin } from './provisioner.ts';
 
@@ -21,6 +22,8 @@ interface FakeStore extends CreateStoreInput {
   crm?: Record<string, CrmContact>;
   /** The seller's mailbox for prospect emails (setOutreachMailbox). */
   outreachMailbox?: OutreachMailbox;
+  /** Draft FluentCRM automations made by addOutreachAutomation, by title. */
+  automations?: Record<string, OutreachAutomation & { id: number }>;
 }
 
 /**
@@ -371,6 +374,17 @@ export class FakeProvisioner implements Provisioner {
     if (this.refusedMailHosts.has(mailbox.host)) return { ok: false, error: '535 5.7.8 Username and Password not accepted' };
     store.outreachMailbox = mailbox;
     return { ok: true };
+  }
+
+  async addOutreachAutomation({ storeId, automation }: Parameters<Provisioner['addOutreachAutomation']>[0]) {
+    this.check('addOutreachAutomation');
+    const store = this.store(storeId);
+    const made = (store.automations ??= {});
+    const found = made[automation.title];
+    if (found) return { id: found.id, created: false };
+    const id = Object.keys(made).length + 1;
+    made[automation.title] = { ...automation, id };
+    return { id, created: true };
   }
 
   async deleteStore({ storeId }: { storeId: string }) {

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { createAjv } from '../src/openapi.ts';
 import { mailboxInput } from '../src/outreach.ts';
+import { automationInput, emailHtml } from '../src/outreachautomation.ts';
 import { crmInput, highLevelWebhook } from '../src/prospectcrm.ts';
 import { Status } from '../src/status.ts';
 import { OWNER, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
@@ -205,5 +206,47 @@ describe("the seller's own mailbox for prospect emails", () => {
     expect((await mailbox()).unavailable).toMatch(/ready-made/);
     expect((await put(BOX)).status).toBe(400);
     await t.pool.query('UPDATE tenants SET external_id = $2 WHERE id = $1', [storefrontId, `storefront-${sellerProduct}`]);
+  });
+});
+
+describe("a group's outreach plan as a draft FluentCRM automation", () => {
+  const PLAN = {
+    group: 'Churches',
+    note: 'Turn it on when your mailbox is connected.',
+    emails: [
+      { day: 1, subject: 'A simpler website for {{contact.first_name}}', body: 'Hi there,\n\nI help churches like {{contact.first_name}}.\n\nSam\nSummit Sites' },
+      { day: 4, subject: 'Re: A simpler website', body: 'See https://demo.example/church.' },
+    ],
+  };
+  const list = async () => (await t.call('GET', `/admin/products/${sellerProduct}/prospects/automations`, { auth: ADMIN })).json() as Promise<any>;
+
+  it('turns the plain text into paragraphs, safely', () => {
+    expect(emailHtml('Hi <b>there</b>,\n\nSee https://x.example/a.\nSam')).toBe('<p>Hi &lt;b&gt;there&lt;/b&gt;,</p>\n<p>See <a href="https://x.example/a">https://x.example/a</a>.<br>Sam</p>');
+    expect(automationInput(PLAN).automation).toMatchObject({ title: 'Outreach: Churches', tag: 'Prospect: Churches' });
+    for (const bad of [{ group: '' }, { emails: [] }, { emails: [{ day: 4, subject: 'a', body: 'b' }, { day: 1, subject: 'a', body: 'b' }] }, { emails: [{ day: 1, subject: '', body: 'b' }] }]) {
+      expect(() => automationInput({ ...PLAN, ...bad })).toThrow();
+    }
+  });
+
+  it('makes it on the storefront once, and links to it', async () => {
+    const empty = await list();
+    valid('ProspectAutomations', empty);
+    expect(empty.automations).toEqual([]);
+    const res = await t.call('POST', `/admin/products/${sellerProduct}/prospects/automations`, { auth: ADMIN, body: PLAN });
+    expect(res.status).toBe(202);
+    await waitFor(async () => (await list()).automations[0]?.state === 'added');
+    const after = await list();
+    valid('ProspectAutomations', after);
+    expect(after.automations[0]).toMatchObject({ group: 'Churches', title: 'Outreach: Churches', funnelId: 1 });
+    expect(after.automations[0].editUrl).toMatch(/^https:\/\/.+\/wp-admin\/admin\.php\?page=fluentcrm-admin#\/funnels\/1\/edit$/);
+    const made = t.provisioner.stores.get(storefrontId)!.automations!['Outreach: Churches']!;
+    expect(made.emails.map((e) => e.day)).toEqual([1, 4]);
+    expect(made.emails[0]!.body).toContain('<p>I help churches like {{contact.first_name}}.</p>');
+    // Again: the storefront keeps the one it has.
+    await t.call('POST', `/admin/products/${sellerProduct}/prospects/automations`, { auth: ADMIN, body: { ...PLAN, emails: [PLAN.emails[0]] } });
+    await waitFor(async () => (await list()).automations[0]?.state === 'added');
+    expect(t.provisioner.stores.get(storefrontId)!.automations!['Outreach: Churches']!.emails).toHaveLength(2);
+    // What was sent isn't kept once it's made.
+    expect((await t.pool.query('SELECT automation FROM prospect_automations WHERE product_id = $1', [sellerProduct])).rows[0].automation).toBeNull();
   });
 });
