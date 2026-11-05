@@ -18,6 +18,7 @@ import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
 import { oauthRoutes } from './oauth.ts';
 import { assistantUsageRoutes } from './assistant-usage.ts';
+import { voiceRoutes } from './voice.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
 import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
@@ -213,6 +214,8 @@ export function createApp(deps: Deps) {
   oauthRoutes(app, deps);
   // The website assistant's monthly allowance per store (src/assistant-usage.ts).
   assistantUsageRoutes(app, deps);
+  // The phone receptionist agent's calls about a store, by the number that was called (src/voice.ts).
+  voiceRoutes(app, deps);
   mcpRoutes(app, deps);
 
   app.onError((err, c) => {

@@ -1,3 +1,4 @@
+import { voiceAdminRoutes } from '../voice.ts';
 import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebhook } from '../prospectcrm.ts';
 import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
 import { addAutomation, automationInput, listAutomations } from '../outreachautomation.ts';
@@ -318,6 +319,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/applications', adminOnly);
   app.use('/applications/*', adminOnly);
   app.use('/resellers', adminOnly);
+  app.use('/voice-lines', adminOnly);
+  app.use('/voice-lines/*', adminOnly);
   app.use('/resellers/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
@@ -1275,6 +1278,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     });
     return c.json(toFailure(failure));
   });
+
+  // Phone numbers for the phone receptionist (src/voice.ts).
+  voiceAdminRoutes(app, deps);
 
   return app;
 }

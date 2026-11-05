@@ -1,0 +1,29 @@
+{
+  "name": "anypress-phone-receptionist",
+  "version": "0.1.0",
+  "description": "The AnyPress phone receptionist: a LiveKit voice agent that answers a store's calls, books jobs and logs callers",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --import tsx src/main.ts dev",
+    "start": "node --import tsx src/main.ts start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@livekit/agents": "1.9.5",
+    "@livekit/agents-plugin-silero": "1.9.5",
+    "livekit-server-sdk": "2.19.2",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}
