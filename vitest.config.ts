@@ -7,8 +7,8 @@ export default defineConfig({
     alias: { 'waas-provisioning-sdk': fileURLToPath(new URL('./sdk/typescript/src/index.ts', import.meta.url)) },
   },
   test: {
-    // agent/ is its own package with its own dependencies and tests (agent/README.md).
-    exclude: [...configDefaults.exclude, 'agent/**'],
+    // agent/ and voice/ are their own packages with their own dependencies and tests (their READMEs).
+    exclude: [...configDefaults.exclude, 'agent/**', 'voice/**'],
     // The suites share one test database.
     fileParallelism: false,
     testTimeout: 20000,
