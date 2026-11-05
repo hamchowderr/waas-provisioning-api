@@ -39,6 +39,8 @@ export interface Config {
   backupRetentionDays: number;
   /** Bearer token for /admin/*. Unset disables the admin API (every request gets 403). */
   adminToken?: string;
+  /** Bearer token the phone receptionist agent sends to /voice/* (src/voice.ts). Unset: /voice is off (404). */
+  voiceAgentToken?: string;
   /** Which Provisioner runs store-side work: the in-memory fake (default) or Coolify. */
   provisioner: 'fake' | 'coolify';
   coolify?: CoolifyProvisionerConfig;
@@ -216,6 +218,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     secretsKey,
     backupRetentionDays: Number(env.BACKUP_RETENTION_DAYS ?? 90),
     adminToken: env.ADMIN_TOKEN || undefined,
+    voiceAgentToken: env.VOICE_AGENT_TOKEN || undefined,
     provisioner,
     coolify,
     sendingDomains: coolify?.mailKeys instanceof ToSendAdmin ? coolify.mailKeys : undefined,

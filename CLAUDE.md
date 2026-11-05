@@ -10,6 +10,7 @@ The AnyPress backend: a Hono API on Node 22 with Postgres and pg-boss jobs, whic
 | `sdk/` | TypeScript and PHP SDKs (`docs/publishing.md`) |
 | `mcp/` | The AnyPress MCP connector and its skills |
 | `agent/` | The website assistant (Mastra), its own package; tests run it against the API and on Playground |
+| `voice/` | The phone receptionist (LiveKit Agents), its own package; it answers a store's calls through `src/voice.ts` |
 | `integrations/` | n8n node, Zapier app, Make app |
 | `templates/` | Store templates: `anypress-store` (what shop.anypress.io sells), `starter-fluentcart`, `seller-storefront` |
 | `install/` | The self-hosting installer |

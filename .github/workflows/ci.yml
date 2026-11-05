@@ -46,6 +46,9 @@ jobs:
       - name: Website assistant
         working-directory: agent
         run: npm ci && npm run typecheck && npm test
+      - name: Phone receptionist
+        working-directory: voice
+        run: npm ci && npm run typecheck && npm test
       - name: Website assistant chat panel
         working-directory: agent/panel
         run: npm ci && npx tsc --noEmit && npm run build
