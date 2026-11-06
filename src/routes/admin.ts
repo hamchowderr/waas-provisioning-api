@@ -450,6 +450,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         siteTypes: siteTypesOf(t.php_constants),
         isSuspended: t.is_suspended,
         onHold: t.on_hold,
+        // The step a running job is on (src/progress.ts); null when none runs.
+        progress: t.progress ?? null,
         latestBackupAt: iso(t.latest_backup_at),
         dateCreated: iso(t.date_created),
       })),
@@ -494,6 +496,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       snapshotGroupName: t.snapshot_group_name,
       statusCode: t.status,
       statusName: statusName(t.status),
+      // The step a running job is on (src/progress.ts); null when none runs, failedAt set when it stopped.
+      progress: t.progress ?? null,
       size: t.size,
       siteTypes: siteTypesOf(t.php_constants),
       keepsOwnCode: t.own_code,

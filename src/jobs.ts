@@ -2,6 +2,7 @@ import { sendWebsiteReady, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { maintainDashboardDomains } from './dashboarddomains.ts';
 import { withTransaction, type Pool } from './db.ts';
+import { planFor, withProgress } from './progress.ts';
 import { promoteVersion } from './promote.ts';
 import type { PgBoss } from 'pg-boss';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
@@ -63,177 +64,192 @@ export function createJobHandlers(
     }
   };
 
+  /** The steps a store job will show on the dashboard's progress bar (src/progress.ts). */
+  const progressPlan = async (data: JobData & { tenantId: string }) => {
+    if (data.type !== 'tenant.create') {
+      const safetyBackup = data.type === 'tenant.rollback' ? !!data.safetyBackupId : data.type === 'tenant.suspend' ? !!data.backupId : false;
+      return planFor(data.type, { safetyBackup });
+    }
+    const { rows } = await pool.query('SELECT snapshot_id FROM tenants WHERE id = $1', [data.tenantId]);
+    return planFor(data.type, { imported: rows[0] ? rows[0].snapshot_id === null : false });
+  };
+
+  async function runJob(data: JobData) {
+    switch (data.type) {
+      case 'version.create':
+        return createVersion(pool, provisioner, secrets, data, boss);
+      case 'basesnapshot.delete':
+        await provisioner.deleteBaseSnapshot({ baseSnapshotId: data.baseSnapshotId });
+        return;
+      case 'version.delete':
+        await provisioner.deleteVersion({ versionId: data.versionId });
+        await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
+        return;
+      case 'tenant.create':
+        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail());
+      case 'tenant.update': {
+        const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
+        if (!rows[0]) return;
+        await provisioner.updateStore({
+          storeId: data.tenantId,
+          wpOptions: data.wpOptions,
+          // The full set whenever any constant changed: a host may have to rewrite them all at once.
+          phpConstants: data.phpConstantNames?.length ? decodePhpConstants(secrets, rows[0].php_constants) : undefined,
+          // The size on record, not the job's: a later PUT may have changed it again before this ran.
+          size: data.size ? rows[0].size : undefined,
+        });
+        // A move or delete queued meanwhile has set its own status; only finish a Pending one.
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      }
+      case 'tenant.move': {
+        const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [data.tenantId]);
+        await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
+        await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
+        await forgetHostUpdate(pool, data.tenantId);
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      }
+      case 'tenant.domains': {
+        const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+        if (!rows[0]) return;
+        // The store's mailbox follows its main domain; a store sending from its own domain keeps it.
+        const sender = (await storeSenders(pool, data.tenantId)).get(data.tenantId);
+        const mail = mailboxDomains && (sender ? { sender } : { mailbox: await mailbox(data.tenantId) });
+        await provisioner.setDomains({ storeId: data.tenantId, mainDomain: rows[0].main_domain, redirectDomains: rows[0].redirect_domains, mail });
+        if (mail) await recordMailSender(pool, provisioner, data.tenantId, mail);
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      }
+      case 'tenant.delete': {
+        await provisioner.deleteStore({ storeId: data.tenantId });
+        // A site that was being moved in leaves no upload behind.
+        await provisioner.deleteImport({ storeId: data.tenantId });
+        // Keep what a restore needs on the backups, which outlive the tenant.
+        const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+        const { rows: domains } = await pool.query(
+          'SELECT domain_name, is_main, is_base FROM tenant_domains WHERE tenant_id = $1 ORDER BY date_created',
+          [data.tenantId],
+        );
+        const record = rows[0] && {
+          name: rows[0].name,
+          versionId: rows[0].version_id,
+          snapshotId: rows[0].snapshot_id,
+          snapshotName: rows[0].snapshot_name,
+          snapshotGroupName: rows[0].snapshot_group_name,
+          size: rows[0].size,
+          ownCode: rows[0].own_code,
+          onHold: rows[0].on_hold,
+          domains: domains.map((d) => ({ domainName: d.domain_name, isMain: d.is_main, isBase: d.is_base })),
+        };
+        await pool.query(
+          'UPDATE tenant_backups SET tenant_deleted_at = now(), tenant_record = COALESCE($2, tenant_record) WHERE tenant_id = $1 AND tenant_deleted_at IS NULL',
+          [data.tenantId, record ?? null],
+        );
+        await pool.query('DELETE FROM tenants WHERE id = $1', [data.tenantId]);
+        return;
+      }
+      case 'tenant.restore': {
+        const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+        const tenant = rows[0];
+        if (!tenant) return;
+        const restoredMailbox = await mailbox(tenant.id);
+        await provisioner.restoreDeletedStore({
+          storeId: tenant.id,
+          backupId: data.backupId,
+          versionId: tenant.version_id,
+          mainDomain: tenant.main_domain,
+          redirectDomains: tenant.redirect_domains,
+          phpConstants: decodePhpConstants(secrets, tenant.php_constants),
+          wpOptions: { ...tenant.wp_options, ...(await brandOptions(pool, tenant.id)) },
+          size: tenant.size,
+          ownCode: tenant.own_code,
+          mailbox: restoredMailbox,
+          // A site moved in that was still held comes back held.
+          ...(tenant.on_hold && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
+        });
+        await recordMailSender(pool, provisioner, tenant.id, { mailbox: restoredMailbox });
+        await forgetHostUpdate(pool, tenant.id);
+        await setTenantStatus(tenant.id, Status.Done, Status.Pending);
+        return;
+      }
+      case 'tenant.rollback': {
+        if (data.safetyBackupId) await backUp(pool, provisioner, data.tenantId, data.safetyBackupId);
+        const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
+        if (!rows[0]) return;
+        await provisioner.rollbackStore({
+          storeId: data.tenantId,
+          backupId: data.backupId,
+          wpOptions: { ...rows[0].wp_options, ...(await brandOptions(pool, data.tenantId)) },
+          mainDomain: rows[0].main_domain,
+          ownCode: rows[0].own_code,
+        });
+        // The backup's database holds the pack total of its day; tell the store the one on record again.
+        const purchased = await emailPacksBought(pool, data.tenantId);
+        if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
+        // Its platform email count is an older one too: the next count tells the store again.
+        await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
+        await forgetHostUpdate(pool, data.tenantId);
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      }
+      case 'tenant.suspend':
+        if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
+        await provisioner.suspendStore({ storeId: data.tenantId, brand: await resellerBrand(pool, data.tenantId) });
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      case 'tenant.resume':
+        await provisioner.resumeStore({ storeId: data.tenantId });
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      case 'tenant.go-live':
+        await provisioner.goLive({ storeId: data.tenantId });
+        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        return;
+      case 'tenant.backup':
+        await backUp(pool, provisioner, data.tenantId, data.backupId);
+        return;
+      case 'storefront.update-host':
+        await pushHostUpdate(pool, provisioner, releases, data.tenantId, data.version);
+        return;
+      case 'storefront.crm-prospects': {
+        const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
+        if (!rows[0]) return failCrmProspects(pool, data.productId, 'The storefront is gone');
+        // The current store agent first: one from before crm-prospects doesn't have it.
+        await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
+        await pushCrmProspects(pool, (contacts) => provisioner.addCrmProspects({ storeId: data.tenantId, contacts }), data.productId);
+        return;
+      }
+      case 'storefront.outreach-mailbox': {
+        const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
+        if (!rows[0]) return failMailbox(pool, data.productId, 'The storefront is gone');
+        // The current store agent first: one from before outreach-mailbox doesn't have it, nor the guard.
+        await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
+        await pushMailbox(pool, secrets, (mailbox) => provisioner.setOutreachMailbox({ storeId: data.tenantId, mailbox }), data.productId);
+        return;
+      }
+      case 'storefront.outreach-automation': {
+        const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
+        if (!rows[0]) return failAutomations(pool, data.productId, 'The storefront is gone');
+        // The current store agent first: one from before crm-automation doesn't have it, nor the outreach queue.
+        await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
+        await pushAutomations(pool, (automation) => provisioner.addOutreachAutomation({ storeId: data.tenantId, automation }), data.productId);
+        return;
+      }
+      case 'tenant.email-packs': {
+        const { rowCount } = await pool.query('SELECT 1 FROM tenants WHERE id = $1', [data.tenantId]);
+        if (!rowCount) return;
+        // The total on record when the job runs, not when it was queued: packs bought meanwhile are included.
+        await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
+        return;
+      }
+    }
+  }
+
   return {
     async run(data: JobData) {
-      switch (data.type) {
-        case 'version.create':
-          return createVersion(pool, provisioner, secrets, data, boss);
-        case 'basesnapshot.delete':
-          await provisioner.deleteBaseSnapshot({ baseSnapshotId: data.baseSnapshotId });
-          return;
-        case 'version.delete':
-          await provisioner.deleteVersion({ versionId: data.versionId });
-          await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
-          return;
-        case 'tenant.create':
-          return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail());
-        case 'tenant.update': {
-          const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
-          if (!rows[0]) return;
-          await provisioner.updateStore({
-            storeId: data.tenantId,
-            wpOptions: data.wpOptions,
-            // The full set whenever any constant changed: a host may have to rewrite them all at once.
-            phpConstants: data.phpConstantNames?.length ? decodePhpConstants(secrets, rows[0].php_constants) : undefined,
-            // The size on record, not the job's: a later PUT may have changed it again before this ran.
-            size: data.size ? rows[0].size : undefined,
-          });
-          // A move or delete queued meanwhile has set its own status; only finish a Pending one.
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        }
-        case 'tenant.move': {
-          const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [data.tenantId]);
-          await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
-          await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
-          await forgetHostUpdate(pool, data.tenantId);
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        }
-        case 'tenant.domains': {
-          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
-          if (!rows[0]) return;
-          // The store's mailbox follows its main domain; a store sending from its own domain keeps it.
-          const sender = (await storeSenders(pool, data.tenantId)).get(data.tenantId);
-          const mail = mailboxDomains && (sender ? { sender } : { mailbox: await mailbox(data.tenantId) });
-          await provisioner.setDomains({ storeId: data.tenantId, mainDomain: rows[0].main_domain, redirectDomains: rows[0].redirect_domains, mail });
-          if (mail) await recordMailSender(pool, provisioner, data.tenantId, mail);
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        }
-        case 'tenant.delete': {
-          await provisioner.deleteStore({ storeId: data.tenantId });
-          // A site that was being moved in leaves no upload behind.
-          await provisioner.deleteImport({ storeId: data.tenantId });
-          // Keep what a restore needs on the backups, which outlive the tenant.
-          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
-          const { rows: domains } = await pool.query(
-            'SELECT domain_name, is_main, is_base FROM tenant_domains WHERE tenant_id = $1 ORDER BY date_created',
-            [data.tenantId],
-          );
-          const record = rows[0] && {
-            name: rows[0].name,
-            versionId: rows[0].version_id,
-            snapshotId: rows[0].snapshot_id,
-            snapshotName: rows[0].snapshot_name,
-            snapshotGroupName: rows[0].snapshot_group_name,
-            size: rows[0].size,
-            ownCode: rows[0].own_code,
-            onHold: rows[0].on_hold,
-            domains: domains.map((d) => ({ domainName: d.domain_name, isMain: d.is_main, isBase: d.is_base })),
-          };
-          await pool.query(
-            'UPDATE tenant_backups SET tenant_deleted_at = now(), tenant_record = COALESCE($2, tenant_record) WHERE tenant_id = $1 AND tenant_deleted_at IS NULL',
-            [data.tenantId, record ?? null],
-          );
-          await pool.query('DELETE FROM tenants WHERE id = $1', [data.tenantId]);
-          return;
-        }
-        case 'tenant.restore': {
-          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
-          const tenant = rows[0];
-          if (!tenant) return;
-          const restoredMailbox = await mailbox(tenant.id);
-          await provisioner.restoreDeletedStore({
-            storeId: tenant.id,
-            backupId: data.backupId,
-            versionId: tenant.version_id,
-            mainDomain: tenant.main_domain,
-            redirectDomains: tenant.redirect_domains,
-            phpConstants: decodePhpConstants(secrets, tenant.php_constants),
-            wpOptions: { ...tenant.wp_options, ...(await brandOptions(pool, tenant.id)) },
-            size: tenant.size,
-            ownCode: tenant.own_code,
-            mailbox: restoredMailbox,
-            // A site moved in that was still held comes back held.
-            ...(tenant.on_hold && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
-          });
-          await recordMailSender(pool, provisioner, tenant.id, { mailbox: restoredMailbox });
-          await forgetHostUpdate(pool, tenant.id);
-          await setTenantStatus(tenant.id, Status.Done, Status.Pending);
-          return;
-        }
-        case 'tenant.rollback': {
-          if (data.safetyBackupId) await backUp(pool, provisioner, data.tenantId, data.safetyBackupId);
-          const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
-          if (!rows[0]) return;
-          await provisioner.rollbackStore({
-            storeId: data.tenantId,
-            backupId: data.backupId,
-            wpOptions: { ...rows[0].wp_options, ...(await brandOptions(pool, data.tenantId)) },
-            mainDomain: rows[0].main_domain,
-            ownCode: rows[0].own_code,
-          });
-          // The backup's database holds the pack total of its day; tell the store the one on record again.
-          const purchased = await emailPacksBought(pool, data.tenantId);
-          if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
-          // Its platform email count is an older one too: the next count tells the store again.
-          await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
-          await forgetHostUpdate(pool, data.tenantId);
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        }
-        case 'tenant.suspend':
-          if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
-          await provisioner.suspendStore({ storeId: data.tenantId, brand: await resellerBrand(pool, data.tenantId) });
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        case 'tenant.resume':
-          await provisioner.resumeStore({ storeId: data.tenantId });
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        case 'tenant.go-live':
-          await provisioner.goLive({ storeId: data.tenantId });
-          await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
-          return;
-        case 'tenant.backup':
-          await backUp(pool, provisioner, data.tenantId, data.backupId);
-          return;
-        case 'storefront.update-host':
-          await pushHostUpdate(pool, provisioner, releases, data.tenantId, data.version);
-          return;
-        case 'storefront.crm-prospects': {
-          const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
-          if (!rows[0]) return failCrmProspects(pool, data.productId, 'The storefront is gone');
-          // The current store agent first: one from before crm-prospects doesn't have it.
-          await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
-          await pushCrmProspects(pool, (contacts) => provisioner.addCrmProspects({ storeId: data.tenantId, contacts }), data.productId);
-          return;
-        }
-        case 'storefront.outreach-mailbox': {
-          const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
-          if (!rows[0]) return failMailbox(pool, data.productId, 'The storefront is gone');
-          // The current store agent first: one from before outreach-mailbox doesn't have it, nor the guard.
-          await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
-          await pushMailbox(pool, secrets, (mailbox) => provisioner.setOutreachMailbox({ storeId: data.tenantId, mailbox }), data.productId);
-          return;
-        }
-        case 'storefront.outreach-automation': {
-          const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
-          if (!rows[0]) return failAutomations(pool, data.productId, 'The storefront is gone');
-          // The current store agent first: one from before crm-automation doesn't have it, nor the outreach queue.
-          await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size });
-          await pushAutomations(pool, (automation) => provisioner.addOutreachAutomation({ storeId: data.tenantId, automation }), data.productId);
-          return;
-        }
-        case 'tenant.email-packs': {
-          const { rowCount } = await pool.query('SELECT 1 FROM tenants WHERE id = $1', [data.tenantId]);
-          if (!rowCount) return;
-          // The total on record when the job runs, not when it was queued: packs bought meanwhile are included.
-          await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
-          return;
-        }
-      }
+      if (!data.type.startsWith('tenant.') || data.type === 'tenant.delete' || !('tenantId' in data)) return runJob(data);
+      return withProgress(pool, data.tenantId, data.type, await progressPlan(data), () => runJob(data));
     },
 
     async maintenance() {

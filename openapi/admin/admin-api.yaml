@@ -3346,10 +3346,28 @@ components:
         total: { type: integer }
         page: { type: integer }
         pageSize: { type: integer }
+    JobProgress:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: >-
+        The step a store's running job is on, for a progress bar: "Step index of total: label". Null when no job
+        runs. Kept with failedAt when the job stopped at that step; a retry starts it again.
+      required: [job, step, label, index, total, steps, startedAt, stepStartedAt]
+      properties:
+        job: { type: string, description: 'The job, e.g. tenant.create, tenant.move, tenant.backup.' }
+        step: { type: string, enum: [server, version, settings, domains, start, backup, restore, database, code, configure, check] }
+        label: { type: string, description: The step in plain words, e.g. "Adding the theme and plugins". }
+        index: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 1 }
+        steps: { type: array, items: { type: string }, description: 'Every step of the job in plain words, in order.' }
+        startedAt: { type: string, format: date-time, description: When the job started. }
+        stepStartedAt: { type: string, format: date-time }
+        failedAt: { type: string, format: date-time }
     TenantRow:
       type: object
       additionalProperties: false
-      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, siteTypes, isSuspended, onHold, latestBackupAt, dateCreated]
+      required: [id, externalId, name, productId, productName, versionId, versionName, mainDomain, domainCount, statusCode, statusName, size, siteTypes, isSuspended, onHold, progress, latestBackupAt, dateCreated]
       properties:
         id: { type: string, format: uuid }
         externalId: { type: string }
@@ -3366,6 +3384,7 @@ components:
         siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         isSuspended: { type: boolean }
         onHold: { type: boolean, description: A site moved in, held until it goes live. }
+        progress: { $ref: '#/components/schemas/JobProgress' }
         latestBackupAt: { type: string, format: date-time, nullable: true }
         dateCreated: { type: string, format: date-time }
     ImportCode:
@@ -3568,6 +3587,7 @@ components:
             month: { type: string, example: '2026-10' }
             sent: { type: integer, minimum: 0 }
             checkedAt: { type: string, format: date-time }
+        progress: { $ref: '#/components/schemas/JobProgress' }
         isSuspended: { type: boolean }
         dateSuspended: { type: string, format: date-time, nullable: true }
         onHold: { type: boolean, description: 'A site moved in, held until it goes live (POST /admin/tenants/{id}/go-live): no scheduled jobs, email only to its owner, not indexed.' }
