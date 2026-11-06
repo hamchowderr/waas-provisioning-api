@@ -165,6 +165,52 @@ describe('store Domain Connect routes', () => {
     expect(link.conflict).toBe('One-click setup is not available for this domain right now. Add the records below by hand.');
   });
 
+  it('gives the records, whether the domain points here, and the link, before and after the domain is added', async () => {
+    adminSpec.components.schemas.DomainConnectLink = storeSpec.components.schemas.DomainConnectLink;
+    ajv.addSchema({ components: adminSpec.components }, 'admin');
+    const validateSetup = ajv.compile({ $ref: 'admin#/components/schemas/DomainSetup' });
+    const setup = (domain: string) => t.call('GET', `/admin/tenants/${tenant.id}/domain-setup?domainName=${domain}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` });
+    t.deps.config.domainConnect = { ...config, ipv6: '2001:db8::7' };
+
+    // Not on the store yet: records and the one-click link, and it doesn't point here.
+    let res = await setup('New.Example.com');
+    expect(res.status).toBe(200);
+    let body = (await res.json()) as { records: unknown[]; pointsHere: boolean; currentAddresses: string[]; connect: { url: string } };
+    expect(validateSetup(body)).toBe(true);
+    expect(body.records).toEqual([
+      { type: 'A', name: 'new', host: 'new.example.com', value: '203.0.113.7' },
+      { type: 'AAAA', name: 'new', host: 'new.example.com', value: '2001:db8::7' },
+    ]);
+    expect(body).toMatchObject({ domainName: 'new.example.com', pointsHere: false, currentAddresses: [] });
+    expect(body.connect.url).toContain('/services/website/apply?domain=example.com&host=new&ip=203.0.113.7');
+
+    // The bare domain is @; a domain at a host without Domain Connect still gets its records.
+    body = await (await setup('example.com')).json();
+    expect(body.records[0]).toMatchObject({ name: '@', host: 'example.com' });
+    body = await (await setup('shop.other.example')).json();
+    expect(body.records[0]).toMatchObject({ name: 'shop' });
+    expect(body.connect).toMatchObject({ supported: false, url: null });
+
+    // Pointing here once its only A is the server's; a stale AAAA beside it still counts as not.
+    const resolve4 = net.resolve4, resolve6 = net.resolve6;
+    net.resolve4 = async (name) => (name === 'shop.example.com' ? ['203.0.113.7'] : resolve4(name));
+    net.resolve6 = async (name) => (name === 'shop.example.com' ? ['2001:db8::99'] : resolve6(name));
+    body = await (await setup('shop.example.com')).json();
+    expect(body).toMatchObject({ pointsHere: false, currentAddresses: ['203.0.113.7', '2001:db8::99'] });
+    net.resolve6 = resolve6;
+    body = await (await setup('shop.example.com')).json();
+    expect(body.pointsHere).toBe(true);
+    net.resolve4 = resolve4;
+
+    // The store's own platform address needs nothing; another store's domain is refused.
+    const { rows } = await t.pool.query('SELECT domain_name FROM tenant_domains WHERE tenant_id = $1 AND is_base', [tenant.id]);
+    expect((await setup(rows[0].domain_name)).status).toBe(400);
+    const other = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Other' } })).json()) as { id: string };
+    await t.pool.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, $2, false)', [other.id, 'taken.example.com']);
+    expect((await setup('taken.example.com')).status).toBe(400);
+    t.deps.config.domainConnect = config;
+  });
+
   it('gives no link when the domain already has a different DKIM key, since some hosts would keep both', async () => {
     net.txt['tosend._domainkey.mail.example.com'] = [['p=OLD']];
     const res = await storefront('domainName=mail.example.com&service=email');

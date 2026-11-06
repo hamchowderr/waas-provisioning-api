@@ -1257,6 +1257,29 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domain-setup:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getStoreDomainSetup
+      summary: The DNS records a custom domain needs, whether it has them, and its one-click link
+      description: >-
+        For a domain the store has, or one it may add (not used by another store or the platform):
+        the A and AAAA records that point it at the store server, the addresses it has now, whether
+        it already points only here, and the Domain Connect link that adds the records at its DNS
+        host. Show it before moving a store to the domain, so the owner points the domain first.
+        400 for the store's own platform address or a domain in use elsewhere.
+      parameters:
+        - { name: domainName, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The domain's setup
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DomainSetup' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/imports:
     post:
       operationId: adminCreateImport
@@ -2848,6 +2871,29 @@ components:
         supported: { type: boolean, description: True when url works }
         url: { type: string, nullable: true }
         conflict: { type: string, description: "Set when there is no link though the DNS host has the template: the domain already has a record the host would keep beside the template's (an older DKIM key), or the stores' IPv6 address is unknown; show it with the records to edit by hand" }
+    DomainSetup:
+      type: object
+      additionalProperties: false
+      required: [domainName, records, currentAddresses, pointsHere, connect]
+      properties:
+        domainName: { type: string }
+        records:
+          description: The records to add at the domain's DNS host. Any other A or AAAA records on the same name should be deleted.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, name, host, value]
+            properties:
+              type: { type: string, enum: [A, AAAA] }
+              name: { type: string, description: 'Relative to the domain the DNS host holds, as most DNS hosts want it: @ for the domain itself' }
+              host: { type: string, description: The full hostname }
+              value: { type: string }
+        currentAddresses: { type: array, items: { type: string }, description: The A and AAAA addresses the domain has now }
+        pointsHere: { type: boolean, description: True when the domain already points only at the store server }
+        connect:
+          description: One-click setup at the domain's DNS host; null when Domain Connect is off on the API
+          anyOf: [{ $ref: '#/components/schemas/DomainConnectLink' }, { type: object, nullable: true, enum: [null] }]
     MailDomain:
       type: object
       required: [domainName, status, dateCreated, dateVerified, records]

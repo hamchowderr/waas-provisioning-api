@@ -30,6 +30,7 @@ import { createStorefront, getStorefront, type NewStorefront } from '../storefro
 import { baseSnapshotService } from './basesnapshots.ts';
 import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
+import { websiteSetup } from '../domainconnect.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
@@ -764,6 +765,15 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.get('/tenants/:id/domain-connect', async (c) => {
     const tenant = await mailTenant(c);
     return c.json(await storeDomainConnect(deps, tenant.id, c.req.query('domainName'), c.req.query('service')));
+  });
+
+  // The records a custom domain needs, whether it has them, and its one-click link: shown before
+  // and after the domain is added to the store.
+  app.get('/tenants/:id/domain-setup', async (c) => {
+    const tenant = await mailTenant(c);
+    const domainName = c.req.query('domainName');
+    if (!domainName?.trim()) throw badRequest('domainName is required');
+    return c.json(await websiteSetup(pool, config, tenant.id, domainName, deps.domainConnectNet));
   });
 
   app.delete('/tenants/:id/mail-domain', async (c) => {
