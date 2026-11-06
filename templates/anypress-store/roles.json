@@ -100,5 +100,17 @@
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
+    },
+    "highlevel": {
+        "title": "HighLevel site",
+        "plugins": [
+            "leadconnector/leadconnector.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "easy-code-manager/easy-code-manager.php",
+            "seo-by-rank-math/rank-math.php",
+            "fluent-security/fluent-security.php",
+            "fluent-toolkit/fluent-toolkit.php",
+            "anypress-blocks/anypress-blocks.php"
+        ]
     }
 }

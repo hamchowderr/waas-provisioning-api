@@ -101,6 +101,18 @@ describe('actions', () => {
     await ready(siteId);
   });
 
+  it("makes the storefront a HighLevel agency's, whose sites get the HighLevel site type", async () => {
+    expect((await t.pool.query('SELECT highlevel_agency FROM products WHERE id = $1', [t.productId])).rows[0].highlevel_agency).toBe(true);
+    const roles = async (id: string) => (await t.pool.query('SELECT php_constants FROM tenants WHERE id = $1', [id])).rows[0].php_constants.ANYPRESS_TENANT_ROLES;
+    expect(await roles(siteId)).toEqual({ value: 'highlevel', isPrivate: false });
+    // Create site's siteType picks another one.
+    const other = await app('POST', '/v1/apps/actions/create-site', { data: { name: 'Typed', email: 'typed@example.com', siteType: 'website' }, extras: { locationId: 'loc-1', contactId: 'contact43' } });
+    const typedId = ((await other.json()) as { siteId: string }).siteId;
+    expect(await roles(typedId)).toEqual({ value: 'website', isPrivate: false });
+    await ready(typedId);
+    expect((await app('POST', '/v1/apps/actions/delete-site', { data: { siteId: typedId } })).status).toBe(200);
+  });
+
   it('gets, suspends, resumes and deletes it', async () => {
     const got = await app('POST', '/v1/apps/actions/get-site', { data: { externalId: 'contact42' } });
     expect(await got.json()).toMatchObject({ siteId, statusName: 'Done', isSuspended: false });

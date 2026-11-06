@@ -31,6 +31,9 @@ export function decodePhpConstants(secrets: Secrets, stored: StoredPhpConstants,
   );
 }
 
+/** The store template's site type for a HighLevel agency's sites (templates/anypress-store/roles.json). */
+export const HIGHLEVEL_SITE_TYPE = 'highlevel';
+
 /**
  * The site types a store was sold as (Website, Bookings, Store...: the keys of the template's roles.json), read from
  * the ANYPRESS_TENANT_ROLES constant the storefront sets. Empty when the store has

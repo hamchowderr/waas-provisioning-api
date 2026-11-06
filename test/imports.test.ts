@@ -460,6 +460,25 @@ describe('stores that keep their own code', () => {
     expect(t.provisioner.stores.get(made.tenantId)!.wpOptions).toMatchObject({ blogname: 'New from the dashboard', admin_email: 'owner@example.com' });
   });
 
+  it("the dashboard's New site gives the site type it picks, and a HighLevel agency's storefront defaults to HighLevel", async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const make = async (body: object) => {
+      const res = await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'Typed', ownerEmail: 'owner@example.com', ...body } });
+      expect(res.status).toBe(201);
+      const { tenantId } = (await res.json()) as { tenantId: string };
+      await waitFor(async () => (await tenant(tenantId))?.statusCode === Status.Done);
+      return t.provisioner.stores.get(tenantId)!.phpConstants.ANYPRESS_TENANT_ROLES?.value;
+    };
+    expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'X', ownerEmail: 'o@example.com', siteType: 'Not one' } })).status).toBe(400);
+    expect(await make({ siteType: 'bookings' })).toBe('bookings');
+    expect(await make({})).toBeUndefined();
+    const flagged = await t.call('PUT', `/admin/products/${t.productId}`, { auth: ADMIN, body: { highlevelAgency: true } });
+    expect(await flagged.json()).toMatchObject({ highlevelAgency: true });
+    expect(await make({})).toBe('highlevel');
+    expect(await make({ siteType: 'website' })).toBe('website');
+    await t.call('PUT', `/admin/products/${t.productId}`, { auth: ADMIN, body: { highlevelAgency: false } });
+  });
+
   it('a new storefront starts ready from another one, and can make a store at once', async () => {
     const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
     const bare = (await (await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Bare' } })).json()) as any;

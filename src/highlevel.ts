@@ -226,6 +226,18 @@ function triggerEvents(filters: unknown): string[] {
   return wanted.length ? [...new Set(wanted)] : siteEvents();
 }
 
+/**
+ * Marks the storefront as a HighLevel agency's, so its new sites get the HighLevel site type (src/routes/tenants.ts).
+ * A storefront others follow (a store template, such as the shop's) is never marked: its sites are the platform's own.
+ */
+export async function markHighLevelAgency(pool: Pool, productId: string) {
+  await pool.query(
+    `UPDATE products p SET highlevel_agency = true
+     WHERE p.id = $1 AND NOT p.highlevel_agency AND NOT EXISTS (SELECT 1 FROM products f WHERE f.follows_product_id = p.id)`,
+    [productId],
+  );
+}
+
 export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
   const { pool, secrets, config } = deps;
   const webhookConfig = config.webhooks ?? { allowPrivate: false, logDays: 30 };
@@ -288,6 +300,7 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     const call = ((await readJson(c)) ?? {}) as AppCall;
     const data = call.data ?? {};
     const productId = await storefront(c, pool, data);
+    await markHighLevelAgency(pool, productId);
     // Signed in to AnyPress (OAuth): the actions need what the person allowed.
     const scopes = c.get('appScopes');
     const needs = action === 'get-site' ? 'stores:read' : 'stores:write';
@@ -308,6 +321,8 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
       body.wordPressUserName = text(data.username) || email;
       body.wordPressUserRole = text(data.role) || 'administrator';
       for (const field of ['size', 'groupName', 'customDomainName']) if (text(data[field])) body[field] = text(data[field]);
+      // The storefront is a HighLevel agency's, so a site with no site type gets the HighLevel one (src/routes/tenants.ts).
+      if (text(data.siteType)) body.phpConstants = { ANYPRESS_TENANT_ROLES: { value: text(data.siteType), isPrivate: false } };
       if (data.notifyOwner === true || ['true', 'yes'].includes(text(data.notifyOwner).toLowerCase())) body.notifyOwner = true;
       const created = (await v1(c, productId, 'POST', '/v1/tenants', body)) as { id?: string; tenantId?: string };
       const tenantId = created.tenantId ?? created.id;
@@ -347,6 +362,7 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     const id = text(trigger.id);
     if (!id) throw badRequest('triggerData.id is required');
     const productId = await storefront(c, pool);
+    if (trigger.eventType !== 'DELETED') await markHighLevelAgency(pool, productId);
     if (trigger.eventType === 'DELETED') {
       await pool.query(
         `DELETE FROM webhook_endpoints WHERE kind = 'highlevel' AND highlevel_trigger_id = $1
