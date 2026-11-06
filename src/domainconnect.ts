@@ -1,5 +1,5 @@
 import { createSign } from 'node:crypto';
-import { resolve4, resolve6, resolveTxt } from 'node:dns/promises';
+import { resolve4, resolve6, resolveNs, resolveTxt } from 'node:dns/promises';
 import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
 import { getMailDomain } from './maildomains.ts';
@@ -53,11 +53,13 @@ export interface DomainConnectNet {
   resolveTxt(name: string): Promise<string[][]>;
   resolve4(name: string): Promise<string[]>;
   resolve6(name: string): Promise<string[]>;
+  /** Nameservers; optional so older fakes keep working (no DNS host is named without it). */
+  resolveNs?(name: string): Promise<string[]>;
   fetch: typeof fetch;
 }
 
 // The settings host and urlAPI come from the domain's own DNS, so their fetches refuse private addresses.
-const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, fetch: publicFetch };
+const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, resolveNs, fetch: publicFetch };
 
 /** The zone a name sits in at a Domain Connect DNS host, and its settings there; null when none. */
 async function discover(name: string, net: DomainConnectNet): Promise<{ zone: string; host: string; settings: Settings } | null> {
@@ -153,6 +155,60 @@ export interface DomainSetup {
   pointsHere: boolean;
   /** One-click setup at the DNS host; null when Domain Connect is off on the API. */
   connect: DomainConnectLink | null;
+  /** Who runs the domain's DNS, from its nameservers; null when they could not be looked up. */
+  dnsHost: { name: string; nameservers: string[] } | null;
+}
+
+/** Nameserver domains of the common DNS hosts, and the name owners know them by. */
+const DNS_HOSTS: [RegExp, string][] = [
+  [/(^|\.)ns\.cloudflare\.com$/, 'Cloudflare'],
+  [/(^|\.)domaincontrol\.com$/, 'GoDaddy'],
+  [/(^|\.)registrar-servers\.com$/, 'Namecheap'],
+  [/(^|\.)squarespacedns\.com$/, 'Squarespace'],
+  [/(^|\.)googledomains\.com$/, 'Google Cloud DNS'],
+  [/(^|\.)awsdns-\d+\.(com|net|org|co\.uk)$/, 'Amazon Route 53'],
+  [/(^|\.)azure-dns\.(com|net|org|info)$/, 'Azure DNS'],
+  [/(^|\.)(dns-parking\.com|hostinger\.\w+)$/, 'Hostinger'],
+  [/(^|\.)vercel-dns\.com$/, 'Vercel'],
+  [/(^|\.)nsone\.net$/, 'NS1'],
+  [/(^|\.)digitalocean\.com$/, 'DigitalOcean'],
+  [/(^|\.)porkbun\.com$/, 'Porkbun'],
+  [/(^|\.)name\.com$/, 'Name.com'],
+  [/(^|\.)(ui-dns\.\w+|ionos\.\w+)$/, 'IONOS'],
+  [/(^|\.)hover\.com$/, 'Hover'],
+  [/(^|\.)wixdns\.net$/, 'Wix'],
+  [/(^|\.)dnsimple(-edge)?\.\w+$/, 'DNSimple'],
+  [/(^|\.)linode\.com$/, 'Akamai (Linode)'],
+  [/(^|\.)bluehost\.com$/, 'Bluehost'],
+  [/(^|\.)hostgator\.com$/, 'HostGator'],
+  [/(^|\.)dreamhost\.com$/, 'DreamHost'],
+  [/(^|\.)siteground\.net$/, 'SiteGround'],
+  [/(^|\.)netlify\.com$/, 'Netlify'],
+  [/(^|\.)gandi\.net$/, 'Gandi'],
+  [/(^|\.)ovh\.net$/, 'OVHcloud'],
+  [/(^|\.)dynadot\.com$/, 'Dynadot'],
+  [/(^|\.)hetzner\.(com|de)$|(^|\.)your-server\.de$/, 'Hetzner'],
+  [/(^|\.)worldnic\.com$/, 'Network Solutions'],
+  [/(^|\.)wordpress\.com$/, 'WordPress.com'],
+  [/(^|\.)shopify\.com$/, 'Shopify'],
+];
+
+/**
+ * The zone a name sits in (where its nameservers are set) and who runs it. An unknown host is named
+ * by its nameservers' domain, ns1.example-dns.net giving example-dns.net.
+ */
+async function findDnsHost(name: string, net: DomainConnectNet): Promise<{ zone: string; host: DomainSetup['dnsHost'] } | null> {
+  if (!net.resolveNs) return null;
+  const labels = name.split('.');
+  for (let i = 0; i < labels.length - 1; i++) {
+    const zone = labels.slice(i).join('.');
+    const ns = await net.resolveNs(zone).catch(() => [] as string[]);
+    if (!ns.length) continue;
+    const nameservers = ns.map((n) => n.toLowerCase().replace(/\.$/, '')).sort();
+    const known = DNS_HOSTS.find(([pattern]) => nameservers.some((n) => pattern.test(n)));
+    return { zone, host: { name: known?.[1] ?? nameservers[0]!.split('.').slice(-2).join('.'), nameservers } };
+  }
+  return null;
 }
 
 /**
@@ -184,19 +240,20 @@ export async function websiteSetup(
   // An old AAAA record left beside the right A record sends IPv6 visitors elsewhere, so it counts too.
   const pointsHere = a.length > 0 && a.every((ip) => ip === want4) && aaaa.every((ip) => ip === want6);
 
+  const found = await findDnsHost(domain, net);
   let connect: DomainConnectLink | null = null;
-  let zone: string | null = null;
+  let zone: string | null = found?.zone ?? null;
   if (config.domainConnect) {
     const link = await domainConnectLink(config.domainConnect, domain, 'website', variables, net);
     connect = conflict && link.supported ? { ...link, supported: false, url: null, conflict } : link;
-    if (link.url) zone = new URL(link.url).searchParams.get('domain');
+    if (link.url) zone = new URL(link.url).searchParams.get('domain') ?? zone;
   }
-  // Without the DNS host's word for the zone, assume the last two labels (example.com).
+  // Without the nameservers or the DNS host's word for the zone, assume the last two labels (example.com).
   zone ??= domain.split('.').slice(-2).join('.');
   const name = domain === zone ? '@' : domain.endsWith(`.${zone}`) ? domain.slice(0, -zone.length - 1) : domain;
   const records: DomainRecord[] = [{ type: 'A', name, host: domain, value: want4 }];
   if (want6) records.push({ type: 'AAAA', name, host: domain, value: want6 });
-  return { domainName: domain, records, currentAddresses: [...a, ...aaaa], pointsHere, connect };
+  return { domainName: domain, records, currentAddresses: [...a, ...aaaa], pointsHere, connect, dnsHost: found?.host ?? null };
 }
 
 /**
