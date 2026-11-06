@@ -471,9 +471,15 @@ describe('stores that keep their own code', () => {
     };
     expect((await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'X', ownerEmail: 'o@example.com', siteType: 'Not one' } })).status).toBe(400);
     expect(await make({ siteType: 'bookings' })).toBe('bookings');
-    expect(await make({})).toBeUndefined();
+    const untyped = await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'Untyped', ownerEmail: 'owner@example.com' } });
+    const untypedId = ((await untyped.json()) as { tenantId: string }).tenantId;
+    await waitFor(async () => (await tenant(untypedId))?.statusCode === Status.Done);
+    expect(t.provisioner.stores.get(untypedId)!.phpConstants.ANYPRESS_TENANT_ROLES).toBeUndefined();
     const flagged = await t.call('PUT', `/admin/products/${t.productId}`, { auth: ADMIN, body: { highlevelAgency: true } });
     expect(await flagged.json()).toMatchObject({ highlevelAgency: true });
+    // Its site with no site type gets the HighLevel one, written to the store.
+    await waitFor(async () => t.provisioner.stores.get(untypedId)!.phpConstants.ANYPRESS_TENANT_ROLES?.value === 'highlevel');
+    await waitFor(async () => (await tenant(untypedId))?.statusCode === Status.Done);
     expect(await make({})).toBe('highlevel');
     expect(await make({ siteType: 'website' })).toBe('website');
     await t.call('PUT', `/admin/products/${t.productId}`, { auth: ADMIN, body: { highlevelAgency: false } });

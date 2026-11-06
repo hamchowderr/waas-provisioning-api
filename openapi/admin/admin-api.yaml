@@ -513,7 +513,8 @@ paths:
         nothing; it only stops new tenants. followsProductId null stops the product following the
         storefront it started from; versions/from-production makes it follow one again.
         highlevelAgency true makes it a HighLevel agency's storefront, so its new tenants made without a
-        site type get the store template's highlevel one. The AnyPress app for HighLevel sets it.
+        site type get the store template's highlevel one, and its existing tenants with no site type
+        (every plugin on) get it too, written to each store. The AnyPress app for HighLevel sets it.
       requestBody:
         required: true
         content:

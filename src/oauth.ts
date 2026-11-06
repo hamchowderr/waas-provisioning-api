@@ -748,7 +748,7 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       }
     }
     // Connecting the HighLevel app makes the storefront a HighLevel agency's: its sites get the HighLevel site type.
-    if (isAppsResource(row.resource)) await markHighLevelAgency(pool, storefront.productId);
+    if (isAppsResource(row.resource)) await markHighLevelAgency(pool, deps.boss, storefront.productId);
     const code = await issueCode(
       pool,
       { clientId: row.client_id, redirectUri: row.redirect_uri, codeChallenge: row.code_challenge, resource: row.resource },

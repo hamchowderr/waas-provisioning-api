@@ -1,6 +1,10 @@
 import type { Context, Hono } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
-import type { Pool } from './db.ts';
+import type { PgBoss } from 'pg-boss';
+import { withTransaction, type Pool } from './db.ts';
+import { enqueue } from './queue.ts';
+import { Status } from './status.ts';
+import { HIGHLEVEL_SITE_TYPE } from './tenants.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import type { Secrets } from './secrets.ts';
@@ -227,15 +231,36 @@ function triggerEvents(filters: unknown): string[] {
 }
 
 /**
- * Marks the storefront as a HighLevel agency's, so its new sites get the HighLevel site type (src/routes/tenants.ts).
- * A storefront others follow (a store template, such as the shop's) is never marked: its sites are the platform's own.
+ * Makes the storefront a HighLevel agency's (or not). Its new sites made without a site type get the HighLevel one
+ * (src/routes/tenants.ts), and turning it on gives its existing sites that have none (every plugin on) the HighLevel
+ * type too, written to each site. Sites moved in keep their own code. Answers how many sites it retyped.
  */
-export async function markHighLevelAgency(pool: Pool, productId: string) {
-  await pool.query(
-    `UPDATE products p SET highlevel_agency = true
-     WHERE p.id = $1 AND NOT p.highlevel_agency AND NOT EXISTS (SELECT 1 FROM products f WHERE f.follows_product_id = p.id)`,
+export async function setHighLevelAgency(pool: Pool, boss: PgBoss, productId: string, on: boolean): Promise<number> {
+  return withTransaction(pool, async (client) => {
+    await client.query('UPDATE products SET highlevel_agency = $2 WHERE id = $1', [productId, on]);
+    if (!on) return 0;
+    const { rows } = await client.query<{ id: string }>(
+      `UPDATE tenants SET php_constants = php_constants || jsonb_build_object('ANYPRESS_TENANT_ROLES', jsonb_build_object('value', $2::text, 'isPrivate', false)),
+         status = $3, date_changed = now()
+       WHERE product_id = $1 AND NOT own_code AND status = $4 AND NOT (php_constants ? 'ANYPRESS_TENANT_ROLES')
+       RETURNING id`,
+      [productId, HIGHLEVEL_SITE_TYPE, Status.Pending, Status.Done],
+    );
+    for (const t of rows) await enqueue(boss, client, { type: 'tenant.update', tenantId: t.id, phpConstantNames: ['ANYPRESS_TENANT_ROLES'] });
+    return rows.length;
+  });
+}
+
+/**
+ * Marks the storefront as a HighLevel agency's the first time the HighLevel app is used for it. A storefront others
+ * follow (a store template, such as the shop's) is never marked: its sites are the platform's own.
+ */
+export async function markHighLevelAgency(pool: Pool, boss: PgBoss, productId: string) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM products p WHERE p.id = $1 AND NOT p.highlevel_agency AND NOT EXISTS (SELECT 1 FROM products f WHERE f.follows_product_id = p.id)`,
     [productId],
   );
+  if (rows.length) await setHighLevelAgency(pool, boss, productId, true);
 }
 
 export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
@@ -300,7 +325,7 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     const call = ((await readJson(c)) ?? {}) as AppCall;
     const data = call.data ?? {};
     const productId = await storefront(c, pool, data);
-    await markHighLevelAgency(pool, productId);
+    await markHighLevelAgency(pool, deps.boss, productId);
     // Signed in to AnyPress (OAuth): the actions need what the person allowed.
     const scopes = c.get('appScopes');
     const needs = action === 'get-site' ? 'stores:read' : 'stores:write';
@@ -362,7 +387,7 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     const id = text(trigger.id);
     if (!id) throw badRequest('triggerData.id is required');
     const productId = await storefront(c, pool);
-    if (trigger.eventType !== 'DELETED') await markHighLevelAgency(pool, productId);
+    if (trigger.eventType !== 'DELETED') await markHighLevelAgency(pool, deps.boss, productId);
     if (trigger.eventType === 'DELETED') {
       await pool.query(
         `DELETE FROM webhook_endpoints WHERE kind = 'highlevel' AND highlevel_trigger_id = $1
