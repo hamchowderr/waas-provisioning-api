@@ -130,7 +130,7 @@ In the **WaaS API** project:
 | `BRAND_DOMAIN` | your own domain when stores live on a separate one, e.g. `anypress.io`. No store can take it or any name under it. Keep your sign-in sites (storefront, dashboard) here, not under `PLATFORM_DOMAIN`: stores under the same domain could set their cookies. Turning it on only stops new addresses: give each store already under it an address under `PLATFORM_DOMAIN` and make that its main address first |
 | `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth |
 | `AUTH_URL`, `AUTH_SECRET` | the dashboard's address (e.g. `https://app.<domain>`) and `openssl rand -base64 32`. Turns on dashboard sign-in. With store email set up (section 8), people sign in with an emailed link and nothing else is needed; GitHub and Google sign-in are optional ([accounts.md](accounts.md)) |
-| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
+| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>`; leave them out to get exactly these from `PLATFORM_DOMAIN` |
 | `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
 
 With the `S3_*` values set, the API also backs up its own database to the bucket every night, encrypted ([db-backups.md](db-backups.md)), and backs up every live store every night ([store-backups.md](store-backups.md)).
@@ -260,7 +260,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `PROVISIONER` | `fake` | `fake` or `coolify` |
 | `COOLIFY_URL`, `COOLIFY_TOKEN`, `COOLIFY_SERVER_UUID`, `COOLIFY_PROJECT_UUID` | | With `PROVISIONER=coolify` |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
-| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
+| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<PLATFORM_DOMAIN>`, `versions.<PLATFORM_DOMAIN>` (`stores.waas.example`, `versions.waas.example` without it) | |
 | `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
 | `AUTH_URL`, `AUTH_SECRET` | off | Dashboard sign-in. With `AUTH_GITHUB_ID`/`_SECRET`, `AUTH_GOOGLE_ID`/`_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM`, `AUTH_BRAND`, `AUTH_SUPPORT_EMAIL`, `AUTH_LOGO_URL` ([accounts.md](accounts.md)) |
 | `BRAND_DOMAIN` | off | Reserves this domain and every name under it |

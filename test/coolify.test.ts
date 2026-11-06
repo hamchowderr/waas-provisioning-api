@@ -1306,6 +1306,15 @@ describe('S3', () => {
 describe('Provisioner selection', () => {
   const base = { DATABASE_URL: 'postgres://x', SECRETS_KEY: 'k' };
 
+  it('takes the stores and versions domains from PLATFORM_DOMAIN unless they are set', () => {
+    expect(loadConfig(base)).toMatchObject({ storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example' });
+    expect(loadConfig({ ...base, PLATFORM_DOMAIN: 'AnyPress.site.' })).toMatchObject({
+      storesDomain: 'stores.anypress.site',
+      versionsDomain: 'versions.anypress.site',
+    });
+    expect(loadConfig({ ...base, PLATFORM_DOMAIN: 'anypress.site', STORES_DOMAIN: 'sites.example.com' }).storesDomain).toBe('sites.example.com');
+  });
+
   it('defaults to the fake and requires the Coolify settings when asked for Coolify', () => {
     expect(loadConfig(base).provisioner).toBe('fake');
     expect(loadConfig(base).coolify).toBeUndefined();

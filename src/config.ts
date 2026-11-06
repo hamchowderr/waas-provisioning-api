@@ -211,8 +211,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     databaseUrl,
     port: Number(env.PORT ?? 4111),
-    storesDomain: env.STORES_DOMAIN ?? 'stores.waas.example',
-    versionsDomain: env.VERSIONS_DOMAIN ?? 'versions.waas.example',
+    // stores.<PLATFORM_DOMAIN> and versions.<PLATFORM_DOMAIN> unless set on their own.
+    storesDomain: env.STORES_DOMAIN?.trim() || `stores.${platformDomain ?? 'waas.example'}`,
+    versionsDomain: env.VERSIONS_DOMAIN?.trim() || `versions.${platformDomain ?? 'waas.example'}`,
     platformDomain,
     brandDomain,
     secretsKey,
