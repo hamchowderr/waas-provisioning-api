@@ -32,7 +32,7 @@ async function admin(method: string, path: string, body?: unknown): Promise<Resp
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.ok) {
-    const opPath = Object.keys(adminSpec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(`/admin${path}`))!;
+    const opPath = Object.keys(adminSpec.paths).find((p) => new RegExp(`^${p.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(`/admin${path}`.split('?')[0]!))!;
     const schema = adminSpec.paths[opPath][method.toLowerCase()].responses[String(res.status)].content['application/json'].schema;
     const validate = ajv.compile(JSON.parse(JSON.stringify(schema).replaceAll('"#/components/', '"admin#/components/')));
     const json = await res.clone().json();
@@ -277,6 +277,26 @@ describe('a signed-in owner', () => {
     expect((await asUser(owner.cookie, 'DELETE', `/account/webhooks/${theirId}`)).status).toBe(404);
   });
 
+  it("has a bell with their own storefront's store events, and their own read state", async () => {
+    // Store builds above made tenant.ready notifications for both storefronts.
+    const bell = await (await asUser(owner.cookie, 'GET', '/account/notifications')).json();
+    expect(bell.items.length).toBeGreaterThan(0);
+    expect(bell.items.every((n: { productId: string }) => n.productId === t.productId)).toBe(true);
+    expect(bell.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'tenant.ready', tenantId: mine.id, title: 'Owner store is ready', level: 'success', unread: true })]));
+    expect(bell.items.find((n: { tenantId: string }) => n.tenantId === theirs.id)).toBeUndefined();
+    expect(bell.unread).toBe(bell.items.length);
+
+    expect((await asUser(owner.cookie, 'POST', '/account/notifications/read')).status).toBe(200);
+    const after = await (await asUser(owner.cookie, 'GET', '/account/notifications')).json();
+    expect(after.unread).toBe(0);
+    expect(after.items.every((n: { unread: boolean }) => !n.unread)).toBe(true);
+
+    // The platform admin sees every storefront's, read as the person the dashboard names.
+    expect((await admin('GET', '/notifications')).status).toBe(400);
+    const all = await (await admin('GET', `/notifications?userId=${randomUUID()}&limit=50`)).json();
+    expect(all.items.map((n: { tenantId: string }) => n.tenantId)).toEqual(expect.arrayContaining([mine.id, theirs.id]));
+  });
+
   it("can't reach what only the platform admin may do", async () => {
     expect((await asUser(owner.cookie, 'GET', '/account/products')).status).toBe(200);
     expect(await (await asUser(owner.cookie, 'GET', '/account/products')).json()).toEqual([expect.objectContaining({ id: t.productId })]);
@@ -314,6 +334,9 @@ describe('a signed-in member', () => {
     expect((await res.json()).message).toMatch(/only look/);
     expect((await asUser(member.cookie, 'GET', '/account/overview')).status).toBe(200);
     expect((await asUser(member.cookie, 'POST', `/account/products/${t.productId}/keys`, { label: 'Nope' })).status).toBe(403);
+    // Their own bell is theirs to mark read.
+    expect((await asUser(member.cookie, 'POST', '/account/notifications/read')).status).toBe(200);
+    expect((await (await asUser(member.cookie, 'GET', '/account/notifications')).json()).unread).toBe(0);
   });
 
   it('loses access once removed', async () => {

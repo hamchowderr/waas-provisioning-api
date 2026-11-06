@@ -40,6 +40,7 @@ import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
 import { emailWebsiteReady } from '../jobs.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
+import { notificationRoutes } from '../notifications.ts';
 
 /**
  * Admin API for the dashboard (waas-api-plu). Not part of /v1: documented in the README
@@ -342,6 +343,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
   app.route('/webhooks', adminWebhookRoutes(deps));
+  app.route('/notifications', notificationRoutes(pool));
 
   async function jobCounts(productId: string | null) {
     const { rows } = await pool.query(

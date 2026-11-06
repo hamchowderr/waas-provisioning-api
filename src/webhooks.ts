@@ -11,6 +11,7 @@ import type { Secrets } from './secrets.ts';
 import { loadHighLevelConfig, triggerBody, triggerHeaders, type HighLevelConfig } from './highlevel.ts';
 import { TENANT_SELECT, toTenant } from './tenants.ts';
 import { toVersion } from './routes/versions.ts';
+import { notifyEvent, pruneNotifications } from './notifications.ts';
 
 /**
  * Outgoing webhooks (docs/webhooks.md). A product registers endpoints; when one of its stores or
@@ -324,6 +325,8 @@ export function withWebhooks<H extends JobHandlers>(handlers: H, pool: Pool, bos
     const payload: Record<string, unknown> = 'tenant' in now ? { tenant: now.tenant } : { version: now.version };
     if (type === 'tenant.failed' || type === 'version.failed') payload.action = ACTIONS[data.type] ?? data.type;
     if (data.type === 'tenant.backup') payload.backupId = data.backupId;
+    // The dashboard's bell hears about it whether or not the storefront has endpoints.
+    await safely(data, () => notifyEvent(pool, now.productId, type, payload as Parameters<typeof notifyEvent>[3]));
     await emit(pool, boss, now.productId, {
       type,
       data: payload,
@@ -355,6 +358,7 @@ export function withWebhooks<H extends JobHandlers>(handlers: H, pool: Pool, bos
     async maintenance() {
       await handlers.maintenance();
       await pruneWebhookLog(pool, config.logDays);
+      await pruneNotifications(pool);
     },
   };
 }
