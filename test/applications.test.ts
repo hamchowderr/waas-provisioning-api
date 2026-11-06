@@ -273,6 +273,8 @@ describe('reviewing', () => {
     expect(loadCrmConfig({ CRM_URL: 'https://shop.example/x', CRM_SECRET: 's' })).toEqual({ url: 'https://shop.example/x', secret: 's' });
     expect(() => loadCrmConfig({ CRM_URL: 'https://shop.example/x' })).toThrow(/both/);
     expect(() => loadCrmConfig({ CRM_URL: 'shop.example', CRM_SECRET: 's' })).toThrow(/http/);
+    expect(loadCrmConfig({ CRM_SECRET: 's' }, 'anypress.io')).toEqual({ url: 'https://shop.anypress.io/wp-json/anypress/v1/offering', secret: 's' });
+    expect(() => loadCrmConfig({ CRM_SECRET: 's' })).toThrow(/both/);
   });
 
   it('defaults a reseller approval to 3 stores across 3 storefronts', async () => {

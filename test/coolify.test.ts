@@ -1306,6 +1306,24 @@ describe('S3', () => {
 describe('Provisioner selection', () => {
   const base = { DATABASE_URL: 'postgres://x', SECRETS_KEY: 'k' };
 
+  it('sends store email from no-reply@<BRAND_DOMAIN> unless STORE_MAIL_FROM is set', () => {
+    const coolify = {
+      ...base,
+      PROVISIONER: 'coolify',
+      COOLIFY_URL: COOLIFY,
+      COOLIFY_SERVER_UUID: SERVER,
+      COOLIFY_PROJECT_UUID: PROJECT,
+      S3_ENDPOINT: S3_ENDPOINT,
+      S3_BUCKET: 'waas-stores',
+      S3_ACCESS_KEY_ID: 'TESTKEY',
+      S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
+      STORE_SMTP_PASSWORD: 'pw',
+    };
+    expect(loadConfig({ ...coolify, BRAND_DOMAIN: 'AnyPress.io' }).coolify?.mail?.from).toBe('no-reply@anypress.io');
+    expect(loadConfig({ ...coolify, BRAND_DOMAIN: 'anypress.io', STORE_MAIL_FROM: 'hi@anypress.io' }).coolify?.mail?.from).toBe('hi@anypress.io');
+    expect(() => loadConfig(coolify)).toThrow(/STORE_MAIL_FROM/);
+  });
+
   it('takes the stores and versions domains from PLATFORM_DOMAIN unless they are set', () => {
     expect(loadConfig(base)).toMatchObject({ storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example' });
     expect(loadConfig({ ...base, PLATFORM_DOMAIN: 'AnyPress.site.' })).toMatchObject({

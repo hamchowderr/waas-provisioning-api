@@ -122,6 +122,9 @@ function required(env: NodeJS.ProcessEnv, name: string, why: string): string {
   return value;
 }
 
+/** BRAND_DOMAIN, lower case, without a trailing dot. */
+const brandDomainOf = (env: NodeJS.ProcessEnv) => env.BRAND_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined;
+
 function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
   const why = 'when PROVISIONER=coolify';
   const mail = loadStoreMail(env);
@@ -152,7 +155,9 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
 function loadStoreMail(env: NodeJS.ProcessEnv): StoreMail | undefined {
   const pass = env.STORE_SMTP_PASSWORD?.trim();
   if (!pass) return undefined;
-  const from = env.STORE_MAIL_FROM?.trim();
+  // no-reply@<BRAND_DOMAIN> unless set on its own.
+  const brand = brandDomainOf(env);
+  const from = env.STORE_MAIL_FROM?.trim() || (brand ? `no-reply@${brand}` : undefined);
   if (!from || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(from)) throw new Error('STORE_MAIL_FROM (an address on the verified sending domain) is required when STORE_SMTP_PASSWORD is set');
   const port = Number(env.STORE_SMTP_PORT?.trim() || 587);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('STORE_SMTP_PORT must be a port number');
@@ -207,7 +212,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (provisioner !== 'fake' && provisioner !== 'coolify') throw new Error('PROVISIONER must be fake or coolify');
   const coolify = provisioner === 'coolify' ? loadCoolify(env) : undefined;
   const platformDomain = env.PLATFORM_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined;
-  const brandDomain = env.BRAND_DOMAIN?.trim().toLowerCase().replace(/\.$/, '') || undefined;
+  const brandDomain = brandDomainOf(env);
   return {
     databaseUrl,
     port: Number(env.PORT ?? 4111),
@@ -238,7 +243,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     storefrontProductId: loadProductId('STOREFRONT_PRODUCT_ID', env.STOREFRONT_PRODUCT_ID),
     storeTemplateProductId: loadProductId('STORE_TEMPLATE_PRODUCT_ID', env.STORE_TEMPLATE_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
-    crm: loadCrmConfig(env),
+    crm: loadCrmConfig(env, brandDomain),
     jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     resellerInvoices: loadResellerInvoiceConfig(env),
     prospects: loadProspectConfig(env),

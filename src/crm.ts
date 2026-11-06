@@ -20,9 +20,10 @@ export interface CrmContact {
   business: string;
 }
 
-export function loadCrmConfig(env: NodeJS.ProcessEnv): CrmConfig | undefined {
-  const url = env.CRM_URL?.trim();
+/** CRM_URL defaults to the shop on BRAND_DOMAIN: https://shop.<BRAND_DOMAIN>/wp-json/anypress/v1/offering. */
+export function loadCrmConfig(env: NodeJS.ProcessEnv, brandDomain?: string): CrmConfig | undefined {
   const secret = env.CRM_SECRET?.trim();
+  const url = env.CRM_URL?.trim() || (secret && brandDomain ? `https://shop.${brandDomain}/wp-json/anypress/v1/offering` : undefined);
   if (!url && !secret) return undefined;
   if (!url || !secret) throw new Error('CRM_URL and CRM_SECRET go together: set both, or neither');
   if (!/^https?:\/\//.test(url)) throw new Error('CRM_URL must be an http(s) address');
