@@ -71,7 +71,7 @@ describe.skipIf(!hasPhp)('store agent: suspension page', () => {
     agent('suspend', { brand: { name: 'Reseller Co' } });
     agent('resume');
     agent('suspend', {});
-    expect(guard()).toContain('AnyPress');
+    expect(guard()).not.toContain('Powered by');
     agent('suspend', { brand: { name: 'Reseller Co' } });
     agent('configure', {});
     expect(guard()).toContain('Reseller Co');

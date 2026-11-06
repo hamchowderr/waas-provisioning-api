@@ -6,7 +6,7 @@ import { forgetDashboardHosts } from '../src/dashboarddomains.ts';
 import { setup, type TestContext } from './helpers.ts';
 
 const MAIL = { key: 'tsend_test_key', from: 'no-reply@app.waas.example', brand: 'AnyPress' };
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', mail: MAIL };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', mail: MAIL };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
@@ -183,13 +183,14 @@ describe('sign-in email settings', () => {
   const base = { AUTH_URL: 'https://app.waas.example', AUTH_SECRET: 'x'.repeat(32) };
 
   it("reuses the stores' toSend key and sender", () => {
-    expect(loadAuthConfig({ ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'no-reply@anypress.io' })!.mail).toEqual({
+    expect(loadAuthConfig({ ...base, BRAND_DOMAIN: 'anypress.io', STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'no-reply@anypress.io' })!.mail).toEqual({
       key: 'tsend_k',
       from: 'support@anypress.io',
       brand: 'AnyPress',
       apiUrl: undefined,
       supportEmail: 'support@anypress.io',
       logoUrl: 'https://anypress.io/logo-512.png',
+      colourStrip: true,
       plainFrom: 'no-reply@anypress.io',
     });
   });
@@ -201,16 +202,31 @@ describe('sign-in email settings', () => {
     expect(own).toMatchObject({ from: 'help@x.example', plainFrom: 'no-reply@x.example' });
   });
 
-  it("shows AnyPress's address and logo only under the AnyPress name", () => {
+  it("shows AnyPress's name, logo and colours only on AnyPress's own install", () => {
     const env = { ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'a@x.example', AUTH_BRAND: 'Acme Sites' };
-    expect(loadAuthConfig(env)!.mail).toMatchObject({ brand: 'Acme Sites', supportEmail: undefined, logoUrl: undefined });
+    expect(loadAuthConfig(env)!.mail).toMatchObject({ brand: 'Acme Sites', supportEmail: undefined, logoUrl: undefined, colourStrip: undefined });
     expect(loadAuthConfig({ ...env, AUTH_SUPPORT_EMAIL: 'help@acme.example' })!.mail).toMatchObject({ supportEmail: 'help@acme.example' });
+    expect(loadAuthConfig({ ...env, BRAND_DOMAIN: 'anypress.io' })!.mail).toMatchObject({ brand: 'Acme Sites', logoUrl: undefined, colourStrip: undefined });
+  });
+
+  it('names a self-hosted install after its own brand, never AnyPress', () => {
+    const env = { ...base, STORE_SMTP_PASSWORD: 'tsend_k', STORE_MAIL_FROM: 'no-reply@acme.example' };
+    // BRAND_NAME names it; the support address and sender come from BRAND_DOMAIN.
+    const named = loadAuthConfig({ ...env, BRAND_NAME: 'Acme Sites', BRAND_DOMAIN: 'Acme.example' })!;
+    expect(named.brand).toBe('Acme Sites');
+    expect(named.mail).toMatchObject({ brand: 'Acme Sites', supportEmail: 'support@acme.example', from: 'support@acme.example', logoUrl: undefined, colourStrip: undefined });
+    // Without a name: the brand domain, else the platform domain, else a plain word.
+    expect(loadAuthConfig({ ...env, BRAND_DOMAIN: 'acme.example' })!.brand).toBe('acme.example');
+    expect(loadAuthConfig({ ...env, PLATFORM_DOMAIN: 'acmesites.net' })!.brand).toBe('acmesites.net');
+    const bare = loadAuthConfig(env)!;
+    expect(bare.brand).toBe('Websites');
+    expect(bare.mail).toMatchObject({ supportEmail: undefined, logoUrl: undefined });
   });
 
   it('puts the message, one button and the support address in the email', async () => {
     let body: any;
     const capture = async (_: unknown, init?: RequestInit) => ((body = JSON.parse(String(init!.body))), new Response('{}', { status: 200 }));
-    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' }, 'a@b.example', 'https://x.example/l?a=1&b=2', null, capture as typeof fetch);
+    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png', colourStrip: true }, 'a@b.example', 'https://x.example/l?a=1&b=2', null, capture as typeof fetch);
     expect(body.html).toContain('<img src="https://anypress.io/logo-512.png"');
     expect(/href="([^"]+)"/.exec(body.html)![1]).toBe('https://x.example/l?a=1&amp;b=2');
     expect(body.html).toContain('mailto:support@anypress.io');
@@ -236,5 +252,14 @@ describe('sign-in email settings', () => {
   it('reports a refused email', async () => {
     const fail = async () => new Response('nope', { status: 422 });
     await expect(sendSignInLink(MAIL, 'a@b.example', 'https://x.example/l', null, fail as typeof fetch)).rejects.toThrow(/422/);
+  });
+});
+
+describe("the platform's name", () => {
+  it('is AnyPress only on AnyPress\'s own install', async () => {
+    const { platformBrandOf } = await import('../src/brand.ts');
+    expect(platformBrandOf({ BRAND_DOMAIN: 'anypress.io' })).toEqual({ name: 'AnyPress', domain: 'anypress.io', anypress: true });
+    expect(platformBrandOf({ BRAND_DOMAIN: 'acme.example', BRAND_NAME: 'Acme' })).toEqual({ name: 'Acme', domain: 'acme.example', anypress: false });
+    expect(platformBrandOf({}).name).toBe('Websites');
   });
 });

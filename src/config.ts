@@ -1,3 +1,4 @@
+import { platformBrandOf } from './brand.ts';
 import { loadProspectConfig, type ProspectConfig } from './prospects.ts';
 import { loadAuthConfig, type AuthConfig } from './auth.ts';
 import { loadCrmConfig, type CrmConfig } from './crm.ts';
@@ -142,9 +143,8 @@ function loadCoolify(env: NodeJS.ProcessEnv): CoolifyProvisionerConfig {
     },
     mail,
     mailKeys: loadStoreMailKeys(env, mail),
-    brand: env.STORE_BRAND_NAME?.trim()
-      ? { name: env.STORE_BRAND_NAME.trim(), url: env.STORE_BRAND_URL?.trim() || undefined }
-      : undefined,
+    // The suspended-store page credits STORE_BRAND_NAME, else the platform's own name (src/brand.ts).
+    brand: { name: env.STORE_BRAND_NAME?.trim() || platformBrandOf(env).name, url: env.STORE_BRAND_URL?.trim() || undefined },
   };
 }
 

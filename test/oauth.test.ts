@@ -14,7 +14,7 @@ import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
 
 type Access = 'read' | 'write';
 /**

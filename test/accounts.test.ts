@@ -10,7 +10,7 @@ import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;

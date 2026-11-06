@@ -13,7 +13,7 @@ import { CoolifyDashboardDomains } from '../src/coolifydashboard.ts';
 import { loadDashboardHost, VercelDomains, VercelError, type DashboardHost, type HostDomainState } from '../src/vercel.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;

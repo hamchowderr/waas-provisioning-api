@@ -13,7 +13,7 @@ import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './hel
 
 const AUTH: AuthConfig = {
   url: 'https://app.waas.example',
-  secret: 'test-auth-secret-not-a-secret-0123456789',
+  secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress',
   mail: { key: 'test-key', from: 'no-reply@anypress.example', brand: 'AnyPress' },
 };
 

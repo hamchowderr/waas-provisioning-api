@@ -239,13 +239,10 @@ COOLIFY_SERVER_UUID=$SERVER_UUID
 COOLIFY_PROJECT_UUID=$STORES_PROJECT
 PLATFORM_DOMAIN=$ANYPRESS_STORE_DOMAIN
 BRAND_DOMAIN=$brand_domain
-STORES_DOMAIN=stores.$ANYPRESS_STORE_DOMAIN
-VERSIONS_DOMAIN=versions.$ANYPRESS_STORE_DOMAIN
 PUBLIC_URL=$API_URL
 AUTH_URL=$DASHBOARD_URL
 AUTH_SECRET=$AUTH_SECRET
-AUTH_BRAND=${STORE_BRAND_NAME:-}
-STORE_BRAND_NAME=${STORE_BRAND_NAME:-}
+BRAND_NAME=${BRAND_NAME:-${STORE_BRAND_NAME:-$ANYPRESS_BRAND_DOMAIN}}
 S3_ENDPOINT=${S3_ENDPOINT:-}
 S3_BUCKET=${S3_BUCKET:-}
 S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
@@ -624,7 +621,7 @@ storefront() {
   local current status
   current=$(waas admin GET "/admin/products/$STOREFRONT_PRODUCT/storefront")
   if [ "$current" = null ]; then
-    current=$(waas admin POST "/admin/products/$STOREFRONT_PRODUCT/storefront" "$(jq -nc --arg n "${STORE_BRAND_NAME:-AnyPress}" \
+    current=$(waas admin POST "/admin/products/$STOREFRONT_PRODUCT/storefront" "$(jq -nc --arg n "${BRAND_NAME:-${STORE_BRAND_NAME:-$ANYPRESS_BRAND_DOMAIN}}" \
       --arg e "$ANYPRESS_ADMIN_EMAIL" --arg s "${ANYPRESS_STOREFRONT_SUBDOMAIN:-}" '{name: $n, email: $e} + (if $s == "" then {} else {subdomain: $s} end)')")
     info "Building it (a few minutes)"
   fi
