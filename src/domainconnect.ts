@@ -4,7 +4,7 @@ import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
 import { getMailDomain } from './maildomains.ts';
 import { publicFetch } from './publicfetch.ts';
-import { normalizeDomain } from './tenants.ts';
+import { domainInUse, normalizeDomain } from './tenants.ts';
 import type { SendingDomains } from './tosend.ts';
 
 /**
@@ -109,6 +109,97 @@ export async function domainConnectLink(
 }
 
 /**
+ * The website template's variables: the stores' server addresses. Custom domains point where the
+ * stores' own names do, so the wildcard (www.<storesDomain>) tells us the address.
+ */
+async function websiteVariables(
+  storesDomain: string,
+  domain: string,
+  net: DomainConnectNet,
+  fallbackIpv6?: string,
+): Promise<{ variables: Record<string, string>; conflict?: string }> {
+  const [ip] = await net.resolve4(`www.${storesDomain}`).catch(() => [] as string[]);
+  if (!ip) throw badRequest(`The address of ${storesDomain} could not be looked up`);
+  // The template sets AAAA too, so an old IPv6 address on the domain is replaced, not left behind.
+  const [ipv6 = fallbackIpv6] = await net.resolve6(`www.${storesDomain}`).catch(() => [] as string[]);
+  if (!ipv6) {
+    // The template needs %ipv6%, so a link without it couldn't be applied. The customer sees the
+    // conflict, so it says what to do; what to fix on the platform goes to the log.
+    console.warn(`Domain Connect: no IPv6 address for stores (www.${storesDomain} has no AAAA record and DOMAIN_CONNECT_IPV6 is not set), so ${domain} gets no link`);
+    const conflict = 'One-click setup is not available for this domain right now. Add the records below by hand.';
+    return { variables: { ip }, conflict };
+  }
+  return { variables: { ip, ipv6 } };
+}
+
+/** One record to add at a domain's DNS host so it reaches the store. */
+export interface DomainRecord {
+  type: 'A' | 'AAAA';
+  /** Relative to the domain the DNS host holds, as most DNS hosts want it: @ for the domain itself. */
+  name: string;
+  /** The full hostname. */
+  host: string;
+  value: string;
+}
+
+/** What a custom domain needs before a store can use it, for the dashboard's domain panel. */
+export interface DomainSetup {
+  domainName: string;
+  /** The records to add (A, and AAAA when the server has an IPv6 address). Any other A or AAAA records on the name go. */
+  records: DomainRecord[];
+  /** The A and AAAA addresses the domain has now. */
+  currentAddresses: string[];
+  /** True when the domain already points only at the store server. */
+  pointsHere: boolean;
+  /** One-click setup at the DNS host; null when Domain Connect is off on the API. */
+  connect: DomainConnectLink | null;
+}
+
+/**
+ * The records a custom domain needs to reach the stores, whether it has them yet, and the Domain
+ * Connect link that adds them. Works before the domain is added to the store, so the owner can point
+ * it first; the link only ever points the domain at this platform, and the owner approves it at
+ * their DNS host. Refuses a domain another store or the platform uses.
+ */
+export async function websiteSetup(
+  pool: Pool,
+  config: { storesDomain: string; platformDomain?: string; brandDomain?: string; domainConnect?: DomainConnectConfig },
+  tenantId: string,
+  domainName: string,
+  net: DomainConnectNet = defaultNet,
+): Promise<DomainSetup> {
+  const domain = normalizeDomain(domainName);
+  const { rows } = await pool.query('SELECT tenant_id, is_base FROM tenant_domains WHERE domain_name = $1', [domain]);
+  const own = rows.find((r) => r.tenant_id === tenantId);
+  if (own?.is_base) throw badRequest(`${domain} is the store's own address on the platform and needs no DNS records`);
+  if (!own && (await domainInUse(pool, domain, config.platformDomain, config.brandDomain))) throw badRequest(`Domain ${domain} is already in use`);
+
+  const { variables, conflict } = await websiteVariables(config.storesDomain, domain, net, config.domainConnect?.ipv6);
+  const [a, aaaa] = await Promise.all([
+    net.resolve4(domain).catch(() => [] as string[]),
+    net.resolve6(domain).catch(() => [] as string[]),
+  ]);
+  const want4 = variables.ip!;
+  const want6 = variables.ipv6;
+  // An old AAAA record left beside the right A record sends IPv6 visitors elsewhere, so it counts too.
+  const pointsHere = a.length > 0 && a.every((ip) => ip === want4) && aaaa.every((ip) => ip === want6);
+
+  let connect: DomainConnectLink | null = null;
+  let zone: string | null = null;
+  if (config.domainConnect) {
+    const link = await domainConnectLink(config.domainConnect, domain, 'website', variables, net);
+    connect = conflict && link.supported ? { ...link, supported: false, url: null, conflict } : link;
+    if (link.url) zone = new URL(link.url).searchParams.get('domain');
+  }
+  // Without the DNS host's word for the zone, assume the last two labels (example.com).
+  zone ??= domain.split('.').slice(-2).join('.');
+  const name = domain === zone ? '@' : domain.endsWith(`.${zone}`) ? domain.slice(0, -zone.length - 1) : domain;
+  const records: DomainRecord[] = [{ type: 'A', name, host: domain, value: want4 }];
+  if (want6) records.push({ type: 'AAAA', name, host: domain, value: want6 });
+  return { domainName: domain, records, currentAddresses: [...a, ...aaaa], pointsHere, connect };
+}
+
+/**
  * The template variables for one of a store's domains: the website's server addresses, or the DKIM
  * key of its sending domain. Refuses a domain the store doesn't have. `conflict` is set when the
  * domain already has a record the DNS host would keep next to the template's (see DomainConnectLink).
@@ -127,19 +218,7 @@ export async function storeVariables(
   if (service === 'website') {
     const { rowCount } = await pool.query('SELECT 1 FROM tenant_domains WHERE tenant_id = $1 AND domain_name = $2', [tenantId, domain]);
     if (!rowCount) throw badRequest(`${domain} is not one of this store's domains`);
-    // Custom domains point where the stores' own names do; the wildcard tells us the address.
-    const [ip] = await net.resolve4(`www.${storesDomain}`).catch(() => [] as string[]);
-    if (!ip) throw badRequest(`The address of ${storesDomain} could not be looked up`);
-    // The template sets AAAA too, so an old IPv6 address on the domain is replaced, not left behind.
-    const [ipv6 = fallbackIpv6] = await net.resolve6(`www.${storesDomain}`).catch(() => [] as string[]);
-    if (!ipv6) {
-      // The template needs %ipv6%, so a link without it couldn't be applied. The customer sees the
-      // conflict, so it says what to do; what to fix on the platform goes to the log.
-      console.warn(`Domain Connect: no IPv6 address for stores (www.${storesDomain} has no AAAA record and DOMAIN_CONNECT_IPV6 is not set), so ${domain} gets no link`);
-      const conflict = 'One-click setup is not available for this domain right now. Add the records below by hand.';
-      return { domain, variables: { ip }, conflict };
-    }
-    return { domain, variables: { ip, ipv6 } };
+    return { domain, ...(await websiteVariables(storesDomain, domain, net, fallbackIpv6)) };
   }
   const mail = await getMailDomain(pool, sendingDomains, tenantId);
   if (!mail || mail.domainName !== domain) throw badRequest(`${domain} is not this store's sending domain`);
