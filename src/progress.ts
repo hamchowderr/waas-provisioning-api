@@ -18,21 +18,27 @@ export type StepKey =
   | 'database'
   | 'code'
   | 'configure'
-  | 'check';
+  | 'check'
+  | 'mail'
+  | 'remove'
+  | 'keep';
 
 /** Plain words: the owner and their customers read these. */
 export const STEP_LABELS: Record<StepKey, string> = {
-  server: 'Getting server space ready',
+  server: 'Making room for the site',
   version: 'Switching to the new version',
   settings: 'Saving the new settings',
   domains: 'Updating the web address',
   start: 'Starting the website',
   backup: 'Saving a backup',
   restore: 'Copying the site in',
-  database: 'Updating the database',
+  database: 'Updating WordPress',
   code: 'Adding the theme and plugins',
-  configure: 'Setting up the site',
+  configure: "Putting in the site's settings",
   check: 'Checking the site works',
+  mail: 'Turning off its email',
+  remove: 'Removing the website and its files',
+  keep: 'Keeping its backups in case you want it back',
 };
 
 export type Progress = {
@@ -120,6 +126,8 @@ export function planFor(job: string, opts: { imported?: boolean; safetyBackup?: 
       return ['settings', 'start', 'configure'];
     case 'tenant.backup':
       return ['backup'];
+    case 'tenant.delete':
+      return ['mail', 'remove', 'keep'];
     case 'tenant.suspend':
       return opts.safetyBackup ? ['backup'] : [];
     default:

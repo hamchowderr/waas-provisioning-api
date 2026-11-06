@@ -3356,7 +3356,7 @@ components:
       required: [job, step, label, index, total, steps, startedAt, stepStartedAt]
       properties:
         job: { type: string, description: 'The job, e.g. tenant.create, tenant.move, tenant.backup.' }
-        step: { type: string, enum: [server, version, settings, domains, start, backup, restore, database, code, configure, check] }
+        step: { type: string, enum: [server, version, settings, domains, start, backup, restore, database, code, configure, check, mail, remove, keep] }
         label: { type: string, description: The step in plain words, e.g. "Adding the theme and plugins". }
         index: { type: integer, minimum: 1 }
         total: { type: integer, minimum: 1 }

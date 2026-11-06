@@ -46,5 +46,6 @@ describe('job progress', () => {
   it('plans a moved-in site with its database update and check', () => {
     expect(planFor('tenant.create', { imported: true })).toEqual(['server', 'start', 'restore', 'database', 'code', 'configure', 'check']);
     expect(planFor('tenant.rollback', { safetyBackup: true })[0]).toBe('backup');
+    expect(planFor('tenant.delete')).toEqual(['mail', 'remove', 'keep']);
   });
 });

@@ -3525,7 +3525,7 @@ components:
           example: tenant.create
         step:
           type: string
-          enum: [server, version, settings, domains, start, backup, restore, database, code, configure, check]
+          enum: [server, version, settings, domains, start, backup, restore, database, code, configure, check, mail, remove, keep]
           example: code
         label:
           type: string

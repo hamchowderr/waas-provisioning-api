@@ -1696,7 +1696,7 @@ export interface components {
              * @example code
              * @enum {string}
              */
-            step: "server" | "version" | "settings" | "domains" | "start" | "backup" | "restore" | "database" | "code" | "configure" | "check";
+            step: "server" | "version" | "settings" | "domains" | "start" | "backup" | "restore" | "database" | "code" | "configure" | "check" | "mail" | "remove" | "keep";
             /** @example Adding the theme and plugins */
             label: string;
             /** @example 4 */

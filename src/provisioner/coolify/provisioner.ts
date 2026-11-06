@@ -1129,6 +1129,7 @@ export class CoolifyProvisioner implements Provisioner {
     const store = this.config.mailKeys && (await this.findService(STORES_ENV, storeName(storeId)));
     const keyId = store ? envValue(await this.coolify.listEnvs(store.uuid), MAIL_KEY_ENV) : undefined;
     if (keyId) await this.config.mailKeys!.delete(keyId);
+    step('remove');
     await this.deleteService(STORES_ENV, storeName(storeId));
   }
 

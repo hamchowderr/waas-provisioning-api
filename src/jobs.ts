@@ -2,7 +2,7 @@ import { sendWebsiteReady, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { maintainDashboardDomains } from './dashboarddomains.ts';
 import { withTransaction, type Pool } from './db.ts';
-import { planFor, withProgress } from './progress.ts';
+import { planFor, step, withProgress } from './progress.ts';
 import { promoteVersion } from './promote.ts';
 import type { PgBoss } from 'pg-boss';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
@@ -126,6 +126,7 @@ export function createJobHandlers(
         // A site that was being moved in leaves no upload behind.
         await provisioner.deleteImport({ storeId: data.tenantId });
         // Keep what a restore needs on the backups, which outlive the tenant.
+        step('keep');
         const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
         const { rows: domains } = await pool.query(
           'SELECT domain_name, is_main, is_base FROM tenant_domains WHERE tenant_id = $1 ORDER BY date_created',
@@ -248,7 +249,7 @@ export function createJobHandlers(
 
   return {
     async run(data: JobData) {
-      if (!data.type.startsWith('tenant.') || data.type === 'tenant.delete' || !('tenantId' in data)) return runJob(data);
+      if (!data.type.startsWith('tenant.') || !('tenantId' in data)) return runJob(data);
       return withProgress(pool, data.tenantId, data.type, await progressPlan(data), () => runJob(data));
     },
 
