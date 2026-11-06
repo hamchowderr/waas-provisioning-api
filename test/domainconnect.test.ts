@@ -180,7 +180,7 @@ describe('store Domain Connect routes', () => {
     // Not on the store yet: records and the one-click link, and it doesn't point here.
     let res = await setup('New.Example.com');
     expect(res.status).toBe(200);
-    let body = (await res.json()) as { records: unknown[]; pointsHere: boolean; currentAddresses: string[]; connect: { url: string } };
+    let body = (await res.json()) as { records: unknown[]; pointsHere: boolean; currentAddresses: string[]; connect: { url: string }; dnsHost: unknown };
     expect(validateSetup(body)).toBe(true);
     expect(body.records).toEqual([
       { type: 'A', name: 'new', host: 'new.example.com', value: '203.0.113.7' },
