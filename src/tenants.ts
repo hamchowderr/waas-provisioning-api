@@ -143,7 +143,6 @@ export const TENANT_SELECT = `
     EXISTS (SELECT 1 FROM tenant_imports i WHERE i.tenant_id = t.id AND i.started_at IS NULL) AS waiting_for_site
   FROM tenants t JOIN versions v ON v.id = t.version_id`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toTenant(row: any) {
   const tenant = compact({
     tenantId: row.id,

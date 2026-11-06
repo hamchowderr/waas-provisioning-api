@@ -17,10 +17,8 @@ const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-s
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let helpers: any;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');

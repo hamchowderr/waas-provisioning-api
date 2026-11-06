@@ -22,7 +22,6 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
     return tenant;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = (tenant: any, backupId: string | null) => ({ tenantId: tenant.id, externalId: tenant.external_id, backupId });
 
   app.post('/suspend', async (c) => {

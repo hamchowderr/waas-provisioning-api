@@ -117,7 +117,6 @@ export type NewApiKey = ApiKeyInfo & { secret: string };
 const KEY_COLUMNS = `id, label, created_at, last_used_at, revoked_at,
   CASE WHEN revoked_at IS NULL THEN 'active' WHEN revoked_at > now() THEN 'expiring' ELSE 'revoked' END AS state`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const toInfo = (r: any): ApiKeyInfo => ({
   id: r.id,
   label: r.label,

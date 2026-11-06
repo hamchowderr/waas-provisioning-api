@@ -67,7 +67,6 @@ let t: TestContext;
 let app: ReturnType<typeof createApp>;
 let key: string;
 let secret: string;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let helpers: any;
 let owner: { userId: string; cookie: string };
 

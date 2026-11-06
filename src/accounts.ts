@@ -165,7 +165,6 @@ export function accountRoutes(deps: Deps) {
 
 // --- Organizations and invitations (/admin/products/:productId/..., and /account for its own) --
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const iso = (d: any) => (d ? new Date(d).toISOString() : null);
 
 function parseRole(value: unknown, fallback: OrgRole = 'owner'): OrgRole {

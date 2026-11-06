@@ -60,14 +60,12 @@ export interface MailCounter {
   countEmails(query: EmailCountQuery): Promise<number>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawDomain = { id: string | number; domain_name?: string; name?: string; verification_status?: string; dns_records?: any };
 
 /** toSend's dns_records: named groups (dkim, spf, …), each one record or a list of them. */
 function toRecords(domain: string, raw: unknown): DnsRecord[] {
   if (!raw || typeof raw !== 'object') return [];
   const groups = Array.isArray(raw) ? raw : Object.values(raw);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return groups.flat().flatMap((r: any) => {
     if (!r || typeof r !== 'object' || !r.type) return [];
     const name = String(r.name ?? r.host ?? '@');

@@ -27,7 +27,6 @@ export interface MailDomain {
   records: DnsRecord[] | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
 
 async function rowOf(pool: Pool, tenantId: string): Promise<Row | undefined> {

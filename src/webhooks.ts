@@ -131,7 +131,6 @@ export function checkEndpointUrl(input: unknown, config: WebhookConfig): string 
  * resolve to a public address when checked and a private one when connected.
  */
 export function guardedLookup(allowPrivate: boolean) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (hostname: string, options: any, callback: any) => {
     dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) return callback(err);
@@ -435,7 +434,6 @@ export async function startWebhookWorker(
 
 // --- Endpoints (the /v1 and admin routes share these) ---
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toEndpoint(row: any) {
   return {
     id: row.id as string,
@@ -448,7 +446,6 @@ export function toEndpoint(row: any) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toDelivery(row: any) {
   return {
     id: row.id as string,

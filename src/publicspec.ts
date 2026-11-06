@@ -70,11 +70,9 @@ function clean(text: string): string {
 }
 
 /** Deep copy without x-* extensions, with internal notes taken out of every description. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function scrub(value: any): any {
   if (Array.isArray(value)) return value.map(scrub);
   if (!value || typeof value !== 'object') return value;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const out: any = {};
   for (const [key, v] of Object.entries(value)) {
     if (key.startsWith('x-')) continue;
@@ -90,21 +88,16 @@ const routePath = (path: string) => path.replace(/\{([^}]+)\}/g, ':$1');
  * The public spec. `served` lists "METHOD /path" for every route the app answers, in Hono's
  * form; operations the server doesn't implement yet are left out.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildPublicSpec(served: Set<string>): any {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paths: Record<string, any> = {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const components: Record<string, Record<string, any>> = {};
   const usedTags = new Set<string>();
   let version = '';
 
   for (const source of SOURCES) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const spec: any = parse(readFileSync(new URL(`../openapi/${source.file}`, import.meta.url), 'utf8'));
     version ||= spec.info.version;
     for (const [path, item] of Object.entries<Record<string, unknown>>(spec.paths)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const kept: Record<string, any> = {};
       for (const [key, op] of Object.entries(item)) {
         if (!METHODS.includes(key)) {
@@ -112,7 +105,6 @@ export function buildPublicSpec(served: Set<string>): any {
           continue;
         }
         if (!served.has(`${key.toUpperCase()} ${routePath(path)}`)) continue;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const operation: any = { ...(op as object) };
         if (!operation.tags?.length && source.tag) operation.tags = [source.tag];
         for (const tag of operation.tags ?? []) usedTags.add(tag);
@@ -144,7 +136,6 @@ export function buildPublicSpec(served: Set<string>): any {
       pending.push(JSON.stringify(value));
     }
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const kept: Record<string, Record<string, any>> = {};
   for (const [kind, entries] of Object.entries(components)) {
     const used = Object.entries(entries).filter(([name]) => reached.has(`${kind}/${name}`));
@@ -173,7 +164,6 @@ export function buildPublicSpec(served: Set<string>): any {
       },
     },
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const tag of publicSpec.tags as any[]) tag['x-displayName'] = TAGS[tag.name]![0];
   return publicSpec;
 }

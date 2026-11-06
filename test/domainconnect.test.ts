@@ -10,9 +10,7 @@ import { Status } from '../src/status.ts';
 import type { SendingDomain, SendingDomains } from '../src/tosend.ts';
 import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const storeSpec: any = parse(readFileSync(new URL('../openapi/store-mail.yaml', import.meta.url), 'utf8'));
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: storeSpec.components }, 'store');
@@ -106,7 +104,6 @@ describe('store Domain Connect routes', () => {
     t = await setup();
     t.deps.config.domainConnect = config;
     t.deps.config.sendingDomains = new FakeDomains();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     t.deps.config.coolify = { mail: { from: 'no-reply@waas.example' } } as any;
     net = fakeNet(['website', 'email']);
     t.deps.domainConnectNet = net;
@@ -173,7 +170,7 @@ describe('store Domain Connect routes', () => {
     t.deps.config.domainConnect = { ...config, ipv6: '2001:db8::7' };
 
     // Not on the store yet: records and the one-click link, and it doesn't point here.
-    let res = await setup('New.Example.com');
+    const res = await setup('New.Example.com');
     expect(res.status).toBe(200);
     let body = (await res.json()) as { records: unknown[]; pointsHere: boolean; currentAddresses: string[]; connect: { url: string } };
     expect(validateSetup(body)).toBe(true);

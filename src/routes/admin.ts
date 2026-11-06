@@ -75,7 +75,6 @@ function statusQuery(c: Context): number | undefined {
   return code;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const iso = (d: any) => (d ? new Date(d).toISOString() : null);
 /** A store's owner email: its admin_email option as the create set it, unless it is the template's placeholder. */
 const ownerEmailOf = (options: Record<string, unknown> | null | undefined): string | null => {
@@ -84,7 +83,6 @@ const ownerEmailOf = (options: Record<string, unknown> | null | undefined): stri
 };
 
 /** What an admin may see of a job: never its data, which can hold encrypted secrets. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function jobTarget(data: any) {
   return {
     type: data?.type ?? null,
@@ -144,10 +142,8 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const toPin = (p: any) => ({ productId: p.product_id, slug: p.slug, version: p.version, pinnedAt: iso(p.pinned_at) });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const backupView = (retentionDays: number) => (b: any) => ({
   id: b.id,
   tenantId: b.tenant_id,
@@ -785,7 +781,6 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   const toBackup = backupView(config.backupRetentionDays);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function toFailure(f: any) {
     return {
       id: f.id,

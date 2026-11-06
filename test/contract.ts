@@ -8,7 +8,6 @@ export type Method = 'get' | 'post' | 'put' | 'delete';
 export type Operation = { method: Method; path: string; operationId: string; phase: number };
 
 export const operations: Operation[] = Object.entries(spec.paths).flatMap(([path, item]) =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Object.entries(item as Record<string, any>)
     .filter(([, op]) => op?.['x-phase'])
     .map(([method, op]) => ({ method: method as Method, path, operationId: op.operationId, phase: op['x-phase'] })),

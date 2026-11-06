@@ -17,7 +17,6 @@ const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-s
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let helpers: any;
 let owner: { userId: string; cookie: string };
 let viewer: { userId: string; cookie: string };

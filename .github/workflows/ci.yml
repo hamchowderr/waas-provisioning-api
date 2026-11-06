@@ -39,6 +39,7 @@ jobs:
       - name: Zapier app
         working-directory: integrations/zapier
         run: npm ci && npm run validate
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run sdk:check
       - run: npm test
