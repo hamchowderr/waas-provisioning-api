@@ -16,6 +16,7 @@ import { HttpError, badRequest, conflict } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
+import { setHighLevelAgency } from '../highlevel.ts';
 import { listHostUpdates, queueHostUpdates } from '../hostupdates.ts';
 import { importCode, importDetail, renewImport } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
@@ -919,7 +920,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     }
     if (body.highlevelAgency !== undefined) {
       if (typeof body.highlevelAgency !== 'boolean') throw badRequest('highlevelAgency must be true or false');
-      await pool.query('UPDATE products SET highlevel_agency = $2 WHERE id = $1', [productId, body.highlevelAgency]);
+      // On: its sites with no site type get the HighLevel one too.
+      await setHighLevelAgency(pool, deps.boss, productId, body.highlevelAgency);
     }
     if (body.followsProductId !== undefined) {
       if (body.followsProductId !== null) throw badRequest('followsProductId can only be null here; POST versions/from-production to follow a storefront');
