@@ -1266,7 +1266,7 @@ paths:
       description: >-
         For a domain the store has, or one it may add (not used by another store or the platform):
         the A and AAAA records that point it at the store server, the addresses it has now, whether
-        it already points only here, and the Domain Connect link that adds the records at its DNS
+        it already points only here, who runs its DNS, and the Domain Connect link that adds the records at its DNS
         host. Show it before moving a store to the domain, so the owner points the domain first.
         400 for the store's own platform address or a domain in use elsewhere.
       parameters:
@@ -2874,7 +2874,7 @@ components:
     DomainSetup:
       type: object
       additionalProperties: false
-      required: [domainName, records, currentAddresses, pointsHere, connect]
+      required: [domainName, records, currentAddresses, pointsHere, connect, dnsHost]
       properties:
         domainName: { type: string }
         records:
@@ -2894,6 +2894,15 @@ components:
         connect:
           description: One-click setup at the domain's DNS host; null when Domain Connect is off on the API
           anyOf: [{ $ref: '#/components/schemas/DomainConnectLink' }, { type: object, nullable: true, enum: [null] }]
+        dnsHost:
+          description: Who runs the domain's DNS, read from its nameservers (GoDaddy, Cloudflare...); an unknown host is named by its nameservers' domain. Null when they could not be looked up.
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [name, nameservers]
+          properties:
+            name: { type: string, example: GoDaddy }
+            nameservers: { type: array, items: { type: string } }
     MailDomain:
       type: object
       required: [domainName, status, dateCreated, dateVerified, records]

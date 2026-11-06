@@ -39,6 +39,11 @@ function fakeNet(templates: string[]): DomainConnectNet & { fetched: string[]; t
       if (name === 'www.stores.waas.example' && ipv6.length) return ipv6;
       throw new Error('ENODATA');
     },
+    async resolveNs(name) {
+      if (name === 'example.com') return ['Dee.NS.Cloudflare.com.', 'ada.ns.cloudflare.com'];
+      if (name === 'other.example') return ['ns2.some-dns.example', 'ns1.some-dns.example'];
+      throw new Error('ENODATA');
+    },
     fetch: (async (url: string) => {
       fetched.push(url);
       if (url === 'https://api.dnshost.example/dc/v2/example.com/settings') {
@@ -183,6 +188,7 @@ describe('store Domain Connect routes', () => {
     ]);
     expect(body).toMatchObject({ domainName: 'new.example.com', pointsHere: false, currentAddresses: [] });
     expect(body.connect.url).toContain('/services/website/apply?domain=example.com&host=new&ip=203.0.113.7');
+    expect(body.dnsHost).toEqual({ name: 'Cloudflare', nameservers: ['ada.ns.cloudflare.com', 'dee.ns.cloudflare.com'] });
 
     // The bare domain is @; a domain at a host without Domain Connect still gets its records.
     body = await (await setup('example.com')).json();
@@ -190,6 +196,8 @@ describe('store Domain Connect routes', () => {
     body = await (await setup('shop.other.example')).json();
     expect(body.records[0]).toMatchObject({ name: 'shop' });
     expect(body.connect).toMatchObject({ supported: false, url: null });
+    // An unknown DNS host is named by its nameservers' domain.
+    expect(body.dnsHost).toEqual({ name: 'some-dns.example', nameservers: ['ns1.some-dns.example', 'ns2.some-dns.example'] });
 
     // Pointing here once its only A is the server's; a stale AAAA beside it still counts as not.
     const resolve4 = net.resolve4, resolve6 = net.resolve6;
