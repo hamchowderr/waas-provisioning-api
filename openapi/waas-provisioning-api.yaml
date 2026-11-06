@@ -3502,6 +3502,56 @@ components:
           description: 'Added for AnyPress. True while a site moved in is held after its move: no scheduled jobs, email only to its owner, not indexed, until Make a moved-in site live (`POST /v1/tenants/go-live`). Must be a JSON boolean.'
           readOnly: true
           example: false
+        progress:
+          $ref: '#/components/schemas/TenantProgress'
+      additionalProperties: false
+    TenantProgress:
+      type: object
+      nullable: true
+      readOnly: true
+      description: 'Added for AnyPress. The step the store''s running job is on, for a progress bar ("Step 3 of 6: Adding the theme and plugins"). Null when no job runs. Kept with failedAt when the job stopped at that step; a retry starts it again.'
+      required:
+      - job
+      - step
+      - label
+      - index
+      - total
+      - steps
+      - startedAt
+      - stepStartedAt
+      properties:
+        job:
+          type: string
+          example: tenant.create
+        step:
+          type: string
+          enum: [server, version, settings, domains, start, backup, restore, database, code, configure, check, mail, remove, keep]
+          example: code
+        label:
+          type: string
+          example: Adding the theme and plugins
+        index:
+          type: integer
+          minimum: 1
+          example: 4
+        total:
+          type: integer
+          minimum: 1
+          example: 5
+        steps:
+          type: array
+          description: Every step of the job in plain words, in order.
+          items:
+            type: string
+        startedAt:
+          type: string
+          format: date-time
+        stepStartedAt:
+          type: string
+          format: date-time
+        failedAt:
+          type: string
+          format: date-time
       additionalProperties: false
     ImportCodeParams:
       required:

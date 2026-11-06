@@ -1686,7 +1686,32 @@ export interface components {
              * @example false
              */
             readonly onHold?: boolean;
+            progress?: components["schemas"]["TenantProgress"];
         };
+        /** @description Added for AnyPress. The step the store's running job is on, for a progress bar ("Step 3 of 6: Adding the theme and plugins"). Null when no job runs. Kept with failedAt when the job stopped at that step; a retry starts it again. */
+        TenantProgress: {
+            /** @example tenant.create */
+            job: string;
+            /**
+             * @example code
+             * @enum {string}
+             */
+            step: "server" | "version" | "settings" | "domains" | "start" | "backup" | "restore" | "database" | "code" | "configure" | "check" | "mail" | "remove" | "keep";
+            /** @example Adding the theme and plugins */
+            label: string;
+            /** @example 4 */
+            index: number;
+            /** @example 5 */
+            total: number;
+            /** @description Every step of the job in plain words, in order. */
+            steps: string[];
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            stepStartedAt: string;
+            /** Format: date-time */
+            failedAt?: string;
+        } | null;
         ImportCodeParams: {
             /**
              * @description The import code, as AnyPress showed it

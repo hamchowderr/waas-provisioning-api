@@ -175,6 +175,8 @@ export function toTenant(row: any) {
     dateSuspended: row.date_suspended ? row.date_suspended.toISOString() : null,
     // A site moved in, held until its owner makes it live (goLiveTenant).
     onHold: row.on_hold === true,
+    // The step a running job is on (src/progress.ts); null when none runs.
+    progress: row.progress ?? null,
   };
 }
 

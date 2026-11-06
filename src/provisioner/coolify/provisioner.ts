@@ -6,6 +6,7 @@ import type { StoreMailKeys } from '../../tosend.ts';
 import { CoolifyClient, CoolifyError, type CoolifyEnv, type CoolifyService, type CoolifyTask } from './client.ts';
 import { AGENT_GZ, AGENT_SCRIPT, encodeConstants, renderCompose } from './compose.ts';
 import { readZipEntry } from '../../zipentry.ts';
+import { step, type StepKey } from '../../progress.ts';
 
 export interface CoolifyProvisionerConfig {
   /** e.g. https://coolify.example.com */
@@ -89,6 +90,15 @@ const NEVER = '0 0 1 1 *';
 const AGENT = 'php /tmp/waas-agent.php';
 /** Coolify stores a scheduled task's command in a varchar(255). */
 const MAX_COMMAND = 255;
+/** The progress step each long agent command is (src/progress.ts); quick ones aren't shown. */
+const OP_STEPS: Partial<Record<string, StepKey>> = {
+  restore: 'restore',
+  'code-import': 'code',
+  'update-db': 'database',
+  configure: 'configure',
+  'check-site': 'check',
+  snapshot: 'backup',
+};
 const STAGE_CHUNK = 200;
 /** What a task's output says when Coolify ran it in the database or WordPress container: the agent never started. */
 const WRONG_CONTAINER = /php: not found|Could not open input file: \/tmp\/waas-agent\.php/;
@@ -349,6 +359,7 @@ export class CoolifyProvisioner implements Provisioner {
       // A retried job finds the Service it created last time already up; that is the goal anyway.
       if (!(err instanceof CoolifyError && err.status === 400 && /already running/i.test(err.message))) throw err;
     });
+    step('start');
     await this.waitHealthy(service.uuid);
     return service.uuid;
   }
@@ -388,6 +399,7 @@ export class CoolifyProvisioner implements Provisioner {
    * after restartSeenTimeoutMs.
    */
   private async restart(uuid: string) {
+    step('start');
     await this.coolify.restartService(uuid);
     const deadline = Date.now() + (this.config.restartSeenTimeoutMs ?? 3 * 60_000);
     while (allHealthy(await this.statuses(uuid)) && Date.now() < deadline) await this.sleep(this.pollMs);
@@ -400,6 +412,8 @@ export class CoolifyProvisioner implements Provisioner {
    * command in 255 characters, so longer arguments are first staged in the container in chunks.
    */
   async exec(uuid: string, op: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const named = OP_STEPS[op];
+    if (named) step(named);
     try {
       return await this.execOnce(uuid, op, args);
     } catch (err) {
@@ -1115,6 +1129,7 @@ export class CoolifyProvisioner implements Provisioner {
     const store = this.config.mailKeys && (await this.findService(STORES_ENV, storeName(storeId)));
     const keyId = store ? envValue(await this.coolify.listEnvs(store.uuid), MAIL_KEY_ENV) : undefined;
     if (keyId) await this.config.mailKeys!.delete(keyId);
+    step('remove');
     await this.deleteService(STORES_ENV, storeName(storeId));
   }
 
