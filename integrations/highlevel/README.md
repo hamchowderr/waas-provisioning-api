@@ -16,7 +16,26 @@ HighLevel refuses addresses that mention it, so the routes are under `/v1/apps` 
 
 ## Signing in: External Authentication
 
-API key / Basic auth, so the install asks for an AnyPress key and HighLevel sends it with every action and trigger call.
+Two ways. **Sign in to AnyPress** (OAuth 2.0) is the one to offer agencies: nobody copies a key, and an agency with no AnyPress storefront yet gets one as it signs in. **API key** is the older way, for installs set up before it; both keep working.
+
+### Sign in to AnyPress (OAuth 2.0)
+
+Register HighLevel as a client once: `POST API/oauth/register` with `{"client_name": "HighLevel", "redirect_uris": ["<the redirect URL HighLevel shows on the External Authentication page>"]}`. It answers the `client_id`. The API's clients prove themselves with PKCE, so there is no client secret (HighLevel's field can hold any text).
+
+| Setting | Value |
+|---|---|
+| Authorization URL | `API/oauth/authorize?resource=API/apps` (the `resource` makes the token one for the app only) |
+| Client ID | the `client_id` from the registration |
+| Scopes | `stores:read stores:write webhooks:read webhooks:write` |
+| PKCE | on (S256) |
+| Access Token Request | `POST API/oauth/token`, form body `grant_type=authorization_code`, `code`, `client_id`, `redirect_uri`, `code_verifier` |
+| Refresh Token Request | `POST API/oauth/token`, form body `grant_type=refresh_token`, `refresh_token`, `client_id`. Turn on "refresh on unauthorized error": access tokens last an hour, and an expired one answers 401 |
+| Request headers | `Authorization: Bearer {{access_token}}` on every action, the trigger and the Storefront options |
+| Test request / Account info | `GET API/v1/apps/account`; ID `id`, Name `name` |
+
+The person installing signs in to the AnyPress dashboard with their email and approves. Someone already on a storefront's team picks the storefront; someone with none names a new one, which is made there and then with three sites, as for a new seller, and the store template the shop sells. It is only an account: no WordPress shop is built for it. The token acts as that person, with their role, and stops working when they leave the storefront's team. It works on `/v1/apps` only.
+
+### API key
 
 | Field key | Label | Type | Required |
 |---|---|---|---|
@@ -28,7 +47,7 @@ API key / Basic auth, so the install asks for an AnyPress key and HighLevel send
 - **Account info:** use the authentication response; ID `id`, Name `name`.
 - Every action and the trigger below send the same three headers.
 
-A storefront's own key works on that storefront. A partner key works on every storefront in the reseller account: the Storefront field of an action, the install's Storefront ID, or `?productId=` says which, in that order.
+API key / Basic auth: the install asks for an AnyPress key and HighLevel sends it with every action and trigger call. A storefront's own key works on that storefront. A partner key works on every storefront in the reseller account: the Storefront field of an action, the install's Storefront ID, or `?productId=` says which, in that order.
 
 ## Actions
 
@@ -43,6 +62,8 @@ Each is an API action: `POST` to the URL with the headers above. HighLevel sends
 | `anypress_suspend_site` | Suspend site | `API/v1/apps/actions/suspend-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_resume_site` | Resume site | `API/v1/apps/actions/resume-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_delete_site` | Delete site | `API/v1/apps/actions/delete-site` | `externalId` or `siteId`, `storefront`. Answers the site as it was, with `deleted: true` |
+
+**Each site belongs to its sub-account.** Create site keeps the sub-account (`extras.locationId`) the workflow ran in, so one storefront serves every sub-account of an agency. The other actions only find that sub-account's own sites (and sites made outside HighLevel), and the trigger only fires in the sub-account a site belongs to. Give the `groupName` field the default `{{location.name}}`, so the dashboard groups each agency's sites by sub-account.
 
 `storefront` is a Select loaded from an External API: `GET API/v1/apps/storefronts` with the headers above answers `{"options": [{"label", "value"}]}`.
 
@@ -73,7 +94,7 @@ A new site answers `Pending` and is ready a few minutes later: start the welcome
 | Subscription URL | `API/v1/apps/triggers`, with the headers above |
 | Filter | `event`, Select, constants: Site ready `tenant.ready`, Site failed `tenant.failed`, Site suspended `tenant.suspended`, Site resumed `tenant.resumed`, Site deleted `tenant.deleted`, Domains changed `tenant.domains_changed`, Backup completed `tenant.backup_completed`, Backup failed `tenant.backup_failed` |
 
-When a workflow adds, changes or removes the trigger, HighLevel posts it to the subscription URL; the API keeps one webhook endpoint per trigger, for the events its filter picks (every site event without one). When one happens, the API posts the site's flat fields to the trigger's `targetUrl` with the sub-account's HighLevel token: its own install's, or one made from the agency's install. The token is only ever sent to HighLevel's own address. These endpoints show in the storefront's webhooks as "HighLevel workflow" and don't count toward its 10.
+When a workflow adds, changes or removes the trigger, HighLevel posts it to the subscription URL; the API keeps one webhook endpoint per trigger, for the events its filter picks (every site event without one). When one happens, the API posts the site's flat fields to the trigger's `targetUrl` with the sub-account's HighLevel token: its own install's, or one made from the agency's install. A site made by Create site only goes to triggers in its own sub-account. The token is only ever sent to HighLevel's own address. These endpoints show in the storefront's webhooks as "HighLevel workflow" and don't count toward its 10.
 
 Sample data (the trigger's custom variables come from it):
 

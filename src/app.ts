@@ -16,7 +16,7 @@ import type { CpuWatch } from './cpuwatch.ts';
 import { checkHealth } from './health.ts';
 import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
-import { oauthRoutes } from './oauth.ts';
+import { isAppsResource, oauthRoutes, verifyAccessToken, type TokenOwner } from './oauth.ts';
 import { assistantUsageRoutes } from './assistant-usage.ts';
 import { voiceRoutes } from './voice.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
@@ -78,7 +78,7 @@ export type AppEnv = {
    * scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts).
    * resellerId: set for a partner key, which also sets productId from the productId query.
    */
-  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string };
+  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string; appScopes?: string[] };
 };
 
 export function createApp(deps: Deps) {
@@ -148,6 +148,21 @@ export function createApp(deps: Deps) {
       if (internal.apiKeyId) c.set('apiKeyId', internal.apiKeyId);
       if (internal.userId) c.set('userId', internal.userId);
       c.set('productId', internal.productId);
+      return next();
+    }
+    // The HighLevel app installed with "Sign in to AnyPress" (OAuth): a token for the /apps resource.
+    const bearer = /^Bearer\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
+    if (bearer && APP_PATHS.test(c.req.path)) {
+      const info = await verifyAccessToken(deps.pool, bearer[1]!).catch(() => null);
+      // 401, so HighLevel refreshes the token and tries again.
+      if (!info || !isAppsResource(info.resource?.pathname ?? '') || (info.expiresAt ?? 0) * 1000 < Date.now()) {
+        return c.json({ statusCode: 401, message: 'The AnyPress sign-in for this account has expired. Reconnect the AnyPress app in HighLevel and sign in again' }, 401);
+      }
+      const owner = info.extra as TokenOwner;
+      c.set('productId', owner.productId);
+      if ('userId' in owner && owner.userId) c.set('userId', owner.userId);
+      if ('apiKeyId' in owner && owner.apiKeyId) c.set('apiKeyId', owner.apiKeyId);
+      c.set('appScopes', info.scopes);
       return next();
     }
     const match = /^Basic\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');

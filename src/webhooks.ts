@@ -210,8 +210,11 @@ export async function emit(pool: Pool, boss: PgBoss, productId: string, event: W
   const { rows: endpoints } = await pool.query<{ id: string }>(
     `SELECT id FROM webhook_endpoints
       WHERE product_id = $1 AND ($3::uuid IS NOT NULL OR (enabled AND (cardinality(event_types) = 0 OR $2 = ANY(event_types))))
-        AND ($3::uuid IS NULL OR id = $3)`,
-    [productId, event.type, endpointId ?? null],
+        AND ($3::uuid IS NULL OR id = $3)
+        -- A HighLevel sub-account's trigger only hears about its own sites (and sites made outside HighLevel).
+        AND ($3::uuid IS NOT NULL OR kind <> 'highlevel' OR highlevel_location_id IS NULL OR $4::uuid IS NULL OR NOT EXISTS (
+              SELECT 1 FROM tenants x WHERE x.id = $4 AND x.highlevel_location_id IS NOT NULL AND x.highlevel_location_id <> webhook_endpoints.highlevel_location_id))`,
+    [productId, event.type, endpointId ?? null, event.tenantId ?? null],
   );
   if (!endpoints.length) return [];
   const client = await pool.connect();

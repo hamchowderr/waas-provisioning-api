@@ -13,7 +13,11 @@ import { checkEndpointUrl, EVENT_TYPES, generateSecret, type WebhookConfig } fro
  *
  * - The install asks for an AnyPress API key and secret (HighLevel's External Authentication), which
  *   HighLevel sends back on every action and trigger call as X-AnyPress-Key and X-AnyPress-Secret.
- *   A partner key adds X-AnyPress-Storefront. So /v1/apps signs in like any other /v1 call.
+ *   A partner key adds X-AnyPress-Storefront. So /v1/apps signs in like any other /v1 call. Or the
+ *   install signs in to AnyPress (OAuth 2.0, the /apps resource in src/oauth.ts), and HighLevel sends
+ *   the person's token instead; someone with no storefront makes one as they approve.
+ * - Each site Create site makes keeps its sub-account (extras.locationId): the other actions only find
+ *   a sub-account's own sites, and the trigger only fires in the sub-account a site belongs to.
  * - Actions: POST /v1/apps/actions/<action> with HighLevel's {data, extras, meta}. Each answers the
  *   site as flat fields for the workflow's next steps.
  * - The trigger: HighLevel tells POST /v1/apps/triggers when a workflow adds, changes or removes it.
@@ -231,7 +235,7 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     const res = await app.request(
       path,
       { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) },
-      { internalAuth: { productId, apiKeyId: c.get('apiKeyId') } },
+      { internalAuth: { productId, apiKeyId: c.get('apiKeyId'), userId: c.get('userId') } },
     );
     const answer = res.status === 200 && res.headers.get('Content-Length') === '0' ? null : await res.json().catch(() => null);
     if (!res.ok) {
@@ -241,11 +245,14 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     return answer;
   }
 
-  async function site(c: Context<AppEnv>, productId: string, ref: { tenantId?: string; externalId?: string }) {
+  /** The site, when it is this sub-account's: a site another sub-account made is "not found" here. */
+  async function site(c: Context<AppEnv>, productId: string, ref: { tenantId?: string; externalId?: string }, locationId?: string) {
     const query = ref.tenantId ? `tenantId=${encodeURIComponent(ref.tenantId)}` : `externalId=${encodeURIComponent(ref.externalId!)}`;
-    const list = (await v1(c, productId, 'GET', `/v1/tenants?${query}`)) as unknown[];
-    if (!list.length) throw new HttpError(404, `Site ${ref.tenantId ?? ref.externalId} not found`);
-    return flatSite(list[0]);
+    const list = (await v1(c, productId, 'GET', `/v1/tenants?${query}`)) as { id: string }[];
+    const found = list[0];
+    const owner = found && locationId ? (await pool.query<{ loc: string | null }>('SELECT highlevel_location_id AS loc FROM tenants WHERE id = $1', [found.id])).rows[0]?.loc : null;
+    if (!found || (owner && owner !== locationId)) throw new HttpError(404, `Site ${ref.tenantId ?? ref.externalId} not found`);
+    return flatSite(found);
   }
 
   function siteRef(data: Record<string, unknown>) {
@@ -281,6 +288,13 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     const call = ((await readJson(c)) ?? {}) as AppCall;
     const data = call.data ?? {};
     const productId = await storefront(c, pool, data);
+    // Signed in to AnyPress (OAuth): the actions need what the person allowed.
+    const scopes = c.get('appScopes');
+    const needs = action === 'get-site' ? 'stores:read' : 'stores:write';
+    if (scopes && !scopes.includes(needs)) {
+      throw new HttpError(403, `The AnyPress sign-in for this account doesn't allow ${needs === 'stores:read' ? 'seeing' : 'changing'} sites. Reconnect the AnyPress app in HighLevel and tick Stores`);
+    }
+    const locationId = text(call.extras?.locationId) || undefined;
 
     if (action === 'create-site') {
       const name = text(data.name);
@@ -296,19 +310,31 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
       for (const field of ['size', 'groupName', 'customDomainName']) if (text(data[field])) body[field] = text(data[field]);
       if (data.notifyOwner === true || ['true', 'yes'].includes(text(data.notifyOwner).toLowerCase())) body.notifyOwner = true;
       const created = (await v1(c, productId, 'POST', '/v1/tenants', body)) as { id?: string; tenantId?: string };
-      return c.json(await site(c, productId, { tenantId: created.tenantId ?? created.id }));
+      const tenantId = created.tenantId ?? created.id;
+      // The site belongs to the sub-account whose workflow made it.
+      if (tenantId && locationId) {
+        await pool.query('UPDATE tenants SET highlevel_location_id = $2, highlevel_company_id = $3 WHERE id = $1 AND product_id = $4', [
+          tenantId,
+          locationId,
+          text(call.extras?.companyId) || null,
+          productId,
+        ]);
+      }
+      return c.json(await site(c, productId, { tenantId }));
     }
 
     const ref = siteRef(data);
+    // Only this sub-account's sites (or ones made outside HighLevel).
+    await site(c, productId, ref, locationId);
     const query = ref.tenantId ? `tenantId=${encodeURIComponent(ref.tenantId)}` : `externalId=${encodeURIComponent(ref.externalId!)}`;
     if (action === 'suspend-site') await v1(c, productId, 'POST', `/v1/tenants/suspend?${query}`, {});
     if (action === 'resume-site') await v1(c, productId, 'POST', `/v1/tenants/resume?${query}`, {});
     if (action === 'delete-site') {
-      const before = await site(c, productId, ref);
+      const before = await site(c, productId, ref, locationId);
       await v1(c, productId, 'DELETE', `/v1/tenants?${query}`);
       return c.json({ ...before, deleted: true });
     }
-    return c.json(await site(c, productId, ref));
+    return c.json(await site(c, productId, ref, locationId));
   });
 
   // HighLevel calls this when a workflow adds, changes or removes the app's trigger.
