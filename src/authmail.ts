@@ -24,15 +24,22 @@ export interface AuthMail {
 /** The platform's own address and logo when it runs under the default AnyPress name (src/auth.ts). */
 export const ANYPRESS_MAIL = { supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' };
 
-export async function sendSignInLink(mail: AuthMail, to: string, url: string, fetchFn: typeof fetch = fetch): Promise<void> {
-  const text = `Use this link to sign in to ${mail.brand}:\n\n${url}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.`;
+/**
+ * The sign-in email: a button and a short code, for the same sign-in. The button opens a page that
+ * asks for one more click before the link is used, so mail scanners that open links (INKY, Microsoft
+ * Safe Links) can't use it up; the code can be typed on the sign-in page when a scanner blocks links.
+ */
+export async function sendSignInLink(mail: AuthMail, to: string, url: string, code: string | null = null, fetchFn: typeof fetch = fetch): Promise<void> {
+  const codeLine = code ? `Or type this code on the sign-in page: ${code}` : null;
+  const text = `Use this link to sign in to ${mail.brand}:\n\n${url}${codeLine ? `\n\n${codeLine}` : ''}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.`;
   const html = layout(mail, {
     title: `Sign in to ${mail.brand}`,
     lines: [`Use this button to sign in to ${mail.brand}.`],
     button: { label: `Sign in to ${mail.brand}`, url },
+    signInCode: code ?? undefined,
     note: "It works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.",
   });
-  await send(mail, to, `Your ${mail.brand} sign-in link`, html, text, 'sign-in email', fetchFn);
+  await send(mail, to, code ? `Your ${mail.brand} sign-in code: ${code}` : `Your ${mail.brand} sign-in link`, html, text, 'sign-in email', fetchFn);
 }
 
 export interface InvitationMail {
@@ -201,6 +208,8 @@ interface Message {
   code?: string;
   /** The one thing to do, as a button. It is the email's first link, with the address written out under it. */
   button?: { label: string; url: string };
+  /** A sign-in code, shown large under the button for typing in by hand. */
+  signInCode?: string;
   /** Smaller grey text under the button; blank lines start a new paragraph. */
   note?: string;
 }
@@ -231,6 +240,10 @@ function layout(mail: AuthMail, m: Message): string {
     m.lines.map((l) => para(l, `font-size:16px;line-height:25px;color:${INK}`)).join('') +
     (m.code ? `<pre style="margin:0 0 16px;padding:12px 14px;background:${PAPER};border:1px solid ${LINE};border-radius:6px;font-size:13px;line-height:19px;white-space:pre-wrap;word-break:break-word;color:${INK}">${escape(m.code)}</pre>` : '') +
     button +
+    (m.signInCode
+      ? `<p style="margin:0 0 8px;font-size:14px;line-height:21px;color:${SOFT}">Link blocked or not working? Type this code on the sign-in page instead:</p>` +
+        `<p style="margin:0 0 24px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:28px;line-height:36px;font-weight:700;letter-spacing:6px;color:${INK}">${escape(m.signInCode)}</p>`
+      : '') +
     (m.note
       ? `<div style="border-top:1px solid ${LINE};padding-top:16px">${m.note.split('\n\n').map((n) => para(n, `font-size:14px;line-height:21px;color:${SOFT}`)).join('')}</div>`
       : '');

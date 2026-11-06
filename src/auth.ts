@@ -1,6 +1,6 @@
 import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
-import { magicLink, organization } from 'better-auth/plugins';
+import { emailOTP, magicLink, organization } from 'better-auth/plugins';
 import { ANYPRESS_MAIL, sendSignInLink, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
@@ -74,6 +74,20 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
 export type OrgRole = 'owner' | 'admin' | 'member';
 export const ORG_ROLES: readonly OrgRole[] = ['owner', 'admin', 'member'];
 
+/** Minutes a sign-in link and its code work. */
+export const SIGN_IN_MINUTES = 15;
+
+/**
+ * The dashboard's /login/confirm page for a Better Auth sign-in link: the same query, so the page's
+ * button goes on to /api/auth/magic-link/verify. Opening the page uses nothing, so a mail scanner
+ * that opens every link (INKY, Safe Links) leaves the link working for the person.
+ */
+export function confirmPage(verifyUrl: string): string {
+  const url = new URL(verifyUrl);
+  url.pathname = '/login/confirm';
+  return url.toString();
+}
+
 /** Days an invitation can be accepted. */
 export const INVITATION_DAYS = 7;
 
@@ -85,7 +99,7 @@ export const INVITATION_DAYS = 7;
  */
 export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterAuthPlugin[] = []) {
   const protocol = new URL(config.url).protocol === 'http:' ? 'http' : 'https';
-  return betterAuth({
+  const auth = betterAuth({
     baseURL: { allowedHosts: ['*'], fallback: config.url, protocol },
     trustedOrigins: (request) => {
       const host = request?.headers.get('x-forwarded-host');
@@ -95,6 +109,17 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
     // Its own schema keeps Better Auth's tables apart from ours; migrations/…_accounts.sql creates them.
     database: { dialect: new PostgresDialect({ pool }), type: 'postgres', schemaName: 'auth', casing: 'snake' },
     telemetry: { enabled: false },
+    // The email-code plugin is only for typing the sign-in email's code (POST /sign-in/email-otp).
+    disabledPaths: [
+      '/email-otp/send-verification-otp',
+      '/email-otp/check-verification-otp',
+      '/email-otp/verify-email',
+      '/email-otp/request-password-reset',
+      '/forget-password/email-otp',
+      '/email-otp/reset-password',
+      '/email-otp/request-email-change',
+      '/email-otp/change-email',
+    ],
     advanced: { database: { generateId: 'uuid' }, trustedProxyHeaders: true },
     // githubLogin: the GitHub username, so the dashboard can tell its platform admins
     // (ALLOWED_GITHUB_LOGINS) from customers. Set from GitHub only, never from what the user sends.
@@ -128,21 +153,33 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
         ? [
             magicLink({
               // Signing in by link proves the address, so it counts as verified (needed to accept invitations).
-              expiresIn: 15 * 60,
+              expiresIn: SIGN_IN_MINUTES * 60,
               storeToken: 'hashed',
               // On a seller's own dashboard address, the email comes in the seller's look (src/branding.ts).
               sendMagicLink: async ({ email, url }) => {
                 const host = new URL(url).host;
                 const productId = host === new URL(config.url).host ? null : await dashboardHostProduct(pool, host);
                 const mail = productId ? await brandedMail(pool, config.mail!, productId) : config.mail!;
-                await sendSignInLink(mail, email.toLowerCase(), url);
+                const to = email.toLowerCase();
+                // The same email carries a code for the sign-in page (POST /sign-in/email-otp), for mail
+                // systems that block or rewrite links.
+                const code = await auth.api.createVerificationOTP({ body: { email: to, type: 'sign-in' } });
+                await sendSignInLink(mail, to, confirmPage(url), code);
               },
+            }),
+            // Codes are only sent inside the sign-in email above: asking for a code alone isn't offered.
+            emailOTP({
+              expiresIn: SIGN_IN_MINUTES * 60,
+              storeOTP: 'hashed',
+              // Unused: its own sending routes are turned off (disabledPaths).
+              async sendVerificationOTP() {},
             }),
           ]
         : []),
       ...extraPlugins,
     ],
   });
+  return auth;
 }
 
 export type Auth = ReturnType<typeof createAuth>;
