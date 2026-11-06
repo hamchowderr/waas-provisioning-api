@@ -1851,6 +1851,50 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/notifications:
+    get:
+      operationId: adminListNotifications
+      summary: The dashboard bell, newest first
+      description: >-
+        What happened to stores and versions (ready, live, failed, backup failed and more), plus for the
+        platform admin new applications and failed restore tests. On /account a person sees their own
+        storefront's and their own read state; on /admin, every storefront's, read as `userId`. Kept 30 days.
+        See docs/notifications.md.
+      parameters:
+        - { name: userId, in: query, description: Whose read state. Required on /admin, ignored on /account., schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        '200':
+          description: Unread count (at most 99) and the newest notifications
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/notifications/read:
+    post:
+      operationId: adminReadNotifications
+      summary: Mark everything up to now as read
+      description: Changes only the caller's own bell, so a team member who can only look may call it too.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string, format: uuid, description: Whose bell. Required on /admin. }
+      responses:
+        '200':
+          description: Read up to this time
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [readUntil]
+                properties:
+                  readUntil: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /admin/webhooks:
     get:
       operationId: adminListWebhooks
@@ -2691,6 +2735,30 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    NotificationList:
+      type: object
+      required: [unread, readUntil, items]
+      properties:
+        unread: { type: integer, minimum: 0, maximum: 99 }
+        readUntil: { type: string, format: date-time, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+    Notification:
+      type: object
+      required: [id, type, level, title, productId, productName, tenantId, versionId, applicationId, at, unread]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, description: 'A webhook event type (tenant.ready, tenant.failed, version.ready...), or application.received or restore_test.failed' }
+        level: { type: string, enum: [success, error, info] }
+        title: { type: string }
+        productId: { type: string, format: uuid, nullable: true, description: Null for a platform notification }
+        productName: { type: string, nullable: true }
+        tenantId: { type: string, format: uuid, nullable: true }
+        versionId: { type: string, format: uuid, nullable: true }
+        applicationId: { type: string, format: uuid, nullable: true }
+        at: { type: string, format: date-time }
+        unread: { type: boolean }
     HostUpdate:
       type: object
       additionalProperties: false

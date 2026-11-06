@@ -1,3 +1,4 @@
+import { recordNotification } from './notifications.ts';
 import type { PgBoss } from 'pg-boss';
 import { sendRestoreTestFailed, type AuthMail } from './authmail.ts';
 import type { Pool } from './db.ts';
@@ -106,6 +107,7 @@ export async function runRestoreTest(
     outcome.status = 'failed';
     outcome.error = (err instanceof Error ? err.message : String(err)).slice(0, 2000);
     await pool.query("UPDATE restore_tests SET status = 'failed', error = $2, finished_at = now() WHERE id = $1", [id, outcome.error]);
+    await recordNotification(pool, { productId: null, type: 'restore_test.failed', title: `The nightly restore test of ${pick.name} failed`, tenantId: pick.tenant_id }).catch(() => undefined);
     if (alerts.mail) {
       for (const address of alerts.to ?? []) {
         try {

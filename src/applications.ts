@@ -1,3 +1,4 @@
+import { recordNotification } from './notifications.ts';
 import { Hono, type Context } from 'hono';
 import { createInvitation, createResellerInvitation, invitationUrl } from './accounts.ts';
 import type { AppEnv, Deps } from './app.ts';
@@ -146,6 +147,9 @@ export function publicApplicationRoutes(deps: Deps) {
       throw err;
     }
     const application = toApplication(row);
+    await recordNotification(pool, { productId: null, type: 'application.received', title: `New seller application from ${business || name}`, applicationId: application.id }).catch(
+      (err) => console.error(`notifications: application ${application.id} not recorded: ${(err as Error).message}`),
+    );
 
     const mail = config.auth?.mail;
     await tryMail(`Application ${application.id} receipt`, (m) => sendApplicationReceived(m, email, { name, business }), mail);
