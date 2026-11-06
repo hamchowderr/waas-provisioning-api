@@ -16,7 +16,9 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv, Deps } from './app.ts';
 import type { Pool } from './db.ts';
-import type { SessionCaller } from './accounts.ts';
+import { createOwnStorefront, type SessionCaller } from './accounts.ts';
+import { DEFAULT_SELLER_STORES } from './applications.ts';
+import { versionService } from './routes/versions.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { publicFetch } from './publicfetch.ts';
@@ -50,6 +52,16 @@ export const scopesFor = (path: string) =>
 
 /** The MCP endpoints a token can be for (RFC 8707 resource), by path. /mcp/site is for one website's owner. */
 export const MCP_PATHS = ['/mcp', '/mcp/read-only', '/mcp/site'] as const;
+
+/**
+ * The resource the HighLevel app (src/highlevel.ts) asks for when an agency signs in to AnyPress at
+ * install (HighLevel's External Authentication, OAuth 2.0): its tokens work on /v1/apps only.
+ */
+export const APPS_PATH = '/apps';
+export const isAppsResource = (resource: string) => resource.endsWith(APPS_PATH);
+
+/** The areas a connection can be given: the HighLevel app only makes and manages sites, and hears about them. */
+const areasFor = (resource: string): readonly (typeof AREAS)[number][] => (isAppsResource(resource) ? ['stores', 'webhooks'] : AREAS);
 
 /** Whether a resource (or path) is the endpoint for one website's owner ("Sign in with your website"). */
 export const isSiteResource = (resource: string) => resource.endsWith('/mcp/site');
@@ -296,7 +308,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     if (params.response_type !== 'code') return back('unsupported_response_type', 'Only response_type=code is supported');
     if (!params.code_challenge || params.code_challenge_method !== 'S256') return back('invalid_request', 'PKCE with S256 is required');
     const resource = (params.resource ?? `${base(c)}/mcp`).replace(/\/$/, '');
-    if (!MCP_PATHS.some((path) => resource === `${base(c)}${path}`)) return back('invalid_target', 'Unknown resource');
+    if (![...MCP_PATHS, APPS_PATH].some((path) => resource === `${base(c)}${path}`)) return back('invalid_target', 'Unknown resource');
     const requested = (params.scope ?? '').split(' ').filter(Boolean);
     if (requested.some((s) => !isScope(s))) return back('invalid_scope', `Scopes are ${ALL_SCOPES.join(' ')}`);
     // What the app asked for only sets which boxes start ticked; the person decides. The read-only endpoint never writes.
@@ -656,11 +668,13 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       storefronts.push(...others.rows.map((p) => ({ productId: p.id, name: p.name, role: 'platform admin', canChange: true })));
     }
     const requested = rows[0].legacy_scope ? expandLegacyScopes(rows[0].scope) : parseScopes(rows[0].scope);
-    return { me, row: rows[0], storefronts, asAdmin, requested, readOnly: rows[0].resource.endsWith('/read-only') };
+    // Someone connecting the HighLevel app before they have a storefront may make one here.
+    const canCreateStorefront = isAppsResource(rows[0].resource) && storefronts.length === 0;
+    return { me, row: rows[0], storefronts, asAdmin, requested, readOnly: rows[0].resource.endsWith('/read-only'), canCreateStorefront };
   }
 
   app.get('/oauth/requests/:id', async (c) => {
-    const { row, storefronts, asAdmin, requested, readOnly } = await load(c);
+    const { row, storefronts, asAdmin, requested, readOnly, canCreateStorefront } = await load(c);
     return c.json({
       id: row.id,
       clientName: row.client_name,
@@ -669,7 +683,7 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       wantsWrite: requested.some((s) => s.endsWith(':write')),
       readOnly,
       // One row per area: a box to see and a box to change, ticked to start with as described.
-      areas: AREAS.map((area) => ({
+      areas: areasFor(row.resource).map((area) => ({
         area,
         name: AREA_LABELS[area].name,
         read: { scope: scopeOf(area, 'read'), label: AREA_LABELS[area].read, ticked: true },
@@ -677,16 +691,27 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       })),
       asAdmin,
       storefronts,
+      forApps: isAppsResource(row.resource),
+      canCreateStorefront,
     });
   });
 
   // { action: 'approve', productId, scopes: ['stores:read', …] } or { action: 'deny' }. Answers where to send the browser.
+  // For the HighLevel app, someone with no storefront sends newStorefront: '<name>' instead of productId to make one.
   // (An older dashboard sends allowWrite instead of scopes: every read scope, and the write scopes asked for when ticked.)
   app.post('/oauth/requests/:id', async (c) => {
-    const { me, row, storefronts, asAdmin, requested, readOnly } = await load(c);
-    const body = ((await readJson(c)) ?? {}) as { action?: unknown; productId?: unknown; scopes?: unknown; allowWrite?: unknown };
+    const { me, row, storefronts, asAdmin, requested, readOnly, canCreateStorefront } = await load(c);
+    const body = ((await readJson(c)) ?? {}) as { action?: unknown; productId?: unknown; scopes?: unknown; allowWrite?: unknown; newStorefront?: unknown };
     if (body.action !== 'approve' && body.action !== 'deny') throw badRequest("action must be 'approve' or 'deny'");
-    const storefront = storefronts.find((s) => s.productId === body.productId);
+    const newName = typeof body.newStorefront === 'string' ? body.newStorefront.trim().slice(0, 100) : '';
+    if (body.newStorefront !== undefined && body.action === 'approve') {
+      if (!canCreateStorefront) throw badRequest('Choose one of your storefronts');
+      if (!newName) throw badRequest('Name your storefront');
+    }
+    let storefront = storefronts.find((s) => s.productId === body.productId);
+    if (body.action === 'approve' && newName && canCreateStorefront) {
+      storefront = { productId: '', name: newName, role: 'owner', canChange: true };
+    }
     let scopes: string[] = [];
     if (body.action === 'approve') {
       if (!storefront) throw badRequest('Choose one of your storefronts');
@@ -699,7 +724,7 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       }
       // Changes need a role that may make them, and an endpoint that isn't read-only.
       if (readOnly || !storefront.canChange) scopes = readsOnly(scopes);
-      scopes = parseScopes(scopes);
+      scopes = parseScopes(scopes).filter((s) => areasFor(row.resource).some((area) => s.startsWith(`${area}:`)));
       if (!scopes.length) throw badRequest('Tick at least one thing the app may see');
     }
     // Single use, whichever way it goes.
@@ -707,6 +732,19 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
     if (!rowCount) throw new HttpError(404, 'This connection request was already used. Go back to the app and connect again.');
     if (body.action === 'deny' || !storefront) {
       return c.json({ redirectUrl: errorRedirect(row.redirect_uri, 'access_denied', 'The user declined', row.state ?? undefined, row.issuer) });
+    }
+    if (!storefront.productId) {
+      const made = await createOwnStorefront(pool, me.user.id, storefront.name, DEFAULT_SELLER_STORES);
+      storefront.productId = made.id;
+      // The store template the shop sells, followed from then on, so its first site can be built.
+      if (deps.config.storeTemplateProductId) {
+        try {
+          const versions = versionService(deps);
+          await versions.copyProduction(made.id, await versions.productionSource(deps.config.storeTemplateProductId));
+        } catch (err) {
+          console.error(`oauth: storefront ${made.id} made without a store template: ${(err as Error).message}`);
+        }
+      }
     }
     const code = await issueCode(
       pool,

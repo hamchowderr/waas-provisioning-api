@@ -210,6 +210,36 @@ describe('install and triggers', () => {
     expect((await t.pool.query("SELECT 1 FROM webhook_endpoints WHERE highlevel_trigger_id = 'trigger-moved'")).rowCount).toBe(0);
   });
 
+  it("keeps each sub-account to its own sites, and its trigger to their events", async () => {
+    received = [];
+    const subscribe = (id: string, locationId: string) =>
+      app('POST', '/v1/apps/triggers', {
+        triggerData: { id, key: 'site_event', eventType: 'CREATED', targetUrl: `${base}/workflows-marketplace/triggers/execute/abc/${id}`, filters: [] },
+        extras: { locationId, companyId: 'company-1', workflowId: 'wf' },
+      });
+    expect((await subscribe('trigger-a', 'loc-a')).status).toBe(200);
+    expect((await subscribe('trigger-b', 'loc-b')).status).toBe(200);
+
+    const made = await app('POST', '/v1/apps/actions/create-site', {
+      data: { name: 'Sub-account Site', email: 'owner@example.com' },
+      extras: { contactId: 'contact-a1', locationId: 'loc-a', companyId: 'company-1' },
+    });
+    const siteId = ((await made.json()) as { siteId: string }).siteId;
+    const { rows } = await t.pool.query('SELECT highlevel_location_id, highlevel_company_id FROM tenants WHERE id = $1', [siteId]);
+    expect(rows[0]).toEqual({ highlevel_location_id: 'loc-a', highlevel_company_id: 'company-1' });
+
+    await waitFor(async () => received.find((r) => r.path.endsWith('/trigger-a')));
+    await ready(siteId);
+    expect(received.some((r) => r.path.endsWith('/trigger-b'))).toBe(false);
+
+    // Another sub-account can't see or change it; its own can, and so can a call that names no sub-account.
+    const other = await app('POST', '/v1/apps/actions/suspend-site', { data: { siteId }, extras: { locationId: 'loc-b' } });
+    expect(other.status).toBe(404);
+    expect((await app('POST', '/v1/apps/actions/get-site', { data: { siteId }, extras: { locationId: 'loc-a' } })).status).toBe(200);
+    expect((await app('POST', '/v1/apps/actions/delete-site', { data: { siteId }, extras: { locationId: 'loc-a' } })).status).toBe(200);
+    await t.pool.query("DELETE FROM webhook_endpoints WHERE kind = 'highlevel'");
+  });
+
   it('never sends the token anywhere but HighLevel', async () => {
     t.deps.config.webhooks!.highlevel = { clientId: 'client-1', clientSecret: 'client-secret', apiUrl: 'https://services.leadconnectorhq.example' };
     received = [];

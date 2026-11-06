@@ -239,6 +239,24 @@ async function ensureOrganization(pool: Deps['pool'], owner: OrgOwner, name?: st
   return { organization: rows[0] ?? (await findOrganization(pool, owner))!, created: rows.length > 0 };
 }
 
+/**
+ * A storefront of the person's own, with them as its owner: for someone who connects an app that
+ * makes sites (the HighLevel app, src/highlevel.ts) before they have one. Only an account record,
+ * with `maxTenants` stores, no WordPress shop.
+ */
+export async function createOwnStorefront(pool: Deps['pool'], userId: string, name: string, maxTenants: number) {
+  const { rows } = await pool.query<{ id: string; name: string }>('INSERT INTO products (name, max_tenants) VALUES ($1, $2) RETURNING id, name', [name, maxTenants]);
+  const product = rows[0]!;
+  try {
+    const { organization } = await ensureOrganization(pool, { productId: product.id, name: product.name });
+    await pool.query(`INSERT INTO auth.member ("organizationId", "userId", role, "createdAt") VALUES ($1, $2, 'owner', now())`, [organization.id, userId]);
+  } catch (err) {
+    await pool.query('DELETE FROM products WHERE id = $1', [product.id]);
+    throw err;
+  }
+  return product;
+}
+
 /** Where an invitation is accepted: the dashboard's /invite/<id>, or null when sign-in is off. */
 /** Where an invitation is accepted: on the storefront's own dashboard address when it has one live. */
 export const invitationUrl = (deps: Pick<Deps, 'config'>, invitationId: string, address?: string | null) =>
