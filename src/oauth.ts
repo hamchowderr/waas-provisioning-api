@@ -18,6 +18,7 @@ import type { AppEnv, Deps } from './app.ts';
 import type { Pool } from './db.ts';
 import { createOwnStorefront, type SessionCaller } from './accounts.ts';
 import { DEFAULT_SELLER_STORES } from './applications.ts';
+import { markHighLevelAgency } from './highlevel.ts';
 import { versionService } from './routes/versions.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
@@ -746,6 +747,8 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
         }
       }
     }
+    // Connecting the HighLevel app makes the storefront a HighLevel agency's: its sites get the HighLevel site type.
+    if (isAppsResource(row.resource)) await markHighLevelAgency(pool, storefront.productId);
     const code = await issueCode(
       pool,
       { clientId: row.client_id, redirectUri: row.redirect_uri, codeChallenge: row.code_challenge, resource: row.resource },

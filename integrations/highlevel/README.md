@@ -57,11 +57,13 @@ Each is an API action: `POST` to the URL with the headers above. HighLevel sends
 
 | Action key | Name | URL | Fields (key, required) |
 |---|---|---|---|
-| `anypress_create_site` | Create site | `API/v1/apps/actions/create-site` | `name` (yes): Site name, up to 30 characters. `externalId`: Your reference; empty uses the contact's id, so a workflow that runs twice for a contact makes one site. `email` (yes): Client email, which makes their WordPress login. Every site needs one. `username`, `role` (administrator, editor, author, contributor), `size` (small, medium, large), `groupName`: starting site group, `customDomainName`, `notifyOwner` (yes or no, default no): email the client when the site is ready, with a link to set their password, `storefront` |
+| `anypress_create_site` | Create site | `API/v1/apps/actions/create-site` | `name` (yes): Site name, up to 30 characters. `externalId`: Your reference; empty uses the contact's id, so a workflow that runs twice for a contact makes one site. `email` (yes): Client email, which makes their WordPress login. Every site needs one. `username`, `role` (administrator, editor, author, contributor), `size` (small, medium, large), `groupName`: starting site group, `customDomainName`, `notifyOwner` (yes or no, default no): email the client when the site is ready, with a link to set their password, `siteType` (default `highlevel`), `storefront` |
 | `anypress_get_site` | Get site | `API/v1/apps/actions/get-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_suspend_site` | Suspend site | `API/v1/apps/actions/suspend-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_resume_site` | Resume site | `API/v1/apps/actions/resume-site` | `externalId` or `siteId`, `storefront` |
 | `anypress_delete_site` | Delete site | `API/v1/apps/actions/delete-site` | `externalId` or `siteId`, `storefront`. Answers the site as it was, with `deleted: true` |
+
+**Sites get the HighLevel set of plugins.** Using the app (or connecting it) marks the storefront as a HighLevel agency's, and its sites made without a site type get the store template's `highlevel` one: the AnyPress theme and Blocks, Rank Math, FluentSnippets, FluentAuth, WP Fusion Lite and HighLevel's LeadConnector plugin, without FluentCRM, Fluent Forms, FluentCart and the other Fluent plugins HighLevel already covers. Create site's optional `siteType` field picks another one (`website`, `bookings`, `online-store`, `community`, `everything`).
 
 **Each site belongs to its sub-account.** Create site keeps the sub-account (`extras.locationId`) the workflow ran in, so one storefront serves every sub-account of an agency. The other actions only find that sub-account's own sites (and sites made outside HighLevel), and the trigger only fires in the sub-account a site belongs to. Give the `groupName` field the default `{{location.name}}`, so the dashboard groups each agency's sites by sub-account.
 

@@ -557,11 +557,16 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     // The owner signs in with their email; it is the store's own address too.
     const ownerEmail = typeof body.ownerEmail === 'string' ? body.ownerEmail.trim().toLowerCase() : '';
     if (!ownerEmail) throw badRequest("ownerEmail is required: the store owner's email");
+    // The template's site type (a roles.json key), which decides the plugins. Left out: the storefront's default
+    // (the HighLevel one for a HighLevel agency's storefront, else none, which leaves every plugin on).
+    const siteType = typeof body.siteType === 'string' ? body.siteType.trim() : '';
+    if (siteType && !/^[a-z0-9_-]{1,40}$/.test(siteType)) throw badRequest('siteType must be a site type key (letters, digits, - and _)');
     const params = {
       name: body.name.trim().slice(0, 100),
       wordPressUserName: ownerEmail,
       wordPressUserEmail: ownerEmail,
       wordPressUserRole: 'administrator',
+      ...(siteType && { phpConstants: { ANYPRESS_TENANT_ROLES: { value: siteType, isPrivate: false } } }),
       ...(body.notifyOwner === true && { notifyOwner: true }),
       ...(typeof body.size === 'string' && { size: body.size }),
       ...(typeof body.customDomainName === 'string' && body.customDomainName.trim() && { customDomainName: body.customDomainName.trim() }),
@@ -873,7 +878,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   async function products(id: string | null) {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, r.name AS reseller_name,
+      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, p.highlevel_agency, r.name AS reseller_name,
          (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
          (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
          (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
@@ -891,6 +896,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       resellerId: p.reseller_id,
       resellerName: p.reseller_name,
       followsProductId: p.follows_product_id,
+      highlevelAgency: p.highlevel_agency,
       dateCreated: iso(p.created_at),
     }));
   }
@@ -900,11 +906,16 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   // The product's settings, each optional: its name, and maxTenants, the most tenants it may have, or
   // null for no limit. Lowering maxTenants below the current count deletes nothing; it only stops new ones.
   // followsProductId null stops it following the storefront it started from (from-production starts it again).
+  // highlevelAgency true gives its new sites the HighLevel site type when they are made without one.
   app.put('/products/:productId', async (c) => {
     const productId = await product(c);
-    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; followsProductId?: unknown };
-    if (body?.name === undefined && body?.maxTenants === undefined && body?.followsProductId === undefined) {
-      throw badRequest('Send name, maxTenants or followsProductId');
+    const body = (await readJson(c)) as { name?: unknown; maxTenants?: unknown; followsProductId?: unknown; highlevelAgency?: unknown };
+    if (body?.name === undefined && body?.maxTenants === undefined && body?.followsProductId === undefined && body?.highlevelAgency === undefined) {
+      throw badRequest('Send name, maxTenants, followsProductId or highlevelAgency');
+    }
+    if (body.highlevelAgency !== undefined) {
+      if (typeof body.highlevelAgency !== 'boolean') throw badRequest('highlevelAgency must be true or false');
+      await pool.query('UPDATE products SET highlevel_agency = $2 WHERE id = $1', [productId, body.highlevelAgency]);
     }
     if (body.followsProductId !== undefined) {
       if (body.followsProductId !== null) throw badRequest('followsProductId can only be null here; POST versions/from-production to follow a storefront');

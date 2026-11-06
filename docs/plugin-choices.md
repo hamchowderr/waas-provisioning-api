@@ -19,7 +19,7 @@ hand on one store is gone after its next move. A plugin choice is part of every 
 | `DELETE /v1/plugin-choices/{slug}` | Removes the choice. Versions built from now on leave that plugin as the template has it |
 
 `siteTypes` are the template's site types, the keys of its `roles.json` (AnyPress's template: `website`, `bookings`,
-`online-store`, `community`, `everything`, `store`). Empty or left out means all of them. A site type the template
+`online-store`, `community`, `everything`, `store`, `highlevel`). Empty or left out means all of them. A site type the template
 doesn't have fails the version build with a message naming the ones it has.
 
 At most 25 plugins added per storefront (and 25 per reseller). AnyPress's own template is never changed by any of

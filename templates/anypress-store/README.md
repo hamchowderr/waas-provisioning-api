@@ -36,6 +36,10 @@ And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress
 for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
+And HighLevel's [LeadConnector](https://wordpress.org/plugins/leadconnector/) 4.0.7 (`leadconnector`): HighLevel forms,
+chat widget and calendars on the site. It is installed **off** (`OFF_PLUGINS` in [`build.sh`](build.sh)) and only the
+`highlevel` site type turns it on.
+
 And WordPress's [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) 0.7.1 (`mcp-adapter`), installed but **off**. The store
 owner turns it on in Dashboard → Your plan → AI apps (MCP); then AI apps that speak MCP can work on the site's pages and
 design at `/wp-json/mcp/anypress`, signed in as a WordPress user with an application password. It is pinned in
@@ -153,7 +157,13 @@ store's plugins to that role's list:
 | `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
+| `highlevel` | HighLevel site, for a HighLevel agency's sites | LeadConnector, WP Fusion Lite, FluentSnippets, Rank Math, FluentAuth, FluentToolkit. HighLevel is the CRM, forms, calendars and payments, so none of FluentCRM, Fluent Forms, FluentCart, FluentBooking, Fluent Support, FluentAffiliate, FluentCommunity or AutomatorWP |
 | `store` | Everything, for stores bought before site types | all of them |
+
+A store made without a site type keeps every plugin on, so the API gives one to the sites it makes for a HighLevel
+agency's storefront (`highlevel`), and the dashboard's New site asks for one. On a HighLevel site the agency connects
+LeadConnector (Settings, LeadConnector) and WP Fusion Lite (Settings, WP Fusion, CRM HighLevel) to its sub-account in
+wp-admin; both stay unconnected in the template.
 
 Pages that need one plugin carry the post meta `_anypress_needs` (FluentCart's six pages and the Support Portal). The
 mu-plugin puts them back to draft while that plugin is off, and the home page shows the latest posts while the shop is

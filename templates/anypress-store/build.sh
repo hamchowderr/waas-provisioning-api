@@ -27,10 +27,12 @@ automatorwp 6.0.5 541d640bdf4b6f602123e0f1f26a5041f950a13d338f08ca0b665a9a161714
 fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
 fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
 "
-# wordpress.org plugins installed but left off: slug version sha256. The store owner turns them on (WordPress's
-# MCP Adapter: Dashboard > Your plan > AI apps, AnyPress Client 2.4.0+); not in roles.json.
+# wordpress.org plugins installed but left off: slug version sha256. The store owner turns the MCP Adapter on
+# (WordPress's MCP Adapter: Dashboard > Your plan > AI apps, AnyPress Client 2.4.0+; not in roles.json).
+# LeadConnector (HighLevel's own plugin: its forms, chat widget and calendars) is on only for the highlevel site type.
 OFF_PLUGINS="
 mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe9b
+leadconnector 4.0.7 03854dce113adde9f792a0b2bd397eb139902c16d08328bcd9c57d6c96a41dbc
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.

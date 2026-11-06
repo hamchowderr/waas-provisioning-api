@@ -11,7 +11,7 @@ import { createImport, importCode, importDetail, renewImport } from '../imports.
 import { publicBase } from '../oauth.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
-import { checkTenantCap, deleteTenant, dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
+import { checkTenantCap, deleteTenant, dnsSafeLabel, domainInUse, encodePhpConstants, findTenant, HIGHLEVEL_SITE_TYPE, normalizeDomain, TENANT_SELECT, toTenant } from '../tenants.ts';
 
 export interface CreateTenantParams {
   name: string;
@@ -213,6 +213,14 @@ export async function createTenant(
     );
   }
 
+  const phpConstants = { ...(body.phpConstants ?? {}) };
+  // A HighLevel agency's site with no site type gets the HighLevel one (the template's roles.json): without one,
+  // AnyPress Client switches nothing off and every plugin of the build stays on.
+  if (!imported && !phpConstants.ANYPRESS_TENANT_ROLES?.value?.trim() && !phpConstants.WAAS_TENANT_ROLES?.value?.trim()) {
+    const { rows } = await pool.query<{ highlevel_agency: boolean }>('SELECT highlevel_agency FROM products WHERE id = $1', [productId]);
+    if (rows[0]?.highlevel_agency) phpConstants.ANYPRESS_TENANT_ROLES = { value: HIGHLEVEL_SITE_TYPE, isPrivate: false };
+  }
+
   const baseDomain = `${dnsSafeLabel(`t-${id.slice(0, 8)}`, 's')}.${config.storesDomain}`;
   const customDomain = body.customDomainName?.trim() ? normalizeDomain(body.customDomainName) : undefined;
   if (customDomain) {
@@ -247,7 +255,7 @@ export async function createTenant(
         snapshot.group_name,
         // A site moved in keeps its own options: none from the create call are written over them, now or on a rollback.
         imported ? {} : storeOptions(body.name, userEmail, body.wpOptions),
-        encodePhpConstants(secrets, body.phpConstants ?? {}),
+        encodePhpConstants(secrets, phpConstants),
         Status.Pending,
         body.size ?? DEFAULT_SIZE,
         imported,
