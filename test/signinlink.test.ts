@@ -10,7 +10,7 @@ const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-s
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
-const sent: { to: string; url: string; body: any }[] = [];
+const sent: { to: string; url: string; href: string; body: any }[] = [];
 const realFetch = globalThis.fetch;
 
 beforeAll(async () => {
@@ -20,7 +20,11 @@ beforeAll(async () => {
     const url = String(input instanceof Request ? input.url : input);
     if (!url.startsWith('https://api.tosend.com/')) return realFetch(input, init);
     const body = JSON.parse(String(init!.body));
-    sent.push({ to: body.to[0].email, url: /href="([^"]+)"/.exec(body.html)![1]!.replaceAll('&amp;', '&'), body });
+    const href = /href="([^"]+)"/.exec(body.html)![1]!.replaceAll('&amp;', '&');
+    // The email's button opens the dashboard's confirm page; its button goes on to Better Auth's verify route.
+    const link = new URL(href);
+    if (link.pathname === '/login/confirm') link.pathname = '/api/auth/magic-link/verify';
+    sent.push({ to: body.to[0].email, url: link.toString(), href, body });
     return new Response(JSON.stringify({ message_id: 'm1' }), { status: 200 });
   });
   t.deps.config.auth = AUTH;
@@ -44,7 +48,9 @@ describe('emailed sign-in links', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.to).toBe('owner@agency.example');
     expect(sent[0]!.body.from).toEqual({ email: MAIL.from, name: 'AnyPress' });
-    expect(sent[0]!.body.subject).toBe('Your AnyPress sign-in link');
+    expect(sent[0]!.body.subject).toMatch(/^Your AnyPress sign-in code: \d{6}$/);
+    // The button opens a page that asks for a click, so a mail scanner opening it uses nothing.
+    expect(new URL(sent[0]!.href).pathname).toBe('/login/confirm');
 
     const link = new URL(sent[0]!.url);
     expect(link.origin).toBe(AUTH.url);
@@ -62,6 +68,42 @@ describe('emailed sign-in links', () => {
     // A link works once.
     const again = await app.request(link.pathname + link.search, { redirect: 'manual' });
     expect(again.headers.getSetCookie().some((c) => /^(__Secure-)?better-auth.session_token=/.test(c))).toBe(false);
+  });
+
+  it('signs in with the code from the email instead of the link, once', async () => {
+    sent.splice(0);
+    await app.request('/api/auth/sign-in/magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: AUTH.url },
+      body: JSON.stringify({ email: 'cass@scanned.example', callbackURL: '/' }),
+    });
+    const code = /sign-in code: (\d{6})$/.exec(sent[0]!.body.subject)![1]!;
+    expect(sent[0]!.body.text).toContain(`Or type this code on the sign-in page: ${code}`);
+    expect(sent[0]!.body.html).toContain(`>${code}</p>`);
+    const typed = (otp: string) =>
+      app.request('/api/auth/sign-in/email-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: AUTH.url },
+        body: JSON.stringify({ email: 'Cass@Scanned.example', otp }),
+      });
+    expect((await typed(code === '000000' ? '111111' : '000000')).status).toBe(400);
+    const ok = await typed(code);
+    expect(ok.status).toBe(200);
+    const cookie = ok.headers.getSetCookie().find((c) => /session_token=/.test(c))!.split(';')[0]!;
+    const account = await app.request('/account', { headers: { Cookie: cookie } });
+    expect((await account.json()).user).toMatchObject({ email: 'cass@scanned.example', emailVerified: true });
+    expect((await typed(code)).status).toBe(400);
+  });
+
+  it("doesn't send codes on their own", async () => {
+    sent.splice(0);
+    const res = await app.request('/api/auth/email-otp/send-verification-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: AUTH.url },
+      body: JSON.stringify({ email: 'x@y.example', type: 'sign-in' }),
+    });
+    expect(res.status).toBe(404);
+    expect(sent).toHaveLength(0);
   });
 });
 
@@ -94,7 +136,7 @@ describe("sign-in on a seller's own dashboard address", () => {
     expect(link!.origin).toBe(`https://${OWN}`);
     // In the seller's name, with a small line for the platform.
     expect(sent[0]!.body.from).toEqual({ email: MAIL.from, name: 'Seller shop' });
-    expect(sent[0]!.body.subject).toBe('Your Seller shop sign-in link');
+    expect(sent[0]!.body.subject).toMatch(/^Your Seller shop sign-in code: \d{6}$/);
     expect(sent[0]!.body.text).toMatch(/Powered by AnyPress$/);
     expect(sent[0]!.body.html).not.toContain('linear-gradient');
     // It comes from no-reply, so it doesn't invite a reply that nobody would read.
@@ -168,7 +210,7 @@ describe('sign-in email settings', () => {
   it('puts the message, one button and the support address in the email', async () => {
     let body: any;
     const capture = async (_: unknown, init?: RequestInit) => ((body = JSON.parse(String(init!.body))), new Response('{}', { status: 200 }));
-    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' }, 'a@b.example', 'https://x.example/l?a=1&b=2', capture as typeof fetch);
+    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' }, 'a@b.example', 'https://x.example/l?a=1&b=2', null, capture as typeof fetch);
     expect(body.html).toContain('<img src="https://anypress.io/logo-512.png"');
     expect(/href="([^"]+)"/.exec(body.html)![1]).toBe('https://x.example/l?a=1&amp;b=2');
     expect(body.html).toContain('mailto:support@anypress.io');
@@ -193,6 +235,6 @@ describe('sign-in email settings', () => {
 
   it('reports a refused email', async () => {
     const fail = async () => new Response('nope', { status: 422 });
-    await expect(sendSignInLink(MAIL, 'a@b.example', 'https://x.example/l', fail as typeof fetch)).rejects.toThrow(/422/);
+    await expect(sendSignInLink(MAIL, 'a@b.example', 'https://x.example/l', null, fail as typeof fetch)).rejects.toThrow(/422/);
   });
 });
