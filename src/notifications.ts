@@ -4,6 +4,7 @@ import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import type { EventType } from './webhooks.ts';
+import { parseSubscription, pushNotice, pushPublicKey, removePushSubscription, savePushSubscription } from './push.ts';
 
 /**
  * The dashboard's bell (docs/notifications.md): the store and version events worth a person's look,
@@ -51,14 +52,13 @@ export interface NewNotification {
 }
 
 export async function recordNotification(pool: Pool, n: NewNotification): Promise<void> {
-  await pool.query('INSERT INTO notifications (product_id, type, title, tenant_id, version_id, application_id) VALUES ($1, $2, $3, $4, $5, $6)', [
-    n.productId,
-    n.type,
-    n.title.slice(0, 300),
-    n.tenantId ?? null,
-    n.versionId ?? null,
-    n.applicationId ?? null,
-  ]);
+  const title = n.title.slice(0, 300);
+  const { rows } = await pool.query<{ id: string }>(
+    'INSERT INTO notifications (product_id, type, title, tenant_id, version_id, application_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+    [n.productId, n.type, title, n.tenantId ?? null, n.versionId ?? null, n.applicationId ?? null],
+  );
+  // The important ones also go to phones and computers (src/push.ts), in the background.
+  void pushNotice(pool, { ...n, title, id: rows[0]!.id });
 }
 
 /** Records a store or version event when it is one people want to hear about. */
@@ -151,6 +151,30 @@ export function notificationRoutes(pool: Pool) {
       [userId],
     );
     return c.json({ readUntil: new Date().toISOString() });
+  });
+
+  // Phone and computer alerts (src/push.ts). `enabled` false: the server has no push keys.
+  app.get('/push', (c) => {
+    const publicKey = pushPublicKey();
+    return c.json({ enabled: publicKey !== null, publicKey });
+  });
+
+  // Turns alerts on for this device. Allowed for members too: it changes only their own alerts.
+  app.post('/push', async (c) => {
+    if (!pushPublicKey()) return c.json({ statusCode: 404, message: 'Alerts are off on this server' }, 404);
+    const body = (await readJson(c)) as { userId?: unknown; subscription?: unknown };
+    const userId = reader(c, body.userId);
+    // The platform admin's own devices (signed up through /admin) hear about every storefront.
+    await savePushSubscription(pool, userId, !scopedProduct(c), parseSubscription(body.subscription));
+    return c.json({ enabled: true }, 201);
+  });
+
+  app.post('/push/remove', async (c) => {
+    const body = (await readJson(c)) as { userId?: unknown; endpoint?: unknown };
+    const userId = reader(c, body.userId);
+    if (typeof body.endpoint !== 'string' || !body.endpoint) throw badRequest('endpoint is required');
+    await removePushSubscription(pool, userId, body.endpoint);
+    return c.json({ enabled: false });
   });
 
   return app;

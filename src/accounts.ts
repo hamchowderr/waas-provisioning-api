@@ -119,8 +119,8 @@ export function sessionAuth(deps: Deps): MiddlewareHandler<AppEnv> {
     const caller = await sessionCaller(deps, c.req.raw.headers);
     if (!caller) return forbidden(c, 'Sign in first');
     if (!caller.active) return forbidden(c, caller.memberships.length ? 'Choose a storefront first' : 'Your account is not part of an organization yet');
-    // Marking their own bell read is the one change a member may make.
-    const ownBell = c.req.method === 'POST' && /\/notifications\/read\/?$/.test(c.req.path);
+    // Their own bell (marking it read, alerts on this device) is the one change a member may make.
+    const ownBell = c.req.method === 'POST' && /\/notifications\/(read|push|push\/remove)\/?$/.test(c.req.path);
     if (!canChange(caller.active.role) && !READ_METHODS.has(c.req.method) && !ownBell) return forbidden(c, 'Members can only look. Ask an owner or admin to make this change.');
     c.set('productId', caller.active.productId);
     c.set('userId', caller.user.id);
