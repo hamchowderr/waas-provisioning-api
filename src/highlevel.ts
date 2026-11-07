@@ -1,3 +1,4 @@
+import { HighLevel } from '@gohighlevel/api-client';
 import type { Context, Hono } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
 import type { PgBoss } from 'pg-boss';
@@ -68,21 +69,24 @@ interface TokenAnswer {
   locationId?: string;
 }
 
-async function oauthPost(hl: HighLevelConfig, path: string, form: Record<string, string>, bearer?: string): Promise<TokenAnswer> {
-  const res = await fetch(`${hl.apiUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-      Version: API_VERSION,
-      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
-    },
-    body: new URLSearchParams(form).toString(),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`HighLevel ${path} answered ${res.status}: ${text.slice(0, 200)}`);
-  const answer = JSON.parse(text) as TokenAnswer;
-  if (!answer.access_token) throw new Error(`HighLevel ${path} gave no access token`);
+/**
+ * HighLevel's official SDK (@gohighlevel/api-client) for its OAuth calls. Tokens stay in our own
+ * highlevel_tokens table (encrypted), so the SDK's session storage is left at its in-memory default.
+ */
+function sdk(hl: HighLevelConfig, agencyToken?: string): HighLevel {
+  return new HighLevel({ clientId: hl.clientId, clientSecret: hl.clientSecret, apiVersion: API_VERSION, logLevel: 'warn', ...(agencyToken && { agencyAccessToken: agencyToken }) });
+}
+
+async function oauthCall(hl: HighLevelConfig, path: string, run: (client: HighLevel, options: { baseURL: string }) => Promise<unknown>, agencyToken?: string): Promise<TokenAnswer> {
+  let answer: TokenAnswer;
+  try {
+    answer = (await run(sdk(hl, agencyToken), { baseURL: hl.apiUrl })) as TokenAnswer;
+  } catch (err: any) {
+    const status = err?.statusCode ?? err?.response?.status;
+    const detail = err?.response?.data ? JSON.stringify(err.response.data) : String(err?.message ?? err);
+    throw new Error(`HighLevel ${path} answered ${status ?? 'with an error'}: ${detail.slice(0, 200)}`);
+  }
+  if (!answer?.access_token) throw new Error(`HighLevel ${path} gave no access token`);
   return answer;
 }
 
@@ -107,13 +111,9 @@ async function saveToken(pool: Pool, secrets: Secrets, answer: TokenAnswer, fall
 
 /** The code HighLevel's install sends to the redirect URL, turned into the install's token. */
 export async function exchangeCode(pool: Pool, secrets: Secrets, hl: HighLevelConfig, code: string, redirectUri: string) {
-  const answer = await oauthPost(hl, '/oauth/token', {
-    client_id: hl.clientId,
-    client_secret: hl.clientSecret,
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: redirectUri,
-  });
+  const answer = await oauthCall(hl, '/oauth/token', (client, options) =>
+    client.oauth.getAccessToken({ client_id: hl.clientId, client_secret: hl.clientSecret, grant_type: 'authorization_code', code, redirect_uri: redirectUri }, options),
+  );
   return saveToken(pool, secrets, answer);
 }
 
@@ -125,13 +125,8 @@ async function storedToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, us
   if (!row) return null;
   if (row.expires_at.getTime() - Date.now() > 5 * 60_000) return secrets.decrypt(row.access_token);
   if (!row.refresh_token) return null;
-  const answer = await oauthPost(hl, '/oauth/token', {
-    client_id: hl.clientId,
-    client_secret: hl.clientSecret,
-    grant_type: 'refresh_token',
-    refresh_token: secrets.decrypt(row.refresh_token),
-    user_type: userType,
-  });
+  const refresh = secrets.decrypt(row.refresh_token);
+  const answer = await oauthCall(hl, '/oauth/token', (client, options) => client.oauth.refreshToken(refresh, hl.clientId, hl.clientSecret, 'refresh_token', userType, options));
   await saveToken(pool, secrets, answer, { userType, companyId: row.company_id ?? undefined, locationId: row.location_id ?? undefined });
   return answer.access_token;
 }
@@ -145,7 +140,7 @@ export async function locationToken(pool: Pool, secrets: Secrets, hl: HighLevelC
   if (own || !companyId) return own;
   const agency = await storedToken(pool, secrets, hl, 'Company', companyId);
   if (!agency) return null;
-  const answer = await oauthPost(hl, '/oauth/locationToken', { companyId, locationId }, agency);
+  const answer = await oauthCall(hl, '/oauth/locationToken', (client, options) => client.oauth.getLocationAccessToken({ companyId, locationId }, options), agency);
   await saveToken(pool, secrets, answer, { userType: 'Location', companyId, locationId });
   return answer.access_token;
 }
