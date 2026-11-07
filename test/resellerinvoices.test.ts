@@ -3,7 +3,7 @@
 // calls themselves against a recorded fetch.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { invoiceAllResellers, lastMonth, loadResellerInvoiceConfig, type ResellerInvoiceConfig } from '../src/resellerinvoices.ts';
-import { Stripe, StripeError, type InvoiceSender, type NewInvoice, type StripeInvoice } from '../src/stripe.ts';
+import { STRIPE_API_VERSION, Stripe, StripeError, type InvoiceSender, type NewInvoice, type StripeInvoice } from '../src/stripe.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 let t: TestContext;
@@ -185,9 +185,10 @@ describe('Stripe calls', () => {
   it('makes, fills, finalizes and emails an invoice with idempotency keys', async () => {
     const calls: { method: string; url: string; body: string; key: string | null }[] = [];
     const fetchFn = (async (url: string, init: RequestInit) => {
-      const headers = init.headers as Record<string, string>;
-      calls.push({ method: init.method!, url, body: String(init.body ?? ''), key: headers['Idempotency-Key'] ?? null });
-      expect(headers.Authorization).toBe('Bearer sk_test_abc');
+      const headers = new Headers(init.headers);
+      calls.push({ method: init.method!, url, body: String(init.body ?? ''), key: headers.get('Idempotency-Key') });
+      expect(headers.get('Authorization')).toBe('Bearer sk_test_abc');
+      expect(headers.get('Stripe-Version')).toBe(STRIPE_API_VERSION);
       const id = url.includes('/v1/invoices') ? 'in_1' : 'ii_1';
       return new Response(JSON.stringify({ id, status: url.endsWith('/send') ? 'open' : 'draft', hosted_invoice_url: 'https://pay.example/in_1' }), { status: 200 });
     }) as typeof fetch;
