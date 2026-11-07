@@ -73,6 +73,10 @@ Repeating `create_store` with the same `externalId` answers with the store it al
 
 A version is a staging WordPress (a PHP and WordPress version) that stores are made from. `manage_versions` create, then poll `manage_versions` list until it is Done, and `manage_versions` set_production makes new stores use it. `update_store` move (with `targetVersionId`) moves an existing store. `manage_versions` delete only works once no store is on it.
 
+## Build a whole website
+
+For a new website or a redesign, follow the `anypress-site-builder` skill: it runs the site tools below in a fixed order (brief, design, photos, pages, words, checks, launch) with the owner's yes at each step.
+
 ## Edit a site's pages and design
 
 The site tools work on one store's WordPress directly (no waiting needed) and need the store to be Done and not suspended.

@@ -5,7 +5,18 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent create an
 It comes with:
 
 - **store screens** ([MCP Apps](https://modelcontextprotocol.io/extensions/apps)) that render inline in clients that support MCP Apps (Claude, ChatGPT, VS Code and others): `show_stores` lists your stores with back up, suspend and resume buttons; `show_store` shows one store (status, size, version, domains, and the versions it can move to); `show_store_backups` its backups, with back up and restore buttons; `show_store_domains` its domains, with add, remove and make-main buttons. Other clients get the same data as text.
-- an **Agent Skill**, [`skills/anypress-stores`](skills/anypress-stores/SKILL.md), that teaches an agent the common jobs: launching a store, putting it on a custom domain, setting up its sending domain, backups and restores, and editing a store's pages and design. The server serves it too (below), so clients that support the Skills extension pick it up on their own.
+- **Agent Skills** (in [`skills/`](skills)) that the server serves too (below), so clients that support the Skills extension pick them up on their own:
+  - [`anypress-stores`](skills/anypress-stores/SKILL.md): the common jobs: launching a store, putting it on a custom domain, setting up its sending domain, backups and restores, and editing a store's pages and design.
+  - [`anypress-site-builder`](skills/anypress-site-builder/SKILL.md): building a whole website in seven steps (brief, design, photos, pages, words, checks, launch), with the owner's yes at each step. It uses the skills below.
+  - [`anypress-design-brief`](skills/anypress-design-brief/SKILL.md): the design brief: the kit, colours and fonts from the theme's slugs, every page's sections, the photo list and every button.
+  - [`anypress-design-md`](skills/anypress-design-md/SKILL.md): a reference site or brand book into a DESIGN.md, and a DESIGN.md into the theme's styles.
+  - [`anypress-site-copy`](skills/anypress-site-copy/SKILL.md): the words for a small business site.
+  - [`anypress-slop-gate`](skills/anypress-slop-gate/SKILL.md): a script that checks a page's block markup for placeholders, fixed colours and sizes, repeated layouts, dead links, missing alt text and stock phrases.
+  - [`anypress-ui-check`](skills/anypress-ui-check/SKILL.md): a browser check at desktop and phone width: names and labels, focus, tap sizes, contrast, sideways scroll and the page's head.
+  - [`anypress-design-critique`](skills/anypress-design-critique/SKILL.md): a design director's review of a page, with fixes named as pattern and style changes.
+  - [`anypress-demo-build`](skills/anypress-demo-build/SKILL.md): one demo site from the demo plan, on WordPress Playground.
+
+  The design skills are our own WordPress versions of open design skills (Higgsfield's website skill, Taste Skill, Vercel's Web Interface Guidelines, Impeccable, Google's DESIGN.md); each skill's `NOTICE.md` keeps the original licence.
 
 > The API secret has full control of your stores. Every tool says whether it only reads or can destroy something, so clients like Claude ask before deleting or restoring a store. The read-only endpoint (or `WAAS_MCP_READ_ONLY=1`) offers only the tools and actions that read, and an OAuth connection offers only the areas you allowed (below).
 
@@ -105,13 +116,13 @@ Claude Desktop, in `claude_desktop_config.json`:
 
 Once the package is on npm, `npx -y waas-provisioning-mcp` replaces the `npm --prefix … run -s mcp` command.
 
-## Install the skill
+## Install the skills
 
-- Claude Code: copy `skills/anypress-stores` into `~/.claude/skills/` (or a project's `.claude/skills/`).
-- Claude apps: zip the `anypress-stores` folder and upload it under Settings, Capabilities, Skills.
-- Other agents that support [Agent Skills](https://agentskills.io) load the same folder.
+- Claude Code: copy the folders in `skills/` into `~/.claude/skills/` (or a project's `.claude/skills/`).
+- Claude apps: zip each folder and upload it under Settings, Capabilities, Skills.
+- Other agents that support [Agent Skills](https://agentskills.io) load the same folders.
 
-The server also serves it over MCP, per the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) (`io.modelcontextprotocol/skills`): it declares the extension in its capabilities, the skill's file is the resource `skill://anypress-stores/SKILL.md`, and `skills/list` and `skills/get` return its frontmatter with the file's SHA-256 digest and size. The server's instructions point at the same URI, so a client without the extension can still read it with `resources/read`. Every folder under `skills/` with a `SKILL.md` is served this way.
+The server also serves them over MCP, per the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) (`io.modelcontextprotocol/skills`): it declares the extension in its capabilities, each skill's files are resources such as `skill://anypress-stores/SKILL.md`, and `skills/list` and `skills/get` return each skill's frontmatter with its files' SHA-256 digests and sizes. The server's instructions point at the stores and site-builder skills, so a client without the extension can still read it with `resources/read`. Every folder under `skills/` with a `SKILL.md` is served this way.
 
 ## Tools
 
