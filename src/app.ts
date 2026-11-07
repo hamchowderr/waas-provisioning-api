@@ -119,6 +119,11 @@ export function createApp(deps: Deps) {
     const headers = new Headers(c.req.raw.headers);
     headers.set('x-forwarded-host', live ?? own.host);
     headers.set('x-forwarded-proto', own.protocol.replace(':', ''));
+    // The browser's own fetch mode, which the dashboard's server passes on (its fetch sends "cors").
+    // The plugin's authorization endpoint redirects a browser that navigates and answers JSON otherwise.
+    const mode = c.req.header('x-forwarded-sec-fetch-mode');
+    if (mode && /^[a-z-]{1,20}$/.test(mode)) headers.set('sec-fetch-mode', mode);
+    headers.delete('x-forwarded-sec-fetch-mode');
     return deps.auth.handler(new Request(c.req.raw, { headers }));
   });
   // Applications to sell on the platform, from the marketing site's form (src/applications.ts). No sign-in.

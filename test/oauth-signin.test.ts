@@ -151,6 +151,19 @@ describe('connecting an AI app by signing in', () => {
     expect((await asUser(owner.cookie, 'GET', connectPath(oauthQuery.replace('scope=', 'scope=webhooks%3Awrite+')))).status).toBe(404);
   });
 
+  it("redirects the browser through the dashboard's server, whose own fetch says cors", async () => {
+    const p = provider();
+    await expect(new Client({ name: 'agent', version: '1' }).connect(transportFor(p))).rejects.toBeInstanceOf(UnauthorizedError);
+    const url = p.saved.authorizationUrl!;
+    const through = (headers: Record<string, string>) => app.request(`${url.pathname}${url.search}`, { headers: { Cookie: owner.cookie, Accept: 'text/html', 'Sec-Fetch-Mode': 'cors', ...headers } });
+    // The browser navigated: a redirect to the Connect page.
+    const navigated = await through({ 'X-Forwarded-Sec-Fetch-Mode': 'navigate' });
+    expect(navigated.status).toBe(302);
+    expect(new URL(navigated.headers.get('Location')!, AUTH.url).pathname).toBe('/connect');
+    // A script's request still gets the plugin's JSON answer.
+    expect((await through({})).status).toBe(200);
+  });
+
   it('connects as the person, with changes allowed for an owner', async () => {
     const { client, p } = await connectAs(owner);
     expect(scopesOf(p)).toBe(ALL_SCOPES.join(' '));
