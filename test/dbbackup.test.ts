@@ -119,7 +119,7 @@ describe('S3 put and list', () => {
     const headers = put.init.headers as Record<string, string>;
     expect(put.url).toBe('https://acct.r2.cloudflarestorage.com/waas-stores/db-backups/2026/x.dump.enc');
     expect(headers['x-amz-content-sha256']).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824');
-    expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKID\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/);
+    expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKID\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/);
     expect(JSON.stringify(put.init)).not.toContain('not-a-secret');
 
     expect(await s3.list('db-backups/')).toEqual([

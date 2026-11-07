@@ -510,7 +510,7 @@ export class CoolifyProvisioner implements Provisioner {
   // Versions
 
   async createUploadUrl({ versionId, asZip }: { versionId: string; asZip: boolean }) {
-    return this.s3.presign('PUT', keys.upload(versionId, asZip), 3600);
+    return await this.s3.presign('PUT', keys.upload(versionId, asZip), 3600);
   }
 
   async buildVersion(input: Parameters<Provisioner['buildVersion']>[0]) {
@@ -524,20 +524,22 @@ export class CoolifyProvisioner implements Provisioner {
       sourceKey = (await this.s3.head(zip)) !== null ? zip : keys.upload(input.versionId, false);
     }
     if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
-    await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home: https(input.domain), title: 'Version site' });
+    await this.exec(uuid, 'restore', { url: await this.s3.presign('GET', sourceKey), home: https(input.domain), title: 'Version site' });
     // Always run: it also undoes choices an earlier version applied to the archive this one comes from. The
     // choices, with a signed link to each zip, go in a file the agent fetches: too long for task commands.
     let pluginArgs: Record<string, unknown> = { plugins: [] };
     if (input.plugins?.length) {
-      const plugins = input.plugins.map((p) =>
-        p.action === 'add' ? { ...p, url: this.s3.presign('GET', p.uploadId ? keys.pluginUpload(p.uploadId) : keys.plugin(p.slug, p.version!), 3600) } : p,
+      const plugins = await Promise.all(
+        input.plugins.map(async (p) =>
+          p.action === 'add' ? { ...p, url: await this.s3.presign('GET', p.uploadId ? keys.pluginUpload(p.uploadId) : keys.plugin(p.slug, p.version!), 3600) } : p,
+        ),
       );
       await this.s3.put(keys.pluginChoices(input.versionId), new TextEncoder().encode(JSON.stringify({ plugins })), 'application/json');
-      pluginArgs = { manifest: this.s3.presign('GET', keys.pluginChoices(input.versionId)) };
+      pluginArgs = { manifest: await this.s3.presign('GET', keys.pluginChoices(input.versionId)) };
     }
     // The manifest can hold licence keys, so it's removed as soon as the agent has read it.
     const applied = await this.exec(uuid, 'plugins', pluginArgs).finally(() => (input.plugins?.length ? this.s3.delete(keys.pluginChoices(input.versionId)) : undefined));
-    await this.exec(uuid, 'code-export', { url: this.s3.presign('PUT', keys.code(input.versionId)) });
+    await this.exec(uuid, 'code-export', { url: await this.s3.presign('PUT', keys.code(input.versionId)) });
     return { pluginFiles: (applied.files ?? {}) as Record<string, string> };
   }
 
@@ -547,7 +549,7 @@ export class CoolifyProvisioner implements Provisioner {
   }
 
   async createPluginUpload({ uploadId }: { uploadId: string }) {
-    return { uploadUrl: this.s3.presign('PUT', keys.pluginUpload(uploadId), 3600) };
+    return { uploadUrl: await this.s3.presign('PUT', keys.pluginUpload(uploadId), 3600) };
   }
 
   async readPluginUpload({ uploadId, maxBytes }: { uploadId: string; maxBytes: number }) {
@@ -596,7 +598,7 @@ export class CoolifyProvisioner implements Provisioner {
   }
 
   async createBaseSnapshotUpload({ baseSnapshotId }: { baseSnapshotId: string }) {
-    return { uploadUrl: this.s3.presign('PUT', keys.base(baseSnapshotId), 3600), uri: this.s3.objectUrl(keys.base(baseSnapshotId)) };
+    return { uploadUrl: await this.s3.presign('PUT', keys.base(baseSnapshotId), 3600), uri: this.s3.objectUrl(keys.base(baseSnapshotId)) };
   }
 
   async deleteBaseSnapshot({ baseSnapshotId }: { baseSnapshotId: string }) {
@@ -605,7 +607,7 @@ export class CoolifyProvisioner implements Provisioner {
 
   async snapshotUpload({ versionId, snapshotId }: { versionId: string; snapshotId: string }) {
     const version = await this.requireService(VERSIONS_ENV, versionName(versionId));
-    await this.exec(version.uuid, 'snapshot', { url: this.s3.presign('PUT', keys.snapshot(snapshotId)) });
+    await this.exec(version.uuid, 'snapshot', { url: await this.s3.presign('PUT', keys.snapshot(snapshotId)) });
   }
 
   async downloadSnapshot({ snapshotId }: { snapshotId: string }) {
@@ -652,13 +654,13 @@ export class CoolifyProvisioner implements Provisioner {
     let check: SiteCheck | undefined;
     let moved: MoveReport | undefined;
     try {
-      const restored = await this.exec(uuid, 'restore', { url: this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
+      const restored = await this.exec(uuid, 'restore', { url: await this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
       if (imported) moved = moveReport(restored);
-      if (!input.ownCode && !imported) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)) });
+      if (!input.ownCode && !imported) await this.exec(uuid, 'code-import', { url: await this.s3.presign('GET', keys.code(input.versionId)) });
       // A site from elsewhere may come from an older WordPress than the version runs.
       if (imported) await this.exec(uuid, 'update-db', {});
       // It keeps its own plugins and themes, and gets AnyPress Client (switched on) and what else the version has that it lacks.
-      if (input.ownCode || imported) await this.exec(uuid, 'code-import', { url: this.s3.presign('GET', keys.code(input.versionId)), add: true });
+      if (input.ownCode || imported) await this.exec(uuid, 'code-import', { url: await this.s3.presign('GET', keys.code(input.versionId)), add: true });
       await this.exec(uuid, 'configure', {
         home,
         // A site moved in keeps its own title and settings.
@@ -751,7 +753,7 @@ export class CoolifyProvisioner implements Provisioner {
       const key = keys.agent(AGENT_SHA);
       if ((await this.s3.head(key)) === null) await this.s3.put(key, Buffer.from(AGENT_GZ, 'base64'), 'application/gzip');
       const step = [
-        `$s = @gzdecode((string) @file_get_contents(${phpString(this.s3.presign('GET', key, 900))}));`,
+        `$s = @gzdecode((string) @file_get_contents(${phpString(await this.s3.presign('GET', key, 900))}));`,
         `if ($s === false || hash('sha256', $s) !== ${phpString(AGENT_SHA)}) { echo "WAAS_ERROR the agent script did not download\n"; exit(1); }`,
         "if (@file_put_contents('/tmp/waas-agent.new', $s) === false || !@rename('/tmp/waas-agent.new', '/tmp/waas-agent.php')) { echo \"WAAS_ERROR cannot write the agent script\n\"; exit(1); }",
         "echo 'WAAS_RESULT {\"swapped\":true}', \"\n\";",
@@ -959,13 +961,13 @@ export class CoolifyProvisioner implements Provisioner {
     });
     await this.restart(store.uuid);
     // A store with its own code takes only the version's AnyPress Client and what it lacks.
-    await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(targetVersionId)), ...(ownCode && { add: true }) });
+    await this.exec(store.uuid, 'code-import', { url: await this.s3.presign('GET', keys.code(targetVersionId)), ...(ownCode && { add: true }) });
     await this.exec(store.uuid, 'update-db', {});
   }
 
   async snapshotStore({ storeId, snapshotId }: { storeId: string; snapshotId: string }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    await this.exec(store.uuid, 'snapshot', { url: this.s3.presign('PUT', keys.snapshot(snapshotId)) });
+    await this.exec(store.uuid, 'snapshot', { url: await this.s3.presign('PUT', keys.snapshot(snapshotId)) });
   }
 
   async restoreStore({ storeId, snapshotId, ownCode }: Parameters<Provisioner['restoreStore']>[0]) {
@@ -973,8 +975,8 @@ export class CoolifyProvisioner implements Provisioner {
     const meta = parseMeta(store.description);
     // Keep the store's current main domain: read it from WordPress before replacing the database.
     const home = await this.currentHome(store.uuid);
-    await this.exec(store.uuid, 'restore', { url: this.s3.presign('GET', keys.snapshot(snapshotId)), home });
-    if (meta?.kind === 'store') await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)), ...(ownCode && { add: true }) });
+    await this.exec(store.uuid, 'restore', { url: await this.s3.presign('GET', keys.snapshot(snapshotId)), home });
+    if (meta?.kind === 'store') await this.exec(store.uuid, 'code-import', { url: await this.s3.presign('GET', keys.code(meta.versionId)), ...(ownCode && { add: true }) });
   }
 
   async rollbackStore({ storeId, backupId, wpOptions, mainDomain, ownCode }: Parameters<Provisioner['rollbackStore']>[0]) {
@@ -986,9 +988,9 @@ export class CoolifyProvisioner implements Provisioner {
     // A store whose WordPress is gone (an emptied volume) has none, so it takes its main domain on record.
     // The agent keeps the suspension flag and page across the restore.
     const home = await this.currentHome(store.uuid, mainDomain);
-    await this.exec(store.uuid, 'restore', { url: this.s3.presign('GET', keys.backup(backupId)), home });
+    await this.exec(store.uuid, 'restore', { url: await this.s3.presign('GET', keys.backup(backupId)), home });
     // The code of the version the store runs now (a store with its own code takes only AnyPress Client and what it lacks), and its database brought up to that WordPress.
-    await this.exec(store.uuid, 'code-import', { url: this.s3.presign('GET', keys.code(meta.versionId)), ...(ownCode && { add: true }) });
+    await this.exec(store.uuid, 'code-import', { url: await this.s3.presign('GET', keys.code(meta.versionId)), ...(ownCode && { add: true }) });
     await this.exec(store.uuid, 'update-db', {});
     await this.exec(store.uuid, 'configure', { options: wpOptions });
   }
@@ -1002,7 +1004,7 @@ export class CoolifyProvisioner implements Provisioner {
 
   async backupStore({ storeId, backupId }: { storeId: string; backupId: string }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    const result = await this.exec(store.uuid, 'snapshot', { url: this.s3.presign('PUT', keys.backup(backupId)) });
+    const result = await this.exec(store.uuid, 'snapshot', { url: await this.s3.presign('PUT', keys.backup(backupId)) });
     const sizeBytes = (await this.s3.head(keys.backup(backupId))) ?? Number(result.sizeBytes ?? 0);
     return { sizeBytes };
   }
@@ -1014,7 +1016,7 @@ export class CoolifyProvisioner implements Provisioner {
   // Sites moved in
 
   async createImportUpload({ storeId, expiresInSeconds }: { storeId: string; expiresInSeconds: number }) {
-    return this.s3.presign('PUT', keys.import(storeId), expiresInSeconds);
+    return await this.s3.presign('PUT', keys.import(storeId), expiresInSeconds);
   }
 
   async startImportParts({ storeId }: { storeId: string }) {
@@ -1022,7 +1024,9 @@ export class CoolifyProvisioner implements Provisioner {
   }
 
   async importPartUrls({ storeId, uploadId, parts, expiresInSeconds }: { storeId: string; uploadId: string; parts: number[]; expiresInSeconds: number }) {
-    return Object.fromEntries(parts.map((n) => [n, this.s3.presign('PUT', keys.import(storeId), expiresInSeconds, { partNumber: String(n), uploadId })]));
+    return Object.fromEntries(
+      await Promise.all(parts.map(async (n) => [n, await this.s3.presign('PUT', keys.import(storeId), expiresInSeconds, { partNumber: String(n), uploadId })] as const)),
+    );
   }
 
   async importParts({ storeId, uploadId }: { storeId: string; uploadId: string }) {
@@ -1085,7 +1089,7 @@ export class CoolifyProvisioner implements Provisioner {
     const key = keys.crmBatch(randomBytes(8).toString('hex'));
     await this.s3.put(key, new TextEncoder().encode(JSON.stringify({ contacts })), 'application/json');
     try {
-      const out = await this.exec(store.uuid, 'crm-prospects', { url: this.s3.presign('GET', key, 900) });
+      const out = await this.exec(store.uuid, 'crm-prospects', { url: await this.s3.presign('GET', key, 900) });
       const failed = out.failed && typeof out.failed === 'object' && !Array.isArray(out.failed) ? (out.failed as Record<string, string>) : {};
       return { added: Number(out.added) || 0, updated: Number(out.updated) || 0, failed };
     } finally {
@@ -1103,7 +1107,7 @@ export class CoolifyProvisioner implements Provisioner {
     const key = keys.mailbox(randomBytes(8).toString('hex'));
     await this.s3.put(key, new TextEncoder().encode(JSON.stringify(mailbox)), 'application/json');
     try {
-      const out = await this.exec(store.uuid, 'outreach-mailbox', { url: this.s3.presign('GET', key, 300) });
+      const out = await this.exec(store.uuid, 'outreach-mailbox', { url: await this.s3.presign('GET', key, 300) });
       return out.ok === true ? { ok: true } : { ok: false, error: typeof out.error === 'string' ? out.error : 'Could not sign in to the mailbox' };
     } finally {
       await this.s3.delete(key).catch(() => undefined);
@@ -1115,7 +1119,7 @@ export class CoolifyProvisioner implements Provisioner {
     const key = keys.automation(randomBytes(8).toString('hex'));
     await this.s3.put(key, new TextEncoder().encode(JSON.stringify(automation)), 'application/json');
     try {
-      const out = await this.exec(store.uuid, 'crm-automation', { url: this.s3.presign('GET', key, 900) });
+      const out = await this.exec(store.uuid, 'crm-automation', { url: await this.s3.presign('GET', key, 900) });
       return { id: Number(out.id) || 0, created: out.created === true };
     } finally {
       await this.s3.delete(key).catch(() => undefined);
@@ -1155,7 +1159,7 @@ export class CoolifyProvisioner implements Provisioner {
         envs: { WAAS_CONSTANTS_B64: encodeConstants({}) },
       });
       await this.exec(uuid, 'suspend', { brand: this.config.brand ?? { name: '' } });
-      await this.exec(uuid, 'restore', { url: this.s3.presign('GET', key), home: https(domain) });
+      await this.exec(uuid, 'restore', { url: await this.s3.presign('GET', key), home: https(domain) });
       const found = await this.exec(uuid, 'verify', {});
       return {
         name: typeof found.name === 'string' ? found.name : null,

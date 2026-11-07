@@ -91,7 +91,7 @@ export async function pushHostUpdate(pool: Pool, provisioner: Provisioner, relea
     storeId: tenantId,
     slug: HOST_SLUG,
     version,
-    url: releases.presignGet(manifest.zip, PACKAGE_URL_TTL),
+    url: await releases.presignGet(manifest.zip, PACKAGE_URL_TTL),
     sha256: manifest.sha256,
     replaces: OLD_HOST_SLUGS,
   });

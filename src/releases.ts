@@ -69,7 +69,7 @@ export interface ReleaseStore {
   /** The parsed JSON object at `key`, or null when there is none. */
   getJson(key: string): Promise<unknown | null>;
   /** A URL anyone can GET for `expiresIn` seconds. */
-  presignGet(key: string, expiresIn: number): string;
+  presignGet(key: string, expiresIn: number): Promise<string>;
 }
 
 export const channelKey = (slug: PluginSlug, channel: Channel) => `releases/${slug}/channels/${channel}.json`;
@@ -105,7 +105,7 @@ export class S3ReleaseStore implements ReleaseStore {
     return value;
   }
 
-  presignGet(key: string, expiresIn: number): string {
+  presignGet(key: string, expiresIn: number): Promise<string> {
     return this.s3.presign('GET', key, expiresIn);
   }
 }

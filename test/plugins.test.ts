@@ -30,7 +30,7 @@ class MemoryReleases implements ReleaseStore {
     if (this.failing) throw new Error('S3 GET failed: HTTP 500');
     return this.objects.get(key) ?? null;
   }
-  presignGet(key: string, expiresIn: number) {
+  async presignGet(key: string, expiresIn: number) {
     return `https://releases.test/${key}?X-Amz-Expires=${expiresIn}`;
   }
 }
@@ -241,7 +241,7 @@ describe('S3ReleaseStore', () => {
       'waas-releases.acct.r2.cloudflarestorage.com/releases/anypress-host/channels/beta.json',
       'waas-releases.acct.r2.cloudflarestorage.com/',
     ]);
-    const presigned = new URL(new S3ReleaseStore({ ...config, virtualHost: true }).presignGet('releases/anypress-host/2.3.0/anypress-host.zip', 600));
+    const presigned = new URL(await new S3ReleaseStore({ ...config, virtualHost: true }).presignGet('releases/anypress-host/2.3.0/anypress-host.zip', 600));
     expect(`${presigned.host}${presigned.pathname}`).toBe('waas-releases.acct.r2.cloudflarestorage.com/releases/anypress-host/2.3.0/anypress-host.zip');
   });
 
@@ -252,8 +252,8 @@ describe('S3ReleaseStore', () => {
     expect((err as Error).message).toBe('S3 GET releases/anypress-host/channels/stable.json failed: HTTP 403 SignatureDoesNotMatch');
   });
 
-  it('presigns GETs of the zip without exposing the secret', () => {
-    const url = new URL(new S3ReleaseStore(config).presignGet('releases/anypress-host/2.3.0/anypress-host.zip', 600));
+  it('presigns GETs of the zip without exposing the secret', async () => {
+    const url = new URL(await new S3ReleaseStore(config).presignGet('releases/anypress-host/2.3.0/anypress-host.zip', 600));
     expect(url.pathname).toBe('/waas-releases/releases/anypress-host/2.3.0/anypress-host.zip');
     expect(url.searchParams.get('X-Amz-Expires')).toBe('600');
     expect(url.toString()).not.toContain('not-a-secret');

@@ -254,7 +254,7 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     if (!releases) throw new HttpError(503, 'Plugin downloads are not configured');
     const manifest = parseManifest(await releases.getJson(channelKey('anypress-export', 'stable')), 'anypress-export');
     if (!manifest) throw new HttpError(404, 'The AnyPress Export plugin is not released yet');
-    return c.redirect(releases.presignGet(manifest.zip, 600), 302);
+    return c.redirect(await releases.presignGet(manifest.zip, 600), 302);
   });
 
   /** The import the request's code names, with its store. 404 for an unknown code, 410 for an expired one. */
