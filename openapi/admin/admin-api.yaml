@@ -2828,9 +2828,10 @@ components:
           type: string
           pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
           description: With wantsStorefront, the storefront's address <subdomain>.<platform domain>. Must be free
+        highLevelAgency: { type: boolean, description: They run a HighLevel agency, and will make sites from its sub-accounts with the AnyPress app. False when left out }
     Application:
       type: object
-      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, status, productId, resellerId, dateDecided, dateCreated]
+      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, highLevelAgency, status, productId, resellerId, dateDecided, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2841,6 +2842,7 @@ components:
         expectedSites: { type: string, enum: ['1-2', '3-9', '10-24', '25+'] }
         wantsStorefront: { type: boolean }
         storefrontSubdomain: { type: string, nullable: true }
+        highLevelAgency: { type: boolean, description: They said they run a HighLevel agency }
         status: { type: string, enum: [pending, approved, declined] }
         productId: { type: string, format: uuid, nullable: true, description: The product made when it was approved }
         resellerId: { type: string, format: uuid, nullable: true, description: The reseller account made when it was approved as a reseller }
