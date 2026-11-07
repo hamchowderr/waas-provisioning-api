@@ -11,11 +11,10 @@ import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'https://services.leadconnectorhq.com/integrations/oauth/finish';
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let helpers: any;
 let clientId: string;
 

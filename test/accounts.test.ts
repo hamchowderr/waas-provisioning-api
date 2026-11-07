@@ -10,16 +10,14 @@ import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let helpers: any;
 let otherProductId: string;
 let otherAuth: string;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
@@ -68,13 +66,11 @@ const accept = (cookie: string, invitationId: string) =>
 async function storeFor(auth: string, name: string): Promise<{ id: string; externalId: string }> {
   const res = await t.call('POST', '/v1/versions', { body: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true }, auth });
   const versionId = ((await res.json()) as { id: string }).id;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`, { auth })).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId }, auth });
   const created = await t.call('POST', '/v1/tenants', { body: { ...OWNER, name }, auth });
   expect(created.status).toBe(200);
   const tenant = (await created.json()) as { id: string; externalId: string };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await waitFor(async () => ((await (await t.call('GET', `/v1/tenants?externalId=${tenant.externalId}`, { auth })).json()) as any[])[0]?.statusCode === Status.Done);
   return tenant;
 }
@@ -172,7 +168,6 @@ describe('a signed-in owner', () => {
   });
 
   it("sees their own stores and never another product's", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const list = (await (await asUser(owner.cookie, 'GET', '/v1/tenants')).json()) as any[];
     expect(list.map((x) => x.id)).toContain(mine.id);
     expect(list.map((x) => x.id)).not.toContain(theirs.id);
@@ -207,7 +202,6 @@ describe('a signed-in owner', () => {
     const res = await asUser(owner.cookie, 'GET', '/account/requests?path=/v1/');
     expect(res.status).toBe(200);
     const log = await res.json();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const marked = log.items.filter((r: any) => r.query?.includes(marker));
     expect(marked).toHaveLength(2);
     expect(marked).toContainEqual(expect.objectContaining({ apiKeyId: own.key, productId: null, status: 403 }));
@@ -220,10 +214,8 @@ describe('a signed-in owner', () => {
     expect(JSON.stringify(asked)).not.toContain(otherProductId);
     // The platform admin still sees all of it, store names included.
     const all = await (await admin('GET', '/requests')).json();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allMarked = all.items.filter((r: any) => r.query?.includes(marker));
     expect(allMarked).toHaveLength(4);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(allMarked.find((r: any) => r.tenantId === theirs.id).tenantName).toBe('Other store');
   });
 
@@ -646,7 +638,6 @@ describe("a reseller's team (docs/resellers.md)", () => {
     const auth = basic(key.key, key.secret);
     const v = await t.call('POST', '/v1/versions', { body: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true }, auth });
     const versionId = ((await v.json()) as { id: string }).id;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`, { auth })).json()) as any[])[0]?.statusCode === Status.Done);
     await t.call('PUT', '/v1/versions/production', { body: { versionId }, auth });
 

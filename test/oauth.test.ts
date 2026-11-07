@@ -14,7 +14,7 @@ import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
 
 type Access = 'read' | 'write';
 /**
@@ -67,7 +67,6 @@ let t: TestContext;
 let app: ReturnType<typeof createApp>;
 let key: string;
 let secret: string;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let helpers: any;
 let owner: { userId: string; cookie: string };
 

@@ -86,7 +86,6 @@ function icon(icons: unknown): string | null {
   return url && url.startsWith('https://') ? url : null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toPlugin(p: any): WpOrgPlugin {
   return {
     slug: text(p.slug),

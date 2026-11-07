@@ -44,7 +44,6 @@ const optionalString = (v: unknown, max: number) => (typeof v === 'string' && v.
 /** Checks a manifest read from the bucket; null when it is malformed or isn't for this slug. */
 export function parseManifest(raw: unknown, slug: PluginSlug, version?: string): ReleaseManifest | null {
   if (!raw || typeof raw !== 'object') return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const m = raw as Record<string, any>;
   if (m.slug !== slug) return null;
   if (typeof m.version !== 'string' || !RELEASE_VERSION.test(m.version)) return null;

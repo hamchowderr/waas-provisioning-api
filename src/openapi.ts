@@ -6,7 +6,6 @@ import { badRequest } from './errors.ts';
 
 export const specPath = new URL('../openapi/waas-provisioning-api.yaml', import.meta.url);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const spec: any = parse(readFileSync(specPath, 'utf8'));
 
 /** An Ajv instance holding the contract's component schemas under the id "spec". */

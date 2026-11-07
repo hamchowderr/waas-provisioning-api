@@ -11,9 +11,7 @@ import { S3 } from '../src/provisioner/s3.ts';
 import { channelKey, manifestKey, parseManifest, S3ReleaseStore, type PluginSlug, type ReleaseStore } from '../src/releases.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const updatesSpec: any = parse(readFileSync(new URL('../openapi/plugin-updates.yaml', import.meta.url), 'utf8'));
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: updatesSpec.components }, 'updates');

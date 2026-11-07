@@ -58,12 +58,10 @@ const quiet = { log: () => undefined, error: () => undefined };
 const now = new Date();
 const month = now.toISOString().slice(0, 7);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function admin(method: string, path: string, body?: unknown): Promise<any> {
   const res = await t.call(method, path, { auth: `Bearer ${TEST_ADMIN_TOKEN}`, body });
   const parsed = await res.json();

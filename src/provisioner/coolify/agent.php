@@ -27,7 +27,7 @@ const CRON_FLAG = CONTENT . '/.waas-cron';
 const HOLD_FLAG = CONTENT . '/.waas-hold';
 /** The page a suspended store shows. Rendered on suspend; kept out of snapshots, so it never spreads to other stores. */
 const PAGE = CONTENT . '/waas-unavailable.html';
-const DEFAULT_BRAND = ['name' => 'AnyPress'];
+const DEFAULT_BRAND = ['name' => ''];
 const WWW_UID = 33; // www-data in the Debian WordPress image (the Alpine CLI image's own is 82)
 
 function fail(string $message)
@@ -459,10 +459,12 @@ function plugin_main_file(string $slug): ?string
 function render_unavailable_page(array $brand): string
 {
     $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-    $name = trim((string) ($brand['name'] ?? '')) ?: DEFAULT_BRAND['name'];
+    $name = trim((string) ($brand['name'] ?? ''));
     $url = (string) ($brand['url'] ?? '');
     if (!preg_match('#^https?://[^\s"<>]+$#i', $url)) $url = '';
     $mark = $url !== '' ? '<a class="brand" href="' . $e($url) . '">' . $e($name) . '</a>' : '<span class="brand">' . $e($name) . '</span>';
+    // Without a name the page credits no one.
+    $footer = $name === '' ? '' : '<footer>Powered by ' . $mark . '</footer>';
     return <<<HTML
 <!doctype html>
 <html lang="en">
@@ -493,7 +495,7 @@ a.brand:hover{color:var(--accent)}
 <h1>This website is temporarily unavailable</h1>
 <p>It isn&rsquo;t being served right now. Please check back later.</p>
 <p>If this is your website, contact your provider to bring it back online.</p>
-<footer>Powered by {$mark}</footer>
+{$footer}
 </main>
 </body>
 </html>

@@ -14,7 +14,6 @@ interface AddDomainParams {
 }
 
 /** Refuses a tenant that is being removed or has failed: its domains can't change. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function assertChangeable(tenant: any) {
   if (tenant.status === Status.Removing || tenant.status === Status.Failed) {
     throw badRequest(`Tenant ${tenant.external_id} is ${statusName(tenant.status)}`);
@@ -34,7 +33,6 @@ async function applyDomains({ pool, boss }: Deps, tenantId: string, change: (cli
  * Adds a domain to the tenant (a no-op when it already has it), optionally making it the main one.
  * Shared by addTenantDomain and the admin dashboard's change of a store's address.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function addTenantDomain(deps: Deps, tenant: any, domainName: string, setAsMain: boolean) {
   const { pool, config } = deps;
   const domain = normalizeDomain(domainName);

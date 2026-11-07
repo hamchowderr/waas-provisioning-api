@@ -96,7 +96,6 @@ export function createApp(deps: Deps) {
 
   // The public API reference, unauthenticated like /health. Built on first request, once every
   // route below is registered, so it lists exactly the operations this server answers.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let publicSpec: any;
   app.get('/openapi.json', (c) => {
     publicSpec ??= buildPublicSpec(new Set(app.routes.map((r) => `${r.method} ${r.path}`)));

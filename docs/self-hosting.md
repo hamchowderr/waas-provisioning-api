@@ -130,8 +130,9 @@ In the **WaaS API** project:
 | `BRAND_DOMAIN` | your own domain when stores live on a separate one, e.g. `anypress.io`. No store can take it or any name under it. Keep your sign-in sites (storefront, dashboard) here, not under `PLATFORM_DOMAIN`: stores under the same domain could set their cookies. Turning it on only stops new addresses: give each store already under it an address under `PLATFORM_DOMAIN` and make that its main address first |
 | `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth |
 | `AUTH_URL`, `AUTH_SECRET` | the dashboard's address (e.g. `https://app.<domain>`) and `openssl rand -base64 32`. Turns on dashboard sign-in. With store email set up (section 8), people sign in with an emailed link and nothing else is needed; GitHub and Google sign-in are optional ([accounts.md](accounts.md)) |
-| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>` |
-| `STORE_BRAND_NAME`, `STORE_BRAND_URL` | the name (and optional link) on a suspended store's "website unavailable" page. Without them the page credits AnyPress |
+| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>`; leave them out to get exactly these from `PLATFORM_DOMAIN` |
+| `BRAND_NAME` | your platform's name, e.g. `Acme Sites`: on sign-in emails and buttons and on a suspended store's "website unavailable" page. Without it the name is `BRAND_DOMAIN`, else `PLATFORM_DOMAIN`. Your install never shows AnyPress's name, address or logo |
+| `STORE_BRAND_NAME`, `STORE_BRAND_URL` | optional: a different name (and a link) for the suspended-store page only |
 
 With the `S3_*` values set, the API also backs up its own database to the bucket every night, encrypted ([db-backups.md](db-backups.md)), and backs up every live store every night ([store-backups.md](store-backups.md)).
 
@@ -260,19 +261,20 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `PROVISIONER` | `fake` | `fake` or `coolify` |
 | `COOLIFY_URL`, `COOLIFY_TOKEN`, `COOLIFY_SERVER_UUID`, `COOLIFY_PROJECT_UUID` | | With `PROVISIONER=coolify` |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | `S3_REGION=auto` | Store archives and backups; also turns on database backups |
-| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.waas.example`, `versions.waas.example` | |
+| `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<PLATFORM_DOMAIN>`, `versions.<PLATFORM_DOMAIN>` (`stores.waas.example`, `versions.waas.example` without it) | |
 | `PLATFORM_DOMAIN` | off | Reserves the platform's own names; also turns on Domain Connect |
 | `AUTH_URL`, `AUTH_SECRET` | off | Dashboard sign-in. With `AUTH_GITHUB_ID`/`_SECRET`, `AUTH_GOOGLE_ID`/`_SECRET`, `AUTH_MAIL_KEY`, `AUTH_MAIL_FROM`, `AUTH_BRAND`, `AUTH_SUPPORT_EMAIL`, `AUTH_LOGO_URL` ([accounts.md](accounts.md)) |
-| `BRAND_DOMAIN` | off | Reserves this domain and every name under it |
+| `BRAND_DOMAIN` | off | Reserves this domain and every name under it; also the default support address (`support@<BRAND_DOMAIN>`), store sender (`no-reply@<BRAND_DOMAIN>`) and shop (`shop.<BRAND_DOMAIN>`) |
 | `DOMAIN_CONNECT`, `DOMAIN_CONNECT_PRIVATE_KEY`, `DOMAIN_CONNECT_KEY_HOST`, `DOMAIN_CONNECT_PROVIDER_ID`, `DOMAIN_CONNECT_IPV6` | on with `PLATFORM_DOMAIN` or `BRAND_DOMAIN`, none, `_dck1`, `BRAND_DOMAIN` else `PLATFORM_DOMAIN`, none | [domain-connect.md](domain-connect.md) |
-| `STORE_BRAND_NAME`, `STORE_BRAND_URL` | AnyPress | The suspended-store page |
+| `BRAND_NAME` | `BRAND_DOMAIN`, else `PLATFORM_DOMAIN` | The platform's name in sign-in emails, on sign-in buttons and on the suspended-store page |
+| `STORE_BRAND_NAME`, `STORE_BRAND_URL` | `BRAND_NAME`, none | The suspended-store page |
 | `BACKUP_RETENTION_DAYS` | `90` | How long a deleted store's backups are kept |
 | `PUBLIC_URL` | each request's own origin | The API's public URL, e.g. `https://api.anypress.io`: the OAuth issuer and the MCP server's address for MCP clients ([mcp/README.md](../mcp/README.md)). Set it in production |
-| `STOREFRONT_PRODUCT_ID` | off | The product whose production version is the [seller storefront template](../templates/seller-storefront/README.md). Turns on ready-made storefronts (`POST /admin/products/{productId}/storefront`). Set `PUBLIC_URL` too: it is the address written into each storefront |
-| `STORE_TEMPLATE_PRODUCT_ID` | off | The storefront whose store template an approved seller's or reseller's storefront starts with (usually your own shop's product). The new storefront then follows it: each new production version there is copied to it and moves its stores |
+| `STOREFRONT_PRODUCT_ID` | off | The product whose production version is the [seller storefront template](../templates/seller-storefront/README.md). Turns on ready-made storefronts (`POST /admin/products/{productId}/storefront`). Set `PUBLIC_URL` too: it is the address written into each storefront. The API saves the choice on start, so after one start the setting can be left out; setting it again changes it |
+| `STORE_TEMPLATE_PRODUCT_ID` | off | The storefront whose store template an approved seller's or reseller's storefront starts with (usually your own shop's product). The new storefront then follows it: each new production version there is copied to it and moves its stores. Saved on start like `STOREFRONT_PRODUCT_ID` |
 | `GOOGLE_PLACES_API_KEY`, `PROSPECT_SEARCHES_PER_MONTH` | off, 100 | The Sales Kit's prospect finder (`POST /admin/products/{productId}/prospects/search`): a Google Maps Platform key with the Places API (New) on, and how many searches each storefront gets a calendar month |
 | `APPLICATION_NOTIFY_EMAILS` | off | Comma-separated addresses emailed when someone applies to sell (`POST /applications`, [accounts](accounts.md#applications-to-sell)). Needs sign-in email. Without it, applications only show on the dashboard |
-| `CRM_URL`, `CRM_SECRET` | off | Where to tell your CRM that an application was approved ([accounts](accounts.md#applications-to-sell)), and the secret sent with it in the `X-CRM-Secret` header. Set both or neither |
+| `CRM_URL`, `CRM_SECRET` | off | Where to tell your CRM that an application was approved ([accounts](accounts.md#applications-to-sell)), and the secret sent with it in the `X-CRM-Secret` header. With `CRM_SECRET` and `BRAND_DOMAIN` set, `CRM_URL` defaults to `https://shop.<BRAND_DOMAIN>/wp-json/anypress/v1/offering` |
 | `JOB_ALERT_EMAILS` | `APPLICATION_NOTIFY_EMAILS` | Comma-separated addresses emailed when a store or version job fails its last retry, with a link to the dashboard's failed jobs. Needs sign-in email |
 | `DASHBOARD_DOMAINS` | off | Lets sellers give the dashboard their own address ([branding](branding.md#your-own-dashboard-address)). `vercel` for a dashboard on Vercel: needs `VERCEL_TOKEN` (with access to the dashboard project's team), `VERCEL_PROJECT_ID` and, for a team project, `VERCEL_TEAM_ID`; Vercel lets a Pro team add 100 domains an hour. `coolify` for a dashboard that is a Coolify application: needs `COOLIFY_URL`, `COOLIFY_TOKEN`, `DASHBOARD_COOLIFY_APP` (the application's UUID) and `DASHBOARD_TARGET` (the dashboard's own hostname, which sellers point a CNAME at). The installer sets these for either |
 | `REQUEST_LOG_DAYS` | `30` | How long the request log (`GET /admin/requests`) keeps each call; `0` turns it off |
@@ -283,6 +285,6 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `STRIPE_SECRET_KEY`, `RESELLER_INVOICE`, `RESELLER_INVOICE_SCHEDULE`, `RESELLER_INVOICE_DAYS_DUE` | off, on with a key, 07:00 UTC on the 1st, 14 | Resellers' monthly bill as a Stripe invoice ([resellers.md](resellers.md#automatic-invoices)) |
 | `STORE_BACKUP`, `STORE_BACKUP_SCHEDULE`, `STORE_BACKUP_KEEP_DAILY`, `STORE_BACKUP_KEEP_WEEKLY` | on, 09:00 UTC, 7, 4 | [store-backups.md](store-backups.md) |
 | `RESTORE_TEST`, `RESTORE_TEST_SCHEDULE` | on, 11:00 UTC | [store-backups.md](store-backups.md#restore-test-nightly) |
-| `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, none, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |
+| `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, `no-reply@<BRAND_DOMAIN>`, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |
 | `TOSEND_ADMIN_KEY`, `TOSEND_API_URL` | off, `https://api.tosend.com` | Per-store keys and stores' own sending domains |
 | `RELEASES_S3_BUCKET` and `RELEASES_S3_*` | off | The plugin update channel; the other values default to `S3_*` |

@@ -13,11 +13,10 @@ import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './hel
 
 const AUTH: AuthConfig = {
   url: 'https://app.waas.example',
-  secret: 'test-auth-secret-not-a-secret-0123456789',
+  secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress',
   mail: { key: 'test-key', from: 'no-reply@anypress.example', brand: 'AnyPress' },
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
@@ -26,11 +25,9 @@ let t: TestContext;
 let app: ReturnType<typeof createApp>;
 const sent: { to: string; subject: string; text: string }[] = [];
 const CRM = { url: 'https://shop.platform.example/wp-json/anypress/v1/offering', secret: 'test-crm-secret' };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const told: { secret: string | null; body: any }[] = [];
 
 /** Calls the API; a 2xx JSON answer must match the admin spec. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function call(method: string, path: string, body?: unknown, admin = true): Promise<{ status: number; json: any }> {
   const res = await app.request(path, {
     method,
@@ -77,7 +74,6 @@ beforeAll(async () => {
   const auth = basic(key.id, key.secret);
   const res = await t.call('POST', '/v1/versions', { body: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true }, auth });
   const versionId = ((await res.json()) as { id: string }).id;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`, { auth })).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId }, auth });
   t.deps.config.storefrontProductId = product.id;
@@ -284,6 +280,8 @@ describe('reviewing', () => {
     expect(loadCrmConfig({ CRM_URL: 'https://shop.example/x', CRM_SECRET: 's' })).toEqual({ url: 'https://shop.example/x', secret: 's' });
     expect(() => loadCrmConfig({ CRM_URL: 'https://shop.example/x' })).toThrow(/both/);
     expect(() => loadCrmConfig({ CRM_URL: 'shop.example', CRM_SECRET: 's' })).toThrow(/http/);
+    expect(loadCrmConfig({ CRM_SECRET: 's' }, 'anypress.io')).toEqual({ url: 'https://shop.anypress.io/wp-json/anypress/v1/offering', secret: 's' });
+    expect(() => loadCrmConfig({ CRM_SECRET: 's' })).toThrow(/both/);
   });
 
   it('defaults a reseller approval to 3 stores across 3 storefronts', async () => {

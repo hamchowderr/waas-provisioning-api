@@ -41,7 +41,6 @@ const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 type Status = 'pending' | 'approved' | 'declined';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toApplication(row: any) {
   return {
     id: row.id as string,

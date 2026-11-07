@@ -43,7 +43,6 @@ export function blockedReason(slug: string): string | null {
   return BLOCK_REASON.get(slug) ?? null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toChoice(row: any, shared: boolean) {
   return {
     slug: row.slug,
@@ -272,7 +271,6 @@ export function pluginChoiceService({ pool, provisioner, secrets, wporg = wordpr
 
   // Uploads: premium plugin zips a seller bought, checked before a choice can use them.
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toUpload = (u: any) =>
     compact({
       id: u.id,

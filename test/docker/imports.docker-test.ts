@@ -290,7 +290,7 @@ describe("what's on a site moved in", () => {
         post(1003, 'flamingo_inbound'),
         post(1004, 'flamingo_inbound'),
         post(1005, 'flamingo_inbound', '', 'trash'),
-        post(1006, 'page', '<!-- wp:shortcode -->[contact-form-7 id=\"1001\" title=\"Contact\"]<!-- /wp:shortcode -->'),
+        post(1006, 'page', '<!-- wp:shortcode -->[contact-form-7 id="1001" title="Contact"]<!-- /wp:shortcode -->'),
         post(1007, 'page', 'No form here'),
         post(1008, 'product'),
         post(1009, 'product'),

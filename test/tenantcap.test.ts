@@ -11,7 +11,6 @@ import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from
 let t: TestContext;
 const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');

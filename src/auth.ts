@@ -2,6 +2,7 @@ import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
 import { emailOTP, magicLink, organization } from 'better-auth/plugins';
 import { ANYPRESS_MAIL, sendSignInLink, type AuthMail } from './authmail.ts';
+import { platformBrandOf } from './brand.ts';
 import { brandedMail } from './branding.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
@@ -23,6 +24,8 @@ export interface AuthConfig {
   secret: string;
   github?: { clientId: string; clientSecret: string };
   google?: { clientId: string; clientSecret: string };
+  /** The name on the "Sign in to …" buttons and emails: AUTH_BRAND, else the platform's (src/brand.ts). */
+  brand: string;
   /** Emailed sign-in links ("Email me a sign-in link"); on when a toSend key and sender are known. */
   mail?: AuthMail;
 }
@@ -49,9 +52,12 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
   // Sign-in links go out like the stores' email unless AUTH_MAIL_KEY / AUTH_MAIL_FROM say otherwise.
   const mailKey = env.AUTH_MAIL_KEY?.trim() || env.STORE_SMTP_PASSWORD?.trim();
   const storeFrom = env.STORE_MAIL_FROM?.trim();
-  const brand = env.AUTH_BRAND?.trim();
-  // Under the default AnyPress name the footer and logo are AnyPress's; another name sets its own or goes without.
-  const supportEmail = env.AUTH_SUPPORT_EMAIL?.trim() || (brand ? undefined : ANYPRESS_MAIL.supportEmail);
+  // The name is AUTH_BRAND, else the platform's (src/brand.ts). The support address is support@<BRAND_DOMAIN>
+  // unless set; AnyPress's logo and colours go only on AnyPress's own install under the AnyPress name.
+  const platform = platformBrandOf(env);
+  const brand = env.AUTH_BRAND?.trim() || platform.name;
+  const anypress = platform.anypress && brand === 'AnyPress';
+  const supportEmail = env.AUTH_SUPPORT_EMAIL?.trim() || (platform.domain ? `support@${platform.domain}` : undefined);
   // Account email comes from the support address when the stores' sending domain covers it, so a reply reaches someone.
   const domain = (address: string | undefined) => address?.split('@')[1]?.toLowerCase();
   const fromSupport = supportEmail && storeFrom && domain(supportEmail) === domain(storeFrom) ? supportEmail : storeFrom;
@@ -60,14 +66,15 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
     ? {
         key: mailKey,
         from: mailFrom,
-        brand: brand || 'AnyPress',
+        brand,
         apiUrl: env.TOSEND_API_URL?.trim() || undefined,
         supportEmail,
-        logoUrl: env.AUTH_LOGO_URL?.trim() || (brand ? undefined : ANYPRESS_MAIL.logoUrl),
+        logoUrl: env.AUTH_LOGO_URL?.trim() || (anypress ? ANYPRESS_MAIL.logoUrl : undefined),
+        colourStrip: anypress || undefined,
         plainFrom: storeFrom && storeFrom !== mailFrom ? storeFrom : undefined,
       }
     : undefined;
-  return { url, secret, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE'), mail };
+  return { url, secret, brand, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE'), mail };
 }
 
 /** Organization roles. A member may only look; an admin or owner may also make changes. */
