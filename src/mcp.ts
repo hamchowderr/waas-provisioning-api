@@ -12,7 +12,7 @@ import { createWaasMcpServer } from '../mcp/src/server.ts';
 import type { AppEnv, Deps } from './app.ts';
 import { mcpIcons } from './icon.ts';
 import { authenticate } from './keys.ts';
-import { MCP_PATHS, protectedResourceMetadataUrl, publicBase, scopesFor, verifyAccessToken, type TokenOwner } from './oauth.ts';
+import { MCP_PATHS, protectedResourceMetadataUrl, publicBase, scopesFor, tokenRequest, verifyAccessToken, type TokenOwner } from './oauth.ts';
 
 type Caller = TokenOwner & { readOnly: boolean; scopes: string[]; [key: string]: unknown };
 
@@ -42,16 +42,20 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
     { onerror: (error) => console.error('mcp:', error.message) },
   );
 
-  const verifier = { verifyAccessToken: (token: string) => verifyAccessToken(deps, token) };
-
   const serve = async (c: Context<AppEnv>, path: (typeof MCP_PATHS)[number]) => {
     const base = publicBase(c, deps.config.publicUrl);
     const resourceMetadataUrl = protectedResourceMetadataUrl(base, path);
     const header = c.req.header('Authorization') ?? '';
     const readOnlyPath = path === '/mcp/read-only';
 
-    if (/^Bearer\s/i.test(header)) {
-      const auth = await requireBearerAuth({ verifier, requiredScopes: [], expectedResource: new URL(`${base}${path}`), resourceMetadataUrl })(c.req.raw);
+    if (/^(Bearer|DPoP)\s/i.test(header)) {
+      // A token bound to the app's key (DPoP) comes as `DPoP <token>` with a proof for this address;
+      // the MCP SDK's bearer check reads the token, and the verifier checks the proof.
+      const how = tokenRequest(c.req.raw, `${base}${path}`);
+      const verifier = { verifyAccessToken: (token: string) => verifyAccessToken(deps, token, how ?? undefined) };
+      // (Headers only: the body stays with the request for the MCP handler.)
+      const asBearer = new Request(c.req.url, { headers: { authorization: `Bearer ${how?.authorization.token ?? ''}` } });
+      const auth = await requireBearerAuth({ verifier, requiredScopes: [], expectedResource: new URL(`${base}${path}`), resourceMetadataUrl })(asBearer);
       if (auth instanceof Response) return auth;
       // A person who may now only look keeps the read scopes; a token with none left can do nothing here.
       if (!auth.scopes.length) {

@@ -21,7 +21,15 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { OAuthError, type AuthInfo } from '@modelcontextprotocol/server';
 import { oauthProviderAuthServerMetadata, verifyOAuthQueryParams } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import { verifyJwsAccessToken } from 'better-auth/oauth2';
+import {
+  createDpopReplayStore,
+  enforceDpopBinding,
+  isDpopBindingError,
+  parseAccessTokenAuthorization,
+  verifyJwsAccessToken,
+  type AccessTokenAuthorization,
+  type DpopReplayStore,
+} from 'better-auth/oauth2';
 import { serializeSignedCookie } from 'better-call';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
@@ -283,17 +291,47 @@ export async function storeSignIn(deps: Deps, tenant: { id: string; product_id: 
 // Checking access tokens.
 
 /**
+ * How the token came: the Authorization scheme (Bearer or DPoP), the DPoP proof, and the request's
+ * method and public URL, which the proof signs (RFC 9449).
+ */
+export type TokenRequest = { authorization: AccessTokenAuthorization; proofJwt: string | null | undefined; method: string; url: string };
+
+/**
+ * The token in an `Authorization: Bearer` or `Authorization: DPoP` header, and how it came, for
+ * {@link verifyAccessToken}. `url` is the address the app called (the API's public one).
+ */
+export function tokenRequest(request: Request, url: string): TokenRequest | null {
+  const authorization = parseAccessTokenAuthorization(request.headers.get('authorization'));
+  if (!authorization?.token || authorization.scheme === 'Unknown') return null;
+  return { authorization, proofJwt: request.headers.get('dpop'), method: request.method, url };
+}
+
+/**
  * Checks an access token for /mcp, /mcp/site, /mcp/read-only or /apps: one the plugin signed, or one
  * from before it. Throws OAuthError invalid_token, as the MCP SDK's bearer helpers expect.
+ *
+ * An app may bind its tokens to a key of its own (DPoP, which the plugin offers): such a token works
+ * only with `Authorization: DPoP` and a fresh proof signed by that key, checked by Better Auth's own
+ * `enforceDpopBinding`. Without `how`, the token came as a Bearer token with no proof.
  */
-export async function verifyAccessToken(deps: Deps, token: string): Promise<AuthInfo> {
-  if (token.split('.').length === 3 && deps.auth && deps.config.auth?.apiUrl) return verifyPluginToken(deps, token);
+export async function verifyAccessToken(deps: Deps, token: string, how?: TokenRequest): Promise<AuthInfo> {
+  if (token.split('.').length === 3 && deps.auth && deps.config.auth?.apiUrl) return verifyPluginToken(deps, token, how);
+  // Tokens from before the plugin were never bound to a key.
+  if (how && how.authorization.scheme !== 'Bearer') throw new OAuthError('invalid_token', 'DPoP authorization requires a DPoP-bound access token');
   return verifyLegacyToken(deps.pool, token);
 }
 
 const jwksCache = new WeakMap<object, object>();
+const replayStores = new WeakMap<object, Promise<DpopReplayStore>>();
 
-async function verifyPluginToken(deps: Deps, token: string): Promise<AuthInfo> {
+/** Better Auth's DPoP proof store, in the database, so a proof is used once across restarts (the one the MCP plugin uses). */
+function replayStore(auth: NonNullable<Deps['auth']>): Promise<DpopReplayStore> {
+  let store = replayStores.get(auth);
+  if (!store) replayStores.set(auth, (store = auth.$context.then((ctx) => createDpopReplayStore(ctx.internalAdapter))));
+  return store;
+}
+
+async function verifyPluginToken(deps: Deps, token: string, how?: TokenRequest): Promise<AuthInfo> {
   const api = deps.config.auth!.apiUrl!;
   const auth = deps.auth!;
   // Better Auth's own JWT check, with the key set read in-process (it caches it, and fetches again for a new key).
@@ -308,6 +346,19 @@ async function verifyPluginToken(deps: Deps, token: string): Promise<AuthInfo> {
     });
   } catch {
     throw new OAuthError('invalid_token', 'Unknown, expired or revoked access token');
+  }
+  try {
+    await enforceDpopBinding({
+      payload,
+      authorization: how?.authorization ?? { scheme: 'Bearer', token },
+      proofJwt: how?.proofJwt,
+      method: how?.method ?? 'GET',
+      url: how?.url ?? api,
+      replayStore: await replayStore(auth),
+    });
+  } catch (error) {
+    if (isDpopBindingError(error)) throw new OAuthError('invalid_token', error.message);
+    throw error;
   }
   const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
   const resource = audiences.find((aud): aud is string => typeof aud === 'string' && RESOURCE_PATHS.some((path) => aud === `${api}${path}`));
