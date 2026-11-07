@@ -22,7 +22,7 @@ Run what CI runs before pushing: `npm ci`, `npm run lint`, `npm run typecheck`, 
 ## Store templates
 
 - `templates/anypress-store/README.md` lists the WordPress and PHP versions, the theme and every plugin with its pinned version and checksum. Change a pin there and in the build together, and check wordpress.org for the version first.
-- A template change only reaches new stores when a new template version is built, published and made production for the shop. That is a publish to customers: do it when the owner has asked for it, then make a test store on it and check what changed.
+- A template change only reaches new stores when a new template version is built, published and made production for the shop. That is a publish to customers: do it when the owner has asked for it, then check what changed on WordPress Playground with the new template zip (no test store on the server).
 - `templates/release.sh` builds the zips; the **Release templates** workflow (`templates-v<version>`) attaches them to a GitHub release for self-hosters.
 
 ## Building for WordPress
@@ -33,7 +33,7 @@ Run what CI runs before pushing: `npm ci`, `npm run lint`, `npm run typecheck`, 
 
 ## Rules for every change
 
-- **No new stores, sellers or storefronts for tests.** Never create a store, product (seller), reseller or ready-made storefront to try, check or demo something. Check on WordPress Playground, or reuse an existing test store. If a check truly needs a new one on the server (payments, the real approval flow), ask the owner first, say why Playground can't do it, and delete it as soon as the check is done.
+- **Playground only for tests.** Never create a store, product (seller), reseller or ready-made storefront on the server to try, check or demo something. Check on WordPress Playground (the WordPress skills in `.claude/skills/`, and the plugins repo's `scripts/playground`). The API's own tests cover the server building stores. If a check truly can't run on Playground, ask the owner first, say why, and delete the store as soon as the check is done. Never keep test stores.
 - **Beads, every time.** Each piece of work gets a Beads issue before it starts (check for a duplicate first). Put the id in the branch, the PR and the status, and close the issue when the PR merges or the change is live. Run `bd` in the session doing the work; the SessionStart hook in `.claude/settings.json` loads the Dolt login, then `bd dolt push` syncs it. This repository's issues are in DoltHub `chowderr/waas_api (ids `waas-api-*`)`.
 - **Pull requests:** open them ready for review, not as drafts, so CI runs. Merge a PR yourself once CI is green and the work was asked for.
 - **No "WPCS" wording.** The old platform is gone. Say "the AnyPress API" or "the API's key and secret login". Don't add the word anywhere; existing identifiers that live sites depend on (plugin slugs such as `anypress-host`, update URLs) stay until a planned migration.
