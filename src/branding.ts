@@ -107,6 +107,31 @@ export async function effectiveBrand(pool: Deps['pool'], base: string, productId
 }
 
 /**
+ * Each product's small picture for the dashboard's storefront switcher: its icon, else its logo, each falling
+ * back to its reseller's like effectiveBrand. One query for the whole list; products without either are left out.
+ */
+export async function productMarks(pool: Deps['pool'], base: string, productIds: string[]): Promise<Map<string, string>> {
+  if (!productIds.length) return new Map();
+  const { rows } = await pool.query<{ product_id: string; own: Row | null; reseller: Row | null }>(
+    `SELECT p.id AS product_id,
+            (SELECT row_to_json(x) FROM (SELECT ${columns()} FROM dashboard_brands WHERE product_id = p.id) x) AS own,
+            (SELECT row_to_json(x) FROM (SELECT ${columns()} FROM dashboard_brands WHERE reseller_id = p.reseller_id) x) AS reseller
+       FROM products p WHERE p.id = ANY($1::uuid[])`,
+    [productIds],
+  );
+  const marks = new Map<string, string>();
+  for (const r of rows) {
+    // row_to_json turns the timestamp into text.
+    const at = (row: Row | null) => (row ? { ...row, updated_at: new Date(row.updated_at) } : undefined);
+    const a = view(base, at(r.own));
+    const b = view(base, at(r.reseller));
+    const url = a.iconUrl ?? a.logoUrl ?? b.iconUrl ?? b.logoUrl;
+    if (url) marks.set(r.product_id, url);
+  }
+  return marks;
+}
+
+/**
  * Sign-in and invitation email for a storefront's team, in its look: sent in its brand's name (or,
  * with its own dashboard address, its own name), with a small "Powered by" line. The platform's own
  * email when it has neither.

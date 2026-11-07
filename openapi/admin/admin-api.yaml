@@ -3490,9 +3490,17 @@ components:
           type: array
           items:
             type: object
-            required: [id, name, tenantCount]
+            required: [id, name, tenantCount, markUrl]
             additionalProperties: false
-            properties: { id: { type: string, format: uuid }, name: { type: string }, tenantCount: { type: integer } }
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              tenantCount: { type: integer }
+              markUrl:
+                type: string
+                nullable: true
+                description: The storefront's icon, else its logo (each from its reseller when unset), for pickers; null when neither is uploaded.
+                format: uri
     DbBackupStatus:
       type: object
       description: >-
