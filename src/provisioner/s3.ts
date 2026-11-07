@@ -1,4 +1,5 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { AwsClient } from 'aws4fetch';
 
 export interface S3Config {
   /** e.g. https://<account>.r2.cloudflarestorage.com or a MinIO URL. Path-style addressing unless virtualHost. */
@@ -14,10 +15,7 @@ export interface S3Config {
   virtualHost?: boolean;
 }
 
-const sha256 = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
-const hmac = (key: Buffer | string, data: string) => createHmac('sha256', key).update(data).digest();
-
-/** RFC 3986 encoding, as SigV4 wants it; `/` kept in paths. */
+/** RFC 3986 encoding for keys in URLs; `/` kept in paths. */
 const encode = (s: string, keepSlash = false) => {
   const out = encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return keepSlash ? out.replace(/%2F/g, '/') : out;
@@ -28,11 +26,12 @@ const unescapeXml = (s: string) =>
 
 /**
  * The few S3 calls the Coolify driver and the database backups need (pre-signed URLs, put, list,
- * copy, head, get, delete), signed with AWS Signature V4. Works with R2, MinIO and AWS. Never logs
- * keys or signatures.
+ * copy, head, get, delete). aws4fetch (the signer Cloudflare's R2 docs use) does the AWS Signature V4
+ * signing. Works with R2, MinIO and AWS. Never logs keys or signatures.
  */
 export class S3 {
   private readonly url: URL;
+  private readonly client: AwsClient;
 
   constructor(
     private readonly config: S3Config,
@@ -41,6 +40,7 @@ export class S3 {
   ) {
     this.url = new URL(config.endpoint);
     if (config.virtualHost) this.url.hostname = `${config.bucket}.${this.url.hostname}`;
+    this.client = new AwsClient({ accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey, service: 's3', region: config.region, retries: 0 });
   }
 
   /** Path-style: /<bucket>/<key>, or /<bucket> for bucket-level calls (key ''). Virtual-host: /<key>, or /. */
@@ -51,40 +51,24 @@ export class S3 {
     return `${bucket}/${encode(key, true)}`;
   }
 
-  private scope(date: string) {
-    return `${date}/${this.config.region}/s3/aws4_request`;
+  /** The signing time, as SigV4 writes it (20260107T010203Z). */
+  private datetime() {
+    return this.now().toISOString().replace(/[-:]|\.\d{3}/g, '');
   }
 
-  private signingKey(date: string) {
-    const kDate = hmac(`AWS4${this.config.secretAccessKey}`, date);
-    return hmac(hmac(hmac(kDate, this.config.region), 's3'), 'aws4_request');
-  }
-
-  private stamp() {
-    const amzDate = this.now().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    return { amzDate, date: amzDate.slice(0, 8) };
+  private target(key: string, query: Record<string, string>) {
+    const url = new URL(`${this.url.origin}${this.path(key)}`);
+    for (const k of Object.keys(query).sort()) url.searchParams.set(k, query[k]!);
+    return url.toString();
   }
 
   /** A URL anyone can GET or PUT for `expiresIn` seconds. `extra` adds signed query parameters (a part's partNumber and uploadId). */
-  presign(method: 'GET' | 'PUT', key: string, expiresIn = 900, extra: Record<string, string> = {}): string {
-    const { amzDate, date } = this.stamp();
-    const path = this.path(key);
-    const query: Record<string, string> = {
-      ...extra,
-      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-      'X-Amz-Credential': `${this.config.accessKeyId}/${this.scope(date)}`,
-      'X-Amz-Date': amzDate,
-      'X-Amz-Expires': String(expiresIn),
-      'X-Amz-SignedHeaders': 'host',
-    };
-    const canonicalQuery = Object.keys(query)
-      .sort()
-      .map((k) => `${encode(k)}=${encode(query[k]!)}`)
-      .join('&');
-    const canonical = [method, path, canonicalQuery, `host:${this.url.host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
-    const toSign = ['AWS4-HMAC-SHA256', amzDate, this.scope(date), sha256(canonical)].join('\n');
-    const signature = createHmac('sha256', this.signingKey(date)).update(toSign).digest('hex');
-    return `${this.url.origin}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+  async presign(method: 'GET' | 'PUT', key: string, expiresIn = 900, extra: Record<string, string> = {}): Promise<string> {
+    const signed = await this.client.sign(this.target(key, { ...extra, 'X-Amz-Expires': String(expiresIn) }), {
+      method,
+      aws: { signQuery: true, datetime: this.datetime() },
+    });
+    return signed.url;
   }
 
   /** A public-looking reference to an object, for `uri` fields. Not fetchable without signing. */
@@ -98,28 +82,15 @@ export class S3 {
     headers: Record<string, string> = {},
     { body, query = {} }: { body?: Uint8Array; query?: Record<string, string> } = {},
   ): Promise<Response> {
-    const { amzDate, date } = this.stamp();
-    const path = this.path(key);
-    const canonicalQuery = Object.keys(query)
-      .sort()
-      .map((k) => `${encode(k)}=${encode(query[k]!)}`)
-      .join('&');
-    const all: Record<string, string> = { ...headers, host: this.url.host, 'x-amz-content-sha256': sha256(body ?? ''), 'x-amz-date': amzDate };
-    const names = Object.keys(all).map((h) => h.toLowerCase()).sort();
-    const lower = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.toLowerCase(), v.trim()]));
-    const signedHeaders = names.join(';');
-    const canonical = [method, path, canonicalQuery, names.map((h) => `${h}:${lower[h]}\n`).join(''), signedHeaders, lower['x-amz-content-sha256']].join('\n');
-    const toSign = ['AWS4-HMAC-SHA256', amzDate, this.scope(date), sha256(canonical)].join('\n');
-    const signature = createHmac('sha256', this.signingKey(date)).update(toSign).digest('hex');
-    const { host: _host, ...sent } = lower;
-    return this.fetchImpl(`${this.url.origin}${path}${canonicalQuery ? `?${canonicalQuery}` : ''}`, {
+    // The body's hash is signed too (aws4fetch would send UNSIGNED-PAYLOAD), so the bucket rejects a changed body.
+    const payloadHash = createHash('sha256').update(body ?? '').digest('hex');
+    const signed = await this.client.sign(this.target(key, query), {
       method,
+      headers: { ...headers, 'x-amz-content-sha256': payloadHash },
       body: body as BodyInit | undefined,
-      headers: {
-        ...sent,
-        authorization: `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${this.scope(date)}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-      },
+      aws: { datetime: this.datetime() },
     });
+    return this.fetchImpl(signed.url, { method, body: body as BodyInit | undefined, headers: Object.fromEntries(signed.headers) });
   }
 
   private static async check(res: Response, what: string) {

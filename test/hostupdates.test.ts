@@ -12,7 +12,7 @@ class MemoryReleases implements ReleaseStore {
   async getJson(key: string) {
     return this.objects.get(key) ?? null;
   }
-  presignGet(key: string, expiresIn: number) {
+  async presignGet(key: string, expiresIn: number) {
     return `https://releases.test/${key}?X-Amz-Expires=${expiresIn}`;
   }
 }

@@ -1251,8 +1251,8 @@ describe('S3', () => {
     () => new Date('2026-10-07T08:00:00Z'),
   );
 
-  it('pre-signs path-style URLs without leaking the secret', () => {
-    const url = new URL(s3.presign('PUT', 'snapshots/a b.zip', 900));
+  it('pre-signs path-style URLs without leaking the secret', async () => {
+    const url = new URL(await s3.presign('PUT', 'snapshots/a b.zip', 900));
     expect(url.pathname).toBe('/waas-stores/snapshots/a%20b.zip');
     expect(url.searchParams.get('X-Amz-Credential')).toBe('TESTKEY/20261007/auto/s3/aws4_request');
     expect(url.searchParams.get('X-Amz-Date')).toBe('20261007T080000Z');
@@ -1261,16 +1261,28 @@ describe('S3', () => {
     expect(url.toString()).not.toContain('test-secret-not-real');
   });
 
-  it('signs deterministically for the same input and differently per method', () => {
-    expect(s3.presign('GET', 'k')).toBe(s3.presign('GET', 'k'));
-    expect(s3.presign('GET', 'k')).not.toBe(s3.presign('PUT', 'k'));
+  it('signs deterministically for the same input and differently per method', async () => {
+    expect(await s3.presign('GET', 'k')).toBe(await s3.presign('GET', 'k'));
+    expect(await s3.presign('GET', 'k')).not.toBe(await s3.presign('PUT', 'k'));
   });
 
-  it('signs a part link with its part number and upload id', () => {
-    const url = new URL(s3.presign('PUT', 'imports/x', 900, { partNumber: '3', uploadId: 'u/1' }));
+  it("matches AWS's own example of a pre-signed URL", async () => {
+    // docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html, "An example".
+    const aws = new S3(
+      { endpoint: 'https://s3.amazonaws.com', bucket: 'examplebucket', region: 'us-east-1', accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', virtualHost: true },
+      fetch,
+      () => new Date('2013-05-24T00:00:00Z'),
+    );
+    const url = new URL(await aws.presign('GET', 'test.txt', 86400));
+    expect(url.host).toBe('examplebucket.s3.amazonaws.com');
+    expect(url.searchParams.get('X-Amz-Signature')).toBe('aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404');
+  });
+
+  it('signs a part link with its part number and upload id', async () => {
+    const url = new URL(await s3.presign('PUT', 'imports/x', 900, { partNumber: '3', uploadId: 'u/1' }));
     expect(url.searchParams.get('partNumber')).toBe('3');
     expect(url.searchParams.get('uploadId')).toBe('u/1');
-    expect(url.toString()).not.toBe(s3.presign('PUT', 'imports/x', 900, { partNumber: '4', uploadId: 'u/1' }));
+    expect(url.toString()).not.toBe(await s3.presign('PUT', 'imports/x', 900, { partNumber: '4', uploadId: 'u/1' }));
   });
 
   it('starts, lists (all pages), finishes and aborts multipart uploads', async () => {

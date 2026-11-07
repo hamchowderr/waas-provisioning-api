@@ -75,7 +75,7 @@ export function pluginRoutes({ pool, releases }: Deps) {
         version: manifest.version,
         channel,
         pinned: Boolean(pin),
-        package: releases.presignGet(manifest.zip, PACKAGE_URL_TTL),
+        package: await releases.presignGet(manifest.zip, PACKAGE_URL_TTL),
         packageExpiresIn: PACKAGE_URL_TTL,
         sha256: manifest.sha256,
         signature: manifest.signature,
