@@ -226,7 +226,9 @@ describe('sign-in email settings', () => {
   it('puts the message, one button and the support address in the email', async () => {
     let body: any;
     const capture = async (_: unknown, init?: RequestInit) => ((body = JSON.parse(String(init!.body))), new Response('{}', { status: 200 }));
-    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png', colourStrip: true }, 'a@b.example', 'https://x.example/l?a=1&b=2', null, capture as typeof fetch);
+    vi.stubGlobal('fetch', capture);
+    await sendSignInLink({ ...MAIL, from: 'support@anypress.io', supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png', colourStrip: true }, 'a@b.example', 'https://x.example/l?a=1&b=2', null);
+    vi.unstubAllGlobals();
     expect(body.html).toContain('<img src="https://anypress.io/logo-512.png"');
     expect(/href="([^"]+)"/.exec(body.html)![1]).toBe('https://x.example/l?a=1&amp;b=2');
     expect(body.html).toContain('mailto:support@anypress.io');
@@ -250,8 +252,9 @@ describe('sign-in email settings', () => {
   });
 
   it('reports a refused email', async () => {
-    const fail = async () => new Response('nope', { status: 422 });
-    await expect(sendSignInLink(MAIL, 'a@b.example', 'https://x.example/l', null, fail as typeof fetch)).rejects.toThrow(/422/);
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ message: 'nope' }), { status: 422 }));
+    await expect(sendSignInLink(MAIL, 'a@b.example', 'https://x.example/l', null)).rejects.toThrow(/422.*nope/);
+    vi.unstubAllGlobals();
   });
 });
 

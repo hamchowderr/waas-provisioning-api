@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { checkHealth } from '../src/health.ts';
 import { describeJob, withFailureAlerts } from '../src/jobalerts.ts';
 import type { JobData, JobHandlers } from '../src/queue.ts';
@@ -19,6 +19,7 @@ beforeAll(async () => {
   await t.pool.query("INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, 'acme.anypress.site', true)", [tenantId]);
 }, 60_000);
 
+afterEach(() => vi.unstubAllGlobals());
 afterAll(() => t?.close());
 
 function recorder() {
@@ -28,7 +29,9 @@ function recorder() {
     sent.push({ to: body.to[0].email, subject: body.subject, text: body.text });
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
-  return { sent, fetchFn };
+  // toSend's SDK sends with the global fetch.
+  vi.stubGlobal('fetch', fetchFn);
+  return { sent };
 }
 
 const mail = { key: 'test-key', from: 'no-reply@anypress.example', brand: 'AnyPress' };
@@ -42,8 +45,8 @@ describe('failed job alerts', () => {
   it('emails each admin after recording the failure, with a link to the failed jobs', async () => {
     const recorded: string[] = [];
     const base = { fail: async (d: JobData) => void recorded.push(d.type) } as unknown as JobHandlers;
-    const { sent, fetchFn } = recorder();
-    const handlers = withFailureAlerts(base, t.pool, { mail, to: ['a@example.com', 'b@example.com'], dashboardUrl: 'https://app.example/' }, fetchFn);
+    const { sent } = recorder();
+    const handlers = withFailureAlerts(base, t.pool, { mail, to: ['a@example.com', 'b@example.com'], dashboardUrl: 'https://app.example/' });
     await handlers.fail({ type: 'tenant.create', tenantId }, new Error('Coolify said no'), { id: 'job-1', attempts: 4 });
     expect(recorded).toEqual(['tenant.create']);
     expect(sent.map((s) => s.to)).toEqual(['a@example.com', 'b@example.com']);
@@ -56,8 +59,8 @@ describe('failed job alerts', () => {
   it('keeps the job outcome when the email fails, and does nothing without recipients', async () => {
     let failed = 0;
     const base = { fail: async () => void failed++ } as unknown as JobHandlers;
-    const broken = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
-    await withFailureAlerts(base, t.pool, { mail, to: ['a@example.com'] }, broken).fail({ type: 'tenant.create', tenantId }, new Error('x'), { id: 'j', attempts: 1 });
+    vi.stubGlobal('fetch', async () => new Response('nope', { status: 500 }));
+    await withFailureAlerts(base, t.pool, { mail, to: ['a@example.com'] }).fail({ type: 'tenant.create', tenantId }, new Error('x'), { id: 'j', attempts: 1 });
     expect(failed).toBe(1);
     expect(withFailureAlerts(base, t.pool, { mail, to: [] })).toBe(base);
     expect(withFailureAlerts(base, t.pool, { to: ['a@example.com'] })).toBe(base);

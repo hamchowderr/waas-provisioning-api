@@ -1,9 +1,10 @@
 /**
  * Sign-in email (docs/accounts.md): the one-time link from "Email me a sign-in link", and team
- * invitations, sent through
- * toSend's API (POST /v2/emails). By default it uses the stores' sending key and address
+ * invitations, sent with toSend's official SDK (the `tosend` package). By default it uses the stores' sending key and address
  * (STORE_SMTP_PASSWORD, STORE_MAIL_FROM), so no extra setup is needed where stores already send email.
  */
+import { ToSend, ToSendError } from 'tosend';
+
 export interface AuthMail {
   /** A toSend API key that may send from `from`. */
   key: string;
@@ -31,7 +32,7 @@ export const ANYPRESS_MAIL = { logoUrl: 'https://anypress.io/logo-512.png' };
  * asks for one more click before the link is used, so mail scanners that open links (INKY, Microsoft
  * Safe Links) can't use it up; the code can be typed on the sign-in page when a scanner blocks links.
  */
-export async function sendSignInLink(mail: AuthMail, to: string, url: string, code: string | null = null, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendSignInLink(mail: AuthMail, to: string, url: string, code: string | null = null): Promise<void> {
   const codeLine = code ? `Or type this code on the sign-in page: ${code}` : null;
   const text = `Use this link to sign in to ${mail.brand}:\n\n${url}${codeLine ? `\n\n${codeLine}` : ''}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.`;
   const html = layout(mail, {
@@ -41,7 +42,7 @@ export async function sendSignInLink(mail: AuthMail, to: string, url: string, co
     signInCode: code ?? undefined,
     note: "It works once and expires in 15 minutes. If you didn't ask for it, you can ignore this email.",
   });
-  await send(mail, to, code ? `Your ${mail.brand} sign-in code: ${code}` : `Your ${mail.brand} sign-in link`, html, text, 'sign-in email', fetchFn);
+  await send(mail, to, code ? `Your ${mail.brand} sign-in code: ${code}` : `Your ${mail.brand} sign-in link`, html, text, 'sign-in email');
 }
 
 export interface InvitationMail {
@@ -67,7 +68,7 @@ export function welcomeText(reseller: boolean): string {
 }
 
 /** An invitation to join a storefront's team. They sign in with this address, then accept. */
-export async function sendInvitation(mail: AuthMail, to: string, invite: InvitationMail, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendInvitation(mail: AuthMail, to: string, invite: InvitationMail): Promise<void> {
   const who = invite.inviter ? `${invite.inviter} invited you` : "You've been invited";
   // A storefront's team invited in its own name (brandedMail) isn't told the name twice.
   const where = invite.organization === mail.brand ? `the ${invite.organization} team` : `${invite.organization} on ${mail.brand}`;
@@ -80,7 +81,7 @@ export async function sendInvitation(mail: AuthMail, to: string, invite: Invitat
     button: { label: `Join ${invite.organization}`, url: invite.url },
     note: `${how} If you weren't expecting it, you can ignore this email.`,
   });
-  await send(mail, to, `Join ${where}`, html, text, 'invitation email', fetchFn);
+  await send(mail, to, `Join ${where}`, html, text, 'invitation email');
 }
 
 /** What the email to a new store's owner says (POST /v1/tenants with notifyOwner). */
@@ -99,7 +100,7 @@ export interface WebsiteReadyMail {
  * To a new store's owner, only when whoever made the store asked for it (notifyOwner): their website is ready, and
  * a link to set their password. Sent in the storefront's brand (src/jobs.ts).
  */
-export async function sendWebsiteReady(mail: AuthMail, to: string, site: WebsiteReadyMail, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendWebsiteReady(mail: AuthMail, to: string, site: WebsiteReadyMail): Promise<void> {
   const address = site.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const lead = `Your website ${site.site} is ready at ${address}.`;
   const how = `Set your password to sign in to it. Your username is ${site.username}.`;
@@ -111,7 +112,7 @@ export async function sendWebsiteReady(mail: AuthMail, to: string, site: Website
     button: { label: 'Set your password', url: site.passwordLink },
     note,
   });
-  await send(mail, to, `Your website ${site.site} is ready`, html, text, 'website ready email', fetchFn);
+  await send(mail, to, `Your website ${site.site} is ready`, html, text, 'website ready email');
 }
 
 /** What a seller application email needs to say. */
@@ -121,17 +122,17 @@ export interface ApplicationMail {
 }
 
 /** To the applicant: their application to sell arrived and is waiting for review. */
-export async function sendApplicationReceived(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendApplicationReceived(mail: AuthMail, to: string, app: ApplicationMail): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
   const next = "We review every application by hand. When yours is approved, you'll get another email with a link to sign in.";
-  await send(mail, to, `We got your ${mail.brand} application`, layout(mail, { title: 'Thanks for applying', lines: [lead, next] }), `${lead}\n\n${next}`, 'application email', fetchFn);
+  await send(mail, to, `We got your ${mail.brand} application`, layout(mail, { title: 'Thanks for applying', lines: [lead, next] }), `${lead}\n\n${next}`, 'application email');
 }
 
 /** To the platform admin: a new application is waiting on the dashboard at `url`. */
-export async function sendApplicationNotice(mail: AuthMail, to: string, app: ApplicationMail & { email: string; url: string }, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendApplicationNotice(mail: AuthMail, to: string, app: ApplicationMail & { email: string; url: string }): Promise<void> {
   const lead = `${app.name} (${app.email}) applied to sell websites as ${app.business}.`;
   const html = layout(mail, { title: 'New seller application', lines: [lead], button: { label: 'Review the application', url: app.url } });
-  await send(mail, to, `New seller application: ${app.business}`, html, `${lead}\n\nReview it: ${app.url}`, 'application notice', fetchFn);
+  await send(mail, to, `New seller application: ${app.business}`, html, `${lead}\n\nReview it: ${app.url}`, 'application notice');
 }
 
 /**
@@ -141,8 +142,7 @@ export async function sendApplicationNotice(mail: AuthMail, to: string, app: App
 export async function sendApplicationApproved(
   mail: AuthMail,
   to: string,
-  app: ApplicationMail & { url: string; days: number; storefront: string | null; reseller?: boolean },
-  fetchFn: typeof fetch = fetch,
+  app: ApplicationMail & { url: string; days: number; storefront: string | null; reseller?: boolean }
 ): Promise<void> {
   const lead = `Hi ${app.name}, your application to sell websites with ${mail.brand} is approved.`;
   const how = `Open the link and sign in with this email address (${to}) to set up ${app.business}. The link lasts ${app.days} days.`;
@@ -157,7 +157,7 @@ export async function sendApplicationApproved(
     note: storefront ? `${how}\n\n${storefront}` : how,
   });
   const text = `${lead}\n\n${what}\n\n${app.url}\n\n${how}${storefront ? `\n\n${storefront}` : ''}`;
-  await send(mail, to, `Your ${mail.brand} application is approved`, html, text, 'approval email', fetchFn);
+  await send(mail, to, `Your ${mail.brand} application is approved`, html, text, 'approval email');
 }
 
 /** What a failed-job alert says (src/jobalerts.ts). */
@@ -171,7 +171,7 @@ export interface JobFailureMail {
 }
 
 /** To the platform admin: a store or version job failed its last retry. */
-export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobFailureMail, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobFailureMail): Promise<void> {
   const lead = `This failed after ${job.attempts} ${job.attempts === 1 ? 'try' : 'tries'}: ${job.what}.`;
   const next = job.url ? 'Retry it from the Jobs page once the cause is fixed.' : 'Retry it with POST /admin/jobs/{id}/retry once the cause is fixed.';
   const html = layout(mail, {
@@ -182,23 +182,23 @@ export async function sendJobFailureNotice(mail: AuthMail, to: string, job: JobF
     note: next,
   });
   const text = `${lead}\n\n${job.error}\n\n${job.url ? `${job.url}\n\n` : ''}${next}`;
-  await send(mail, to, `Failed: ${job.what}`, html, text, 'job failure notice', fetchFn);
+  await send(mail, to, `Failed: ${job.what}`, html, text, 'job failure notice');
 }
 
 /** To the platform admins: the nightly restore test (src/restoretests.ts) could not restore a store's backup. */
-export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { store: string; backupAt: Date; error: string }, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { store: string; backupAt: Date; error: string }): Promise<void> {
   const lead = `Last night's restore test failed: the backup of ${test.store} from ${test.backupAt.toISOString().slice(0, 16).replace('T', ' ')} UTC could not be restored into a test copy.`;
   const next = 'The store itself is untouched and the test copy was deleted. The test runs again tomorrow night, on the store tested longest ago.';
   const html = layout(mail, { title: 'Restore test failed', lines: [lead], code: test.error, note: next });
   const text = `${lead}\n\n${test.error}\n\n${next}`;
-  await send(mail, to, `Failed: restore test of ${test.store}`, html, text, 'restore test notice', fetchFn);
+  await send(mail, to, `Failed: restore test of ${test.store}`, html, text, 'restore test notice');
 }
 
 /** To the applicant: not approved. */
-export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail, fetchFn: typeof fetch = fetch): Promise<void> {
+export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
   const body = "We can't offer you a seller account right now. If you have questions, contact us through our website.";
-  await send(mail, to, `Your ${mail.brand} application`, layout(mail, { title: 'About your application', lines: [lead, body] }), `${lead}\n\n${body}`, 'decline email', fetchFn);
+  await send(mail, to, `Your ${mail.brand} application`, layout(mail, { title: 'About your application', lines: [lead, body] }), `${lead}\n\n${body}`, 'decline email');
 }
 
 /** What one email says, in reading order; layout() puts it in the shared look. */
@@ -269,16 +269,16 @@ function layout(mail: AuthMail, m: Message): string {
   );
 }
 
-async function send(mail: AuthMail, to: string, subject: string, html: string, text: string, what: string, fetchFn: typeof fetch) {
+async function send(mail: AuthMail, to: string, subject: string, html: string, text: string, what: string) {
   if (mail.supportEmail) text += `\n\nQuestions? Write to ${mail.supportEmail}${repliesReachSupport(mail) ? ' or just reply to this email' : ''}.`;
   if (mail.poweredBy) text += `\n\nPowered by ${mail.poweredBy}`;
-  const res = await fetchFn(`${(mail.apiUrl ?? 'https://api.tosend.com').replace(/\/$/, '')}/v2/emails`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${mail.key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ from: { email: mail.from, name: mail.brand }, to: [{ email: to }], subject, html, text }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`toSend refused the ${what} (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  const tosend = new ToSend({ apiKey: mail.key, timeout: 15_000, ...(mail.apiUrl && { baseUrl: mail.apiUrl }) });
+  try {
+    await tosend.send({ from: { email: mail.from, name: mail.brand }, to: [{ email: to }], subject, html, text });
+  } catch (err) {
+    if (!(err instanceof ToSendError)) throw err;
+    throw new Error(`toSend refused the ${what} (${err.code}): ${err.message.slice(0, 300)}`);
+  }
 }
 
 /** A reply reaches the support address only when the email comes from it (toSend has no verified reply-to). */
