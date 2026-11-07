@@ -84,8 +84,14 @@ export function selectExpired(backups: { key: string; at: Date }[], keepDaily: n
     const day = b.at.toISOString().slice(0, 10);
     const week = isoWeek(b.at);
     let keep = false;
-    if (!days.has(day) && days.size < keepDaily) days.add(day), (keep = true);
-    if (!weeks.has(week) && weeks.size < keepWeekly) weeks.add(week), (keep = true);
+    if (!days.has(day) && days.size < keepDaily) {
+      days.add(day);
+      keep = true;
+    }
+    if (!weeks.has(week) && weeks.size < keepWeekly) {
+      weeks.add(week);
+      keep = true;
+    }
     if (!keep) expired.push(b.key);
   }
   return expired;

@@ -12,11 +12,9 @@ import { dnsSafeLabel } from '../src/tenants.ts';
 import type { SendingDomain, SendingDomains } from '../src/tosend.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const storeSpec: any = parse(readFileSync(new URL('../openapi/store-mail.yaml', import.meta.url), 'utf8'));
 ajv.addSchema({ components: storeSpec.components }, 'store');
 
@@ -47,7 +45,6 @@ const domains = new FakeDomains();
 const senders: { storeId: string; sender?: StoreSender }[] = [];
 const quiet = { log: () => undefined, error: (m: string) => console.error(m) };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function admin(method: string, path: string, expected = 200, body?: unknown): Promise<any> {
   const res = await t.call(method, path, { auth: `Bearer ${TEST_ADMIN_TOKEN}`, body });
   const parsed = await res.json();
@@ -64,7 +61,6 @@ const path = () => `/admin/tenants/${tenantId}/mail-domain`;
 beforeAll(async () => {
   t = await setup();
   t.deps.config.sendingDomains = domains;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   t.deps.config.coolify = { mail: { from: 'no-reply@waas.example' } } as any;
   t.provisioner.ensureStoreMail = async (input) => {
     senders.push(input);
@@ -132,7 +128,6 @@ describe('store sending domains', () => {
 });
 
 describe('store sending domains from the storefront', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function storefront(method: string, query: string, expected = 200, body?: unknown, auth?: string): Promise<any> {
     const res = await t.call(method, `/v1/tenants/mail-domain?${query}`, { body, auth });
     const parsed = await res.json();

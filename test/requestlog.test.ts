@@ -9,7 +9,6 @@ import { createAjv } from '../src/openapi.ts';
 import { pruneRequestLog } from '../src/requestlog.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, type TestContext, OWNER } from './helpers.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: adminSpec.components }, 'admin');
@@ -27,7 +26,6 @@ let t: TestContext;
 let key: string;
 let secret: string;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function requests(query = ''): Promise<any> {
   const res = await t.call('GET', `/admin/requests${query}`, { auth: ADMIN });
   expect(res.status).toBe(200);

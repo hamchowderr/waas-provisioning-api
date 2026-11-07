@@ -85,7 +85,6 @@ export class VercelDomains implements DashboardHost {
     });
     if (allow404 && res.status === 404) return null;
     const text = await res.text();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json: any = text ? JSON.parse(text) : null;
     if (!res.ok) throw new VercelError(res.status, json?.error?.code, json?.error?.message ?? `Vercel answered ${res.status}`);
     return json as T;

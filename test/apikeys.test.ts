@@ -7,7 +7,6 @@ import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const load = (path: string): any => parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const keysSpec = load('../openapi/api-keys.yaml');
 const adminSpec = load('../openapi/admin/admin-api.yaml');

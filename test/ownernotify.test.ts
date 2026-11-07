@@ -33,7 +33,7 @@ beforeAll(async () => {
     sent.push({ to: body.to[0].email, url: /href="([^"]+)"/.exec(body.html)![1]!.replaceAll('&amp;', '&'), body });
     return new Response(JSON.stringify({ message_id: 'm1' }), { status: 200 });
   });
-  t.deps.config.auth = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', mail: MAIL };
+  t.deps.config.auth = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', mail: MAIL };
   const res = await t.call('POST', '/v1/versions', { body: { name: 'v1', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true } });
   const versionId = ((await res.json()) as { id: string }).id;
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as { statusCode: number }[])[0]?.statusCode === Status.Done);

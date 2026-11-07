@@ -65,6 +65,12 @@ interface RawInvoice {
 
 const toInvoice = (raw: RawInvoice): StripeInvoice => ({ id: raw.id, status: raw.status, hostedInvoiceUrl: raw.hosted_invoice_url ?? null });
 
+/**
+ * The Stripe API version every call asks for, so a change to the account's default version never
+ * changes what these calls send or get back. The version the official `stripe` package (23.1.0) pins.
+ */
+export const STRIPE_API_VERSION = '2026-10-28.endive';
+
 export class Stripe implements InvoiceSender {
   constructor(
     private readonly secretKey: string,
@@ -73,7 +79,7 @@ export class Stripe implements InvoiceSender {
   ) {}
 
   private async call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, params?: Record<string, unknown>, idempotencyKey?: string): Promise<T> {
-    const headers: Record<string, string> = { Authorization: `Bearer ${this.secretKey}` };
+    const headers: Record<string, string> = { Authorization: `Bearer ${this.secretKey}`, 'Stripe-Version': STRIPE_API_VERSION };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     let body: string | undefined;
     if (params && method === 'POST') {

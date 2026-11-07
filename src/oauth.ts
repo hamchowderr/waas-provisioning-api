@@ -189,7 +189,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   const documents = new Map<string, { client: Client | null; until: number }>();
   const keyFor = siteKeys(deps.config.secretsKey);
   /** The brand on the "Sign in to …" button, when people can sign in (AUTH_URL set); else none. */
-  const signInBrand = () => (deps.config.auth ? (deps.config.auth.mail?.brand ?? 'AnyPress') : undefined);
+  const signInBrand = () => (deps.config.auth ? deps.config.auth.brand : undefined);
 
   // Browser-based MCP clients (the MCP Inspector, for one) call these cross-origin.
   const open = cors({ origin: '*', allowHeaders: ['Authorization', 'Content-Type', 'MCP-Protocol-Version'], exposeHeaders: ['WWW-Authenticate'] });

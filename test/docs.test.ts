@@ -5,7 +5,6 @@ import { createAjv } from '../src/openapi.ts';
 
 // Neither route touches the database or the queue.
 const app = createApp({ config: {} } as Deps);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const spec: any = await (await app.request('/openapi.json')).json();
 const text = JSON.stringify(spec);
 

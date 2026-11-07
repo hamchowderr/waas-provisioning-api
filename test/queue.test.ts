@@ -12,7 +12,7 @@ async function wipe() {
 }
 
 const jobRow = async (boss: PgBoss, id: string) =>
-  ((await boss.getDb().executeSql('SELECT state, heartbeat_seconds FROM pgboss.job WHERE id = $1', [id])) as { rows: { state: string; heartbeat_seconds: number | null }[] }).rows[0]!;
+  ((await boss.getDb().executeSql('SELECT state FROM pgboss.job WHERE id = $1', [id])) as { rows: { state: string }[] }).rows[0]!;
 
 let boss: PgBoss | undefined;
 afterEach(async () => {
@@ -35,16 +35,14 @@ describe('provision queue after a restart', () => {
     expect((await jobRow(boss, id)).state).toBe('retry');
   });
 
-  it('gives a queue made before the heartbeat, and the jobs waiting in it, the heartbeat', async () => {
+  it('gives a queue made before the heartbeat the heartbeat', async () => {
     await wipe();
     const old = new PgBoss({ connectionString: TEST_DATABASE_URL, schema: 'pgboss' });
     await old.start();
     await old.createQueue(QUEUE, { policy: 'key_strict_fifo', retryLimit: 3, expireInSeconds: 3600 });
-    const waiting = (await old.send(QUEUE, { type: 'tenant.domains' }, { singletonKey: 'tenant:x' }))!;
     await old.stop({ graceful: false });
 
     boss = await startBoss(TEST_DATABASE_URL);
     expect((await boss.getQueue(QUEUE))!.heartbeatSeconds).toBe(HEARTBEAT_SECONDS);
-    expect((await jobRow(boss, waiting)).heartbeat_seconds).toBe(HEARTBEAT_SECONDS);
   });
 });

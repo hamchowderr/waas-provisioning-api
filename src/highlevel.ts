@@ -155,6 +155,8 @@ export async function locationToken(pool: Pool, secrets: Secrets, hl: HighLevelC
 /** The flat fields a trigger sends its workflow, from a webhook event's body. */
 export function triggerBody(eventBody: string, eventId: string): string {
   const event = JSON.parse(eventBody) as { type: string; timestamp: string; data?: Record<string, unknown> };
+  // `version` is left out of the flat fields.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { tenant, version, ...rest } = (event.data ?? {}) as { tenant?: Record<string, unknown>; version?: unknown };
   return JSON.stringify({
     ...(tenant ?? {}),
@@ -213,7 +215,6 @@ async function storefront(c: Context<AppEnv>, pool: Pool, data?: Record<string, 
 }
 
 /** A site as flat fields, with its address. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const flatSite = (tenant: any) => ({ ...tenant, siteId: tenant.id, url: tenant.domainName ? `https://${tenant.domainName}` : null });
 
 const ACTIONS = ['create-site', 'get-site', 'suspend-site', 'resume-site', 'delete-site'] as const;

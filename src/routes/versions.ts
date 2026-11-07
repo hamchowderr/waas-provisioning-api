@@ -22,7 +22,6 @@ interface CreateVersionParams {
   asZip?: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toVersion(row: any) {
   return {
     id: row.id,

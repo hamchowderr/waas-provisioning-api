@@ -21,6 +21,7 @@ import type { Provisioner } from './provisioner/provisioner.ts';
 import { startBoss, startWorker } from './queue.ts';
 import { S3ReleaseStore } from './releases.ts';
 import { startHostUpdates } from './hostupdates.ts';
+import { resolvePlatformProducts } from './platformproducts.ts';
 import { Secrets } from './secrets.ts';
 import { siteKey, siteKeyMaster } from './sitekeys.ts';
 import { startStoreBackups } from './storebackups.ts';
@@ -29,6 +30,7 @@ import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webh
 const config = loadConfig();
 await migrate(config.databaseUrl);
 const pool = createPool(config.databaseUrl);
+await resolvePlatformProducts(pool, config);
 const boss = await startBoss(config.databaseUrl);
 // Coolify for normal stores (docs/coolify.md); the fake for local runs and tests.
 const siteKeys = siteKeyMaster(config.secretsKey);

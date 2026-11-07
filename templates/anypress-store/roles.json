@@ -2,13 +2,15 @@
     "website": {
         "title": "Website",
         "plugins": [
+            "fluent-security/fluent-security.php",
+            "fluent-smtp/fluent-smtp.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",
+            "fluent-player/fluent-player.php",
             "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
-            "fluent-security/fluent-security.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
@@ -16,16 +18,18 @@
     "bookings": {
         "title": "Bookings",
         "plugins": [
-            "fluent-booking/fluent-booking.php",
-            "fluent-cart/fluent-cart.php",
-            "fluent-support/fluent-support.php",
+            "fluent-security/fluent-security.php",
+            "fluent-smtp/fluent-smtp.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",
+            "fluent-booking/fluent-booking.php",
+            "fluent-cart/fluent-cart.php",
+            "fluent-player/fluent-player.php",
+            "fluent-support/fluent-support.php",
             "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
-            "fluent-security/fluent-security.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
@@ -33,16 +37,18 @@
     "online-store": {
         "title": "Online store",
         "plugins": [
-            "fluent-cart/fluent-cart.php",
-            "fluent-support/fluent-support.php",
-            "fluent-affiliate/fluent-affiliate.php",
+            "fluent-security/fluent-security.php",
+            "fluent-smtp/fluent-smtp.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",
+            "fluent-cart/fluent-cart.php",
+            "fluent-player/fluent-player.php",
+            "fluent-affiliate/fluent-affiliate.php",
+            "fluent-support/fluent-support.php",
             "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
-            "fluent-security/fluent-security.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
@@ -50,15 +56,17 @@
     "community": {
         "title": "Community & courses",
         "plugins": [
-            "fluent-community/fluent-community.php",
-            "fluent-cart/fluent-cart.php",
+            "fluent-security/fluent-security.php",
+            "fluent-smtp/fluent-smtp.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",
+            "fluent-cart/fluent-cart.php",
+            "fluent-community/fluent-community.php",
+            "fluent-player/fluent-player.php",
             "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
-            "fluent-security/fluent-security.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
@@ -66,18 +74,20 @@
     "everything": {
         "title": "Everything",
         "plugins": [
-            "fluent-cart/fluent-cart.php",
+            "fluent-security/fluent-security.php",
+            "fluent-smtp/fluent-smtp.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",
             "fluent-booking/fluent-booking.php",
-            "fluent-support/fluent-support.php",
+            "fluent-cart/fluent-cart.php",
+            "fluent-community/fluent-community.php",
+            "fluent-player/fluent-player.php",
             "fluent-affiliate/fluent-affiliate.php",
+            "fluent-support/fluent-support.php",
             "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
-            "fluent-security/fluent-security.php",
-            "fluent-community/fluent-community.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
@@ -85,18 +95,20 @@
     "store": {
         "title": "Everything (stores bought before site types)",
         "plugins": [
-            "fluent-cart/fluent-cart.php",
+            "fluent-security/fluent-security.php",
+            "fluent-smtp/fluent-smtp.php",
             "fluent-crm/fluent-crm.php",
             "fluentform/fluentform.php",
             "fluent-booking/fluent-booking.php",
-            "fluent-support/fluent-support.php",
+            "fluent-cart/fluent-cart.php",
+            "fluent-community/fluent-community.php",
+            "fluent-player/fluent-player.php",
             "fluent-affiliate/fluent-affiliate.php",
+            "fluent-support/fluent-support.php",
             "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
             "automatorwp/automatorwp.php",
-            "fluent-security/fluent-security.php",
-            "fluent-community/fluent-community.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
@@ -104,12 +116,11 @@
     "highlevel": {
         "title": "HighLevel site",
         "plugins": [
-            "leadconnector/leadconnector.php",
-            "wp-fusion-lite/wp-fusion-lite.php",
-            "easy-code-manager/easy-code-manager.php",
-            "seo-by-rank-math/rank-math.php",
             "fluent-security/fluent-security.php",
-            "fluent-toolkit/fluent-toolkit.php",
+            "seo-by-rank-math/rank-math.php",
+            "automatorwp/automatorwp.php",
+            "wp-fusion-lite/wp-fusion-lite.php",
+            "leadconnector/leadconnector.php",
             "anypress-blocks/anypress-blocks.php"
         ]
     }

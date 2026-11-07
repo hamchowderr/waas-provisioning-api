@@ -90,14 +90,9 @@ export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } 
       heartbeatSeconds: HEARTBEAT_SECONDS,
     });
   } else if (queue.heartbeatSeconds !== HEARTBEAT_SECONDS) {
-    // Queues made before the heartbeat: jobs take it from the queue when they are sent, so the
-    // ones already waiting get it here too. Running ones are left alone: an older API may still
-    // be working on them while this one starts, and it does not check in.
+    // Queues made before the heartbeat. Jobs take it from the queue when they are sent; the jobs
+    // that waited from before it are long gone, so this only ever changes the queue itself.
     await boss.updateQueue(QUEUE, { heartbeatSeconds: HEARTBEAT_SECONDS });
-    await boss.getDb().executeSql(
-      `UPDATE pgboss.job SET heartbeat_seconds = $2 WHERE name = $1 AND state IN ('created', 'retry') AND heartbeat_seconds IS NULL`,
-      [QUEUE, HEARTBEAT_SECONDS],
-    );
   }
   if (!(await boss.getQueue(MAINTENANCE_QUEUE))) await boss.createQueue(MAINTENANCE_QUEUE, { retryLimit: 2 });
   await boss.schedule(MAINTENANCE_QUEUE, '17 3 * * *');

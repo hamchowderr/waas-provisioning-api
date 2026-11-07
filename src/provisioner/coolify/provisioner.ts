@@ -81,8 +81,6 @@ const decodeMail = (value: string | undefined): Partial<StoreMail> | null => {
   }
 };
 
-export const DEFAULT_BRAND: Brand = { name: 'AnyPress' };
-
 const STORES_ENV = 'stores';
 const VERSIONS_ENV = 'versions';
 /** On-demand tasks are created disabled; Coolify still wants a valid schedule (it rejects Feb 31st). */
@@ -1055,7 +1053,7 @@ export class CoolifyProvisioner implements Provisioner {
 
   async suspendStore({ storeId, brand }: { storeId: string; brand?: Brand }) {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
-    await this.exec(store.uuid, 'suspend', { brand: brand ?? this.config.brand ?? DEFAULT_BRAND });
+    await this.exec(store.uuid, 'suspend', { brand: brand ?? this.config.brand ?? { name: '' } });
   }
 
   async resumeStore({ storeId }: { storeId: string }) {
@@ -1156,7 +1154,7 @@ export class CoolifyProvisioner implements Provisioner {
         domains: [domain],
         envs: { WAAS_CONSTANTS_B64: encodeConstants({}) },
       });
-      await this.exec(uuid, 'suspend', { brand: this.config.brand ?? DEFAULT_BRAND });
+      await this.exec(uuid, 'suspend', { brand: this.config.brand ?? { name: '' } });
       await this.exec(uuid, 'restore', { url: this.s3.presign('GET', key), home: https(domain) });
       const found = await this.exec(uuid, 'verify', {});
       return {

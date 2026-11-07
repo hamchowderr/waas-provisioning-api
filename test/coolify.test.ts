@@ -953,7 +953,7 @@ describe('CoolifyProvisioner', () => {
     await p.suspendStore({ storeId: STORE_ID });
     await p.resumeStore({ storeId: STORE_ID });
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['suspend', 'resume']);
-    expect(cloud.agentOps[0]!.args).toEqual({ brand: { name: 'AnyPress' } });
+    expect(cloud.agentOps[0]!.args).toEqual({ brand: { name: '' } });
   });
 
   it('brands the unavailable page with the suspend\'s brand over the default', async () => {
@@ -1305,6 +1305,51 @@ describe('S3', () => {
 
 describe('Provisioner selection', () => {
   const base = { DATABASE_URL: 'postgres://x', SECRETS_KEY: 'k' };
+
+  it('sends store email from no-reply@<BRAND_DOMAIN> unless STORE_MAIL_FROM is set', () => {
+    const coolify = {
+      ...base,
+      PROVISIONER: 'coolify',
+      COOLIFY_URL: COOLIFY,
+      COOLIFY_SERVER_UUID: SERVER,
+      COOLIFY_PROJECT_UUID: PROJECT,
+      S3_ENDPOINT: S3_ENDPOINT,
+      S3_BUCKET: 'waas-stores',
+      S3_ACCESS_KEY_ID: 'TESTKEY',
+      S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
+      STORE_SMTP_PASSWORD: 'pw',
+    };
+    expect(loadConfig({ ...coolify, BRAND_DOMAIN: 'AnyPress.io' }).coolify?.mail?.from).toBe('no-reply@anypress.io');
+    expect(loadConfig({ ...coolify, BRAND_DOMAIN: 'anypress.io', STORE_MAIL_FROM: 'hi@anypress.io' }).coolify?.mail?.from).toBe('hi@anypress.io');
+    expect(() => loadConfig(coolify)).toThrow(/STORE_MAIL_FROM/);
+  });
+
+  it("credits the platform's own name on a suspended store, AnyPress only on AnyPress's install", () => {
+    const coolify = {
+      ...base,
+      PROVISIONER: 'coolify',
+      COOLIFY_URL: COOLIFY,
+      COOLIFY_SERVER_UUID: SERVER,
+      COOLIFY_PROJECT_UUID: PROJECT,
+      S3_ENDPOINT: S3_ENDPOINT,
+      S3_BUCKET: 'waas-stores',
+      S3_ACCESS_KEY_ID: 'TESTKEY',
+      S3_SECRET_ACCESS_KEY: 'test-secret-not-real',
+    };
+    expect(loadConfig({ ...coolify, BRAND_DOMAIN: 'anypress.io' }).coolify?.brand).toEqual({ name: 'AnyPress', url: undefined });
+    expect(loadConfig({ ...coolify, BRAND_NAME: 'Acme Sites' }).coolify?.brand?.name).toBe('Acme Sites');
+    expect(loadConfig({ ...coolify, BRAND_NAME: 'Acme Sites', STORE_BRAND_NAME: 'Acme Hosting' }).coolify?.brand?.name).toBe('Acme Hosting');
+    expect(loadConfig({ ...coolify, PLATFORM_DOMAIN: 'acmesites.net' }).coolify?.brand?.name).toBe('acmesites.net');
+  });
+
+  it('takes the stores and versions domains from PLATFORM_DOMAIN unless they are set', () => {
+    expect(loadConfig(base)).toMatchObject({ storesDomain: 'stores.waas.example', versionsDomain: 'versions.waas.example' });
+    expect(loadConfig({ ...base, PLATFORM_DOMAIN: 'AnyPress.site.' })).toMatchObject({
+      storesDomain: 'stores.anypress.site',
+      versionsDomain: 'versions.anypress.site',
+    });
+    expect(loadConfig({ ...base, PLATFORM_DOMAIN: 'anypress.site', STORES_DOMAIN: 'sites.example.com' }).storesDomain).toBe('sites.example.com');
+  });
 
   it('defaults to the fake and requires the Coolify settings when asked for Coolify', () => {
     expect(loadConfig(base).provisioner).toBe('fake');

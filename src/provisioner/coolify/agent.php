@@ -27,7 +27,7 @@ const CRON_FLAG = CONTENT . '/.waas-cron';
 const HOLD_FLAG = CONTENT . '/.waas-hold';
 /** The page a suspended store shows. Rendered on suspend; kept out of snapshots, so it never spreads to other stores. */
 const PAGE = CONTENT . '/waas-unavailable.html';
-const DEFAULT_BRAND = ['name' => 'AnyPress'];
+const DEFAULT_BRAND = ['name' => ''];
 const WWW_UID = 33; // www-data in the Debian WordPress image (the Alpine CLI image's own is 82)
 
 function fail(string $message)
@@ -459,10 +459,12 @@ function plugin_main_file(string $slug): ?string
 function render_unavailable_page(array $brand): string
 {
     $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-    $name = trim((string) ($brand['name'] ?? '')) ?: DEFAULT_BRAND['name'];
+    $name = trim((string) ($brand['name'] ?? ''));
     $url = (string) ($brand['url'] ?? '');
     if (!preg_match('#^https?://[^\s"<>]+$#i', $url)) $url = '';
     $mark = $url !== '' ? '<a class="brand" href="' . $e($url) . '">' . $e($name) . '</a>' : '<span class="brand">' . $e($name) . '</span>';
+    // Without a name the page credits no one.
+    $footer = $name === '' ? '' : '<footer>Powered by ' . $mark . '</footer>';
     return <<<HTML
 <!doctype html>
 <html lang="en">
@@ -493,7 +495,7 @@ a.brand:hover{color:var(--accent)}
 <h1>This website is temporarily unavailable</h1>
 <p>It isn&rsquo;t being served right now. Please check back later.</p>
 <p>If this is your website, contact your provider to bring it back online.</p>
-<footer>Powered by {$mark}</footer>
+{$footer}
 </main>
 </body>
 </html>
@@ -640,8 +642,15 @@ if (!is_array($waas_mail) || empty($waas_mail['host']) || empty($waas_mail['from
 // under the store's name, and replies go to the address the store meant to send from, else to the
 // site's administrator (nobody reads the store's address on the relay's domain).
 add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
+    $GLOBALS['waas_mail_own_service'] = false;
     // A prospect email goes through the seller's own mailbox instead (waas-outreach.php), never the relay.
     if (!empty($GLOBALS['anypress_outreach_mailer'])) return;
+    // The owner connected their own email service in FluentSMTP, which sends this email after this hook (it picks the
+    // connection by the From address as it is now): leave the email to it, and to its sender, untouched.
+    if (function_exists('anypress_own_mail_service') && anypress_own_mail_service((string) $mailer->From)) {
+        $GLOBALS['waas_mail_own_service'] = true;
+        return;
+    }
     $mailer->isSMTP();
     $mailer->Host = $waas_mail['host'];
     $mailer->Port = (int) ($waas_mail['port'] ?? 465);
@@ -787,6 +796,24 @@ PHP);
 // So a prospect email is sent from the mailbox the seller connected in AnyPress (the anypress_outreach_mail option,
 // set by the outreach-mailbox operation), one prospect at a time, or not at all.
 
+/**
+ * Whether FluentSMTP sends an email from this address through a connection the owner added (their own email service)
+ * rather than handing it on as WordPress would. Then the relay (waas-mail.php) and the seller's mailbox step aside, and
+ * the email doesn't count against the plan (waas-plan.php). Its "Default (none)" connection and simulation mode don't count.
+ */
+function anypress_own_mail_service(string $from): bool
+{
+    if (!function_exists('fluentMailGetProvider')) return false;
+    try {
+        $driver = fluentMailGetProvider($from);
+    } catch (\Throwable $e) {
+        return false;
+    }
+    return is_object($driver)
+        && !($driver instanceof \FluentMail\App\Services\Mailer\Providers\DefaultMail\Handler)
+        && !($driver instanceof \FluentMail\App\Services\Mailer\Providers\Simulator\Handler);
+}
+
 /** The seller's mailbox: host, port, user, pass, from, name, daily. Null until one is connected. */
 function anypress_outreach_config(): ?array
 {
@@ -855,12 +882,22 @@ add_filter('pre_wp_mail', function ($return, $atts) {
     $limit = max(1, min(200, (int) ($config['daily'] ?? 30)));
     if ($count >= $limit) return anypress_outreach_block('limit', $subject);
     $GLOBALS['anypress_outreach_mailer'] = $config;
+    // FluentSMTP with the owner's own connection would send it through that service, whatever phpmailer_init sets,
+    // so it is sent through the seller's mailbox here instead, as the very last pre_wp_mail filter: added now, it runs
+    // after every hold and recipient check that was already in place (the template's, AnyPress Client's switches).
+    if (anypress_own_mail_service((string) $config['from'])) {
+        $send = function ($return, $atts) use (&$send, $config) {
+            remove_filter('pre_wp_mail', $send, PHP_INT_MAX);
+            return $return !== null ? $return : anypress_outreach_send($atts, $config);
+        };
+        add_filter('pre_wp_mail', $send, PHP_INT_MAX, 2);
+    }
     return null;
 }, -9990, 2);
 
-add_action('phpmailer_init', function ($mailer) {
-    $c = $GLOBALS['anypress_outreach_mailer'] ?? null;
-    if (!$c) return;
+/** Configures a mailer for the seller's mailbox, as phpmailer_init does below. */
+function anypress_outreach_mailer($mailer, array $c): void
+{
     $mailer->isSMTP();
     $mailer->Host = (string) $c['host'];
     $mailer->Port = (int) ($c['port'] ?? 587);
@@ -872,6 +909,49 @@ add_action('phpmailer_init', function ($mailer) {
     $mailer->clearReplyTos();
     $mailer->setFrom((string) $c['from'], $name, false);
     $mailer->Sender = (string) $c['from'];
+}
+
+/** Sends one prospect email through the seller's mailbox without wp_mail (see above), with wp_mail's success and failure hooks. */
+function anypress_outreach_send(array $atts, array $c): bool
+{
+    require_once ABSPATH . WPINC . '/PHPMailer/PHPMailer.php';
+    require_once ABSPATH . WPINC . '/PHPMailer/SMTP.php';
+    require_once ABSPATH . WPINC . '/PHPMailer/Exception.php';
+    $mail = ['to' => $atts['to'] ?? [], 'subject' => (string) ($atts['subject'] ?? ''), 'message' => (string) ($atts['message'] ?? ''), 'headers' => $atts['headers'] ?? [], 'attachments' => $atts['attachments'] ?? []];
+    try {
+        $m = new PHPMailer\PHPMailer\PHPMailer(true);
+        $m->CharSet = (string) get_bloginfo('charset') ?: 'UTF-8';
+        anypress_outreach_mailer($m, $c);
+        foreach (anypress_outreach_addresses($mail['to']) as $to) $m->addAddress($to);
+        $m->Subject = $mail['subject'];
+        $m->Body = $mail['message'];
+        $headers = is_array($mail['headers']) ? $mail['headers'] : preg_split('/\r?\n/', (string) $mail['headers']);
+        foreach ($headers as $line) {
+            if (!preg_match('/^\s*([\w-]+)\s*:\s*(.*)$/', (string) $line, $h)) continue;
+            $name = strtolower($h[1]);
+            // The sender, the recipient and replies are the seller's mailbox's and the prospect's only.
+            if (in_array($name, ['from', 'to', 'cc', 'bcc', 'reply-to', 'mime-version'], true)) continue;
+            if ($name === 'content-type') {
+                if (stripos($h[2], 'text/html') !== false) $m->isHTML(true);
+                continue;
+            }
+            $m->addCustomHeader($h[1], trim($h[2]));
+        }
+        $files = is_array($mail['attachments']) ? $mail['attachments'] : explode("\n", str_replace("\r\n", "\n", (string) $mail['attachments']));
+        foreach (array_filter($files) as $file) $m->addAttachment((string) $file);
+        $m->send();
+    } catch (\Throwable $e) {
+        do_action('wp_mail_failed', new WP_Error('wp_mail_failed', $e->getMessage(), $mail));
+        return false;
+    }
+    $GLOBALS['waas_mail_own_service'] = false;
+    do_action('wp_mail_succeeded', $mail);
+    return true;
+}
+
+add_action('phpmailer_init', function ($mailer) {
+    $c = $GLOBALS['anypress_outreach_mailer'] ?? null;
+    if ($c) anypress_outreach_mailer($mailer, $c);
 }, PHP_INT_MAX);
 
 add_action('wp_mail_succeeded', function () {
@@ -1288,6 +1368,8 @@ function waas_plan_mail(): array
     return $fresh;
 }
 add_action('wp_mail_succeeded', function () {
+    // Sent through the owner's own email service (FluentSMTP), not the platform's: not part of the plan's email.
+    if (!empty($GLOBALS['waas_mail_own_service'])) return;
     $mail = waas_plan_mail();
     $mail['sent']++;
     update_option('waas_plan_mail', $mail, false);

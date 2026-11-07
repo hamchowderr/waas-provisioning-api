@@ -15,14 +15,16 @@ export interface AuthMail {
   poweredBy?: string;
   /** Shown in the footer as the address to write to with questions. */
   supportEmail?: string;
+  /** AnyPress's colour strip across the top: only on AnyPress's own install (src/auth.ts). */
+  colourStrip?: boolean;
   /** A logo image (https) shown above the message. */
   logoUrl?: string;
   /** The no-reply sender a seller's branded email uses, when `from` is the platform's own support address. */
   plainFrom?: string;
 }
 
-/** The platform's own address and logo when it runs under the default AnyPress name (src/auth.ts). */
-export const ANYPRESS_MAIL = { supportEmail: 'support@anypress.io', logoUrl: 'https://anypress.io/logo-512.png' };
+/** AnyPress's logo, on its own install's emails only (src/auth.ts). */
+export const ANYPRESS_MAIL = { logoUrl: 'https://anypress.io/logo-512.png' };
 
 /**
  * The sign-in email: a button and a short code, for the same sign-in. The button opens a page that
@@ -259,8 +261,8 @@ function layout(mail: AuthMail, m: Message): string {
     `<tr><td style="padding:0 4px 20px">${head}</td></tr>` +
     `<tr><td style="background:#ffffff;border:1px solid ${LINE};border-radius:12px;overflow:hidden">` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">` +
-    // The AnyPress colour strip only on AnyPress's own emails: a seller's or reseller's carry just their brand.
-    (mail.poweredBy ? '' : `<tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:#ff7a2a;background-image:linear-gradient(90deg,#ffc75a,#ff7a2a,#ee2f5e,#d21fa4)">&nbsp;</td></tr>`) +
+    // The AnyPress colour strip only on AnyPress's own emails: a seller's, a reseller's or a self-hosted install's carry just their brand.
+    (mail.poweredBy || !mail.colourStrip ? '' : `<tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:#ff7a2a;background-image:linear-gradient(90deg,#ffc75a,#ff7a2a,#ee2f5e,#d21fa4)">&nbsp;</td></tr>`) +
     `<tr><td style="padding:32px 32px 16px">${body}</td></tr></table></td></tr>` +
     (foot.length ? `<tr><td style="padding:20px 4px 0;font-size:13px;line-height:20px;color:${SOFT}">${foot.join('<br>')}</td></tr>` : '') +
     `</table></td></tr></table></body></html>`

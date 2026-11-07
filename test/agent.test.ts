@@ -71,7 +71,7 @@ describe.skipIf(!hasPhp)('store agent: suspension page', () => {
     agent('suspend', { brand: { name: 'Reseller Co' } });
     agent('resume');
     agent('suspend', {});
-    expect(guard()).toContain('AnyPress');
+    expect(guard()).not.toContain('Powered by');
     agent('suspend', { brand: { name: 'Reseller Co' } });
     agent('configure', {});
     expect(guard()).toContain('Reseller Co');
@@ -101,6 +101,7 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
             function addReplyTo($a, $n) { $this->replyTo[$a] = $n; }
             function setFrom($a, $n, $auto) { $this->From = $a; $this->FromName = $n; }
           }
+          function anypress_own_mail_service($from) { return $from === getenv('WAAS_OWN_SERVICE'); }
           include ${JSON.stringify(join(root, 'wp-content/mu-plugins/waas-mail.php'))};
           $m = new Mailer();
           $m->From = ${JSON.stringify(message.from)};
@@ -145,6 +146,41 @@ describe.skipIf(!hasPhp)('store agent: mail mu-plugin', () => {
   it('uses STARTTLS on other ports', () => {
     const env = { WAAS_MAIL_B64: Buffer.from(JSON.stringify({ ...relay, port: 587 })).toString('base64') };
     expect(send(env, { from: 'a@b.example', fromName: 'x' })).toMatchObject({ Port: 587, SMTPSecure: 'tls' });
+  });
+
+  it("leaves an email to the owner's own email service in FluentSMTP", () => {
+    // The stand-in for waas-outreach.php's check: the owner's FluentSMTP connection sends from this address.
+    const m = (from: string) =>
+      send({ ...withRelay, WAAS_OWN_SERVICE: 'owner@gmail.example' }, { from, fromName: 'WordPress' });
+    expect(m('owner@gmail.example')).toMatchObject({ mailer: 'mail', From: 'owner@gmail.example', Host: null, replyTo: [] });
+    expect(m('other@gmail.example')).toMatchObject({ mailer: 'smtp', Host: 'smtp.resend.com', From: 'store@mail.example' });
+  });
+
+  it("tells the owner's own FluentSMTP connection apart from its Default and simulation (waas-outreach.php)", () => {
+    const check = (driver: string) =>
+      execFileSync(
+        'php',
+        [
+          '-r',
+          `
+          namespace FluentMail\\App\\Services\\Mailer\\Providers\\DefaultMail { class Handler {} }
+          namespace FluentMail\\App\\Services\\Mailer\\Providers\\Simulator { class Handler {} }
+          namespace FluentMail\\App\\Services\\Mailer\\Providers\\Smtp { class Handler {} }
+          namespace {
+          function add_filter() {} function add_action() {}
+          ${driver === 'none' ? '' : `function fluentMailGetProvider($from) { return ${driver}; }`}
+          include ${JSON.stringify(join(root, 'wp-content/mu-plugins/waas-outreach.php'))};
+          echo json_encode(anypress_own_mail_service('a@b.example'));
+          }
+          `,
+        ],
+        { encoding: 'utf8' },
+      );
+    expect(check('new \\FluentMail\\App\\Services\\Mailer\\Providers\\Smtp\\Handler()')).toBe('true');
+    expect(check('new \\FluentMail\\App\\Services\\Mailer\\Providers\\DefaultMail\\Handler()')).toBe('false');
+    expect(check('new \\FluentMail\\App\\Services\\Mailer\\Providers\\Simulator\\Handler()')).toBe('false');
+    expect(check('false')).toBe('false');
+    expect(check('none')).toBe('false');
   });
 
   it('changes nothing without relay settings (version sites)', () => {
@@ -443,6 +479,11 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     const old = plan(quotas, { waas_plan_mail: { month: '2000-01', sent: 99 } }, send);
     expect(old.out).toBe('null');
     expect(old.options.waas_plan_mail).toEqual({ month: month(), sent: 1 });
+  });
+
+  it("doesn't count email the owner's own service sent (FluentSMTP)", () => {
+    const own = `$GLOBALS['waas_mail_own_service'] = true; do_action('wp_mail_succeeded'); $GLOBALS['waas_mail_own_service'] = false; do_action('wp_mail_succeeded');`;
+    expect(plan(quotas, { waas_plan_mail: { month: month(), sent: 3 } }, own).options.waas_plan_mail).toEqual({ month: month(), sent: 4 });
   });
 
   describe('email packs', () => {

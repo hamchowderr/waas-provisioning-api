@@ -13,14 +13,11 @@ import { Status } from '../src/status.ts';
 import { checkEndpointUrl, isPrivateAddress, sign } from '../src/webhooks.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const webhookSpec: any = parse(readFileSync(new URL('../openapi/webhooks.yaml', import.meta.url), 'utf8'));
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: webhookSpec.components }, 'webhooks');
 ajv.addSchema({ components: adminSpec.components }, 'admin');
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const schemaOf = (spec: any, id: string, path: string, method: string, status = '200') =>
   ajv.compile(JSON.parse(JSON.stringify(spec.paths[path][method].responses[status].content['application/json'].schema).replaceAll('"#/components', `"${id}#/components`)));
 const validate = {

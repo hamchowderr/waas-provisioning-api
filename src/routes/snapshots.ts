@@ -4,7 +4,6 @@ import { badRequest } from '../errors.ts';
 import { booleanQuery, compact, requiredUuidQuery, uuidQuery } from '../http.ts';
 import { Status, statusName } from '../status.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toSnapshot(row: any) {
   return compact({
     id: row.id,

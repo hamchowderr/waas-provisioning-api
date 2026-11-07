@@ -12,7 +12,6 @@ import { toPlugin, type WpOrg } from '../src/wporg.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 import { pluginZip } from './zip.ts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const spec: any = parse(readFileSync(new URL('../openapi/plugin-choices.yaml', import.meta.url), 'utf8'));
 const ajv = createAjv();
 ajv.addSchema({ components: spec.components }, 'choices');
