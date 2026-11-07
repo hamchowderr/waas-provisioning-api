@@ -21,16 +21,16 @@ The API serves the MCP server itself, so there is nothing to run:
 
 ### Sign in with OAuth (Claude, ChatGPT and other connectors)
 
-Add the address as a custom connector. There is no client id or secret to copy: the client registers itself, finds the sign-in on its own and opens the API's approve page.
+Add the address as a custom connector. There is no client id or secret to copy: the client registers itself, finds the sign-in on its own and opens the dashboard's Connect page (`<AUTH_URL>/connect`). Sign-in must be on ([docs/accounts.md](../docs/accounts.md)).
 
-- At `/mcp` (and `/mcp/read-only`) the page has one way in, **Sign in** (sign-in must be on, see [docs/accounts.md](../docs/accounts.md)): the dashboard opens, you sign in as yourself, pick your storefront, tick what the app may see and change, and approve. The app then acts as you, with your role: someone who may only look can only allow looking. A platform admin can pick any storefront.
-- At `/mcp/site` it has only **Sign in with your website**, for someone who owns one website and has no dashboard account: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)). This address takes no API key.
+- At `/mcp` (and `/mcp/read-only`) you sign in as yourself, pick your storefront, tick what the app may see and change, and approve. The app then acts as you, with your role: someone who may only look can only allow looking. A platform admin can pick any storefront.
+- At `/mcp/site` the page has only **Sign in with your website**, for someone who owns one website and has no dashboard account: type its address, approve in that website's WordPress dashboard, and the app gets the site tools for that website only ([docs/site-editing.md](../docs/site-editing.md)). This address takes no API key.
 
 Either way the client only gets a token. Website connections made at `/mcp` before `/mcp/site` existed keep working.
 
 #### Scopes
 
-Each area has a scope to see and a scope to change. The approve page has a box for each; the read boxes start ticked, and the write boxes of the areas the app asked to change. Ticking a write box includes that area's read scope. Most tools take an `action`, and each action needs its area's read or write scope: a tool offers only the actions its connection may use (the others are left out of its `action` list and refused if called), and a tool none of whose actions are allowed isn't offered.
+Each area has a scope to see and a scope to change. The Connect page has a box for each area the app asked for; the read boxes start ticked, and the write boxes of the areas the app asked to change. An app that asks for no scopes is offered every area. Ticking a write box includes that area's read scope. Most tools take an `action`, and each action needs its area's read or write scope: a tool offers only the actions its connection may use (the others are left out of its `action` list and refused if called), and a tool none of whose actions are allowed isn't offered.
 
 | Area | `:read` | `:write` |
 |---|---|---|
@@ -44,15 +44,17 @@ Each area has a scope to see and a scope to change. The approve page has a box f
 
 So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
 
-What the API implements, per the MCP authorization spec:
+The authorization server is Better Auth's MCP plugin ([`@better-auth/mcp`](https://www.npmjs.com/package/@better-auth/mcp)), with [`@better-auth/cimd`](https://www.npmjs.com/package/@better-auth/cimd) and its JWT plugin, set up in [`src/oauthserver.ts`](../src/oauthserver.ts). Per the MCP authorization spec:
 
 - Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and `/mcp/read-only`, `/mcp/site`), pointed to by the `WWW-Authenticate` header of a 401
-- Authorization Server Metadata (RFC 8414) at `/.well-known/oauth-authorization-server`
-- Client ID Metadata Documents, and dynamic client registration (RFC 7591) at `/oauth/register`
-- Authorization code with PKCE (S256 only) at `/oauth/authorize` and `/oauth/token`, refresh tokens that rotate, and revocation (RFC 7009) at `/oauth/revoke`
+- Authorization Server Metadata (RFC 8414) at `/.well-known/oauth-authorization-server`. The API is the issuer; the endpoints are at `<AUTH_URL>/api/auth/oauth2/*`, which the dashboard passes on to the API
+- Client ID Metadata Documents, and dynamic client registration (RFC 7591)
+- Authorization code with PKCE (S256 only), refresh tokens that rotate, and revocation (RFC 7009)
 - Tokens bound to their endpoint (RFC 8707 `resource`), with the scopes above, listed in both metadata documents and the `WWW-Authenticate` header
 
-Access tokens last an hour and refresh tokens 30 days. Both are stored hashed and belong to the person who signed in and their storefront (leaving its team cuts the client off, and becoming a member who only looks takes away the write actions), or to one store. Tokens approved with an API key and secret, before that option was removed, keep working until the key is revoked. Set `PUBLIC_URL` to the API's public address in production; it is the issuer and the resource clients see.
+The API's addresses from before the plugin keep working and hand over to it: `/oauth/authorize`, `/oauth/register`, `/oauth/token` and `/oauth/revoke`.
+
+Access tokens are signed JWTs that last an hour; refresh tokens last 30 days. Each app gets a refresh token. A token belongs to the person who signed in and their storefront, or to one store, and is checked again on every call and refresh: leaving the team cuts the app off, and becoming a member who only looks takes away the write actions. Revoking a refresh token ends the connection when its access token runs out. Connections made before the plugin keep working, and their refresh tokens keep refreshing. Set `PUBLIC_URL` to the API's public address, and `AUTH_URL` and `AUTH_SECRET` for sign-in; `PUBLIC_URL` is the issuer and the resource clients see.
 
 ### Sign in with the API key (Basic auth)
 

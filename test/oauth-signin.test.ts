@@ -1,6 +1,7 @@
-// Connecting an AI app to /mcp by signing in as a person (src/oauth.ts): the approve page hands over
-// to the dashboard (AUTH_URL/connect/<id>), which approves for one of the person's storefronts
-// through /account/oauth/requests, with the scopes they ticked. The token acts as that person, with
+// Connecting an AI app to /mcp by signing in as a person (src/oauth.ts, src/oauthserver.ts): Better
+// Auth's MCP plugin sends the browser to the dashboard's Connect page (AUTH_URL/connect?<its signed
+// request>), which approves for one of the person's storefronts through /account/oauth/connect, with
+// the scopes they ticked. The token acts as that person, with
 // their role, while they stay on the team. A platform admin (the dashboard's server vouches with the
 // admin token) sees every storefront and may approve for any of them.
 import { Client, StreamableHTTPClientTransport, UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/client';
@@ -13,7 +14,7 @@ import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', apiUrl: BASE };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
@@ -49,7 +50,6 @@ function provider() {
 }
 
 const transportFor = (p: OAuthClientProvider) => new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), { fetch: appFetch, authProvider: p });
-const decode = (value: string) => value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 /** The dashboard's server, calling /account with the person's session. */
 const asUser = (cookie: string, method: string, path: string, body?: unknown, adminToken?: string) =>
@@ -80,39 +80,43 @@ async function join(email: string, role: string) {
   return person;
 }
 
-/** Up to the approve page's "Sign in" button; returns the connection request's id and the provider. */
-async function startSignIn() {
+/**
+ * Up to the dashboard's Connect page: the app starts connecting, the browser (signed in as `who`, or
+ * not) follows the plugin to AUTH_URL/connect, and the page has the plugin's signed request.
+ */
+async function startSignIn(who?: { cookie: string }) {
   const p = provider();
   await expect(new Client({ name: 'agent', version: '1' }).connect(transportFor(p))).rejects.toBeInstanceOf(UnauthorizedError);
   const url = p.saved.authorizationUrl!;
-  const html = await (await app.request(`${url.pathname}${url.search}`)).text();
-  expect(html).toContain('Sign in to AnyPress');
-  const hidden = Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, decode(m[2]!)]));
-  const response = await app.request('/oauth/authorize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ ...hidden, action: 'signin' }).toString(),
-  });
+  expect(`${url.origin}${url.pathname}`).toBe(`${AUTH.url}/api/auth/oauth2/authorize`);
+  const response = await app.request(`${url.pathname}${url.search}`, { headers: who ? { Cookie: who.cookie } : {} });
   expect(response.status).toBe(302);
-  const location = response.headers.get('Location')!;
-  expect(location).toMatch(new RegExp(`^${AUTH.url}/connect/[0-9a-f-]{36}$`));
-  return { id: location.split('/').pop()!, p };
+  const location = new URL(response.headers.get('Location')!, AUTH.url);
+  expect(`${location.origin}${location.pathname}`).toBe(`${AUTH.url}/connect`);
+  return { oauthQuery: location.search.slice(1), p };
 }
 
+const connectPath = (oauthQuery: string) => `/account/oauth/connect?${new URLSearchParams({ oauth_query: oauthQuery })}`;
+
 /** Approves on the dashboard as `who`, ticking `scopes` (every one by default), then lets the app finish connecting. */
-async function connectAs(who: { cookie: string }, options: { scopes?: readonly string[]; adminToken?: string; productId?: string; body?: object } = {}) {
-  const { id, p } = await startSignIn();
-  const body = options.body ?? { action: 'approve', productId: options.productId ?? t.productId, scopes: options.scopes ?? ALL_SCOPES };
-  const res = await asUser(who.cookie, 'POST', `/account/oauth/requests/${id}`, body, options.adminToken);
+async function connectAs(who: { cookie: string }, options: { scopes?: readonly string[]; adminToken?: string; productId?: string } = {}) {
+  const { oauthQuery, p } = await startSignIn(who);
+  const body = { oauth_query: oauthQuery, action: 'approve', productId: options.productId ?? t.productId, scopes: options.scopes ?? ALL_SCOPES };
+  const res = await asUser(who.cookie, 'POST', '/account/oauth/connect', body, options.adminToken);
   expect(res.status).toBe(200);
   const callback = new URL((await res.json()).redirectUrl);
   expect(`${callback.origin}${callback.pathname}`).toBe(REDIRECT);
   expect(callback.searchParams.get('iss')).toBe(BASE);
   await transportFor(p).finishAuth(callback.searchParams);
+  // A refresh token always comes too (offline_access is added for every app), so connections last 30 days.
+  expect(p.saved.tokens).toMatchObject({ refresh_token: expect.any(String), expires_in: 3600 });
   const client = new Client({ name: 'agent', version: '1' });
   await client.connect(transportFor(p));
   return { client, p };
 }
+
+/** The scopes a token response gave, without the refresh token's offline_access. */
+const scopesOf = (p: { saved: { tokens?: unknown } }) => ((p.saved.tokens as { scope: string }).scope.split(' ').filter((s) => s !== 'offline_access')).join(' ');
 
 const tools = async (client: Client) => (await client.listTools()).tools.map((tool) => tool.name);
 
@@ -131,8 +135,8 @@ afterAll(() => t.close());
 
 describe('connecting an AI app by signing in', () => {
   it('shows the dashboard what is asking, and the storefronts to pick from', async () => {
-    const { id } = await startSignIn();
-    const res = await asUser(owner.cookie, 'GET', `/account/oauth/requests/${id}`);
+    const { oauthQuery } = await startSignIn(owner);
+    const res = await asUser(owner.cookie, 'GET', connectPath(oauthQuery));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       clientName: 'Claude',
@@ -142,12 +146,14 @@ describe('connecting an AI app by signing in', () => {
       storefronts: [{ productId: t.productId, role: 'owner', canChange: true }],
     });
     // The dashboard's server only: no X-Session-Auth, no answer.
-    expect((await app.request(`/account/oauth/requests/${id}`, { headers: { Cookie: owner.cookie } })).status).toBe(403);
+    expect((await app.request(connectPath(oauthQuery), { headers: { Cookie: owner.cookie } })).status).toBe(403);
+    // A request the plugin didn't sign, or one changed on the way, is refused.
+    expect((await asUser(owner.cookie, 'GET', connectPath(oauthQuery.replace('scope=', 'scope=webhooks%3Awrite+')))).status).toBe(404);
   });
 
   it('connects as the person, with changes allowed for an owner', async () => {
     const { client, p } = await connectAs(owner);
-    expect(p.saved.tokens).toMatchObject({ scope: ALL_SCOPES.join(' ') });
+    expect(scopesOf(p)).toBe(ALL_SCOPES.join(' '));
     expect(await tools(client)).toContain('create_store');
     expect((await client.callTool({ name: 'manage_versions', arguments: { action: 'list' } })).isError).toBeFalsy();
     // Tool calls go through /v1 as this person, so the request log says who.
@@ -158,24 +164,30 @@ describe('connecting an AI app by signing in', () => {
 
   it('gives someone who may only look read-only access, whatever they ticked', async () => {
     const { client, p } = await connectAs(viewer);
-    expect(p.saved.tokens).toMatchObject({ scope: READ_SCOPES.join(' ') });
+    expect(scopesOf(p)).toBe(READ_SCOPES.join(' '));
     expect(await tools(client)).not.toContain('create_store');
     await client.close();
   });
 
-  it('uses each connection request once, and declining goes back with access_denied', async () => {
-    const { id } = await startSignIn();
-    const denied = await asUser(owner.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'deny' });
+  it('declining goes back with access_denied', async () => {
+    const { oauthQuery } = await startSignIn(owner);
+    const denied = await asUser(owner.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'deny' });
     expect(new URL((await denied.json()).redirectUrl).searchParams.get('error')).toBe('access_denied');
-    expect((await asUser(owner.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', productId: t.productId })).status).toBe(404);
-    expect((await asUser(owner.cookie, 'GET', `/account/oauth/requests/${id}`)).status).toBe(404);
+  });
+
+  it('asks again on a second connection, and what is ticked then counts', async () => {
+    const first = await connectAs(owner);
+    await first.client.close();
+    const second = await connectAs(owner, { scopes: ['stores:read'] });
+    expect(scopesOf(second.p)).toBe('stores:read');
+    await second.client.close();
   });
 
   it("refuses a storefront the person isn't on", async () => {
     const stranger = await signedIn('stranger@example.com');
-    const { id } = await startSignIn();
-    expect((await (await asUser(stranger.cookie, 'GET', `/account/oauth/requests/${id}`)).json()).storefronts).toEqual([]);
-    expect((await asUser(stranger.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', productId: t.productId })).status).toBe(400);
+    const { oauthQuery } = await startSignIn(stranger);
+    expect((await (await asUser(stranger.cookie, 'GET', connectPath(oauthQuery))).json()).storefronts).toEqual([]);
+    expect((await asUser(stranger.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', productId: t.productId, scopes: ['stores:read'] })).status).toBe(400);
   });
 
   it('follows the person: read-only once they may only look, cut off once they leave the team', async () => {
@@ -210,26 +222,15 @@ describe('connecting an AI app by signing in', () => {
     expect(refreshed.status).toBe(400);
   });
 
-  it('still answers an older dashboard that sends allowWrite', async () => {
-    // (The owner above has left the team by now.)
-    const another = await join('another-owner@agency.example', 'owner');
-    const { client, p } = await connectAs(another, { body: { action: 'approve', productId: t.productId, allowWrite: false } });
-    expect(p.saved.tokens).toMatchObject({ scope: READ_SCOPES.join(' ') });
-    await client.close();
-    const writer = await connectAs(another, { body: { action: 'approve', productId: t.productId, allowWrite: true } });
-    expect(writer.p.saved.tokens).toMatchObject({ scope: ALL_SCOPES.join(' ') });
-    await writer.client.close();
-  });
-
   it('lets a platform admin approve for any storefront, as an owner would', async () => {
     const admin = await signedIn('platform@anypress.example');
     const other = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Another storefront') RETURNING id")).rows[0]!.id;
-    const { id } = await startSignIn();
+    const { oauthQuery } = await startSignIn(admin);
     // Without the admin token, someone on no team has nothing to pick.
-    expect((await (await asUser(admin.cookie, 'GET', `/account/oauth/requests/${id}`)).json()).storefronts).toEqual([]);
+    expect((await (await asUser(admin.cookie, 'GET', connectPath(oauthQuery))).json()).storefronts).toEqual([]);
     // A wrong token is no better.
-    expect((await (await asUser(admin.cookie, 'GET', `/account/oauth/requests/${id}`, undefined, 'not-the-token')).json()).asAdmin).toBe(false);
-    const view = await (await asUser(admin.cookie, 'GET', `/account/oauth/requests/${id}`, undefined, TEST_ADMIN_TOKEN)).json();
+    expect((await (await asUser(admin.cookie, 'GET', connectPath(oauthQuery), undefined, 'not-the-token')).json()).asAdmin).toBe(false);
+    const view = await (await asUser(admin.cookie, 'GET', connectPath(oauthQuery), undefined, TEST_ADMIN_TOKEN)).json();
     expect(view.asAdmin).toBe(true);
     expect(view.storefronts).toEqual(
       expect.arrayContaining([
@@ -239,38 +240,23 @@ describe('connecting an AI app by signing in', () => {
     );
 
     const { client, p } = await connectAs(admin, { adminToken: TEST_ADMIN_TOKEN });
-    expect(p.saved.tokens).toMatchObject({ scope: ALL_SCOPES.join(' ') });
+    expect(scopesOf(p)).toBe(ALL_SCOPES.join(' '));
     expect(await tools(client)).toContain('create_store');
     expect((await client.callTool({ name: 'manage_versions', arguments: { action: 'list' } })).isError).toBeFalsy();
     await client.close();
-    const { rows } = await t.pool.query("SELECT platform_admin, user_id FROM oauth_tokens WHERE kind = 'refresh' ORDER BY created_at DESC LIMIT 1");
-    expect(rows[0]).toEqual({ platform_admin: true, user_id: admin.userId });
-
-    // A refresh doesn't stretch a platform admin's grant past its first 30 days.
-    const tokens = p.saved.tokens as { refresh_token: string };
-    const clientId = (p.saved.client as { client_id: string }).client_id;
-    const before = (await t.pool.query("SELECT expires_at FROM oauth_tokens WHERE kind = 'refresh' AND user_id = $1 ORDER BY created_at DESC LIMIT 1", [admin.userId])).rows[0].expires_at;
-    const refreshed = await app.request('/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: clientId }).toString(),
-    });
-    expect(refreshed.status).toBe(200);
-    const after = (await t.pool.query("SELECT expires_at FROM oauth_tokens WHERE kind = 'refresh' AND user_id = $1 AND revoked_at IS NULL", [admin.userId])).rows[0].expires_at;
-    expect(after.getTime()).toBe(before.getTime());
+    // The token says a platform admin approved it.
+    const access = (p.saved.tokens as { access_token: string }).access_token;
+    expect(JSON.parse(Buffer.from(access.split('.')[1]!, 'base64url').toString())).toMatchObject({ product_id: t.productId, platform_admin: true, sub: admin.userId });
 
     // Without the admin token, the same person can't approve for a storefront they aren't on.
-    const second = await startSignIn();
-    expect((await asUser(admin.cookie, 'POST', `/account/oauth/requests/${second.id}`, { action: 'approve', productId: other, scopes: ['stores:read'] })).status).toBe(400);
+    const second = await startSignIn(admin);
+    expect((await asUser(admin.cookie, 'POST', '/account/oauth/connect', { oauth_query: second.oauthQuery, action: 'approve', productId: other, scopes: ['stores:read'] })).status).toBe(400);
   });
 
-  it('offers no sign-in button when sign-in is off', async () => {
+  it('has no app sign-in when sign-in is off', async () => {
     t.deps.config.auth = undefined;
     try {
-      const p = provider();
-      await expect(new Client({ name: 'agent', version: '1' }).connect(transportFor(p))).rejects.toBeInstanceOf(UnauthorizedError);
-      const url = p.saved.authorizationUrl!;
-      expect(await (await app.request(`${url.pathname}${url.search}`)).text()).not.toContain('Sign in to');
+      expect((await app.request('/.well-known/oauth-authorization-server')).status).toBe(404);
     } finally {
       t.deps.config.auth = AUTH;
     }

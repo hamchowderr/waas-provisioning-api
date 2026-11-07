@@ -1,11 +1,13 @@
 import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
 import { emailOTP, magicLink, organization } from 'better-auth/plugins';
+import type { ClientMetadataResourceFetch } from '@better-auth/oauth-provider';
 import { ANYPRESS_MAIL, sendSignInLink, type AuthMail } from './authmail.ts';
 import { platformBrandOf } from './brand.ts';
 import { brandedMail } from './branding.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
+import { mcpSignInPlugins } from './oauthserver.ts';
 
 /**
  * Sign-in for people (docs/accounts.md): Better Auth, with its tables in the `auth` schema of this
@@ -28,6 +30,11 @@ export interface AuthConfig {
   brand: string;
   /** Emailed sign-in links ("Email me a sign-in link"); on when a toSend key and sender are known. */
   mail?: AuthMail;
+  /**
+   * The API's own public origin (PUBLIC_URL). With it, AI apps sign in to the MCP server through
+   * Better Auth's MCP plugin (src/oauthserver.ts); without it, that sign-in is off.
+   */
+  apiUrl?: string;
 }
 
 /** On when AUTH_URL and AUTH_SECRET are both set; off otherwise, and /api/auth answers 404. */
@@ -74,7 +81,8 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
         plainFrom: storeFrom && storeFrom !== mailFrom ? storeFrom : undefined,
       }
     : undefined;
-  return { url, secret, brand, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE'), mail };
+  const apiUrl = env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined;
+  return { url, secret, brand, github: pair('AUTH_GITHUB'), google: pair('AUTH_GOOGLE'), mail, apiUrl };
 }
 
 /** Organization roles. A member may only look; an admin or owner may also make changes. */
@@ -104,7 +112,12 @@ export const INVITATION_DAYS = 7;
  * X-Forwarded-Host, which the API's /api/auth route has already checked (src/app.ts): it is AUTH_URL's
  * host or a live dashboard address, never what a caller made up.
  */
-export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterAuthPlugin[] = []) {
+export function createAuth(
+  pool: Pool,
+  config: AuthConfig,
+  extraPlugins: BetterAuthPlugin[] = [],
+  options: { clientMetadataFetch?: ClientMetadataResourceFetch } = {},
+) {
   const protocol = new URL(config.url).protocol === 'http:' ? 'http' : 'https';
   const auth = betterAuth({
     baseURL: { allowedHosts: ['*'], fallback: config.url, protocol },
@@ -126,11 +139,19 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
       '/email-otp/reset-password',
       '/email-otp/request-email-change',
       '/email-otp/change-email',
+      // The JWT plugin signs AI apps' access tokens (src/oauthserver.ts); sessions don't become JWTs.
+      '/token',
     ],
     advanced: { database: { generateId: 'uuid' }, trustedProxyHeaders: true },
     // githubLogin: the GitHub username, so the dashboard can tell its platform admins
     // (ALLOWED_GITHUB_LOGINS) from customers. Set from GitHub only, never from what the user sends.
-    user: { additionalFields: { githubLogin: { type: 'string', required: false, input: false } } },
+    // storeTenantId: set only on the one user each store gets for "Sign in with your website" (src/oauthserver.ts).
+    user: {
+      additionalFields: {
+        githubLogin: { type: 'string', required: false, input: false },
+        storeTenantId: { type: 'string', required: false, input: false },
+      },
+    },
     socialProviders: {
       ...(config.github ? { github: { ...config.github, mapProfileToUser: (profile) => ({ githubLogin: profile.login }) } } : {}),
       ...(config.google ? { google: config.google } : {}),
@@ -183,6 +204,7 @@ export function createAuth(pool: Pool, config: AuthConfig, extraPlugins: BetterA
             }),
           ]
         : []),
+      ...(config.apiUrl ? mcpSignInPlugins(pool, { apiUrl: config.apiUrl, clientMetadataFetch: options.clientMetadataFetch }) : []),
       ...extraPlugins,
     ],
   });

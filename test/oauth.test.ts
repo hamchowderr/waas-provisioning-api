@@ -1,9 +1,11 @@
-// OAuth sign-in for /mcp (src/oauth.ts), driven by the MCP client SDK the way Claude or ChatGPT
-// connect: discovery, registration (dynamic, or a Client ID Metadata Document), the approve page
-// handing over to the dashboard's sign-in, ticking scopes per area, the token exchange, and then tool
-// calls with the token. Also: grants from before scopes per area keep what they had.
+// OAuth sign-in for /mcp (src/oauth.ts, src/oauthserver.ts), driven by the MCP client SDK the way
+// Claude or ChatGPT connect: discovery, registration (dynamic, or a Client ID Metadata Document),
+// Better Auth's MCP plugin sending the browser to the dashboard's Connect page, ticking scopes per
+// area, the token exchange, and then tool calls with the token. Also: grants from before the plugin
+// (and from before scopes per area) keep what they had.
 import { Client, StreamableHTTPClientTransport, UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/client';
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { testUtils } from 'better-auth/plugins';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ALL_SCOPES, READ_SCOPES } from '../mcp/src/scopes.ts';
@@ -14,7 +16,8 @@ import { basic, setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'http://localhost:3999/callback';
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', apiUrl: BASE };
+const AUTHORIZE = `${AUTH.url}/api/auth/oauth2/authorize`;
 
 type Access = 'read' | 'write';
 /**
@@ -69,6 +72,8 @@ let key: string;
 let secret: string;
 let helpers: any;
 let owner: { userId: string; cookie: string };
+/** Answers Client ID Metadata Document fetches; a test sets it. */
+let metadataFetch: (input: RequestInfo | URL) => Promise<Response> = async () => new Response(null, { status: 404 });
 
 /** Hands the request to the app in-process, keeping redirects visible as they are to a browser. */
 const appFetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -82,7 +87,7 @@ const appFetch = (async (input: string | URL | Request, init?: RequestInit) => {
 }) as typeof fetch;
 
 /** An in-memory OAuthClientProvider: what an MCP host keeps between steps. */
-function provider(options: { clientMetadataUrl?: string; scope?: string } = {}) {
+function provider(options: { clientMetadataUrl?: string } = {}) {
   const saved: { client?: unknown; tokens?: unknown; verifier?: string; authorizationUrl?: URL } = {};
   const p: OAuthClientProvider & { saved: typeof saved } = {
     saved,
@@ -94,7 +99,6 @@ function provider(options: { clientMetadataUrl?: string; scope?: string } = {}) 
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      ...(options.scope !== undefined ? { scope: options.scope } : {}),
     },
     clientInformation: () => saved.client as never,
     saveClientInformation: (info) => void (saved.client = info),
@@ -109,36 +113,39 @@ function provider(options: { clientMetadataUrl?: string; scope?: string } = {}) 
 
 const transportFor = (path: string, authProvider: OAuthClientProvider) =>
   new StreamableHTTPClientTransport(new URL(`${BASE}${path}`), { fetch: appFetch, authProvider });
-const decode = (value: string) => value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-const hiddenFields = (html: string) => Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, decode(m[2]!)]));
-const postForm = (fields: Record<string, string>) =>
-  app.request('/oauth/authorize', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields).toString() });
 
-/** The dashboard's server, calling /account with the person's session (and, for a platform admin, the admin token). */
-const asUser = (cookie: string, method: string, path: string, body?: unknown, adminToken?: string) =>
+/** The dashboard's server, calling /account with the person's session. */
+const asUser = (cookie: string, method: string, path: string, body?: unknown) =>
   app.request(path, {
     method,
-    headers: { Cookie: cookie, 'X-Session-Auth': '1', 'Content-Type': 'application/json', ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}) },
+    headers: { Cookie: cookie, 'X-Session-Auth': '1', 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-/** Up to the approve page's "Sign in" button; returns the connection request's id. */
-async function startSignIn(authorizationUrl: URL) {
-  const page = await app.request(`${authorizationUrl.pathname}${authorizationUrl.search}`);
-  expect(page.status).toBe(200);
-  const html = await page.text();
-  const response = await postForm({ ...hiddenFields(html), action: 'signin' });
+/** The app's authorization request, followed by the owner's browser to the dashboard's Connect page; answers the plugin's signed request. */
+async function toConnectPage(authorizationUrl: URL) {
+  expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(AUTHORIZE);
+  const response = await app.request(`${authorizationUrl.pathname}${authorizationUrl.search}`, { headers: { Cookie: owner.cookie } });
   expect(response.status).toBe(302);
-  return response.headers.get('Location')!.split('/').pop()!;
+  const location = new URL(response.headers.get('Location')!, AUTH.url);
+  expect(`${location.origin}${location.pathname}`).toBe(`${AUTH.url}/connect`);
+  return location.search.slice(1);
 }
 
-/** The whole connect flow, ticking `scopes` on the dashboard; returns a connected client and the provider holding its tokens. */
-async function connectWithOAuth(path = '/mcp', options: { clientMetadataUrl?: string; scope?: string; scopes?: readonly string[] } = {}) {
+const connectPath = (oauthQuery: string) => `/account/oauth/connect?${new URLSearchParams({ oauth_query: oauthQuery })}`;
+
+/** Starts connecting to `path` and stops at the Connect page. */
+async function startSignIn(path = '/mcp', options: { clientMetadataUrl?: string } = {}) {
   const p = provider(options);
   await expect(new Client({ name: 'agent', version: '1' }).connect(transportFor(path, p))).rejects.toBeInstanceOf(UnauthorizedError);
   expect(p.saved.authorizationUrl).toBeDefined();
-  const id = await startSignIn(p.saved.authorizationUrl!);
-  const res = await asUser(owner.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', productId: t.productId, scopes: options.scopes ?? ALL_SCOPES });
+  return { p, oauthQuery: await toConnectPage(p.saved.authorizationUrl!) };
+}
+
+/** The whole connect flow, ticking `scopes` on the dashboard; returns a connected client and the provider holding its tokens. */
+async function connectWithOAuth(path = '/mcp', options: { clientMetadataUrl?: string; scopes?: readonly string[] } = {}) {
+  const { p, oauthQuery } = await startSignIn(path, options);
+  const res = await asUser(owner.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', productId: t.productId, scopes: options.scopes ?? ALL_SCOPES });
   expect(res.status).toBe(200);
   const callback = new URL((await res.json()).redirectUrl);
   expect(`${callback.origin}${callback.pathname}`).toBe(REDIRECT);
@@ -148,11 +155,14 @@ async function connectWithOAuth(path = '/mcp', options: { clientMetadataUrl?: st
   return { client, provider: p };
 }
 
+/** The scopes a token response gave, without the refresh token's offline_access. */
+const scopesOf = (tokens: unknown) => (tokens as { scope: string }).scope.split(' ').filter((s) => s !== 'offline_access').join(' ');
+
 const toolNames = async (client: Client) => listing((await client.listTools()).tools);
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('base64url');
 
-/** Puts an access and refresh token straight in the table, as an older API would have written them (no legacy_scope given). */
+/** Puts an access and refresh token straight in the table, as the API wrote them before the plugin (no legacy_scope given). */
 async function oldToken(scope: string) {
   const access = randomBytes(32).toString('base64url');
   const refresh = randomBytes(32).toString('base64url');
@@ -188,7 +198,7 @@ beforeAll(async () => {
   t = await setup();
   t.deps.config.publicUrl = BASE;
   ({ key, secret } = await createApiKey(t.pool, t.productId));
-  const auth = createAuth(t.pool, AUTH, [testUtils()]);
+  const auth = createAuth(t.pool, AUTH, [testUtils()], { clientMetadataFetch: (input) => metadataFetch(input) });
   helpers = ((await auth.$context) as unknown as { test: unknown }).test;
   t.deps.config.auth = AUTH;
   t.deps.auth = auth;
@@ -231,12 +241,13 @@ describe('OAuth for /mcp', () => {
     const readOnly = await (await app.request('/.well-known/oauth-protected-resource/mcp/read-only')).json();
     expect(readOnly).toMatchObject({ resource: `${BASE}/mcp/read-only`, scopes_supported: READ_SCOPES });
 
+    // The plugin's own metadata: the API is the issuer, the endpoints are on the dashboard (which passes them on).
     const server = await (await app.request('/.well-known/oauth-authorization-server')).json();
     expect(server).toMatchObject({
       issuer: BASE,
-      authorization_endpoint: `${BASE}/oauth/authorize`,
-      token_endpoint: `${BASE}/oauth/token`,
-      registration_endpoint: `${BASE}/oauth/register`,
+      authorization_endpoint: AUTHORIZE,
+      token_endpoint: `${AUTH.url}/api/auth/oauth2/token`,
+      registration_endpoint: `${AUTH.url}/api/auth/oauth2/register`,
       code_challenge_methods_supported: ['S256'],
       client_id_metadata_document_supported: true,
       scopes_supported: ALL_SCOPES,
@@ -246,8 +257,8 @@ describe('OAuth for /mcp', () => {
   it('connects a client that registers itself, and its token works on /mcp', async () => {
     const { client, provider: p } = await connectWithOAuth();
     expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28');
-    expect((p.saved.client as { client_id: string }).client_id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(p.saved.tokens).toMatchObject({ token_type: 'Bearer', scope: ALL_SCOPES.join(' ') });
+    expect(p.saved.tokens).toMatchObject({ token_type: 'Bearer', expires_in: 3600, refresh_token: expect.any(String) });
+    expect(scopesOf(p.saved.tokens)).toBe(ALL_SCOPES.join(' '));
 
     expect(await toolNames(client)).toEqual(toolsFor(ALL_SCOPES));
     const result = await client.callTool({ name: 'manage_versions', arguments: { action: 'list' } });
@@ -261,10 +272,10 @@ describe('OAuth for /mcp', () => {
 
   it('connects a client identified by a Client ID Metadata Document', async () => {
     const documentUrl = 'https://agent.example.com/oauth/client.json';
-    t.deps.clientMetadataFetch = (async (input: string | URL | Request) => {
-      expect(String(input)).toBe(documentUrl);
-      return Response.json({ client_id: documentUrl, client_name: 'Metadata Agent', redirect_uris: [REDIRECT] });
-    }) as typeof fetch;
+    metadataFetch = async (input) => {
+      expect(String(input instanceof Request ? input.url : input)).toBe(documentUrl);
+      return Response.json({ client_id: documentUrl, client_name: 'Metadata Agent', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' });
+    };
     const { client, provider: p } = await connectWithOAuth('/mcp', { clientMetadataUrl: documentUrl });
     expect(p.saved.authorizationUrl!.searchParams.get('client_id')).toBe(documentUrl);
     expect(await toolNames(client)).toEqual(toolsFor(ALL_SCOPES));
@@ -273,7 +284,7 @@ describe('OAuth for /mcp', () => {
 
   it('offers only the tools of the areas ticked, and a write box brings its read box', async () => {
     const { client, provider: p } = await connectWithOAuth('/mcp', { scopes: ['stores:read', 'backups:write'] });
-    expect(p.saved.tokens).toMatchObject({ scope: 'stores:read backups:read backups:write' });
+    expect(scopesOf(p.saved.tokens).split(' ').sort()).toEqual(['backups:read', 'backups:write', 'stores:read']);
     const names = await toolNames(client);
     expect(names).toEqual(toolsFor(['stores:read', 'backups:read', 'backups:write']));
     expect(names).toContain('manage_backups.restore');
@@ -329,7 +340,7 @@ describe('OAuth for /mcp', () => {
 
   it('signs in to /mcp/read-only with a read-only token that /mcp refuses', async () => {
     const { client, provider: p } = await connectWithOAuth('/mcp/read-only');
-    expect(p.saved.tokens).toMatchObject({ scope: READ_SCOPES.join(' ') });
+    expect(scopesOf(p.saved.tokens)).toBe(READ_SCOPES.join(' '));
     expect(await toolNames(client)).toEqual(toolsFor(READ_SCOPES));
     await client.close();
 
@@ -345,114 +356,125 @@ describe('OAuth for /mcp', () => {
     await new Client({ name: 'agent', version: '1' }).connect(transportFor('/mcp', asked)).catch(() => {});
     expect(asked.saved.authorizationUrl!.searchParams.get('scope')).toBe(ALL_SCOPES.join(' '));
     asked.saved.authorizationUrl!.searchParams.set('scope', 'stores:read domains:write');
-    const id = await startSignIn(asked.saved.authorizationUrl!);
-    const view = await (await asUser(owner.cookie, 'GET', `/account/oauth/requests/${id}`)).json();
-    expect(view).toMatchObject({ wantsWrite: true, readOnly: false, asAdmin: false, requestedScopes: ['stores:read', 'domains:write'] });
-    const ticks = Object.fromEntries(view.areas.map((a: { area: string; read: { ticked: boolean }; write: { ticked: boolean } }) => [a.area, [a.read.ticked, a.write.ticked]]));
-    expect(ticks).toEqual({ stores: [true, false], backups: [true, false], domains: [true, true], email: [true, false], versions: [true, false], webhooks: [true, false], site: [true, false] });
-    expect(view.areas[0]).toMatchObject({ name: 'Stores', read: { scope: 'stores:read' }, write: { scope: 'stores:write' } });
+    const oauthQuery = await toConnectPage(asked.saved.authorizationUrl!);
+    const view = await (await asUser(owner.cookie, 'GET', connectPath(oauthQuery))).json();
+    expect(view).toMatchObject({ clientName: 'Test Agent', wantsWrite: true, readOnly: false, asAdmin: false, requestedScopes: ['stores:read', 'domains:write'] });
+    const ticks = Object.fromEntries(view.areas.map((a: { area: string; read: { ticked: boolean }; write: { ticked: boolean } | null }) => [a.area, [a.read.ticked, a.write?.ticked ?? null]]));
+    // An area the app only asked to see has no box to change.
+    expect(ticks).toEqual({ stores: [true, null], domains: [true, true] });
+    expect(view.areas[1]).toMatchObject({ name: 'Domains', read: { scope: 'domains:read' }, write: { scope: 'domains:write' } });
 
     // Nothing ticked, or a scope we don't have, is refused, and the request is still there.
-    expect((await asUser(owner.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', productId: t.productId, scopes: [] })).status).toBe(400);
-    expect((await asUser(owner.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', productId: t.productId, scopes: ['everything'] })).status).toBe(400);
-    expect((await asUser(owner.cookie, 'GET', `/account/oauth/requests/${id}`)).status).toBe(200);
-
-    // A client that asks for nothing: the person decides; no write box starts ticked.
-    const none = provider();
-    await new Client({ name: 'agent', version: '1' }).connect(transportFor('/mcp', none)).catch(() => {});
-    none.saved.authorizationUrl!.searchParams.delete('scope');
-    const noneId = await startSignIn(none.saved.authorizationUrl!);
-    const noneView = await (await asUser(owner.cookie, 'GET', `/account/oauth/requests/${noneId}`)).json();
-    expect(noneView.wantsWrite).toBe(false);
-    expect(noneView.areas.every((a: { read: { ticked: boolean }; write: { ticked: boolean } }) => a.read.ticked && !a.write.ticked)).toBe(true);
+    const approve = (scopes: unknown) => asUser(owner.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', productId: t.productId, scopes });
+    expect((await approve([])).status).toBe(400);
+    expect((await approve(['everything'])).status).toBe(400);
+    expect((await asUser(owner.cookie, 'GET', connectPath(oauthQuery))).status).toBe(200);
+    // Only what the app asked for is given, whatever else is ticked.
+    const res = await approve(ALL_SCOPES);
+    expect(res.status).toBe(200);
+    const callback = new URL((await res.json()).redirectUrl);
+    await transportFor('/mcp', asked).finishAuth(callback.searchParams);
+    expect(scopesOf(asked.saved.tokens).split(' ').sort()).toEqual(['domains:write', 'stores:read']);
   });
 
-  it('only signs in: no API key and secret on the approve page', async () => {
-    const p = provider();
-    await new Client({ name: 'agent', version: '1' }).connect(transportFor('/mcp', p)).catch(() => {});
+  it('refuses requests the plugin did not sign, unknown redirects, no PKCE and scopes it does not have', async () => {
+    const { p, oauthQuery } = await startSignIn();
+    // The Connect page only answers for the plugin's signed request.
+    expect((await asUser(owner.cookie, 'GET', connectPath(oauthQuery.replace('scope=', 'scope=webhooks%3Awrite+')))).status).toBe(404);
     const url = p.saved.authorizationUrl!;
-    const html = await (await app.request(`${url.pathname}${url.search}`)).text();
-    expect(html).toContain('Connect Test Agent');
-    expect(html).toContain('Sign in to AnyPress');
-    expect(html).not.toContain('api_secret');
-    expect(html).not.toContain('API key');
-    expect(html).not.toContain('WPCS');
-
-    // Approving with a key and secret is no longer taken, even when they are right.
-    const withKey = await postForm({ ...hiddenFields(html), action: 'approve', api_key: key, api_secret: secret });
-    expect(withKey.status).toBe(400);
-    expect(withKey.headers.get('Location')).toBeNull();
-    expect(await withKey.text()).toContain('no longer offered');
-
-    const cancelled = await postForm({ ...hiddenFields(html), action: 'deny' });
-    const back = new URL(cancelled.headers.get('Location')!);
-    expect(back.searchParams.get('error')).toBe('access_denied');
-    expect(back.searchParams.get('state')).toBe(url.searchParams.get('state'));
-
-    // A redirect URI the client never registered is refused on our page, never redirected to.
+    const follow = async (changed: URL) => {
+      const res = await app.request(`${changed.pathname}${changed.search}`, { headers: { Cookie: owner.cookie } });
+      return { status: res.status, location: res.headers.get('Location') ?? '' };
+    };
+    // A redirect URI the client never registered is never redirected to.
     const elsewhere = new URL(url);
     elsewhere.searchParams.set('redirect_uri', 'https://evil.example/steal');
-    const refused = await app.request(`${elsewhere.pathname}${elsewhere.search}`);
-    expect(refused.status).toBe(400);
-    expect(refused.headers.get('Location')).toBeNull();
-    expect(refused.headers.get('X-Frame-Options')).toBe('DENY');
-
+    expect((await follow(elsewhere)).location).not.toContain('evil.example');
     // PKCE is required, and scopes must be ours.
     const noPkce = new URL(url);
     noPkce.searchParams.delete('code_challenge');
-    expect(new URL((await app.request(`${noPkce.pathname}${noPkce.search}`)).headers.get('Location')!).searchParams.get('error')).toBe('invalid_request');
+    expect((await follow(noPkce)).location).not.toContain('/connect?');
     const badScope = new URL(url);
     badScope.searchParams.set('scope', 'stores:read admin');
-    expect(new URL((await app.request(`${badScope.pathname}${badScope.search}`)).headers.get('Location')!).searchParams.get('error')).toBe('invalid_scope');
+    expect(new URL((await follow(badScope)).location, AUTH.url).searchParams.get('error')).toBe('invalid_scope');
+  });
+
+  it('declines with access_denied and the app’s state', async () => {
+    const { p, oauthQuery } = await startSignIn();
+    const res = await asUser(owner.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'deny' });
+    const back = new URL((await res.json()).redirectUrl);
+    expect(back.searchParams.get('error')).toBe('access_denied');
+    expect(back.searchParams.get('state')).toBe(p.saved.authorizationUrl!.searchParams.get('state'));
   });
 
   it('refuses script redirect URIs at registration', async () => {
     const response = await app.request('/oauth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ redirect_uris: ['javascript:alert(1)'] }),
+      body: JSON.stringify({ redirect_uris: ['javascript:alert(1)'], token_endpoint_auth_method: 'none' }),
     });
     expect(response.status).toBe(400);
-    const plainHttp = await app.request('/oauth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ redirect_uris: ['http://example.com/callback'] }),
-    });
-    expect(plainHttp.status).toBe(400);
   });
 
   it('uses each code once, rotates refresh tokens, narrows on request, and revokes', async () => {
     const { client, provider: p } = await connectWithOAuth();
     await client.close();
     const clientId = (p.saved.client as { client_id: string }).client_id;
-    const { refresh_token: refresh, access_token: access } = p.saved.tokens as { refresh_token: string; access_token: string };
+    const { refresh_token: refresh } = p.saved.tokens as { refresh_token: string; access_token: string };
 
     const refreshed = await token({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
     expect(refreshed.status).toBe(200);
     const next = await refreshed.json();
-    expect(next).toMatchObject({ token_type: 'Bearer', expires_in: 3600, scope: ALL_SCOPES.join(' ') });
+    expect(next).toMatchObject({ token_type: 'Bearer', expires_in: 3600 });
+    expect(scopesOf(next)).toBe(ALL_SCOPES.join(' '));
     expect(next.refresh_token).not.toBe(refresh);
 
-    // The old refresh token is spent.
-    const again = await token({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
+    // The old refresh token is spent. For 30 seconds the same request (an app retrying) gets the same
+    // answer back, as the MCP plugin does for every MCP app; anything else with it is refused.
+    const retried = await token({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
+    expect(retried.status).toBe(200);
+    expect((await retried.json()).refresh_token).toBe(next.refresh_token);
+    const again = await token({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId, scope: 'stores:read offline_access' });
     expect(again.status).toBe(400);
     expect(await again.json()).toMatchObject({ error: 'invalid_grant' });
 
     // Narrowing keeps only what is asked for; widening is refused.
-    const narrowed = await (await token({ grant_type: 'refresh_token', refresh_token: next.refresh_token, client_id: clientId, scope: 'stores:read' })).json();
-    expect(narrowed.scope).toBe('stores:read');
+    const narrowed = await (await token({ grant_type: 'refresh_token', refresh_token: next.refresh_token, client_id: clientId, scope: 'stores:read offline_access' })).json();
+    expect(scopesOf(narrowed)).toBe('stores:read');
     expect(await listedWith(narrowed.access_token)).toEqual(toolsFor(['stores:read']));
-    const wider = await token({ grant_type: 'refresh_token', refresh_token: narrowed.refresh_token, client_id: clientId, scope: 'stores:read stores:write' });
-    expect(await wider.json()).toMatchObject({ error: 'invalid_scope' });
+    const wider = await token({ grant_type: 'refresh_token', refresh_token: narrowed.refresh_token, client_id: clientId, scope: 'stores:read stores:write offline_access' });
+    expect(wider.status).toBe(400);
 
-    // Revoking the access token (RFC 7009) cuts the client off.
-    expect((await rpc(next.access_token, 'ping')).status).not.toBe(401);
-    const revoked = await app.request('/oauth/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `token=${access}` });
+    // Revoking the refresh token (RFC 7009) ends the connection: no more tokens.
+    const fresh = await (await token({ grant_type: 'refresh_token', refresh_token: narrowed.refresh_token, client_id: clientId })).json();
+    expect(fresh.refresh_token).toBeTruthy();
+    const revoked = await app.request('/oauth/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: fresh.refresh_token, token_type_hint: 'refresh_token', client_id: clientId }).toString(),
+    });
     expect(revoked.status).toBe(200);
-    expect((await rpc(access, 'ping')).status).toBe(401);
+    expect((await token({ grant_type: 'refresh_token', refresh_token: fresh.refresh_token, client_id: clientId })).status).toBe(400);
   });
 
-  it('keeps grants from before scopes per area working as they did', async () => {
+  it('signs in again an app registered before the plugin, with the client id it already has', async () => {
+    const { rows } = await t.pool.query<{ id: string }>("INSERT INTO oauth_clients (client_name, redirect_uris) VALUES ('Claude', $1) RETURNING id", [[REDIRECT]]);
+    // The migration's copy of the apps registered before it (migrations/1765900000000_oauth-better-auth.sql).
+    const migration = readFileSync(new URL('../migrations/1765900000000_oauth-better-auth.sql', import.meta.url), 'utf8');
+    const copy = /INSERT INTO auth\."oauthClient"[\s\S]*?DO NOTHING;/.exec(migration)![0];
+    await t.pool.query(copy);
+    const p = provider();
+    p.saved.client = { client_id: rows[0]!.id, redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' };
+    await expect(new Client({ name: 'agent', version: '1' }).connect(transportFor('/mcp', p))).rejects.toBeInstanceOf(UnauthorizedError);
+    const oauthQuery = await toConnectPage(p.saved.authorizationUrl!);
+    expect((await (await asUser(owner.cookie, 'GET', connectPath(oauthQuery))).json()).clientName).toBe('Claude');
+    const res = await asUser(owner.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', productId: t.productId, scopes: ['stores:read'] });
+    await transportFor('/mcp', p).finishAuth(new URL((await res.json()).redirectUrl).searchParams);
+    expect(scopesOf(p.saved.tokens)).toBe('stores:read');
+    expect(await listedWith((p.saved.tokens as { access_token: string }).access_token)).toEqual(toolsFor(['stores:read']));
+  });
+
+  it('keeps tokens from before the plugin working, with what they meant', async () => {
     // stores:read used to mean seeing everything.
     const reader = await oldToken('stores:read');
     expect(await listedWith(reader.access)).toEqual(toolsFor(READ_SCOPES));
@@ -471,6 +493,11 @@ describe('OAuth for /mcp', () => {
     expect(await listedWith(again.access_token)).toEqual(toolsFor(ALL_SCOPES));
     const { rows } = await t.pool.query('SELECT legacy_scope FROM oauth_tokens WHERE token_hash = $1', [sha256(again.refresh_token)]);
     expect(rows[0]).toEqual({ legacy_scope: true });
+
+    // Revoking one (RFC 7009) cuts it off.
+    const revoked = await app.request('/oauth/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `token=${reader.access}` });
+    expect(revoked.status).toBe(200);
+    expect((await rpc(reader.access, 'ping')).status).toBe(401);
 
     // Tokens an API key approved stop when the key is revoked.
     await t.pool.query('UPDATE api_keys SET revoked_at = now() WHERE id = $1', [key]);

@@ -1,17 +1,28 @@
-// OAuth 2.1 for the MCP server at /mcp (src/mcp.ts), as the MCP authorization spec asks of a remote
-// server: Claude, ChatGPT and other MCP clients find this authorization server through the
-// Protected Resource Metadata document (RFC 9728), register themselves (RFC 7591) or identify
-// themselves with a Client ID Metadata Document, and get tokens with PKCE. Approving a client means
-// signing in as a person on the dashboard (AUTH_URL/connect), picking a storefront and ticking what
-// the app may see and change, area by area (mcp/src/scopes.ts), or, for a store owner, "Sign in with
-// your website": pressing Allow in the store's own wp-admin (AnyPress Client), which answers signed with
-// the store's site key. A code or token belongs to that person and product, or to that one store:
-// once the person leaves the team or the store is deleted, the client is cut off, and a person who
-// may only look gets read-only access whatever they approved. A platform admin may approve for any
-// storefront. A store's token only edits that store's site (src/mcp.ts). Tokens approved with an API
-// key and secret, before that was dropped, keep working until the key is revoked.
+// OAuth 2.1 for the MCP server at /mcp (src/mcp.ts) and the HighLevel app (/apps), as the MCP
+// authorization spec asks of a remote server. The authorization server is Better Auth's MCP plugin
+// (src/oauthserver.ts): Claude, ChatGPT and other MCP clients find it through the Protected Resource
+// Metadata documents here (RFC 9728), register themselves (RFC 7591) or use a Client ID Metadata
+// Document, and get tokens with PKCE. This file is the API's side of it:
+//
+// - the discovery documents, and the API's own addresses from before the plugin (/oauth/authorize,
+//   /oauth/register, /oauth/token, /oauth/revoke), which HighLevel's app settings and connected apps
+//   still use: each hands over to the plugin's endpoint;
+// - the dashboard's Connect page (/account/oauth/connect): the person picks a storefront and ticks
+//   what the app may see and change, area by area (mcp/src/scopes.ts), and the plugin finishes;
+// - "Sign in with your website" (/mcp/site): the store's own wp-admin (AnyPress Client) approves,
+//   signed with the store's site key, and the store's grant only edits that site;
+// - checking an access token on every call: the person must still be on the storefront's team, and a
+//   member only looks; a store's grant ends with the store. A platform admin may approve for any
+//   storefront.
+//
+// Tokens issued before the plugin (oauth_tokens) keep working, and refreshing, until they expire or
+// are revoked; tokens approved with an API key and secret keep working until the key is revoked.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { OAuthError, type AuthInfo } from '@modelcontextprotocol/server';
+import { oauthProviderAuthServerMetadata, verifyOAuthQueryParams } from '@better-auth/oauth-provider';
+import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import { verifyJwsAccessToken } from 'better-auth/oauth2';
+import { serializeSignedCookie } from 'better-call';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv, Deps } from './app.ts';
@@ -22,10 +33,20 @@ import { markHighLevelAgency } from './highlevel.ts';
 import { versionService } from './routes/versions.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
-import { publicFetch } from './publicfetch.ts';
 import { tokenMatches } from './routes/admin.ts';
 import { connectAnswerSignature, connectLinkSignature, siteKeys, verifySiteRequest, type ConnectAnswer, type ConnectLink } from './sitekeys.ts';
 import { Status } from './status.ts';
+import {
+  APPS_PATH,
+  CLAIMS,
+  CONNECT_PAGE,
+  MCP_PATHS,
+  memberRole,
+  OFFLINE,
+  referenceId,
+  RESOURCE_PATHS,
+  type GrantReference,
+} from './oauthserver.ts';
 import {
   ALL_SCOPES,
   AREA_LABELS,
@@ -37,10 +58,9 @@ import {
   readsOnly,
   scopeOf,
   withReads,
-  WRITE_SCOPES,
 } from '../mcp/src/scopes.ts';
 
-export { ALL_SCOPES, READ_SCOPES };
+export { ALL_SCOPES, APPS_PATH, MCP_PATHS, READ_SCOPES };
 
 /** The scopes a stored grant means: as written, or, for a grant from before scopes per area, what the old two meant. */
 export function grantedScopes(scope: string, legacy: boolean): string[] {
@@ -49,29 +69,26 @@ export function grantedScopes(scope: string, legacy: boolean): string[] {
 
 /** The scopes an endpoint offers: /mcp/read-only only the read ones, /mcp/site only the site ones. */
 export const scopesFor = (path: string) =>
-  path.endsWith('/read-only') ? READ_SCOPES : isSiteResource(path) ? [scopeOf('site', 'read'), scopeOf('site', 'write')] : ALL_SCOPES;
+  path.endsWith('/read-only') ? READ_SCOPES : isSiteResource(path) ? [scopeOf('site', 'read'), scopeOf('site', 'write')] : isAppsResource(path) ? APP_SCOPES : ALL_SCOPES;
 
-/** The MCP endpoints a token can be for (RFC 8707 resource), by path. /mcp/site is for one website's owner. */
-export const MCP_PATHS = ['/mcp', '/mcp/read-only', '/mcp/site'] as const;
+/** The HighLevel app (src/highlevel.ts) only makes and manages sites, and hears about them. */
+const APP_AREAS = ['stores', 'webhooks'] as const;
+const APP_SCOPES = APP_AREAS.flatMap((area) => [scopeOf(area, 'read'), scopeOf(area, 'write')]);
 
-/**
- * The resource the HighLevel app (src/highlevel.ts) asks for when an agency signs in to AnyPress at
- * install (HighLevel's External Authentication, OAuth 2.0): its tokens work on /v1/apps only.
- */
-export const APPS_PATH = '/apps';
 export const isAppsResource = (resource: string) => resource.endsWith(APPS_PATH);
 
-/** The areas a connection can be given: the HighLevel app only makes and manages sites, and hears about them. */
-const areasFor = (resource: string): readonly (typeof AREAS)[number][] => (isAppsResource(resource) ? ['stores', 'webhooks'] : AREAS);
+/** The areas a connection can be given. */
+const areasFor = (resource: string): readonly (typeof AREAS)[number][] => (isAppsResource(resource) ? APP_AREAS : AREAS);
 
 /** Whether a resource (or path) is the endpoint for one website's owner ("Sign in with your website"). */
 export const isSiteResource = (resource: string) => resource.endsWith('/mcp/site');
 
-const CODE_TTL_S = 10 * 60;
-/** How long a storefront's handoff to the website assistant stays good. */
+/** How long "Sign in with your website" waits for the store's answer, and a storefront's handoff to the assistant lasts. */
+const SITE_REQUEST_TTL_S = 10 * 60;
 const HANDOFF_TTL_S = 2 * 60;
-const ACCESS_TTL_S = 60 * 60;
-const REFRESH_TTL_S = 30 * 24 * 60 * 60;
+/** Tokens from before the plugin: how long a refreshed one lasts. */
+const LEGACY_ACCESS_TTL_S = 60 * 60;
+const LEGACY_REFRESH_TTL_S = 30 * 24 * 60 * 60;
 
 /** The API's public origin: PUBLIC_URL, or the request's own (behind a proxy, its X-Forwarded-Proto). */
 export function publicBase(c: Context<AppEnv>, publicUrl: string | undefined): string {
@@ -87,7 +104,6 @@ export function protectedResourceMetadataUrl(base: string, path: string): string
 }
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('base64url');
-const randomToken = () => randomBytes(32).toString('base64url');
 
 /** Who a token acts as: an API key, a person on a product's team (userId), or one store's owner (tenantId). */
 export type TokenOwner =
@@ -95,19 +111,245 @@ export type TokenOwner =
   | { productId: string; userId: string; apiKeyId?: undefined; tenantId?: undefined }
   | { productId: string; tenantId: string; apiKeyId?: undefined; userId?: undefined };
 
-/** The owner of a code or token row. */
-function rowOwner(row: { api_key_id: string | null; user_id: string | null; tenant_id: string | null; product_id: string }): TokenOwner {
-  if (row.user_id) return { productId: row.product_id, userId: row.user_id };
-  if (row.tenant_id) return { productId: row.product_id, tenantId: row.tenant_id };
-  return { productId: row.product_id, apiKeyId: row.api_key_id! };
+/** Owners and admins may make changes; a member only looks. */
+const mayChange = (role: string | null) => !!role && role.split(',').some((r) => ['owner', 'admin'].includes(r.trim()));
+
+// ---------------------------------------------------------------------------------------------
+// Talking to the plugin. Its endpoints live under Better Auth's /api/auth on the dashboard's address
+// (AUTH_URL, which proxies them here), because that is where people's sessions are.
+
+/** Calls one of Better Auth's endpoints in-process, as if on the dashboard's address. */
+async function authCall(
+  deps: Deps,
+  path: string,
+  init: { method?: string; query?: string; json?: unknown; form?: string; cookie?: string; authorization?: string; contentType?: string } = {},
+): Promise<Response> {
+  const auth = requireAuth(deps);
+  const url = new URL(`${deps.config.auth!.url}/api/auth${path}`);
+  if (init.query) url.search = init.query;
+  const headers = new Headers({ Accept: 'application/json' });
+  if (init.cookie) {
+    headers.set('Cookie', init.cookie);
+    // A request with a session is checked against Better Auth's trusted origins.
+    headers.set('Origin', deps.config.auth!.url);
+  }
+  if (init.authorization) headers.set('Authorization', init.authorization);
+  let body: string | undefined;
+  if (init.json !== undefined) {
+    headers.set('Content-Type', 'application/json');
+    body = JSON.stringify(init.json);
+  } else if (init.form !== undefined) {
+    headers.set('Content-Type', init.contentType ?? 'application/x-www-form-urlencoded');
+    body = init.form;
+  }
+  return auth.handler(new Request(url, { method: init.method ?? (body === undefined ? 'GET' : 'POST'), headers, body }));
+}
+
+function requireAuth(deps: Deps) {
+  if (!deps.auth || !deps.config.auth?.apiUrl) throw new HttpError(404, 'Signing in apps is off on this server: it needs AUTH_URL, AUTH_SECRET and PUBLIC_URL');
+  return deps.auth;
+}
+
+/** The plugin's answer to a step in the browser flow: where to send the browser next. */
+async function nextUrl(response: Response): Promise<string> {
+  const json = (await response.json().catch(() => ({}))) as { url?: string; error_description?: string; message?: string };
+  if (!response.ok || !json.url) throw badRequest(json.error_description ?? json.message ?? 'This sign-in could not go on. Go back to the app and connect again.');
+  return json.url;
+}
+
+/** The signed request a plugin redirect to the Connect page carries, or null when it went elsewhere. */
+function connectQuery(url: string): string | null {
+  const parsed = new URL(url, 'https://connect.invalid');
+  return parsed.pathname === CONNECT_PAGE && parsed.searchParams.has('sig') ? parsed.search.slice(1) : null;
+}
+
+/** A signed request the plugin made (its sig and expiry checked), as its parameters. */
+async function signedRequest(deps: Deps, oauthQuery: unknown): Promise<URLSearchParams> {
+  requireAuth(deps);
+  if (typeof oauthQuery !== 'string' || !oauthQuery || oauthQuery.length > 8192) throw badRequest('oauth_query is required');
+  if (!(await verifyOAuthQueryParams(oauthQuery, deps.config.auth!.secret))) {
+    throw new HttpError(404, 'This connection request has expired. Go back to the app and connect again.');
+  }
+  return new URLSearchParams(oauthQuery);
+}
+
+/** An app the plugin knows (registered, migrated from before it, or from a metadata document), by client id. */
+async function findClient(deps: Deps, clientId: string): Promise<{ name: string; redirectUris: string[] } | null> {
+  const { rows } = await deps.pool.query<{ name: string | null; redirectUris: string[] }>(
+    'SELECT "name", "redirectUris" FROM auth."oauthClient" WHERE "clientId" = $1 AND "disabled" IS NOT TRUE',
+    [clientId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return { name: row.name || hostOf(clientId) || 'An AI app', redirectUris: row.redirectUris };
+}
+
+const hostOf = (value: string) => {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+};
+
+/** Records which storefront (or store) a session's sign-in is for, for the plugin's consent. */
+async function setPick(pool: Pool, sessionId: string, ref: GrantReference) {
+  await pool.query("DELETE FROM oauth_connect_picks WHERE created_at < now() - interval '1 hour'");
+  await pool.query(
+    'INSERT INTO oauth_connect_picks (session_id, reference) VALUES ($1, $2) ON CONFLICT (session_id) DO UPDATE SET reference = EXCLUDED.reference, created_at = now()',
+    [sessionId, referenceId(ref)],
+  );
+}
+
+/**
+ * Finishes a sign-in in the plugin once the person (or store) is known and picked: the plugin's
+ * post-login step, then its consent with the scopes chosen. Answers the app's redirect, with its code.
+ */
+async function approve(deps: Deps, cookie: string, sessionId: string, userId: string, ref: GrantReference, start: { oauthQuery: string } | { authorize: URLSearchParams }, scopes: string[]) {
+  const ctx = await requireAuth(deps).$context;
+  await setPick(deps.pool, sessionId, ref);
+  try {
+    const params = 'oauthQuery' in start ? new URLSearchParams(start.oauthQuery) : start.authorize;
+    // A new approval replaces an earlier one for the same app and storefront, so what was ticked now counts.
+    const clientId = params.get('client_id') ?? '';
+    await ctx.adapter.deleteMany({
+      model: 'oauthConsent',
+      where: [
+        { field: 'clientId', value: clientId },
+        { field: 'userId', value: userId },
+        { field: 'referenceId', value: referenceId(ref) },
+      ],
+    });
+    const next =
+      'oauthQuery' in start
+        ? await nextUrl(await authCall(deps, '/oauth2/continue', { json: { postLogin: true, oauth_query: start.oauthQuery }, cookie }))
+        : await nextUrl(await authCall(deps, '/oauth2/authorize', { query: start.authorize.toString(), cookie }));
+    const consent = connectQuery(next);
+    if (!consent) return next;
+    // Only scopes the app asked for (and the refresh token it is always given).
+    const asked = new Set((new URLSearchParams(consent).get('scope') ?? '').split(' ').filter(Boolean));
+    const scope = [...scopes, OFFLINE].filter((s) => asked.has(s));
+    if (!scope.some((s) => s !== OFFLINE)) throw badRequest('The app did not ask for any of what you ticked. Go back to the app and connect again.');
+    return await nextUrl(await authCall(deps, '/oauth2/consent', { json: { accept: true, scope: scope.join(' '), oauth_query: consent }, cookie }));
+  } finally {
+    await deps.pool.query('DELETE FROM oauth_connect_picks WHERE session_id = $1', [sessionId]);
+  }
+}
+
+/**
+ * The app's redirect when the person (or website) declines. With a session, the plugin's own consent
+ * answers it. The plugin's consent needs a session, and "Sign in with your website" has none, so there
+ * the answer is the same one it gives (RFC 6749 access_denied, with the state and the issuer, RFC 9207),
+ * to the redirect URI in the request the plugin signed after checking it against the app's.
+ */
+async function decline(deps: Deps, oauthQuery: string, cookie?: string) {
+  if (cookie) return nextUrl(await authCall(deps, '/oauth2/consent', { json: { accept: false, oauth_query: oauthQuery }, cookie }));
+  const params = await signedRequest(deps, oauthQuery);
+  const back = new URL(params.get('redirect_uri') ?? '');
+  back.searchParams.set('error', 'access_denied');
+  back.searchParams.set('error_description', 'User denied access');
+  const state = params.get('state');
+  if (state) back.searchParams.set('state', state);
+  back.searchParams.set('iss', deps.config.auth!.apiUrl!);
+  return back.toString();
+}
+
+/** The session cookie for a session made here (a store's own sign-in), as Better Auth signs it. */
+async function sessionCookie(deps: Deps, token: string): Promise<string> {
+  const ctx = await requireAuth(deps).$context;
+  const set = await serializeSignedCookie(ctx.authCookies.sessionToken.name, token, ctx.secret);
+  return set.split(';')[0]!;
+}
+
+/**
+ * "Sign in with your website", once the store has said yes (or a storefront or the store vouched for
+ * its owner): the store's own Better Auth user, a session for this one sign-in, and the plugin's
+ * code for this store only. `scopes` are site:read, and site:write when allowed.
+ */
+export async function storeSignIn(deps: Deps, tenant: { id: string; product_id: string }, start: { oauthQuery: string } | { authorize: URLSearchParams }, scopes: string[]) {
+  const ctx = await requireAuth(deps).$context;
+  const { rows } = await deps.pool.query<{ id: string }>('SELECT id FROM auth."user" WHERE "storeTenantId" = $1', [tenant.id]);
+  let userId = rows[0]?.id;
+  if (!userId) {
+    // An address no mail goes to: this user can only ever sign in this way.
+    const user = await ctx.internalAdapter.createUser({ email: `${tenant.id}@stores.invalid`, name: 'Website owner', emailVerified: true, storeTenantId: tenant.id }, { method: 'store-site-sign-in' });
+    userId = user.id;
+  }
+  const session = await ctx.internalAdapter.createSession(userId);
+  return approve(deps, await sessionCookie(deps, session.token), session.id, userId, { kind: 'tenant', tenantId: tenant.id }, start, scopes);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Checking access tokens.
+
+/**
+ * Checks an access token for /mcp, /mcp/site, /mcp/read-only or /apps: one the plugin signed, or one
+ * from before it. Throws OAuthError invalid_token, as the MCP SDK's bearer helpers expect.
+ */
+export async function verifyAccessToken(deps: Deps, token: string): Promise<AuthInfo> {
+  if (token.split('.').length === 3 && deps.auth && deps.config.auth?.apiUrl) return verifyPluginToken(deps, token);
+  return verifyLegacyToken(deps.pool, token);
+}
+
+const jwksCache = new WeakMap<object, object>();
+
+async function verifyPluginToken(deps: Deps, token: string): Promise<AuthInfo> {
+  const api = deps.config.auth!.apiUrl!;
+  const auth = deps.auth!;
+  // Better Auth's own JWT check, with the key set read in-process (it caches it, and fetches again for a new key).
+  let cacheKey = jwksCache.get(auth);
+  if (!cacheKey) jwksCache.set(auth, (cacheKey = {}));
+  let payload;
+  try {
+    payload = await verifyJwsAccessToken(token, {
+      jwksFetch: async () => (await authCall(deps, '/jwks')).json(),
+      jwksCacheKey: cacheKey,
+      verifyOptions: { issuer: api, audience: RESOURCE_PATHS.map((path) => `${api}${path}`), requiredClaims: ['azp'] },
+    });
+  } catch {
+    throw new OAuthError('invalid_token', 'Unknown, expired or revoked access token');
+  }
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  const resource = audiences.find((aud): aud is string => typeof aud === 'string' && RESOURCE_PATHS.some((path) => aud === `${api}${path}`));
+  const productId = payload[CLAIMS.product];
+  if (!resource || typeof productId !== 'string') throw new OAuthError('invalid_token', 'This access token is not for this API');
+  const granted = parseScopes(typeof payload.scope === 'string' ? payload.scope : '');
+  const tenantId = payload[CLAIMS.tenant];
+  let owner: TokenOwner;
+  let scopes = granted;
+  if (typeof tenantId === 'string') {
+    const { rowCount } = await deps.pool.query('SELECT 1 FROM tenants WHERE id = $1 AND product_id = $2', [tenantId, productId]);
+    if (!rowCount) throw new OAuthError('invalid_token', 'This website no longer exists');
+    owner = { productId, tenantId };
+  } else {
+    const userId = String(payload.sub ?? '');
+    if (payload[CLAIMS.admin] === true) {
+      const { rowCount } = await deps.pool.query('SELECT 1 FROM products WHERE id = $1', [productId]);
+      if (!rowCount) throw new OAuthError('invalid_token', 'This storefront no longer exists');
+    } else {
+      const role = await memberRole(deps.pool, userId, productId);
+      if (!role) throw new OAuthError('invalid_token', 'You are no longer on this storefront’s team');
+      // A person who may now only look keeps the read scopes.
+      if (!mayChange(role)) scopes = readsOnly(granted);
+    }
+    owner = { productId, userId };
+  }
+  return {
+    token,
+    clientId: String(payload.azp),
+    scopes,
+    expiresAt: typeof payload.exp === 'number' ? payload.exp : undefined,
+    resource: new URL(resource),
+    extra: { ...owner },
+  };
 }
 
 /** The organization `o` gives access to the row's product: the storefront's own team, or its reseller's team (docs/resellers.md). */
 const ORG_HAS = (alias: string) =>
   `(o."productId" = ${alias}.product_id OR o."resellerId" = (SELECT p.reseller_id FROM products p WHERE p.id = ${alias}.product_id))`;
 /**
- * Whether a code or token's owner may still use it: the API key still works, the store still exists,
- * or the person is still on the product's team. `role` is the person's role there (null when not), for trimming write access.
+ * Whether a token from before the plugin may still be used: the API key still works, the store still
+ * exists, or the person is still on the product's team. `role` is the person's role there.
  */
 const OWNER_CHECK = (alias: string) => `
   CASE WHEN ${alias}.api_key_id IS NOT NULL
@@ -122,17 +364,15 @@ const OWNER_ROLE = (alias: string) => `(SELECT m.role FROM auth.member m JOIN au
                      WHERE m."userId" = ${alias}.user_id AND ${ORG_HAS(alias)}
                      ORDER BY (o."productId" IS NULL) LIMIT 1)`;
 
-/** Owners and admins may make changes; a member only looks. */
-const mayChange = (role: string | null) => !!role && role.split(',').some((r) => ['owner', 'admin'].includes(r.trim()));
-
-/** A person's token keeps its write scopes only while their role allows changes (a platform admin's always). */
-function allowedScopes(scopes: string[], row: { user_id: string | null; role: string | null; platform_admin: boolean }): string[] {
-  if (!row.user_id || row.platform_admin || mayChange(row.role)) return scopes;
-  return readsOnly(scopes);
+/** The owner of a token row from before the plugin. */
+function rowOwner(row: { api_key_id: string | null; user_id: string | null; tenant_id: string | null; product_id: string }): TokenOwner {
+  if (row.user_id) return { productId: row.product_id, userId: row.user_id };
+  if (row.tenant_id) return { productId: row.product_id, tenantId: row.tenant_id };
+  return { productId: row.product_id, apiKeyId: row.api_key_id! };
 }
 
-/** Checks an access token for /mcp. Throws OAuthError invalid_token, as the SDK's bearer helpers expect. */
-export async function verifyAccessToken(pool: Pool, token: string): Promise<AuthInfo> {
+/** A token from before the plugin (oauth_tokens): random, stored hashed. */
+async function verifyLegacyToken(pool: Pool, token: string): Promise<AuthInfo> {
   const { rows } = await pool.query<{
     client_id: string;
     scope: string;
@@ -155,41 +395,72 @@ export async function verifyAccessToken(pool: Pool, token: string): Promise<Auth
   );
   const row = rows[0];
   if (!row) throw new OAuthError('invalid_token', 'Unknown or revoked access token');
-  const owner = rowOwner(row);
+  const scopes = grantedScopes(row.scope, row.legacy_scope);
   return {
     token,
     clientId: row.client_id,
-    scopes: allowedScopes(grantedScopes(row.scope, row.legacy_scope), row),
+    // A person's token keeps its write scopes only while their role allows changes (a platform admin's always).
+    scopes: !row.user_id || row.platform_admin || mayChange(row.role) ? scopes : readsOnly(scopes),
     expiresAt: Math.floor(row.expires_at.getTime() / 1000),
     resource: new URL(row.resource),
-    extra: { ...owner },
+    extra: { ...rowOwner(row) },
   };
 }
 
-interface AuthorizeRequest {
-  client: Client;
-  redirectUri: string;
-  state: string | undefined;
-  codeChallenge: string;
-  /** What the app asked for (may be empty: then the person decides). */
-  scope: string[];
-  resource: string;
+/** Refreshes a token from before the plugin (they rotate), or null when the refresh token isn't one. */
+async function legacyRefresh(pool: Pool, form: Record<string, string | undefined>) {
+  const { rows } = await pool.query<{
+    client_id: string;
+    api_key_id: string | null;
+    user_id: string | null;
+    tenant_id: string | null;
+    product_id: string | null;
+    scope: string;
+    resource: string;
+    legacy_scope: boolean;
+    platform_admin: boolean;
+    expires_at: Date;
+    owner_ok: boolean;
+  }>(
+    `UPDATE oauth_tokens t SET revoked_at = now()
+      WHERE t.token_hash = $1 AND t.kind = 'refresh' AND t.revoked_at IS NULL AND t.expires_at > now()
+      RETURNING t.client_id, t.api_key_id, t.user_id, t.tenant_id, t.product_id, t.scope, t.resource, t.legacy_scope, t.platform_admin, t.expires_at,
+                ${OWNER_CHECK('t')} AS owner_ok`,
+    [sha256(form.refresh_token ?? '')],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const fail = { error: 'invalid_grant', error_description: 'The refresh token is unknown, used, expired or revoked' };
+  if (!row.owner_ok || row.client_id !== form.client_id) return { status: 400 as const, body: fail };
+  let scope = row.scope;
+  if (form.scope) {
+    const narrower = [...new Set(form.scope.split(' ').filter((s) => s && s !== OFFLINE))];
+    if (narrower.some((s) => !row.scope.split(' ').includes(s))) return { status: 400 as const, body: { error: 'invalid_scope', error_description: 'A refresh can only keep or narrow the scope' } };
+    if (narrower.length) scope = narrower.join(' ');
+  }
+  const access = randomToken();
+  const refresh = randomToken();
+  // A platform admin's approval isn't checked against a team, so it doesn't outlive its first 30 days.
+  const refreshUntil = row.platform_admin ? row.expires_at : null;
+  await pool.query(
+    `INSERT INTO oauth_tokens (token_hash, kind, client_id, api_key_id, user_id, tenant_id, product_id, scope, resource, legacy_scope, platform_admin, expires_at) VALUES
+       ($1, 'access', $3, $4, $5, $6, $7, $8, $9, $12, $13, LEAST(now() + make_interval(secs => $10), COALESCE($14, 'infinity'::timestamptz))),
+       ($2, 'refresh', $3, $4, $5, $6, $7, $8, $9, $12, $13, COALESCE($14, now() + make_interval(secs => $11)))`,
+    [sha256(access), sha256(refresh), row.client_id, row.api_key_id, row.user_id, row.tenant_id, row.api_key_id ? null : row.product_id, scope, row.resource, LEGACY_ACCESS_TTL_S, LEGACY_REFRESH_TTL_S, row.legacy_scope, row.platform_admin, refreshUntil],
+  );
+  await pool.query("DELETE FROM oauth_tokens WHERE expires_at < now() - interval '1 day'");
+  return { status: 200 as const, body: { access_token: access, token_type: 'Bearer', expires_in: LEGACY_ACCESS_TTL_S, refresh_token: refresh, scope } };
 }
 
-interface Client {
-  clientId: string;
-  name: string;
-  redirectUris: string[];
-}
+const randomToken = () => randomBytes(32).toString('base64url');
+
+// ---------------------------------------------------------------------------------------------
+// Routes.
 
 export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   const { pool } = deps;
-  const base = (c: Context<AppEnv>) => publicBase(c, deps.config.publicUrl);
-  const fetchMetadata: typeof fetch = (input, init) => (deps.clientMetadataFetch ?? publicFetch)(input, init);
-  const documents = new Map<string, { client: Client | null; until: number }>();
   const keyFor = siteKeys(deps.config.secretsKey);
-  /** The brand on the "Sign in to …" button, when people can sign in (AUTH_URL set); else none. */
-  const signInBrand = () => (deps.config.auth ? deps.config.auth.brand : undefined);
+  const api = () => requireAuth(deps) && deps.config.auth!.apiUrl!;
 
   // Browser-based MCP clients (the MCP Inspector, for one) call these cross-origin.
   const open = cors({ origin: '*', allowHeaders: ['Authorization', 'Content-Type', 'MCP-Protocol-Version'], exposeHeaders: ['WWW-Authenticate'] });
@@ -198,182 +469,142 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   app.use('/oauth/token', open);
   app.use('/oauth/revoke', open);
 
-  for (const path of MCP_PATHS) {
-    app.get(`/.well-known/oauth-protected-resource${path}`, (c) =>
-      c.json({
-        resource: `${base(c)}${path}`,
-        authorization_servers: [base(c)],
-        scopes_supported: scopesFor(path),
-        bearer_methods_supported: ['header'],
-        resource_name: path === '/mcp' ? 'Store management' : isSiteResource(path) ? 'Your website' : 'Store management (read-only)',
-      }),
-    );
-  }
-
-  const authorizationServerMetadata = (c: Context<AppEnv>) => {
-    const issuer = base(c);
-    return c.json({
-      issuer,
-      authorization_endpoint: `${issuer}/oauth/authorize`,
-      token_endpoint: `${issuer}/oauth/token`,
-      registration_endpoint: `${issuer}/oauth/register`,
-      revocation_endpoint: `${issuer}/oauth/revoke`,
-      scopes_supported: ALL_SCOPES,
-      response_types_supported: ['code'],
-      response_modes_supported: ['query'],
-      grant_types_supported: ['authorization_code', 'refresh_token'],
-      token_endpoint_auth_methods_supported: ['none'],
-      revocation_endpoint_auth_methods_supported: ['none'],
-      code_challenge_methods_supported: ['S256'],
-      client_id_metadata_document_supported: true,
-      authorization_response_iss_parameter_supported: true,
-    });
+  // Protected Resource Metadata (RFC 9728), with the plugin's resource helper: this API is its authorization server.
+  const resourceNames: Record<string, string> = {
+    '/mcp': 'Store management',
+    '/mcp/read-only': 'Store management (read-only)',
+    '/mcp/site': 'Your website',
+    [APPS_PATH]: 'The AnyPress app for HighLevel',
   };
-  app.get('/.well-known/oauth-authorization-server', authorizationServerMetadata);
-  app.get('/.well-known/openid-configuration', authorizationServerMetadata);
-
-  // Dynamic client registration (RFC 7591). Public clients only: they prove themselves with PKCE.
-  app.post('/oauth/register', async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const fail = (description: string) => c.json({ error: 'invalid_client_metadata', error_description: description }, 400);
-    if (!body || typeof body !== 'object') return fail('Send the client metadata as JSON');
-    const uris: unknown = body.redirect_uris;
-    if (!Array.isArray(uris) || uris.length === 0 || uris.length > 10) return fail('redirect_uris must list 1 to 10 URLs');
-    for (const uri of uris) {
-      if (typeof uri !== 'string' || !allowedRedirectUri(uri)) {
-        return c.json({ error: 'invalid_redirect_uri', error_description: `Not an allowed redirect URI: ${String(uri).slice(0, 200)}` }, 400);
-      }
-    }
-    const name = typeof body.client_name === 'string' ? body.client_name.slice(0, 100) : null;
-    const { rows } = await pool.query<{ id: string; created_at: Date }>(
-      'INSERT INTO oauth_clients (client_name, redirect_uris) VALUES ($1, $2) RETURNING id, created_at',
-      [name, uris],
-    );
-    return c.json(
-      {
-        client_id: rows[0]!.id,
-        client_id_issued_at: Math.floor(rows[0]!.created_at.getTime() / 1000),
-        client_name: name ?? undefined,
-        redirect_uris: uris,
-        token_endpoint_auth_method: 'none',
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-      },
-      201,
-    );
-  });
-
-  /** A registered client, or one identified by its metadata document URL; null when neither. */
-  async function resolveClient(clientId: string): Promise<Client | null> {
-    if (isUuid(clientId)) {
-      const { rows } = await pool.query<{ client_name: string | null; redirect_uris: string[] }>(
-        'SELECT client_name, redirect_uris FROM oauth_clients WHERE id = $1',
-        [clientId],
+  for (const path of RESOURCE_PATHS) {
+    app.get(`/.well-known/oauth-protected-resource${path}`, async (c) => {
+      const resources = oauthProviderResourceClient(requireAuth(deps)).getActions();
+      return c.json(
+        await resources.getProtectedResourceMetadata({
+          resource: `${api()}${path}`,
+          scopes_supported: [...scopesFor(path)],
+          bearer_methods_supported: ['header'],
+          resource_name: resourceNames[path],
+        }),
       );
-      const row = rows[0];
-      return row ? { clientId, name: row.client_name ?? 'An MCP client', redirectUris: row.redirect_uris } : null;
-    }
-    if (!isMetadataDocumentUrl(clientId)) return null;
-    const cached = documents.get(clientId);
-    if (cached && cached.until > Date.now()) return cached.client;
-    const client = await fetchClientDocument(clientId).catch(() => null);
-    documents.set(clientId, { client, until: Date.now() + (client ? 5 * 60_000 : 30_000) });
-    return client;
+    });
   }
 
-  async function fetchClientDocument(url: string): Promise<Client | null> {
-    const response = await fetchMetadata(url, { headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(5000) });
-    if (!response.ok) return null;
-    const text = await response.text();
-    if (text.length > 64 * 1024) return null;
-    const doc = JSON.parse(text) as { client_id?: unknown; client_name?: unknown; redirect_uris?: unknown };
-    if (doc.client_id !== url || !Array.isArray(doc.redirect_uris)) return null;
-    const redirectUris = doc.redirect_uris.filter((u): u is string => typeof u === 'string' && allowedRedirectUri(u));
-    if (!redirectUris.length) return null;
-    return { clientId: url, name: typeof doc.client_name === 'string' ? doc.client_name.slice(0, 100) : new URL(url).host, redirectUris };
-  }
+  // Authorization Server Metadata (RFC 8414), as the plugin writes it: its endpoints on the dashboard's address.
+  // The plugin's endpoints are added at run time (src/oauthserver.ts), so Auth's type doesn't list them.
+  const serverMetadata = () => oauthProviderAuthServerMetadata(requireAuth(deps) as unknown as Parameters<typeof oauthProviderAuthServerMetadata>[0])(new Request(`${deps.config.auth!.url}/api/auth/.well-known/oauth-authorization-server`));
+  app.get('/.well-known/oauth-authorization-server', () => serverMetadata());
+  app.get('/.well-known/openid-configuration', () => serverMetadata());
 
-  /**
-   * Checks an authorization request. Problems with the client or redirect URI are shown on our page
-   * (redirecting to an unchecked URI would make this an open redirector); the rest go back to the client.
-   */
-  async function parseAuthorize(c: Context<AppEnv>, params: Record<string, string | undefined>) {
-    const clientId = params.client_id ?? '';
-    const client = clientId ? await resolveClient(clientId) : null;
-    if (!client) return { page: 'This app is not registered, or its client id could not be checked.' } as const;
-    const redirectUri = params.redirect_uri ?? (client.redirectUris.length === 1 ? client.redirectUris[0] : undefined);
-    if (!redirectUri || !client.redirectUris.some((uri) => sameRedirectUri(uri, redirectUri))) {
-      return { page: 'The address this app asked to return to is not one it registered.' } as const;
-    }
-    const back = (error: string, description: string) => ({ redirect: errorRedirect(redirectUri, error, description, params.state, base(c)) }) as const;
-    if (params.response_type !== 'code') return back('unsupported_response_type', 'Only response_type=code is supported');
-    if (!params.code_challenge || params.code_challenge_method !== 'S256') return back('invalid_request', 'PKCE with S256 is required');
-    const resource = (params.resource ?? `${base(c)}/mcp`).replace(/\/$/, '');
-    if (![...MCP_PATHS, APPS_PATH].some((path) => resource === `${base(c)}${path}`)) return back('invalid_target', 'Unknown resource');
-    const requested = (params.scope ?? '').split(' ').filter(Boolean);
-    if (requested.some((s) => !isScope(s))) return back('invalid_scope', `Scopes are ${ALL_SCOPES.join(' ')}`);
-    // What the app asked for only sets which boxes start ticked; the person decides. The read-only endpoint never writes.
-    let scope = parseScopes(requested);
-    if (resource.endsWith('/read-only')) scope = readsOnly(scope);
-    const request: AuthorizeRequest = { client, redirectUri, state: params.state, codeChallenge: params.code_challenge, scope, resource };
-    return { request } as const;
-  }
-
-  app.get('/oauth/authorize', async (c) => {
-    const parsed = await parseAuthorize(c, c.req.query());
-    if ('page' in parsed) return page(c, errorPage(parsed.page!), 400);
-    if ('redirect' in parsed) return c.redirect(parsed.redirect!);
-    return page(c, approvePage(parsed.request, c.req.query(), signInBrand()));
+  // The API's authorization address from before the plugin (HighLevel's app settings use it): the plugin's, on the dashboard.
+  app.get('/oauth/authorize', (c) => {
+    requireAuth(deps);
+    const url = new URL(c.req.url);
+    return c.redirect(`${deps.config.auth!.url}/api/auth/oauth2/authorize${url.search}`, 302);
   });
 
+  // The website assistant's sign-in form (agent/panel): the authorization request plus action=site and the website's address.
   app.post('/oauth/authorize', async (c) => {
     const form = (await c.req.parseBody()) as Record<string, string | undefined>;
-    const parsed = await parseAuthorize(c, form);
-    if ('page' in parsed) return page(c, errorPage(parsed.page!), 400);
-    if ('redirect' in parsed) return c.redirect(parsed.redirect!, 302);
-    const { request } = parsed;
-    // Sign in as a person instead: the dashboard (where the session cookie lives) finishes the approval.
-    const auth = deps.config.auth;
-    if (form.action === 'signin' && auth && !isSiteResource(request.resource)) {
-      const { rows } = await pool.query<{ id: string }>(
-        `INSERT INTO oauth_requests (client_id, client_name, redirect_uri, state, code_challenge, scope, resource, issuer, expires_at, legacy_scope)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + make_interval(secs => $9), false) RETURNING id`,
-        [request.client.clientId, request.client.name, request.redirectUri, request.state ?? null, request.codeChallenge, request.scope.join(' '), request.resource, base(c), CODE_TTL_S],
-      );
-      await pool.query("DELETE FROM oauth_requests WHERE expires_at < now() - interval '1 day'");
-      return c.redirect(`${auth.url}/connect/${rows[0]!.id}`, 302);
+    const { action, site, ...rest } = form;
+    const query = new URLSearchParams(Object.entries(rest).filter((e): e is [string, string] => typeof e[1] === 'string'));
+    if (action !== 'site') return c.redirect(`${deps.config.auth!.url}/api/auth/oauth2/authorize?${query}`, 302);
+    const next = await nextUrl(await authCall(deps, '/oauth2/authorize', { query: query.toString() }));
+    const oauthQuery = connectQuery(next);
+    // The plugin refused the request (an unknown app, say), or answered the app straight away.
+    if (!oauthQuery) return c.redirect(next, 302);
+    const started = await startSiteSignIn(oauthQuery, site ?? '');
+    if ('message' in started) return page(c, errorPage(started.message), 400);
+    return c.redirect(started.redirectUrl, 302);
+  });
+
+  // Registration (RFC 7591), at the address apps used before: the plugin's. Apps that registered here
+  // never got a secret, so one that names no way to sign in at the token endpoint stays a public app.
+  app.post('/oauth/register', async (c) => {
+    const raw = await c.req.text();
+    let body: Record<string, unknown> | null = null;
+    try {
+      body = JSON.parse(raw || '{}') as Record<string, unknown>;
+    } catch {
+      body = null;
     }
-    // Sign in with your website: the store's own wp-admin (AnyPress Client) asks its admin, then answers at /oauth/site/answer.
-    if (form.action === 'site' && isSiteResource(request.resource)) {
-      const store = await findStoreByAddress(pool, form.site ?? '');
-      const retry = (message: string) => page(c, approvePage(request, form, signInBrand(), message), 400);
-      if (!store?.main_domain) return retry('We could not find an AnyPress website at that address. Type the address people visit it at, such as mybakery.com.');
-      if (store.status !== Status.Done || store.is_suspended) return retry('That website cannot be connected right now: it is being set up, changed or is paused. Try again later.');
-      const { rows } = await pool.query<{ id: string }>(
-        `INSERT INTO oauth_requests (client_id, client_name, redirect_uri, state, code_challenge, scope, resource, issuer, tenant_id, expires_at, legacy_scope)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(secs => $10), false) RETURNING id`,
-        [request.client.clientId, request.client.name, request.redirectUri, request.state ?? null, request.codeChallenge, request.scope.join(' '), request.resource, base(c), store.id, CODE_TTL_S],
-      );
-      await pool.query("DELETE FROM oauth_requests WHERE expires_at < now() - interval '1 day'");
-      const link: ConnectLink = {
-        request: rows[0]!.id,
-        app: request.client.name,
-        to: returnHost(request.redirectUri),
-        write: siteWantsWrite(request.scope, request.resource) ? '1' : '0',
-        back: `${base(c)}/oauth/site/answer`,
-        t: String(Math.floor(Date.now() / 1000) + CODE_TTL_S),
-      };
-      const target = new URL(`https://${store.main_domain}/wp-admin/admin.php`);
-      target.searchParams.set('page', 'waas-connect');
-      for (const [name, value] of Object.entries(link)) target.searchParams.set(name, value);
-      target.searchParams.set('s', connectLinkSignature(keyFor(store.id), link));
-      return c.redirect(target.toString(), 302);
+    if (body && typeof body === 'object' && !Array.isArray(body) && body.token_endpoint_auth_method === undefined) body.token_endpoint_auth_method = 'none';
+    return authCall(deps, '/oauth2/register', { form: body ? JSON.stringify(body) : raw, contentType: 'application/json' });
+  });
+
+  app.post('/oauth/token', async (c) => {
+    const raw = await c.req.text();
+    const type = c.req.header('Content-Type') ?? 'application/x-www-form-urlencoded';
+    const form = type.includes('application/json')
+      ? ((JSON.parse(raw || '{}') ?? {}) as Record<string, string | undefined>)
+      : Object.fromEntries(new URLSearchParams(raw));
+    // A refresh token from before the plugin is refreshed as before; everything else is the plugin's.
+    if (form.grant_type === 'refresh_token' && form.refresh_token) {
+      const legacy = await legacyRefresh(pool, form);
+      if (legacy) return c.json(legacy.body, legacy.status, { 'Cache-Control': 'no-store' });
     }
-    if (form.action === 'deny') {
-      return c.redirect(errorRedirect(request.redirectUri, 'access_denied', 'The user declined', request.state, base(c)), 302);
+    return authCall(deps, '/oauth2/token', { form: raw, contentType: type, authorization: c.req.header('Authorization') });
+  });
+
+  // Revocation (RFC 7009): a token from before the plugin, or the plugin's. Always 200.
+  app.post('/oauth/revoke', async (c) => {
+    const raw = await c.req.text();
+    const type = c.req.header('Content-Type') ?? 'application/x-www-form-urlencoded';
+    const form = type.includes('application/json') ? ((JSON.parse(raw || '{}') ?? {}) as Record<string, string>) : Object.fromEntries(new URLSearchParams(raw));
+    if (form.token) {
+      const { rowCount } = await pool.query('UPDATE oauth_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL', [sha256(form.token)]);
+      if (rowCount) return c.body(null, 200);
     }
-    // Approving with an API key and secret is gone: people sign in instead.
-    return page(c, approvePage(request, form, signInBrand(), undefined, 'Approving with an API key and secret is no longer offered. Sign in instead.'), 400);
+    if (deps.auth && deps.config.auth?.apiUrl) await authCall(deps, '/oauth2/revoke', { form: raw, contentType: type, authorization: c.req.header('Authorization') });
+    return c.body(null, 200);
+  });
+
+  /**
+   * Sign in with your website: the store a typed address names, and the link to its wp-admin's connect
+   * page (AnyPress Client), signed with its site key. The store answers at /oauth/site/answer.
+   */
+  async function startSiteSignIn(oauthQuery: string, typed: string): Promise<{ redirectUrl: string } | { message: string }> {
+    const params = await signedRequest(deps, oauthQuery);
+    const resource = params.get('resource') ?? '';
+    if (!isSiteResource(resource)) throw badRequest('This sign-in is not for a website');
+    const store = await findStoreByAddress(pool, typed);
+    if (!store?.main_domain) return { message: 'We could not find an AnyPress website at that address. Type the address people visit it at, such as mybakery.com.' };
+    if (store.status !== Status.Done || store.is_suspended) return { message: 'That website cannot be connected right now: it is being set up, changed or is paused. Try again later.' };
+    const clientId = params.get('client_id') ?? '';
+    const client = await findClient(deps, clientId);
+    const redirectUri = params.get('redirect_uri') ?? client?.redirectUris[0] ?? '';
+    const requested = parseScopes(params.get('scope') ?? '');
+    const write = siteWantsWrite(requested);
+    await pool.query('DELETE FROM oauth_site_requests WHERE expires_at < now()');
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO oauth_site_requests (oauth_query, tenant_id, client_name, write, expires_at)
+       VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5)) RETURNING id`,
+      [oauthQuery, store.id, client?.name ?? 'An AI app', write, SITE_REQUEST_TTL_S],
+    );
+    const link: ConnectLink = {
+      request: rows[0]!.id,
+      app: client?.name ?? 'An AI app',
+      to: returnHost(redirectUri),
+      write: write ? '1' : '0',
+      back: `${api()}/oauth/site/answer`,
+      t: String(Math.floor(Date.now() / 1000) + SITE_REQUEST_TTL_S),
+    };
+    const target = new URL(`https://${store.main_domain}/wp-admin/admin.php`);
+    target.searchParams.set('page', 'waas-connect');
+    for (const [name, value] of Object.entries(link)) target.searchParams.set(name, value);
+    target.searchParams.set('s', connectLinkSignature(keyFor(store.id), link));
+    return { redirectUrl: target.toString() };
+  }
+
+  // The dashboard's Connect page, for a website's owner: { oauth_query, site } (or { oauth_query, action: 'deny' }).
+  // No sign-in needed: the store's wp-admin approves. Answers where to send the browser.
+  app.post('/oauth/site/start', async (c) => {
+    const body = ((await readJson(c)) ?? {}) as { oauth_query?: unknown; site?: unknown; action?: unknown };
+    const params = await signedRequest(deps, body.oauth_query);
+    if (body.action === 'deny') return c.json({ redirectUrl: await decline(deps, params.toString()) });
+    const started = await startSiteSignIn(String(body.oauth_query), typeof body.site === 'string' ? body.site : '');
+    if ('message' in started) throw badRequest(started.message);
+    return c.json(started);
   });
 
   // The store's answer to "Sign in with your website", signed with its site key (AnyPress Client's connect page).
@@ -382,8 +613,8 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     if (!id || !isUuid(id) || !['allow', 'allow-read', 'deny'].includes(answer ?? '') || !s) {
       return page(c, errorPage('The answer from your website was not complete.'), 400);
     }
-    const { rows } = await pool.query<{ redirect_uri: string; state: string | null; code_challenge: string; client_id: string; scope: string; resource: string; issuer: string; tenant_id: string; product_id: string; legacy_scope: boolean }>(
-      `SELECT r.*, t.product_id FROM oauth_requests r JOIN tenants t ON t.id = r.tenant_id WHERE r.id = $1 AND r.expires_at > now()`,
+    const { rows } = await pool.query<{ oauth_query: string; tenant_id: string; product_id: string; write: boolean }>(
+      `SELECT r.oauth_query, r.tenant_id, r.write, t.product_id FROM oauth_site_requests r JOIN tenants t ON t.id = r.tenant_id WHERE r.id = $1 AND r.expires_at > now()`,
       [id],
     );
     const row = rows[0];
@@ -394,20 +625,17 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
       return page(c, errorPage('The answer could not be checked: it did not come from that website.'), 400);
     }
     // Single use, whichever way it goes.
-    const { rowCount } = await pool.query('DELETE FROM oauth_requests WHERE id = $1', [id]);
+    const { rowCount } = await pool.query('DELETE FROM oauth_site_requests WHERE id = $1', [id]);
     if (!rowCount) return page(c, errorPage('This connection request was already used.'), 400);
-    if (answer === 'deny') return c.redirect(errorRedirect(row.redirect_uri, 'access_denied', 'The user declined', row.state ?? undefined, row.issuer), 302);
-    // A store's connection only ever edits its site: site:read, and site:write when allowed.
-    const requested = row.legacy_scope ? expandLegacyScopes(row.scope) : parseScopes(row.scope);
-    const write = answer === 'allow' && siteWantsWrite(requested, row.resource);
-    const scope = write ? [scopeOf('site', 'read'), scopeOf('site', 'write')] : [scopeOf('site', 'read')];
-    const code = await issueCode(
-      pool,
-      { clientId: row.client_id, redirectUri: row.redirect_uri, codeChallenge: row.code_challenge, resource: row.resource },
-      { productId: row.product_id, tenantId: row.tenant_id },
-      scope.join(' '),
-    );
-    return c.redirect(codeRedirect(row.redirect_uri, code, row.state, row.issuer), 302);
+    try {
+      if (answer === 'deny') return c.redirect(await decline(deps, row.oauth_query), 302);
+      // A store's connection only ever edits its site: site:read, and site:write when allowed.
+      const scopes = answer === 'allow' && row.write ? [scopeOf('site', 'read'), scopeOf('site', 'write')] : [scopeOf('site', 'read')];
+      return c.redirect(await storeSignIn(deps, { id: row.tenant_id, product_id: row.product_id }, { oauthQuery: row.oauth_query }, scopes), 302);
+    } catch (error) {
+      if (error instanceof HttpError) return page(c, errorPage(error.message), 400);
+      throw error;
+    }
   });
 
   // The website assistant trades a storefront's handoff (createSiteHandoff), with its own PKCE challenge,
@@ -424,20 +652,17 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     const given = rows[0];
     if (!given) throw badRequest('This link has expired. Open the assistant again from your account.');
     if (!sameRedirectUri(given.redirect_uri, redirectUri)) throw badRequest('redirect_uri is not the assistant this storefront named');
-    const { rows: clients } = isUuid(clientId)
-      ? await pool.query<{ redirect_uris: string[] }>('SELECT redirect_uris FROM oauth_clients WHERE id = $1', [clientId])
-      : { rows: [] };
-    if (!clients[0]?.redirect_uris.some((uri) => sameRedirectUri(uri, redirectUri))) throw badRequest('client_id is not an app registered for that redirect_uri');
+    const client = await findClient(deps, clientId);
+    if (!client?.redirectUris.some((uri) => sameRedirectUri(uri, redirectUri))) throw badRequest('client_id is not an app registered for that redirect_uri');
     const { rows: tenants } = await pool.query<{ status: number; is_suspended: boolean }>('SELECT status, is_suspended FROM tenants WHERE id = $1', [given.tenant_id]);
     if (tenants[0]?.status !== Status.Done || tenants[0].is_suspended) throw badRequest('This website is not ready');
-    const issuer = base(c);
-    const code = await issueCode(
-      pool,
-      { clientId, redirectUri, codeChallenge, resource: `${issuer}/mcp/site` },
-      { productId: given.product_id, tenantId: given.tenant_id },
-      [scopeOf('site', 'read'), scopeOf('site', 'write')].join(' '),
+    const redirectUrl = await storeSignIn(
+      deps,
+      { id: given.tenant_id, product_id: given.product_id },
+      { authorize: siteAuthorizeRequest(api(), { clientId, redirectUri, codeChallenge, state }) },
+      [scopeOf('site', 'read'), scopeOf('site', 'write')],
     );
-    return c.json({ redirectUrl: codeRedirect(redirectUri, code, state || undefined, issuer) }, 200, { 'Cache-Control': 'no-store' });
+    return c.json({ redirectUrl }, 200, { 'Cache-Control': 'no-store' });
   });
 
   // The page editor's assistant (AnyPress Client): the store itself, signing with its site key, hands the
@@ -476,128 +701,25 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
     url.searchParams.set('handoff', handoff);
     return c.json({ url: url.toString() }, 200, { 'Cache-Control': 'no-store' });
   });
+}
 
-  app.post('/oauth/token', async (c) => {
-    const form = (await readForm(c)) as Record<string, string | undefined>;
-    const fail = (error: string, description: string, status: 400 | 401 = 400) =>
-      c.json({ error, error_description: description }, status, { 'Cache-Control': 'no-store' });
-
-    if (form.grant_type === 'authorization_code') {
-      if (!form.code || !form.code_verifier || !form.client_id) return fail('invalid_request', 'code, code_verifier and client_id are required');
-      const { rows } = await pool.query<{
-        client_id: string;
-        redirect_uri: string;
-        code_challenge: string;
-        api_key_id: string | null;
-        user_id: string | null;
-        tenant_id: string | null;
-        product_id: string | null;
-        scope: string;
-        resource: string;
-        legacy_scope: boolean;
-        platform_admin: boolean;
-      }>(
-        `UPDATE oauth_codes c SET used_at = now()
-          WHERE c.code_hash = $1 AND c.used_at IS NULL AND c.expires_at > now() AND ${OWNER_CHECK('c')}
-          RETURNING c.client_id, c.redirect_uri, c.code_challenge, c.api_key_id, c.user_id, c.tenant_id, c.product_id, c.scope, c.resource, c.legacy_scope, c.platform_admin`,
-        [sha256(form.code)],
-      );
-      const row = rows[0];
-      if (!row || row.client_id !== form.client_id) return fail('invalid_grant', 'The code is unknown, used or expired');
-      if (form.redirect_uri !== undefined && form.redirect_uri !== row.redirect_uri) return fail('invalid_grant', 'redirect_uri does not match');
-      if (sha256(form.code_verifier) !== row.code_challenge) return fail('invalid_grant', 'code_verifier does not match');
-      return c.json(await issueTokens(row.client_id, row, row.scope, row.resource), 200, { 'Cache-Control': 'no-store' });
-    }
-
-    if (form.grant_type === 'refresh_token') {
-      if (!form.refresh_token || !form.client_id) return fail('invalid_request', 'refresh_token and client_id are required');
-      // Refresh tokens rotate: this one is spent, whatever happens next.
-      const { rows } = await pool.query<{
-        client_id: string;
-        api_key_id: string | null;
-        user_id: string | null;
-        tenant_id: string | null;
-        product_id: string | null;
-        scope: string;
-        resource: string;
-        legacy_scope: boolean;
-        platform_admin: boolean;
-        expires_at: Date;
-        owner_ok: boolean;
-      }>(
-        `UPDATE oauth_tokens t SET revoked_at = now()
-          WHERE t.token_hash = $1 AND t.kind = 'refresh' AND t.revoked_at IS NULL AND t.expires_at > now()
-          RETURNING t.client_id, t.api_key_id, t.user_id, t.tenant_id, t.product_id, t.scope, t.resource, t.legacy_scope, t.platform_admin, t.expires_at,
-                    ${OWNER_CHECK('t')} AS owner_ok`,
-        [sha256(form.refresh_token)],
-      );
-      const row = rows[0];
-      if (!row || !row.owner_ok || row.client_id !== form.client_id) return fail('invalid_grant', 'The refresh token is unknown, used, expired or revoked');
-      // Narrowing compares names as stored: a grant from before scopes per area keeps the old names
-      // (and its mark), so a client that sends its old scope back keeps everything it had.
-      let scope = row.scope;
-      if (form.scope) {
-        const narrower = [...new Set(form.scope.split(' ').filter(Boolean))];
-        if (narrower.some((s) => !row.scope.split(' ').includes(s))) return fail('invalid_scope', 'A refresh can only keep or narrow the scope');
-        scope = narrower.join(' ');
-      }
-      // A platform admin's approval isn't checked against a team, so it doesn't outlive its first 30 days: then connect again.
-      return c.json(await issueTokens(row.client_id, row, scope, row.resource, row.platform_admin ? row.expires_at : undefined), 200, { 'Cache-Control': 'no-store' });
-    }
-
-    return fail('unsupported_grant_type', 'Use authorization_code or refresh_token');
+/** The authorization request a store's vouched-for sign-in makes for the app: /mcp/site, the site scopes. */
+export function siteAuthorizeRequest(api: string, request: { clientId: string; redirectUri: string; codeChallenge: string; state?: string }) {
+  const query = new URLSearchParams({
+    response_type: 'code',
+    client_id: request.clientId,
+    redirect_uri: request.redirectUri,
+    code_challenge: request.codeChallenge,
+    code_challenge_method: 'S256',
+    resource: `${api}/mcp/site`,
+    scope: [scopeOf('site', 'read'), scopeOf('site', 'write'), OFFLINE].join(' '),
   });
-
-  // Token revocation (RFC 7009): always 200, whether or not the token existed.
-  app.post('/oauth/revoke', async (c) => {
-    const form = (await readForm(c)) as Record<string, string | undefined>;
-    if (form.token) await pool.query('UPDATE oauth_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL', [sha256(form.token)]);
-    return c.body(null, 200);
-  });
-
-  async function issueTokens(
-    clientId: string,
-    owner: { api_key_id: string | null; user_id: string | null; tenant_id: string | null; product_id: string | null; legacy_scope: boolean; platform_admin: boolean },
-    scope: string,
-    resource: string,
-    refreshUntil?: Date,
-  ) {
-    const access = randomToken();
-    const refresh = randomToken();
-    await pool.query(
-      `INSERT INTO oauth_tokens (token_hash, kind, client_id, api_key_id, user_id, tenant_id, product_id, scope, resource, legacy_scope, platform_admin, expires_at) VALUES
-         ($1, 'access', $3, $4, $5, $6, $7, $8, $9, $12, $13, LEAST(now() + make_interval(secs => $10), COALESCE($14, 'infinity'::timestamptz))),
-         ($2, 'refresh', $3, $4, $5, $6, $7, $8, $9, $12, $13, COALESCE($14, now() + make_interval(secs => $11)))`,
-      [sha256(access), sha256(refresh), clientId, owner.api_key_id, owner.user_id, owner.tenant_id, owner.api_key_id ? null : owner.product_id, scope, resource, ACCESS_TTL_S, REFRESH_TTL_S, owner.legacy_scope, owner.platform_admin, refreshUntil ?? null],
-    );
-    // Housekeeping: codes and tokens a day past expiry are of no use to anyone.
-    await pool.query("DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 day'");
-    await pool.query("DELETE FROM oauth_tokens WHERE expires_at < now() - interval '1 day'");
-    return { access_token: access, token_type: 'Bearer', expires_in: ACCESS_TTL_S, refresh_token: refresh, scope };
-  }
+  if (request.state) query.set('state', request.state);
+  return query;
 }
 
-export interface CodeRequest {
-  clientId: string;
-  redirectUri: string;
-  codeChallenge: string;
-  resource: string;
-}
-
-/** A new code, for scopes per area (never a legacy grant). `platformAdmin`: approved by a platform admin, not a team member. */
-export async function issueCode(pool: Pool, request: CodeRequest, owner: TokenOwner, scope: string, platformAdmin = false): Promise<string> {
-  const code = randomToken();
-  await pool.query(
-    `INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, api_key_id, user_id, tenant_id, product_id, scope, resource, expires_at, legacy_scope, platform_admin)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + make_interval(secs => $11), false, $12)`,
-    [sha256(code), request.clientId, request.redirectUri, request.codeChallenge, owner.apiKeyId ?? null, owner.userId ?? null, owner.tenantId ?? null, owner.apiKeyId ? null : owner.productId, scope, request.resource, CODE_TTL_S, platformAdmin],
-  );
-  return code;
-}
-
-/** Whether "Sign in with your website" should offer changes: unless the app asked to look only, or used the read-only endpoint. */
-function siteWantsWrite(requested: string[], resource: string): boolean {
-  if (resource.endsWith('/read-only')) return false;
+/** Whether "Sign in with your website" should offer changes: unless the app asked to look only. */
+function siteWantsWrite(requested: string[]): boolean {
   return requested.length === 0 || requested.some((s) => s.endsWith(':write'));
 }
 
@@ -615,36 +737,22 @@ export async function createSiteHandoff(pool: Pool, tenant: { id: string; produc
   return handoff;
 }
 
-export function codeRedirect(redirectUri: string, code: string, state: string | null | undefined, issuer: string): string {
-  const target = new URL(redirectUri);
-  target.searchParams.set('code', code);
-  if (state !== undefined && state !== null) target.searchParams.set('state', state);
-  target.searchParams.set('iss', issuer);
-  return target.toString();
+/** Whether an app registered this redirect URI with the plugin. */
+export async function clientHasRedirect(deps: Deps, clientId: string, redirectUri: string): Promise<boolean> {
+  const client = await findClient(deps, clientId);
+  return !!client?.redirectUris.some((uri) => sameRedirectUri(uri, redirectUri));
 }
 
 /**
- * The dashboard's half of signing in as a person (AUTH_URL/connect/<id>): read a waiting approval,
- * then approve it for one of the person's storefronts, with the scopes they ticked, or decline.
- * Mounted in /account, so the caller is the signed-in person whose session the dashboard's server
- * passes on. When the dashboard's server also sends the admin token, it vouches that this person is
- * a platform admin: they see every storefront and may grant what an owner may.
+ * The dashboard's half of signing in as a person (its Connect page, AUTH_URL/connect, where the plugin
+ * sends the browser): read a waiting sign-in, then approve it for one of the person's storefronts, with
+ * the scopes they ticked, or decline. Mounted in /account, so the caller is the signed-in person whose
+ * session the dashboard's server passes on. When the dashboard's server also sends the admin token, it
+ * vouches that this person is a platform admin: they see every storefront and may grant what an owner may.
  */
 export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promise<SessionCaller | null>) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
-  type Row = {
-    id: string;
-    client_id: string;
-    client_name: string;
-    redirect_uri: string;
-    state: string | null;
-    code_challenge: string;
-    scope: string;
-    resource: string;
-    issuer: string;
-    legacy_scope: boolean;
-  };
   type Storefront = { productId: string; name: string; role: string; canChange: boolean };
 
   /** Whether the dashboard's server sent the admin token: the person is one of its platform admins. */
@@ -653,12 +761,14 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
     return !!deps.config.adminToken && !!match && tokenMatches(match[1]!, deps.config.adminToken);
   };
 
-  async function load(c: Context<AppEnv>) {
+  async function load(c: Context<AppEnv>, oauthQuery: unknown) {
     const me = await caller(c);
     if (!me) throw new HttpError(403, 'Sign in first');
-    const id = c.req.param('id')!;
-    const { rows } = isUuid(id) ? await pool.query<Row>('SELECT * FROM oauth_requests WHERE id = $1 AND tenant_id IS NULL AND expires_at > now()', [id]) : { rows: [] };
-    if (!rows[0]) throw new HttpError(404, 'This connection request has expired. Go back to the app and connect again.');
+    const params = await signedRequest(deps, oauthQuery);
+    const resource = params.get('resource') ?? '';
+    if (isSiteResource(resource)) throw badRequest('This connection is for a website: type its address instead');
+    const client = await findClient(deps, params.get('client_id') ?? '');
+    if (!client) throw new HttpError(404, 'This app is not registered. Go back to the app and connect again.');
     const asAdmin = platformAdmin(c);
     // The person's own storefronts, then, for a platform admin, every other one.
     const storefronts: Storefront[] = me.memberships.map((m) => ({ productId: m.productId, name: m.productName, role: m.role, canChange: asAdmin || mayChange(m.role) }));
@@ -668,72 +778,65 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       ]);
       storefronts.push(...others.rows.map((p) => ({ productId: p.id, name: p.name, role: 'platform admin', canChange: true })));
     }
-    const requested = rows[0].legacy_scope ? expandLegacyScopes(rows[0].scope) : parseScopes(rows[0].scope);
+    const requested = parseScopes(params.get('scope') ?? '');
+    const readOnly = resource.endsWith('/read-only');
     // Someone connecting the HighLevel app before they have a storefront may make one here.
-    const canCreateStorefront = isAppsResource(rows[0].resource) && storefronts.length === 0;
-    return { me, row: rows[0], storefronts, asAdmin, requested, readOnly: rows[0].resource.endsWith('/read-only'), canCreateStorefront };
+    const canCreateStorefront = isAppsResource(resource) && storefronts.length === 0;
+    return { me, params, client, resource, storefronts, asAdmin, requested, readOnly, canCreateStorefront };
   }
 
-  app.get('/oauth/requests/:id', async (c) => {
-    const { row, storefronts, asAdmin, requested, readOnly, canCreateStorefront } = await load(c);
+  app.get('/oauth/connect', async (c) => {
+    const { params, client, resource, storefronts, asAdmin, requested, readOnly, canCreateStorefront } = await load(c, c.req.query('oauth_query'));
+    // An app that asked for nothing specific has every box ready for the person to choose from.
+    const asked = requested.length ? requested : [...ALL_SCOPES];
     return c.json({
-      id: row.id,
-      clientName: row.client_name,
-      returnTo: returnHost(row.redirect_uri),
+      clientName: client.name,
+      returnTo: returnHost(params.get('redirect_uri') ?? client.redirectUris[0] ?? ''),
       requestedScopes: requested,
-      wantsWrite: requested.some((s) => s.endsWith(':write')),
+      wantsWrite: asked.some((s) => s.endsWith(':write')),
       readOnly,
       // One row per area: a box to see and a box to change, ticked to start with as described.
-      areas: areasFor(row.resource).map((area) => ({
-        area,
-        name: AREA_LABELS[area].name,
-        read: { scope: scopeOf(area, 'read'), label: AREA_LABELS[area].read, ticked: true },
-        write: readOnly ? null : { scope: scopeOf(area, 'write'), label: AREA_LABELS[area].write, ticked: requested.includes(scopeOf(area, 'write')) },
-      })),
+      areas: areasFor(resource)
+        .filter((area) => asked.includes(scopeOf(area, 'read')) || asked.includes(scopeOf(area, 'write')))
+        .map((area) => ({
+          area,
+          name: AREA_LABELS[area].name,
+          read: { scope: scopeOf(area, 'read'), label: AREA_LABELS[area].read, ticked: true },
+          write: readOnly || !asked.includes(scopeOf(area, 'write')) ? null : { scope: scopeOf(area, 'write'), label: AREA_LABELS[area].write, ticked: requested.includes(scopeOf(area, 'write')) },
+        })),
       asAdmin,
       storefronts,
-      forApps: isAppsResource(row.resource),
+      forApps: isAppsResource(resource),
       canCreateStorefront,
     });
   });
 
-  // { action: 'approve', productId, scopes: ['stores:read', …] } or { action: 'deny' }. Answers where to send the browser.
+  // { oauth_query, action: 'approve', productId, scopes: ['stores:read', …] } or { oauth_query, action: 'deny' }.
   // For the HighLevel app, someone with no storefront sends newStorefront: '<name>' instead of productId to make one.
-  // (An older dashboard sends allowWrite instead of scopes: every read scope, and the write scopes asked for when ticked.)
-  app.post('/oauth/requests/:id', async (c) => {
-    const { me, row, storefronts, asAdmin, requested, readOnly, canCreateStorefront } = await load(c);
-    const body = ((await readJson(c)) ?? {}) as { action?: unknown; productId?: unknown; scopes?: unknown; allowWrite?: unknown; newStorefront?: unknown };
-    if (body.action !== 'approve' && body.action !== 'deny') throw badRequest("action must be 'approve' or 'deny'");
+  // Answers where to send the browser.
+  app.post('/oauth/connect', async (c) => {
+    const body = ((await readJson(c)) ?? {}) as { oauth_query?: unknown; action?: unknown; productId?: unknown; scopes?: unknown; newStorefront?: unknown };
+    const { me, resource, storefronts, readOnly, canCreateStorefront, asAdmin } = await load(c, body.oauth_query);
+    const oauthQuery = String(body.oauth_query);
+    const cookie = c.req.header('Cookie') ?? '';
+    const session = await requireAuth(deps).api.getSession({ headers: c.req.raw.headers });
+    if (!session) throw new HttpError(403, 'Sign in first');
+    if (body.action === 'deny') return c.json({ redirectUrl: await decline(deps, oauthQuery, cookie) });
+    if (body.action !== 'approve') throw badRequest("action must be 'approve' or 'deny'");
     const newName = typeof body.newStorefront === 'string' ? body.newStorefront.trim().slice(0, 100) : '';
-    if (body.newStorefront !== undefined && body.action === 'approve') {
+    if (body.newStorefront !== undefined) {
       if (!canCreateStorefront) throw badRequest('Choose one of your storefronts');
       if (!newName) throw badRequest('Name your storefront');
     }
     let storefront = storefronts.find((s) => s.productId === body.productId);
-    if (body.action === 'approve' && newName && canCreateStorefront) {
-      storefront = { productId: '', name: newName, role: 'owner', canChange: true };
-    }
-    let scopes: string[] = [];
-    if (body.action === 'approve') {
-      if (!storefront) throw badRequest('Choose one of your storefronts');
-      if (body.scopes !== undefined) {
-        if (!Array.isArray(body.scopes) || body.scopes.some((s) => typeof s !== 'string' || !isScope(s))) throw badRequest(`scopes must list some of ${ALL_SCOPES.join(' ')}`);
-        scopes = withReads(parseScopes(body.scopes as string[]));
-      } else {
-        const writes = requested.filter((s) => s.endsWith(':write'));
-        scopes = [...READ_SCOPES, ...(body.allowWrite === true ? (writes.length ? writes : WRITE_SCOPES) : [])];
-      }
-      // Changes need a role that may make them, and an endpoint that isn't read-only.
-      if (readOnly || !storefront.canChange) scopes = readsOnly(scopes);
-      scopes = parseScopes(scopes).filter((s) => areasFor(row.resource).some((area) => s.startsWith(`${area}:`)));
-      if (!scopes.length) throw badRequest('Tick at least one thing the app may see');
-    }
-    // Single use, whichever way it goes.
-    const { rowCount } = await pool.query('DELETE FROM oauth_requests WHERE id = $1', [row.id]);
-    if (!rowCount) throw new HttpError(404, 'This connection request was already used. Go back to the app and connect again.');
-    if (body.action === 'deny' || !storefront) {
-      return c.json({ redirectUrl: errorRedirect(row.redirect_uri, 'access_denied', 'The user declined', row.state ?? undefined, row.issuer) });
-    }
+    if (newName && canCreateStorefront) storefront = { productId: '', name: newName, role: 'owner', canChange: true };
+    if (!storefront) throw badRequest('Choose one of your storefronts');
+    if (!Array.isArray(body.scopes) || body.scopes.some((s) => typeof s !== 'string' || !isScope(s))) throw badRequest(`scopes must list some of ${ALL_SCOPES.join(' ')}`);
+    let scopes = withReads(parseScopes(body.scopes as string[]));
+    // Changes need a role that may make them, and an endpoint that isn't read-only.
+    if (readOnly || !storefront.canChange) scopes = readsOnly(scopes);
+    scopes = scopes.filter((s) => areasFor(resource).some((area) => s.startsWith(`${area}:`)));
+    if (!scopes.length) throw badRequest('Tick at least one thing the app may see');
     if (!storefront.productId) {
       const made = await createOwnStorefront(pool, me.user.id, storefront.name, DEFAULT_SELLER_STORES);
       storefront.productId = made.id;
@@ -748,16 +851,12 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
       }
     }
     // Connecting the HighLevel app makes the storefront a HighLevel agency's: its sites get the HighLevel site type.
-    if (isAppsResource(row.resource)) await markHighLevelAgency(pool, deps.boss, storefront.productId);
-    const code = await issueCode(
-      pool,
-      { clientId: row.client_id, redirectUri: row.redirect_uri, codeChallenge: row.code_challenge, resource: row.resource },
-      { productId: storefront.productId, userId: me.user.id },
-      scopes.join(' '),
-      // A platform admin's grant stands on its own, not on a team role.
-      asAdmin,
-    );
-    return c.json({ redirectUrl: codeRedirect(row.redirect_uri, code, row.state, row.issuer) });
+    if (isAppsResource(resource)) await markHighLevelAgency(pool, deps.boss, storefront.productId);
+    // A platform admin's grant stands on its own, not on a team role (unless they are on the team).
+    const onTeam = me.memberships.some((m) => m.productId === storefront!.productId);
+    const ref: GrantReference = asAdmin && !onTeam ? { kind: 'admin', productId: storefront.productId } : { kind: 'product', productId: storefront.productId };
+    const redirectUrl = await approve(deps, cookie, session.session.id, me.user.id, ref, { oauthQuery }, scopes);
+    return c.json({ redirectUrl });
   });
 
   return app;
@@ -765,8 +864,12 @@ export function connectRoutes(deps: Deps, caller: (c: Context<AppEnv>) => Promis
 
 /** Where an app sends the browser back to, for people to read: its host, or its own scheme. */
 function returnHost(redirectUri: string): string {
-  const url = new URL(redirectUri);
-  return url.protocol === 'https:' || url.protocol === 'http:' ? url.host : `${url.protocol}//`;
+  try {
+    const url = new URL(redirectUri);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.host : `${url.protocol}//`;
+  } catch {
+    return '';
+  }
 }
 
 /** The store a typed website address names (by any of its domains, with or without www.), or null. */
@@ -789,26 +892,7 @@ async function findStoreByAddress(pool: Pool, typed: string) {
   return rows[0] ?? null;
 }
 
-async function readForm(c: Context<AppEnv>): Promise<Record<string, unknown>> {
-  if ((c.req.header('Content-Type') ?? '').includes('application/json')) return ((await c.req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
-  return (await c.req.parseBody()) as Record<string, unknown>;
-}
-
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
-
-/** https anywhere, http only on this machine (RFC 8252), and app schemes such as cursor://, never script or file URLs. */
-function allowedRedirectUri(uri: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(uri);
-  } catch {
-    return false;
-  }
-  if (url.hash) return false;
-  if (url.protocol === 'https:') return true;
-  if (url.protocol === 'http:') return LOOPBACK.has(url.hostname);
-  return !['javascript:', 'data:', 'file:', 'blob:', 'vbscript:', 'about:'].includes(url.protocol);
-}
 
 /** Exact match, except a loopback redirect may use any port (RFC 8252 7.3). */
 export function sameRedirectUri(registered: string, requested: string): boolean {
@@ -825,33 +909,8 @@ export function sameRedirectUri(registered: string, requested: string): boolean 
   }
 }
 
-/** A Client ID Metadata Document URL: https with a path, and not an address on this network. */
-function isMetadataDocumentUrl(value: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== 'https:' || url.pathname === '/' || url.hash || url.username || url.password) return false;
-  const host = url.hostname;
-  if (LOOPBACK.has(host) || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return false;
-  // IP literals (v4, or bracketed v6) are refused outright: a client id names a site.
-  return !/^\d+\.\d+\.\d+\.\d+$/.test(host) && !host.startsWith('[') && host.includes('.');
-}
-
-function errorRedirect(redirectUri: string, error: string, description: string, state: string | undefined, issuer: string): string {
-  const url = new URL(redirectUri);
-  url.searchParams.set('error', error);
-  url.searchParams.set('error_description', description);
-  if (state !== undefined) url.searchParams.set('state', state);
-  url.searchParams.set('iss', issuer);
-  return url.toString();
-}
-
 function page(c: Context<AppEnv>, html: string, status: 200 | 400 | 401 = 200) {
   return c.html(html, status, {
-    // No form-action: browsers apply it to the redirect after the form, and apps return to their own schemes.
     'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
@@ -863,78 +922,18 @@ const esc = (value: string) =>
   value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
 const STYLE = `
-  :root { color-scheme: light dark; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --card: #f6f8fa; --accent: #1f6feb; --bad: #cf222e; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --card: #151b23; --accent: #4493f8; --bad: #f85149; } }
+  :root { color-scheme: light dark; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --card: #f6f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --card: #151b23; } }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 440px; margin: 48px auto; padding: 0 16px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
   h1 { font-size: 20px; margin: 0 0 8px; }
-  h2 { font-size: 16px; margin: 0 0 4px; }
   p { margin: 0 0 12px; }
   .muted { color: var(--muted); font-size: 13px; }
-  ul { margin: 0 0 16px; padding-left: 20px; }
-  label { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 4px; }
-  input[type=text] { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; }
-  .buttons { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 20px; }
-  button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: inherit; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; flex: 1; }
-  .error { color: var(--bad); font-weight: 600; }
-  code { font-size: 13px; }
-  .or { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 `;
 
-function shell(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title><style>${STYLE}</style></head><body><main><div class="card">${body}</div></main></body></html>`;
-}
-
+/** The page a browser lands on when a website sign-in can't go on (the store's answer comes back here). */
 function errorPage(message: string): string {
-  return shell('Cannot connect', `<h1>Cannot connect this app</h1><p>${esc(message)}</p><p class="muted">Go back to the app and try connecting again.</p>`);
-}
-
-/** What an app asks for, in plain words: an area it may see, or see and change. */
-function askedFor(request: AuthorizeRequest): string[] {
-  if (!request.scope.length) return ['You choose what it may see and change after you sign in'];
-  return AREAS.filter((area) => request.scope.includes(scopeOf(area, 'read')) || request.scope.includes(scopeOf(area, 'write'))).map(
-    (area) => `${AREA_LABELS[area].name}: ${request.scope.includes(scopeOf(area, 'write')) ? 'see and change' : 'see'}`,
-  );
-}
-
-function approvePage(request: AuthorizeRequest, params: Record<string, string | undefined>, signIn?: string, siteError?: string, error?: string): string {
-  const keep = ['client_id', 'redirect_uri', 'response_type', 'code_challenge', 'code_challenge_method', 'state', 'scope', 'resource'];
-  const hidden = keep
-    .filter((name) => params[name] !== undefined)
-    .map((name) => `<input type="hidden" name="${name}" value="${esc(params[name]!)}">`)
-    .join('');
-  const where = returnHost(request.redirectUri);
-  const cancel = `<button type="submit" name="action" value="deny">Cancel</button>`;
-  // One website's owner (the /mcp/site address): they type their site and approve in its WordPress dashboard.
-  if (isSiteResource(request.resource)) {
-    return shell(
-      'Connect your website',
-      `<h1>Connect ${esc(request.client.name)}</h1>
-<p><strong>${esc(request.client.name)}</strong> wants to edit your website's pages and design, and nothing else.</p>
-<p class="muted">Type your website's address, then approve in its WordPress dashboard. After you approve, you go back to <code>${esc(where)}</code>.</p>
-${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}
-<form method="post" action="/oauth/authorize">${hidden}
-<label for="site">Your website</label><input type="text" id="site" name="site" required spellcheck="false" placeholder="mybakery.com" value="${esc(params.site ?? '')}">
-${siteError ? `<p class="error" role="alert">${esc(siteError)}</p>` : ''}
-<div class="buttons"><button type="submit" name="action" value="site" class="primary">Continue to your website</button></div>
-</form>
-<form method="post" action="/oauth/authorize">${hidden}<div class="buttons">${cancel}</div></form>`,
-    );
-  }
-  return shell(
-    'Connect to your stores',
-    `<h1>Connect ${esc(request.client.name)}</h1>
-<p><strong>${esc(request.client.name)}</strong> wants to use your stores. It asks for:</p>
-<ul>${askedFor(request)
-      .map((line) => `<li>${esc(line)}</li>`)
-      .join('')}</ul>
-<p class="muted">You pick what it may see and change, area by area, before you approve. After you approve, you go back to <code>${esc(where)}</code>.</p>
-${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}
-<form method="post" action="/oauth/authorize">${hidden}<div class="buttons">${
-      signIn ? `<button type="submit" name="action" value="signin" class="primary">Sign in to ${esc(signIn)}</button>` : ''
-    }${cancel}</div></form>`,
-  );
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Cannot connect</title><style>${STYLE}</style></head><body><main><div class="card"><h1>Cannot connect this app</h1><p>${esc(message)}</p><p class="muted">Go back to the app and try connecting again.</p></div></main></body></html>`;
 }
