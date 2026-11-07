@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { badRequest, HttpError } from '../errors.ts';
-import { isUuid, readJson } from '../http.ts';
-import { codeRedirect, createSiteHandoff, issueCode, publicBase, sameRedirectUri } from '../oauth.ts';
+import { readJson } from '../http.ts';
+import { clientHasRedirect, createSiteHandoff, siteAuthorizeRequest, storeSignIn } from '../oauth.ts';
 import { validateBody } from '../openapi.ts';
 import { scopeOf } from '../../mcp/src/scopes.ts';
 import { callSite, siteKeys, type SiteRequest } from '../sitekeys.ts';
@@ -48,19 +48,15 @@ export function siteRoutes(deps: Deps) {
     );
     if (tenant.status !== Status.Done) throw badRequest(`Tenant ${tenant.external_id} is ${statusName(tenant.status)}; wait until it is Done`);
     if (tenant.is_suspended) throw badRequest(`Tenant ${tenant.external_id} is suspended`);
-    const { rows } = isUuid(clientId)
-      ? await pool.query<{ redirect_uris: string[] }>('SELECT redirect_uris FROM oauth_clients WHERE id = $1', [clientId])
-      : { rows: [] };
-    if (!rows[0]) throw badRequest('clientId is not a registered app');
-    if (!rows[0].redirect_uris.some((uri) => sameRedirectUri(uri, redirectUri))) throw badRequest('redirectUri is not one the app registered');
-    const issuer = publicBase(c, config.publicUrl);
-    const code = await issueCode(
-      pool,
-      { clientId, redirectUri, codeChallenge, resource: `${issuer}/mcp/site` },
-      { productId: tenant.product_id, tenantId: tenant.id },
-      [scopeOf('site', 'read'), scopeOf('site', 'write')].join(' '),
+    if (!config.auth?.apiUrl) throw badRequest('Signing in apps is off on this server');
+    if (!(await clientHasRedirect(deps, clientId, redirectUri))) throw badRequest('clientId is not a registered app with that redirectUri');
+    const redirectUrl = await storeSignIn(
+      deps,
+      { id: tenant.id, product_id: tenant.product_id },
+      { authorize: siteAuthorizeRequest(config.auth.apiUrl, { clientId, redirectUri, codeChallenge, state }) },
+      [scopeOf('site', 'read'), scopeOf('site', 'write')],
     );
-    return c.json({ redirectUrl: codeRedirect(redirectUri, code, state, issuer) });
+    return c.json({ redirectUrl });
   });
 
   // The storefront's "Ask the website assistant" button: a one-time handoff of its signed-in owner to the

@@ -51,7 +51,7 @@ export function assistantUsageRoutes(app: Hono<AppEnv>, deps: Deps) {
     const token = /^Bearer\s+(\S+)$/i.exec(header ?? '')?.[1];
     if (token) {
       try {
-        const auth = await verifyAccessToken(deps.pool, token);
+        const auth = await verifyAccessToken(deps, token);
         const tenantId = (auth.extra as { tenantId?: string }).tenantId;
         if (tenantId && auth.resource && isSiteResource(auth.resource.href) && auth.expiresAt! * 1000 > Date.now()) return tenantId;
       } catch {

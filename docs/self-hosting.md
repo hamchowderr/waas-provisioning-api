@@ -128,7 +128,7 @@ In the **WaaS API** project:
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | the bucket from section 3 (`S3_REGION=auto` for R2) |
 | `PLATFORM_DOMAIN` | the domain stores are named under, e.g. `anypress.site`. Reserves the apex and names like `www`, `api`, `app` |
 | `BRAND_DOMAIN` | your own domain when stores live on a separate one, e.g. `anypress.io`. No store can take it or any name under it. Keep your sign-in sites (storefront, dashboard) here, not under `PLATFORM_DOMAIN`: stores under the same domain could set their cookies. Turning it on only stops new addresses: give each store already under it an address under `PLATFORM_DOMAIN` and make that its main address first |
-| `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth |
+| `PUBLIC_URL` | the API's own address, e.g. `https://api.anypress.io`, for MCP clients signing in with OAuth (which also needs `AUTH_URL` and `AUTH_SECRET`) |
 | `AUTH_URL`, `AUTH_SECRET` | the dashboard's address (e.g. `https://app.<domain>`) and `openssl rand -base64 32`. Turns on dashboard sign-in. With store email set up (section 8), people sign in with an emailed link and nothing else is needed; GitHub and Google sign-in are optional ([accounts.md](accounts.md)) |
 | `STORES_DOMAIN`, `VERSIONS_DOMAIN` | `stores.<domain>`, `versions.<domain>`; leave them out to get exactly these from `PLATFORM_DOMAIN` |
 | `BRAND_NAME` | your platform's name, e.g. `Acme Sites`: on sign-in emails and buttons and on a suspended store's "website unavailable" page. Without it the name is `BRAND_DOMAIN`, else `PLATFORM_DOMAIN`. Your install never shows AnyPress's name, address or logo |

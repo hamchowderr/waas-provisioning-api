@@ -5,12 +5,16 @@ import { createHash, randomBytes } from 'node:crypto';
 import { LLMock } from '@copilotkit/aimock';
 import { LibSQLStore } from '@mastra/libsql';
 import { StatusCode, WaasClient } from '../../sdk/typescript/src/index.ts';
+import { createApp } from '../../src/app.ts';
+import { createAuth, type AuthConfig } from '../../src/auth.ts';
 import { createApiKey } from '../../src/keys.ts';
 import { setup, type TestContext } from '../../test/helpers.ts';
 import { createAssistant } from '../src/assistant.ts';
 import { createServer } from '../src/server.ts';
 
 export const BASE = 'https://api.example.test';
+/** Sign-in on, as in production: the API's AI-app sign-in (Better Auth's MCP plugin) needs it. */
+const AUTH: AuthConfig = { url: 'https://app.example.test', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', apiUrl: BASE };
 
 export interface Store {
   id: string;
@@ -40,6 +44,9 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
   const t = await setup();
   t.deps.config.publicUrl = BASE;
   t.deps.siteFetch = storeFetch;
+  t.deps.config.auth = AUTH;
+  t.deps.auth = createAuth(t.pool, AUTH);
+  t.app = createApp(t.deps);
 
   const appFetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(String(input), init);

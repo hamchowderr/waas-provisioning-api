@@ -74,7 +74,7 @@ export function clientId(redirectUri: string): Promise<string> {
       const response = await fetch(`${API_URL}/oauth/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ client_name: 'Website assistant', redirect_uris: [redirectUri] }),
+        body: JSON.stringify({ client_name: 'Website assistant', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' }),
       });
       if (!response.ok) throw new Error(`The API refused the panel's registration (${response.status}).`);
       return ((await response.json()) as { client_id: string }).client_id;

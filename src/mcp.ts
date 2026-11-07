@@ -42,7 +42,7 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
     { onerror: (error) => console.error('mcp:', error.message) },
   );
 
-  const verifier = { verifyAccessToken: (token: string) => verifyAccessToken(deps.pool, token) };
+  const verifier = { verifyAccessToken: (token: string) => verifyAccessToken(deps, token) };
 
   const serve = async (c: Context<AppEnv>, path: (typeof MCP_PATHS)[number]) => {
     const base = publicBase(c, deps.config.publicUrl);

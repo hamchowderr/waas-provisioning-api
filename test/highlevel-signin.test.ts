@@ -11,14 +11,12 @@ import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const BASE = 'https://api.example.test';
 const REDIRECT = 'https://services.leadconnectorhq.com/integrations/oauth/finish';
-const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress' };
+const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', apiUrl: BASE };
 
 let t: TestContext;
 let app: ReturnType<typeof createApp>;
 let helpers: any;
 let clientId: string;
-
-const decode = (value: string) => value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 const asUser = (cookie: string, method: string, path: string, body?: unknown) =>
   app.request(path, {
@@ -33,21 +31,24 @@ async function signedIn(email: string) {
   return { userId: user.id as string, cookie: (headers as Headers).get('cookie')! };
 }
 
-/** HighLevel's install: the authorization URL, then the approve page's "Sign in" button. */
-async function startInstall(resource = `${BASE}/apps`) {
+/**
+ * HighLevel's install: its app settings send the browser to the API's old authorization address, which
+ * hands over to the plugin, which sends the signed-in person to the dashboard's Connect page.
+ */
+async function startInstall(who: { cookie: string }, resource = `${BASE}/apps`) {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   const query = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256', state: 'hl-state', resource });
-  const html = await (await app.request(`/oauth/authorize?${query}`)).text();
-  expect(html).toContain('Sign in to AnyPress');
-  const hidden = Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, decode(m[2]!)]));
-  const res = await app.request('/oauth/authorize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ ...hidden, action: 'signin' }).toString(),
-  });
+  const old = await app.request(`/oauth/authorize?${query}`);
+  expect(old.status).toBe(302);
+  const plugin = new URL(old.headers.get('Location')!);
+  expect(`${plugin.origin}${plugin.pathname}`).toBe(`${AUTH.url}/api/auth/oauth2/authorize`);
+  const res = await app.request(`${plugin.pathname}${plugin.search}`, { headers: { Cookie: who.cookie } });
   expect(res.status).toBe(302);
-  return { id: res.headers.get('Location')!.split('/').pop()!, verifier };
+  const location = new URL(res.headers.get('Location')!, AUTH.url);
+  expect(`${location.origin}${location.pathname}`).toBe(`${AUTH.url}/connect`);
+  const oauthQuery = location.search.slice(1);
+  return { oauthQuery, verifier, path: `/account/oauth/connect?${new URLSearchParams({ oauth_query: oauthQuery })}` };
 }
 
 async function finish(redirectUrl: string, verifier: string) {
@@ -84,18 +85,19 @@ afterAll(() => t.close());
 describe('installing the HighLevel app by signing in to AnyPress', () => {
   it('makes a storefront for an agency that has none, and signs the app in to it', async () => {
     const agency = await signedIn('owner@flowsper.example');
-    const { id, verifier } = await startInstall();
-    const view = await (await asUser(agency.cookie, 'GET', `/account/oauth/requests/${id}`)).json();
+    const { oauthQuery, verifier, path } = await startInstall(agency);
+    const view = await (await asUser(agency.cookie, 'GET', path)).json();
     expect(view).toMatchObject({ clientName: 'HighLevel', forApps: true, canCreateStorefront: true, storefronts: [] });
     // It only makes and manages sites, and hears about them.
     expect((view.areas as { area: string }[]).map((a) => a.area)).toEqual(['stores', 'webhooks']);
 
-    const approved = await asUser(agency.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', newStorefront: 'Flowsper Sites', scopes: ALL_SCOPES });
+    const approved = await asUser(agency.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', newStorefront: 'Flowsper Sites', scopes: ALL_SCOPES });
     expect(approved.status).toBe(200);
     const { redirectUrl } = (await approved.json()) as { redirectUrl: string };
     expect(new URL(redirectUrl).searchParams.get('state')).toBe('hl-state');
     const tokens = await finish(redirectUrl, verifier);
-    expect((tokens as unknown as { scope: string }).scope).toBe('stores:read stores:write webhooks:read webhooks:write');
+    expect((tokens as unknown as { scope: string }).scope.split(' ').sort()).toEqual(['offline_access', 'stores:read', 'stores:write', 'webhooks:read', 'webhooks:write']);
+    expect(tokens.refresh_token).toBeTruthy();
 
     const account = await apps(tokens.access_token, 'GET', '/v1/apps/account');
     expect(account.status).toBe(200);
@@ -128,20 +130,20 @@ describe('installing the HighLevel app by signing in to AnyPress', () => {
       headers: { Cookie: person.cookie, 'Content-Type': 'application/json', Origin: AUTH.url },
       body: JSON.stringify({ invitationId: invitation.id }),
     });
-    const { id } = await startInstall();
-    expect(await (await asUser(person.cookie, 'GET', `/account/oauth/requests/${id}`)).json()).toMatchObject({ canCreateStorefront: false });
-    expect((await asUser(person.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', newStorefront: 'Another' })).status).toBe(400);
+    const { oauthQuery, path } = await startInstall(person);
+    expect(await (await asUser(person.cookie, 'GET', path)).json()).toMatchObject({ canCreateStorefront: false });
+    expect((await asUser(person.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', newStorefront: 'Another' })).status).toBe(400);
   });
 
   it("refuses an AI app's token, and actions the sign-in doesn't allow", async () => {
     const agency = await signedIn('reader@agency.example');
     // An /mcp token on /v1/apps: refused.
-    const mcp = await startInstall(`${BASE}/mcp`);
-    const mcpApproval = await asUser(agency.cookie, 'POST', `/account/oauth/requests/${mcp.id}`, { action: 'approve', newStorefront: 'Nope' });
+    const mcp = await startInstall(agency, `${BASE}/mcp`);
+    const mcpApproval = await asUser(agency.cookie, 'POST', '/account/oauth/connect', { oauth_query: mcp.oauthQuery, action: 'approve', newStorefront: 'Nope' });
     expect(mcpApproval.status).toBe(400);
 
-    const { id, verifier } = await startInstall();
-    const approved = await asUser(agency.cookie, 'POST', `/account/oauth/requests/${id}`, { action: 'approve', newStorefront: 'Reader Sites', scopes: READ_SCOPES });
+    const { oauthQuery, verifier } = await startInstall(agency);
+    const approved = await asUser(agency.cookie, 'POST', '/account/oauth/connect', { oauth_query: oauthQuery, action: 'approve', newStorefront: 'Reader Sites', scopes: READ_SCOPES });
     const tokens = await finish(((await approved.json()) as { redirectUrl: string }).redirectUrl, verifier);
     const res = await apps(tokens.access_token, 'POST', '/v1/apps/actions/create-site', { data: { name: 'X', email: 'x@example.com' } });
     expect(res.status).toBe(403);

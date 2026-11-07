@@ -54,8 +54,6 @@ export interface Deps {
   releases?: ReleaseStore;
   /** DNS and HTTP for Domain Connect lookups; tests replace it. */
   domainConnectNet?: DomainConnectNet;
-  /** Fetches OAuth Client ID Metadata Documents (src/oauth.ts); tests replace it. */
-  clientMetadataFetch?: typeof fetch;
   /** The wordpress.org plugin directory, for plugin choices (src/wporg.ts); tests replace it. */
   wporg?: WpOrg;
   /** Calls stores' site-editing routes (src/sitekeys.ts); tests replace it. */
@@ -152,7 +150,7 @@ export function createApp(deps: Deps) {
     // The HighLevel app installed with "Sign in to AnyPress" (OAuth): a token for the /apps resource.
     const bearer = /^Bearer\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '');
     if (bearer && APP_PATHS.test(c.req.path)) {
-      const info = await verifyAccessToken(deps.pool, bearer[1]!).catch(() => null);
+      const info = await verifyAccessToken(deps, bearer[1]!).catch(() => null);
       // 401, so HighLevel refreshes the token and tries again.
       if (!info || !isAppsResource(info.resource?.pathname ?? '') || (info.expiresAt ?? 0) * 1000 < Date.now()) {
         return c.json({ statusCode: 401, message: 'The AnyPress sign-in for this account has expired. Reconnect the AnyPress app in HighLevel and sign in again' }, 401);
