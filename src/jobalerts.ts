@@ -60,7 +60,7 @@ const VERBS: Record<JobData['type'], string> = {
 };
 
 /** Wraps the job handlers so each job that fails its last retry is emailed to the admins. */
-export function withFailureAlerts<H extends JobHandlers>(handlers: H, pool: Pool, config: JobAlertConfig, fetchFn: typeof fetch = fetch): H {
+export function withFailureAlerts<H extends JobHandlers>(handlers: H, pool: Pool, config: JobAlertConfig): H {
   const { mail, to = [] } = config;
   if (!mail || !to.length) return handlers;
   return {
@@ -71,7 +71,7 @@ export function withFailureAlerts<H extends JobHandlers>(handlers: H, pool: Pool
         const what = await describeJob(pool, data);
         const message = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
         const url = config.dashboardUrl ? `${config.dashboardUrl.replace(/\/+$/, '')}/jobs?state=failed` : undefined;
-        for (const address of to) await sendJobFailureNotice(mail, address, { what, error: message, attempts: job.attempts, url }, fetchFn);
+        for (const address of to) await sendJobFailureNotice(mail, address, { what, error: message, attempts: job.attempts, url });
       } catch (err) {
         console.error(`job ${job.id} failure alert not sent: ${(err as Error).message}`);
       }

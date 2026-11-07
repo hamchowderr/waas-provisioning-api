@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { checkHealth } from '../src/health.ts';
 import { cleanUpInterruptedTests, loadRestoreTestConfig, RESTORE_TEST_QUEUE, restoreTestStatus, runRestoreTest, startRestoreTests } from '../src/restoretests.ts';
 import { Status } from '../src/status.ts';
@@ -36,6 +36,7 @@ beforeAll(async () => {
   await waitFor(async () => ((await (await t.call('GET', `/v1/versions?versionId=${versionId}`)).json()) as any[])[0]?.statusCode === Status.Done);
   await t.call('PUT', '/v1/versions/production', { body: { versionId } });
 });
+afterEach(() => vi.unstubAllGlobals());
 afterAll(async () => {
   await t.close();
 });
@@ -93,10 +94,11 @@ describe('nightly restore test', () => {
       sent.push({ to: body.to?.[0]?.email ?? body.to, subject: body.subject, text: body.text });
       return new Response(JSON.stringify({ id: 'msg' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }) as typeof fetch;
+    vi.stubGlobal('fetch', fetchFn);
     const mail = { key: 'key', from: 'no-reply@waas.example', brand: 'WaaS', apiUrl: 'https://tosend.example' };
 
     t.provisioner.failNext('testRestore');
-    const failed = await runRestoreTest(t.pool, t.provisioner, { mail, to: ['ops@waas.example'] }, fetchFn);
+    const failed = await runRestoreTest(t.pool, t.provisioner, { mail, to: ['ops@waas.example'] });
     expect(failed).toMatchObject({ status: 'failed', error: 'FakeProvisioner: testRestore failed (injected)' });
     expect(sent).toHaveLength(1);
     expect(sent[0]!.subject).toMatch(/^Failed: restore test of Restore /);

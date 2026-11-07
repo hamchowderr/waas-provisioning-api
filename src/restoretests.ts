@@ -73,7 +73,6 @@ export async function runRestoreTest(
   pool: Pool,
   provisioner: Provisioner,
   alerts: RestoreTestAlerts = {},
-  fetchFn: typeof fetch = fetch,
 ): Promise<RestoreTestOutcome | undefined> {
   const { rows } = await pool.query<{ tenant_id: string; name: string; version_id: string; size: string; backup_id: string; backup_at: Date }>(
     `SELECT t.id AS tenant_id, t.name, t.version_id, t.size, b.id AS backup_id, b.date_created AS backup_at
@@ -111,7 +110,7 @@ export async function runRestoreTest(
     if (alerts.mail) {
       for (const address of alerts.to ?? []) {
         try {
-          await sendRestoreTestFailed(alerts.mail, address, { store: pick.name, backupAt: pick.backup_at, error: outcome.error }, fetchFn);
+          await sendRestoreTestFailed(alerts.mail, address, { store: pick.name, backupAt: pick.backup_at, error: outcome.error });
         } catch (mailErr) {
           console.error(`restore test ${id}: alert to ${address} not sent: ${(mailErr as Error).message}`);
         }
