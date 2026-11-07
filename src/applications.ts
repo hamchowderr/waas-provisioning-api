@@ -53,6 +53,7 @@ function toApplication(row: any) {
     expectedSites: row.expected_sites as string,
     wantsStorefront: row.wants_storefront as boolean,
     storefrontSubdomain: (row.storefront_subdomain as string | null) ?? null,
+    highLevelAgency: row.highlevel_agency === true,
     status: row.status as Status,
     productId: (row.product_id as string | null) ?? null,
     resellerId: (row.reseller_id as string | null) ?? null,
@@ -120,6 +121,8 @@ export function publicApplicationRoutes(deps: Deps) {
     }
     if (typeof body.wantsStorefront !== 'boolean') throw badRequest('wantsStorefront must be true or false');
     const wantsStorefront = body.wantsStorefront;
+    if (body.highLevelAgency !== undefined && typeof body.highLevelAgency !== 'boolean') throw badRequest('highLevelAgency must be true or false');
+    const highLevelAgency = body.highLevelAgency === true;
     let subdomain: string | null = null;
     if (wantsStorefront && body.storefrontSubdomain !== undefined && body.storefrontSubdomain !== null && body.storefrontSubdomain !== '') {
       subdomain = typeof body.storefrontSubdomain === 'string' ? body.storefrontSubdomain.trim().toLowerCase() : '';
@@ -136,9 +139,9 @@ export function publicApplicationRoutes(deps: Deps) {
     let row;
     try {
       ({ rows: [row] } = await pool.query(
-        `INSERT INTO seller_applications (name, email, business, website, clients, expected_sites, wants_storefront, storefront_subdomain)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-        [name, email, business, website, clients, expectedSites, wantsStorefront, subdomain],
+        `INSERT INTO seller_applications (name, email, business, website, clients, expected_sites, wants_storefront, storefront_subdomain, highlevel_agency)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [name, email, business, website, clients, expectedSites, wantsStorefront, subdomain, highLevelAgency],
       ));
     } catch (err) {
       if ((err as { constraint?: string }).constraint === 'seller_applications_pending_email_idx') {

@@ -119,7 +119,14 @@ describe('applying', () => {
       },
     ]);
     const { json } = await call('GET', `/admin/applications/${res.json.id}`);
-    expect(json).toMatchObject({ email: 'ada@agency.example', website: 'https://agency.example/', status: 'pending', productId: null });
+    expect(json).toMatchObject({ email: 'ada@agency.example', website: 'https://agency.example/', status: 'pending', productId: null, highLevelAgency: false });
+  });
+
+  it('keeps whether the applicant runs a HighLevel agency', async () => {
+    const res = await apply(form({ email: 'hl@agency.example', highLevelAgency: true }));
+    expect(res.status).toBe(201);
+    expect((await call('GET', `/admin/applications/${res.json.id}`)).json).toMatchObject({ highLevelAgency: true });
+    expect((await apply(form({ email: 'hl2@agency.example', highLevelAgency: 'yes' }))).status).toBe(400);
   });
 
   it('keeps one waiting application per email address', async () => {
