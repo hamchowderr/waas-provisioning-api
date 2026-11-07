@@ -7,6 +7,7 @@ import { Client, StreamableHTTPClientTransport, UnauthorizedError, type OAuthCli
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { testUtils } from 'better-auth/plugins';
+import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ALL_SCOPES, READ_SCOPES } from '../mcp/src/scopes.ts';
 import { createApp } from '../src/app.ts';
@@ -455,6 +456,54 @@ describe('OAuth for /mcp', () => {
     });
     expect(revoked.status).toBe(200);
     expect((await token({ grant_type: 'refresh_token', refresh_token: fresh.refresh_token, client_id: clientId })).status).toBe(400);
+  });
+
+  it('takes tokens an app binds to its own key (DPoP) only with a fresh proof from that key', async () => {
+    const { client, provider: p } = await connectWithOAuth();
+    await client.close();
+    const clientId = (p.saved.client as { client_id: string }).client_id;
+    const { refresh_token: refresh } = p.saved.tokens as { refresh_token: string };
+    const { privateKey, publicKey } = await generateKeyPair('ES256');
+    const jwk = await exportJWK(publicKey);
+    const proof = (method: string, htu: string, accessToken?: string) =>
+      new SignJWT({ htm: method, htu, jti: randomBytes(16).toString('hex'), ...(accessToken ? { ath: createHash('sha256').update(accessToken).digest('base64url') } : {}) })
+        .setProtectedHeader({ alg: 'ES256', typ: 'dpop+jwt', jwk })
+        .setIssuedAt()
+        .sign(privateKey);
+
+    // The app gets a bound token from the plugin's token endpoint (where the metadata points).
+    const tokenUrl = `${AUTH.url}/api/auth/oauth2/token`;
+    const res = await app.request('/api/auth/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', DPoP: await proof('POST', tokenUrl) },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const bound = await res.json();
+    expect(bound.token_type).toBe('DPoP');
+    const claims = JSON.parse(Buffer.from(bound.access_token.split('.')[1], 'base64url').toString());
+    expect(claims.cnf).toEqual({ jkt: await calculateJwkThumbprint(jwk) });
+
+    const call = async (authorization: string, dpop?: string) =>
+      app.request('/mcp', {
+        method: 'POST',
+        headers: { Authorization: authorization, ...(dpop ? { DPoP: dpop } : {}), 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+    const ok = await call(`DPoP ${bound.access_token}`, await proof('POST', `${BASE}/mcp`, bound.access_token));
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toContain('show_stores');
+
+    // Refused: as a plain Bearer token, without a proof, a proof used twice, and a proof for another address.
+    expect((await call(`Bearer ${bound.access_token}`)).status).toBe(401);
+    expect((await call(`DPoP ${bound.access_token}`)).status).toBe(401);
+    const once = await proof('POST', `${BASE}/mcp`, bound.access_token);
+    expect((await call(`DPoP ${bound.access_token}`, once)).status).toBe(200);
+    expect((await call(`DPoP ${bound.access_token}`, once)).status).toBe(401);
+    expect((await call(`DPoP ${bound.access_token}`, await proof('POST', `${BASE}/mcp/site`, bound.access_token))).status).toBe(401);
+    // And an unbound token can't claim the DPoP scheme.
+    const plain = (p.saved.tokens as { access_token: string }).access_token;
+    expect((await call(`DPoP ${plain}`, await proof('POST', `${BASE}/mcp`, plain))).status).toBe(401);
   });
 
   it('signs in again an app registered before the plugin, with the client id it already has', async () => {
