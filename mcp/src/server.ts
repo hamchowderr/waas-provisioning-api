@@ -25,6 +25,10 @@ export interface WaasMcpOptions {
   icons?: { src: string; mimeType?: string; sizes?: string[] }[];
 }
 
+// One wait call stays under the 100-second limit of the proxy in front of the hosted connector
+// (Cloudflare answers 524 after that); the agent calls wait again while done is false.
+const WAIT_MAX_SECONDS = 90;
+
 const ref = {
   externalId: z.string().optional().describe('Your own id for the store (what AnyPress Host uses). Give this or tenantId.'),
   tenantId: z.string().optional().describe("The API's id for the store. Give this or externalId."),
@@ -291,7 +295,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   actionTool('get_stores', {
     title: 'Get stores', area: 'stores',
     description: 'Looks up stores.',
-    input: { ...ref, timeoutSeconds: z.number().int().min(1).max(600).optional().describe('For wait: how long to wait, 120 when omitted, at most 600') },
+    input: { ...ref, timeoutSeconds: z.number().int().min(1).max(WAIT_MAX_SECONDS).optional().describe(`For wait: how long to wait, at most ${WAIT_MAX_SECONDS} (the default); call wait again while done is false`) },
     actions: {
       list: { access: 'read', does: 'every store with its status, version and main domain', run: () => client.tenants.list() },
       get: { access: 'read', does: 'one store: status, size, version, snapshot, main domain and dates; null when no store has that id', run: (args) => client.tenants.get(toRef(args)) },
@@ -301,7 +305,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         run: async (args) => {
           const storeRef = toRef(args);
           try {
-            const store = await client.waitForTenant(storeRef, { intervalMs: options.pollIntervalMs ?? 5_000, timeoutMs: (args.timeoutSeconds ?? 120) * 1000 });
+            const store = await client.waitForTenant(storeRef, { intervalMs: options.pollIntervalMs ?? 5_000, timeoutMs: Math.min(args.timeoutSeconds ?? WAIT_MAX_SECONDS, WAIT_MAX_SECONDS) * 1000 });
             return { done: true, store };
           } catch (error) {
             if (error instanceof WaasApiError || error instanceof TenantFailedError) throw error;
