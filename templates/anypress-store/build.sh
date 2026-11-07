@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the "AnyPress store" base snapshot: WordPress with the AnyPress Client plugin, the Fluent suite,
+# Builds the "AnyPress store" base snapshot: WordPress with the AnyPress Client plugin, the Fluent suite (FluentPlayer and FluentSMTP included),
 # Rank Math, WP Fusion Lite and AutomatorWP (free wordpress.org versions) and the AnyPress block theme (a pinned release, theme.sh),
 # packaged as the provisioner restores it (see README).
 #
@@ -12,20 +12,23 @@ set -euo pipefail
 # Pinned inputs. Bump these (and the checksums) to rebuild on newer releases.
 WP_VERSION=${WP_VERSION:-7.1.4}
 WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f938c5f87}
-# wordpress.org plugins: slug version sha256. All installed and active (roles.json switches them per plan).
+# wordpress.org plugins: slug version sha256, in the order AnyPress lists them. All installed and active (roles.json
+# switches them per site type).
 PLUGINS="
-fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
+fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
+fluent-smtp 2.4.5 f495ffcf3c61c4f2b0e20af1092bae256e2a666b9453c8402eb621bc4e444f00
 fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63e
 fluentform 6.2.16 9ec4fce3857a0c069dcb392f6e0e9bd1a5a1231d94a49a76d9768a40e973a7fd
 fluent-booking 2.5.0 1443134ef2f1ae24c17435bab81d6a15ba10136c15095c90e2d07de15f1c0eb0
-fluent-support 2.4.7 606b04ca47e8dfddcd241136953ed426fa7e60dcad03b3b1504285fda7be3e10
+fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
+fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
+fluent-player 1.4.0 edba3f48662136605564bb040fda0b51d50c154c167c699cca47ce3f43f20f1c
 fluent-affiliate 1.7.0 f1c617715aaae58657b155c75752adab2db42dd1a8a896469823a19a3b3ee8c8
+fluent-support 2.4.7 606b04ca47e8dfddcd241136953ed426fa7e60dcad03b3b1504285fda7be3e10
 easy-code-manager 10.58 39bfd2fe29b099147949086c42dfe715cedd4ddce3631c9ef33165470ed25667
 seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb9686fa8aa290
-wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 automatorwp 6.0.5 541d640bdf4b6f602123e0f1f26a5041f950a13d338f08ca0b665a9a1617144b
-fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
-fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
+wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 "
 # wordpress.org plugins installed but left off: slug version sha256. The store owner turns the MCP Adapter on
 # (WordPress's MCP Adapter: Dashboard > Your plan > AI apps, AnyPress Client 2.4.0+; not in roles.json).
@@ -221,6 +224,11 @@ grep -q 'sitemap_index' <<<"$(wp rewrite list --format=csv)" || { echo "Rank Mat
 [ "$(wp eval '$c = get_option("_fc_ab_cart_settings"); echo ($c["enabled"] ?? "") === "yes" && \FluentCart\App\Models\Coupon::where("code", "COMEBACK20")->exists() ? "ok" : "bad";')" = ok ] || { echo "abandoned checkout or coupon missing" >&2; exit 1; }
 [ "$(wp option get fluent_cart_plugin_once_activated)" = 1 ] || { echo "FluentCart first-activation flag missing" >&2; exit 1; }
 [ ! -e "$SITE/wp-content/fluent-snippet-storage" ] || { echo "fluent-snippet-storage must not ship (its secret would be shared)" >&2; exit 1; }
+# FluentSMTP sends wp_mail() but, with no connection of its own, still runs phpmailer_init, where AnyPress's mail
+# service (the store's waas-mail.php) sets the relay. Sent here to a no-op sendmail (a real address: the template drops
+# reserved ones before any mailer); any log row is removed.
+MAIL_CHECK=$(wp eval 'add_action("phpmailer_init", function ($m) { $GLOBALS["anypress_mail_init"] = true; $m->isSendmail(); $m->Sendmail = "/bin/true"; }, PHP_INT_MAX); wp_mail("check@anypress.io", "Check", "Check"); global $wpdb; $wpdb->query("DELETE FROM {$wpdb->prefix}" . FLUENT_MAIL_DB_PREFIX . "email_logs"); echo function_exists("fluentMailSend") && !empty($GLOBALS["anypress_mail_init"]) ? "ok" : "bad";' 2>&1)
+[ "${MAIL_CHECK##*$'\n'}" = ok ] || { echo "FluentSMTP skips phpmailer_init, so AnyPress mail would not send: $MAIL_CHECK" >&2; exit 1; }
 
 echo "== Package"
 rm -rf "$WORK/out" && mkdir -p "$WORK/out"
