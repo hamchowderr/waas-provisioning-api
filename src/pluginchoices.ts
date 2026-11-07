@@ -322,7 +322,7 @@ export function pluginChoiceService({ pool, provisioner, secrets, wporg = wordpr
       result = { status: 'rejected', reason: zip };
     } else {
       try {
-        const info = inspectPluginZip(zip);
+        const info = await inspectPluginZip(zip);
         const blocked = blockedReason(info.slug);
         result = blocked
           ? { status: 'rejected', reason: `${info.name} can't be added: ${blocked}`, slug: info.slug, name: info.name }
