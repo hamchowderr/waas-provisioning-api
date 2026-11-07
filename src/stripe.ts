@@ -1,3 +1,5 @@
+import StripeSdk from 'stripe';
+
 /**
  * The few Stripe REST calls that turn a reseller's monthly bill into a Stripe invoice
  * (src/resellerinvoices.ts): make a customer, read whether it has a card on file, make a draft
@@ -46,104 +48,96 @@ export class StripeError extends Error {
   }
 }
 
-/** Stripe's form encoding: nested objects as key[sub], arrays as key[0]. */
-function form(params: Record<string, unknown>, prefix = '', out = new URLSearchParams()): URLSearchParams {
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) continue;
-    const name = prefix ? `${prefix}[${key}]` : key;
-    if (value !== null && typeof value === 'object') form(value as Record<string, unknown>, name, out);
-    else out.append(name, String(value));
-  }
-  return out;
-}
-
-interface RawInvoice {
-  id: string;
-  status: StripeInvoice['status'];
-  hosted_invoice_url?: string | null;
-}
-
-const toInvoice = (raw: RawInvoice): StripeInvoice => ({ id: raw.id, status: raw.status, hostedInvoiceUrl: raw.hosted_invoice_url ?? null });
-
 /**
  * The Stripe API version every call asks for, so a change to the account's default version never
- * changes what these calls send or get back. The version the official `stripe` package (23.1.0) pins.
+ * changes what these calls send or get back: the one the official `stripe` package pins.
  */
-export const STRIPE_API_VERSION = '2026-10-28.endive';
+export const STRIPE_API_VERSION = StripeSdk.API_VERSION;
 
+const toInvoice = (raw: { id: string; status: string | null; hosted_invoice_url?: string | null }): StripeInvoice => ({
+  id: raw.id,
+  status: raw.status as StripeInvoice['status'],
+  hostedInvoiceUrl: raw.hosted_invoice_url ?? null,
+});
+
+/** The official `stripe` package, behind the small InvoiceSender interface the invoicing uses. */
 export class Stripe implements InvoiceSender {
-  constructor(
-    private readonly secretKey: string,
-    private readonly fetchFn: typeof fetch = fetch,
-    private readonly baseUrl = 'https://api.stripe.com',
-  ) {}
+  private readonly sdk: StripeSdk;
 
-  private async call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, params?: Record<string, unknown>, idempotencyKey?: string): Promise<T> {
-    const headers: Record<string, string> = { Authorization: `Bearer ${this.secretKey}`, 'Stripe-Version': STRIPE_API_VERSION };
-    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-    let body: string | undefined;
-    if (params && method === 'POST') {
-      headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      body = form(params).toString();
+  constructor(secretKey: string, fetchFn: typeof fetch = fetch) {
+    this.sdk = new StripeSdk(secretKey, {
+      apiVersion: STRIPE_API_VERSION,
+      httpClient: StripeSdk.createFetchHttpClient(fetchFn),
+      // Every write carries an idempotency key, so retrying a dropped connection is safe.
+      maxNetworkRetries: 2,
+      timeout: 30_000,
+      appInfo: { name: 'waas-provisioning-api' },
+    });
+  }
+
+  /** The SDK's errors as StripeError, with the HTTP status and Stripe's error code. */
+  private async call<T>(what: string, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      if (err instanceof StripeSdk.errors.StripeError) throw new StripeError(err.statusCode ?? 0, `Stripe ${what}: ${err.message}`, err.code);
+      throw err;
     }
-    const res = await this.fetchFn(`${this.baseUrl}${path}`, { method, headers, body, signal: AbortSignal.timeout(30_000) });
-    const answer = (await res.json().catch(() => ({}))) as { error?: { message?: string; code?: string } };
-    if (!res.ok) throw new StripeError(res.status, `Stripe ${method} ${path.split('?')[0]}: ${answer.error?.message ?? res.statusText}`, answer.error?.code);
-    return answer as T;
   }
 
   async createCustomer({ email, name, metadata, idempotencyKey }: { email: string; name: string; metadata: Record<string, string>; idempotencyKey: string }) {
-    return (await this.call<{ id: string }>('POST', '/v1/customers', { email, name, metadata }, idempotencyKey)).id;
+    return (await this.call('create customer', () => this.sdk.customers.create({ email, name, metadata }, { idempotencyKey }))).id;
   }
 
   async hasCardOnFile(customer: string) {
-    const c = await this.call<{ invoice_settings?: { default_payment_method?: string | null }; default_source?: string | null }>(
-      'GET',
-      `/v1/customers/${encodeURIComponent(customer)}`,
-    );
-    return Boolean(c.invoice_settings?.default_payment_method || c.default_source);
+    const c = await this.call('read customer', () => this.sdk.customers.retrieve(customer));
+    if ('deleted' in c && c.deleted) return false;
+    const live = c as { invoice_settings?: { default_payment_method?: unknown }; default_source?: unknown };
+    return Boolean(live.invoice_settings?.default_payment_method || live.default_source);
   }
 
   async sendInvoice(input: NewInvoice, onDraft: (invoiceId: string) => Promise<void>) {
-    const draft = await this.call<RawInvoice>(
-      'POST',
-      '/v1/invoices',
-      {
-        customer: input.customer,
-        currency: 'usd',
-        collection_method: input.chargeAutomatically ? 'charge_automatically' : 'send_invoice',
-        days_until_due: input.chargeAutomatically ? undefined : input.daysUntilDue,
-        auto_advance: true,
-        pending_invoice_items_behavior: 'exclude',
-        description: input.description,
-        footer: input.footer,
-        metadata: input.metadata,
-      },
-      `${input.idempotencyKey}:invoice`,
+    const key = input.idempotencyKey;
+    const draft = await this.call('create invoice', () =>
+      this.sdk.invoices.create(
+        {
+          customer: input.customer,
+          currency: 'usd',
+          collection_method: input.chargeAutomatically ? 'charge_automatically' : 'send_invoice',
+          days_until_due: input.chargeAutomatically ? undefined : input.daysUntilDue,
+          auto_advance: true,
+          pending_invoice_items_behavior: 'exclude',
+          description: input.description,
+          footer: input.footer,
+          metadata: input.metadata,
+        },
+        { idempotencyKey: `${key}:invoice` },
+      ),
     );
-    await onDraft(draft.id);
+    const id = draft.id!;
+    await onDraft(id);
     for (const [i, line] of input.lines.entries()) {
-      await this.call(
-        'POST',
-        '/v1/invoiceitems',
-        { customer: input.customer, invoice: draft.id, currency: 'usd', amount: line.amountCents, description: line.description },
-        `${input.idempotencyKey}:line:${i}`,
+      await this.call('add invoice line', () =>
+        this.sdk.invoiceItems.create(
+          { customer: input.customer, invoice: id, currency: 'usd', amount: line.amountCents, description: line.description },
+          { idempotencyKey: `${key}:line:${i}` },
+        ),
       );
     }
-    const finalized = await this.call<RawInvoice>('POST', `/v1/invoices/${draft.id}/finalize`, { auto_advance: true }, `${input.idempotencyKey}:finalize`);
+    const finalized = await this.call('finalize invoice', () => this.sdk.invoices.finalizeInvoice(id, { auto_advance: true }, { idempotencyKey: `${key}:finalize` }));
     if (!input.chargeAutomatically) {
-      return toInvoice(await this.call<RawInvoice>('POST', `/v1/invoices/${draft.id}/send`, {}, `${input.idempotencyKey}:send`));
+      return toInvoice(await this.call('send invoice', () => this.sdk.invoices.sendInvoice(id, {}, { idempotencyKey: `${key}:send` })));
     }
     return toInvoice(finalized);
   }
 
   async getInvoice(invoiceId: string) {
-    return toInvoice(await this.call<RawInvoice>('GET', `/v1/invoices/${encodeURIComponent(invoiceId)}`));
+    return toInvoice((await this.call('read invoice', () => this.sdk.invoices.retrieve(invoiceId))));
   }
 
   async deleteDraft(invoiceId: string) {
     try {
-      await this.call('DELETE', `/v1/invoices/${encodeURIComponent(invoiceId)}`);
+      await this.call('delete draft invoice', () => this.sdk.invoices.del(invoiceId));
     } catch (err) {
       if (!(err instanceof StripeError && err.status === 404)) throw err;
     }
