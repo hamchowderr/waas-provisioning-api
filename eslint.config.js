@@ -15,4 +15,22 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }],
     },
   },
+  {
+    // Services with an official SDK are called through it, never by hand: Stripe (stripe), toSend
+    // (tosend), S3 and R2 (aws4fetch), HighLevel (@gohighlevel/api-client). A literal naming one of
+    // their API hosts, endpoints or the AWS signing scheme means someone is writing the call by hand.
+    files: ['src/**/*.ts', 'mcp/**/*.ts', 'sdk/typescript/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          ['Literal', 'value'],
+          ['TemplateElement', 'value.raw'],
+        ].map(([node, field]) => ({
+          selector: `${node}[${field}=/api\\.stripe\\.com|api\\.tosend\\.com|\\/v2\\/(emails|domains|api-keys)|AWS4-HMAC-SHA256|leadconnectorhq\\.com\\/oauth/]`,
+          message: 'Call this service through its official SDK (stripe, tosend, aws4fetch, @gohighlevel/api-client), not by hand.',
+        })),
+      ],
+    },
+  },
 );
