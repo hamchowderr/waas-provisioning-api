@@ -121,6 +121,15 @@ describe('branding (admin)', () => {
     expect(new Uint8Array(await image.arrayBuffer())).toEqual(PNG);
     // The icon is a separate image.
     expect((await app.request(new URL(logoUrl).pathname.replace('/logo', '/icon'))).status).toBe(404);
+    // The storefront switcher's list carries it, and prefers the icon once there is one.
+    const mark = async () =>
+      ((await (await admin('GET', '/overview')).json()) as { products: { id: string; markUrl: string | null }[] }).products.find(
+        (p) => p.id === t.productId,
+      )?.markUrl;
+    expect(await mark()).toBe(logoUrl);
+    const { iconUrl } = (await (await admin('PUT', `/products/${t.productId}/branding/icon`, PNG)).json()) as { iconUrl: string };
+    expect(await mark()).toBe(iconUrl);
+    await admin('DELETE', `/products/${t.productId}/branding/icon`);
     const removed = await (await admin('DELETE', `/products/${t.productId}/branding/logo`)).json();
     expect(removed.logoUrl).toBeNull();
     expect((await app.request(new URL(logoUrl).pathname)).status).toBe(404);

@@ -7,7 +7,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
 import { adminApplicationRoutes } from '../applications.ts';
-import { brandingRoutes } from '../branding.ts';
+import { brandingRoutes, productMarks } from '../branding.ts';
 import { dashboardDomainRoutes } from '../dashboarddomains.ts';
 import type { AppEnv, Deps } from '../app.ts';
 import type { Config } from '../config.ts';
@@ -380,13 +380,14 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         [own],
       ),
     ]);
+    const marks = await productMarks(pool, publicBase(c, config.publicUrl), products.rows.map((p) => p.id as string));
     return c.json({
       health,
       tenants: { ...tenants, suspended: suspended.rows[0].n },
       versions,
       backups,
       jobs,
-      products: products.rows.map((p) => ({ id: p.id, name: p.name, tenantCount: p.tenant_count })),
+      products: products.rows.map((p) => ({ id: p.id, name: p.name, tenantCount: p.tenant_count, markUrl: marks.get(p.id) ?? null })),
     });
   });
 
