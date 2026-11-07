@@ -224,17 +224,26 @@ describe('MCP server', () => {
     expect(domains.structuredContent).toMatchObject({ ref: { externalId: 'mcp-1' }, domains: [expect.objectContaining({ isBaseDomain: true })], canChange: true });
   });
 
-  it('serves the anypress-stores skill (Skills extension)', async () => {
+  it('serves the skills (Skills extension)', async () => {
     expect(mcp.getServerCapabilities()?.extensions).toMatchObject({ 'io.modelcontextprotocol/skills': {} });
     expect(mcp.getServerCapabilities()?.resources).toBeDefined();
     expect(mcp.getInstructions()).toContain('skill://anypress-stores/SKILL.md');
+    expect(mcp.getInstructions()).toContain('skill://anypress-site-builder/SKILL.md');
 
     const markdown = readFileSync(new URL('../mcp/skills/anypress-stores/SKILL.md', import.meta.url));
     const resources = [{ uri: 'skill://anypress-stores/SKILL.md', digest: `sha256:${createHash('sha256').update(markdown).digest('hex')}`, size: markdown.length }];
     const entry = { uri: 'skill://anypress-stores/SKILL.md', frontmatter: { name: 'anypress-stores', description: expect.stringContaining('AnyPress'), license: 'GPL-3.0-or-later' }, resources };
 
     const list = await mcp.request({ method: 'skills/list', params: {} }, z.object({ skills: z.array(z.any()) }).loose());
-    expect(list.skills).toEqual([entry]);
+    expect(list.skills).toContainEqual(entry);
+    // Every skill folder is served, with each of its files.
+    expect(list.skills.map((s) => s.frontmatter.name).sort()).toEqual(
+      ['anypress-demo-build', 'anypress-design-brief', 'anypress-design-critique', 'anypress-design-md', 'anypress-site-builder', 'anypress-site-copy', 'anypress-slop-gate', 'anypress-stores', 'anypress-ui-check'],
+    );
+    const gate = list.skills.find((s) => s.frontmatter.name === 'anypress-slop-gate');
+    expect(gate.resources.map((r: { uri: string }) => r.uri)).toEqual(
+      expect.arrayContaining(['skill://anypress-slop-gate/SKILL.md', 'skill://anypress-slop-gate/NOTICE.md', 'skill://anypress-slop-gate/scripts/slop-gate.mjs']),
+    );
     const got = await mcp.request({ method: 'skills/get', params: { uri: 'skill://anypress-stores/SKILL.md' } }, z.object({ skill: z.any() }).loose());
     expect(got.skill).toEqual(entry);
     await expect(mcp.request({ method: 'skills/get', params: { uri: 'skill://nope/SKILL.md' } }, z.object({}).loose())).rejects.toMatchObject({ code: -32602 });
@@ -242,14 +251,18 @@ describe('MCP server', () => {
     const { contents } = await mcp.readResource({ uri: 'skill://anypress-stores/SKILL.md' });
     expect(contents[0]).toMatchObject({ mimeType: 'text/markdown', text: markdown.toString('utf8') });
     const listed = (await mcp.listResources()).resources.find((r) => r.uri === 'skill://anypress-stores/SKILL.md');
-    expect(listed).toMatchObject({ name: 'anypress-stores', mimeType: 'text/markdown', description: loadSkills()[0]!.frontmatter.description });
+    expect(listed).toMatchObject({ name: 'anypress-stores', mimeType: 'text/markdown', description: loadSkills().find((s) => s.frontmatter.name === 'anypress-stores')!.frontmatter.description });
 
-    // The skill names only tools the server has.
+    // The skills name only tools the server has.
     const names = new Set((await mcp.listTools()).tools.map((tool) => tool.name));
-    const named = [...markdown.toString('utf8').matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]!);
-    const tools = named.filter((name) => /^(show|get|create|update|store|manage|mail|site|page|header|add)_/.test(name));
-    expect(tools.length).toBeGreaterThan(10);
-    for (const name of tools) expect(names, name).toContain(name);
+    const toolsIn = (text: string) =>
+      [...text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]!).filter((name) => /^(show|get|create|update|store|manage|mail|site|page|header|add|business|import)_/.test(name));
+    expect(toolsIn(markdown.toString('utf8')).length).toBeGreaterThan(10);
+    for (const skill of loadSkills()) {
+      for (const file of skill.files.filter((f) => f.uri.endsWith('.md'))) for (const name of toolsIn(file.text)) expect(names, `${file.uri}: ${name}`).toContain(name);
+      // Each of our own versions of an outside skill keeps that skill's licence notice.
+      if (skill.frontmatter.name !== 'anypress-stores' && skill.frontmatter.name !== 'anypress-demo-build') expect(skill.files.map((f) => f.uri), skill.uri).toContain(skill.uri.replace('SKILL.md', 'NOTICE.md'));
+    }
   });
 
   it('deletes a store', async () => {

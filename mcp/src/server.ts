@@ -97,7 +97,7 @@ interface Action<Args> {
  * An MCP server whose tools call the WaaS provisioning API through the TypeScript SDK. The tools
  * are grouped by area (stores, backups, domains, email, versions, site) and most take an `action`;
  * each action needs its area's read or write scope, and only the actions a connection may use are
- * offered. It also serves the store screens (MCP Apps) and the anypress-stores skill (Skills
+ * offered. It also serves the store screens (MCP Apps) and the skills in mcp/skills (Skills
  * extension). Serve it with serveStdio or createMcpHandler from @modelcontextprotocol/server; it is
  * built per connection or request.
  */
@@ -107,7 +107,9 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   const may = (area: Area, access: Access) => granted.has(scopeOf(area, access)) && !(options.readOnly && access === 'write');
   // What the connection may not do, for the instructions: "see or change backups", "change domains".
   const withheld = AREAS.filter((area) => !may(area, 'write')).map((area) => `${may(area, 'read') ? 'change' : 'see or change'} ${AREA_LABELS[area].name.toLowerCase()}`);
-  const skill = loadSkills()[0]?.uri;
+  const skillUri = (name: string) => loadSkills().find((s) => s.frontmatter.name === name)?.uri;
+  const skill = skillUri('anypress-stores');
+  const siteBuilder = skillUri('anypress-site-builder');
   const server = new McpServer(
     { name: 'waas-provisioning', title: 'AnyPress', version: '0.1.0', websiteUrl: 'https://anypress.io', ...(options.icons ? { icons: options.icons } : {}) },
     {
@@ -120,6 +122,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so. ' +
         'For a whole new page, start from a starter page (site_patterns with action find and category anypress/pages: home pages per site type, about, services, contact) and then rewrite its text for the business.' +
         (skill ? ` The skill ${skill} walks through the common jobs step by step.` : '') +
+        (siteBuilder ? ` To build a whole website or redesign one, follow ${siteBuilder}.` : '') +
         (options.readOnly ? ' This server is read-only: it cannot change anything.' : '') +
         (!options.readOnly && !options.store && withheld.length ? ` This connection was not allowed to ${withheld.join(', ')}, so those tools and actions are not offered; the user can reconnect to allow more.` : '') +
         (options.store ? ' This connection is for one website only: the site tools act on it, and the store ids can be left out.' : ''),
