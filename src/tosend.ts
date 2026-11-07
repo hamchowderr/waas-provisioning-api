@@ -1,9 +1,11 @@
 /**
- * The parts of toSend's admin API (https://api.tosend.com, admin keys `tsend_admin_…`) the API
- * uses: one sending key per store, restricted to the platform's sending domain or to the store's
- * own one, the stores' own sending domains, and counts of the emails sent (docs/store-email.md).
- * Paths and fields follow toSend's official SDKs.
+ * The parts of toSend's admin API (admin keys `tsend_admin_…`) the API uses, through toSend's
+ * official SDK (the `tosend` package): one sending key per store, restricted to the platform's
+ * sending domain or to the store's own one, the stores' own sending domains, and counts of the
+ * emails sent (docs/store-email.md).
  */
+import { ToSendAdmin as ToSendSdk, ToSendError as SdkError } from 'tosend';
+
 export interface StoreMailKey {
   id: string;
   key: string;
@@ -60,7 +62,7 @@ export interface MailCounter {
   countEmails(query: EmailCountQuery): Promise<number>;
 }
 
-type RawDomain = { id: string | number; domain_name?: string; name?: string; verification_status?: string; dns_records?: any };
+type RawDomain = { id: string | number; domain_name?: string; verification_status?: string; dns_records?: unknown };
 
 /** toSend's dns_records: named groups (dkim, spf, …), each one record or a list of them. */
 function toRecords(domain: string, raw: unknown): DnsRecord[] {
@@ -75,7 +77,7 @@ function toRecords(domain: string, raw: unknown): DnsRecord[] {
   });
 }
 
-const domainName = (d: RawDomain) => (d.domain_name ?? d.name ?? '').toLowerCase();
+const domainName = (d: RawDomain) => (d.domain_name ?? '').toLowerCase();
 
 export class ToSendError extends Error {
   constructor(
@@ -87,37 +89,33 @@ export class ToSendError extends Error {
 }
 
 export class ToSendAdmin implements StoreMailKeys, SendingDomains, MailCounter {
+  private readonly sdk: ToSendSdk;
   private domainId?: string;
 
   constructor(
-    private readonly adminKey: string,
+    adminKey: string,
     /** The verified domain store keys are restricted to, e.g. anypress.io. */
     private readonly domain: string,
-    private readonly baseUrl = 'https://api.tosend.com',
-    private readonly fetchFn: typeof fetch = fetch,
-  ) {}
+    baseUrl?: string,
+  ) {
+    this.sdk = new ToSendSdk({ apiKey: adminKey, ...(baseUrl && { baseUrl }) });
+  }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.fetchFn(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
-      method,
-      headers: { authorization: `Bearer ${this.adminKey}`, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const text = await res.text();
-    const json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-    if (!res.ok) {
-      const error = json.error as { message?: string } | string | undefined;
-      const message = typeof error === 'string' ? error : (error?.message ?? (json.message as string | undefined) ?? res.statusText);
-      throw new ToSendError(`toSend ${method} ${path}: HTTP ${res.status} ${message}`, res.status);
+  /** Runs one SDK call, turning its errors into ours (with the HTTP status the callers check). */
+  private async call<T>(what: string, run: (sdk: ToSendSdk) => Promise<T>): Promise<T> {
+    try {
+      return await run(this.sdk);
+    } catch (err) {
+      if (!(err instanceof SdkError)) throw err;
+      throw new ToSendError(`toSend ${what}: HTTP ${err.code} ${err.message}`, err.code);
     }
-    return json as T;
   }
 
   /** The account's domain with this name, if it has one. */
   private async findDomain(name: string): Promise<RawDomain | undefined> {
     for (let page = 1; ; page++) {
-      const res = await this.request<{ data?: RawDomain[] }>('GET', `/v2/domains?page=${page}&per_page=100`);
-      const domains = res.data ?? [];
+      const res = await this.call('list domains', (sdk) => sdk.listDomains({ page, per_page: 100 }));
+      const domains: RawDomain[] = res.data ?? [];
       const found = domains.find((d) => domainName(d) === name);
       if (found || domains.length < 100) return found;
     }
@@ -133,26 +131,22 @@ export class ToSendAdmin implements StoreMailKeys, SendingDomains, MailCounter {
 
   async create(storeId: string, domainId?: string): Promise<StoreMailKey> {
     const domain = domainId ?? (await this.sendingDomainId());
-    const res = await this.request<{ data?: { id: string | number; api_key?: string } }>('POST', '/v2/api-keys', { name: `store-${storeId}`, domain });
-    if (!res.data?.api_key) throw new Error('toSend created a sending key but returned no key');
-    return { id: String(res.data.id), key: res.data.api_key };
+    const key = await this.call('create sending key', (sdk) => sdk.createSendingKey(`store-${storeId}`, domain));
+    if (!key?.api_key) throw new Error('toSend created a sending key but returned no key');
+    return { id: String(key.id), key: key.api_key };
   }
 
   /** Revokes a store's key; one already gone is fine. */
   async delete(id: string): Promise<void> {
-    try {
-      await this.request('DELETE', `/v2/api-keys/${encodeURIComponent(id)}`);
-    } catch (err) {
-      if (!(err instanceof ToSendError && err.status === 404)) throw err;
-    }
+    await this.gone(`delete sending key ${id}`, (sdk) => sdk.deleteSendingKey(Number(id)));
   }
 
   async addDomain(name: string): Promise<SendingDomain> {
     let id: string;
     try {
-      const res = await this.request<{ data?: RawDomain }>('POST', '/v2/domains', { name });
-      if (res.data?.id === undefined) throw new Error('toSend added the domain but returned no id');
-      id = String(res.data.id);
+      const created = await this.call('add domain', (sdk) => sdk.createDomain(name));
+      if (created?.id === undefined) throw new Error('toSend added the domain but returned no id');
+      id = String(created.id);
     } catch (err) {
       // 409: names are unique across toSend. Ours (a retry after a timeout) is read back; another
       // account's can't be used.
@@ -165,16 +159,20 @@ export class ToSendAdmin implements StoreMailKeys, SendingDomains, MailCounter {
   }
 
   async getDomain(id: string): Promise<SendingDomain> {
-    const res = await this.request<{ data?: RawDomain }>('GET', `/v2/domains/${encodeURIComponent(id)}`);
-    const d = res.data;
+    const d: RawDomain | undefined = await this.call(`get domain ${id}`, (sdk) => sdk.getDomain(id));
     if (!d) throw new Error(`toSend returned no domain ${id}`);
     const name = domainName(d);
     return { id: String(d.id), name, status: d.verification_status ?? 'unknown', records: toRecords(name, d.dns_records) };
   }
 
   async deleteDomain(id: string): Promise<void> {
+    await this.gone(`delete domain ${id}`, (sdk) => sdk.deleteDomain(id));
+  }
+
+  /** A delete where a 404 (already gone) counts as done. */
+  private async gone(what: string, run: (sdk: ToSendSdk) => Promise<void>): Promise<void> {
     try {
-      await this.request('DELETE', `/v2/domains/${encodeURIComponent(id)}`);
+      await this.call(what, run);
     } catch (err) {
       if (!(err instanceof ToSendError && err.status === 404)) throw err;
     }
@@ -185,10 +183,9 @@ export class ToSendAdmin implements StoreMailKeys, SendingDomains, MailCounter {
    * against toSend's write limit (300 a minute; 429 past it).
    */
   async countEmails({ search, from, status }: EmailCountQuery): Promise<number> {
-    const query = new URLSearchParams({ page: '1', per_page: '1', search, from, ...(status && { status }) });
-    const res = await this.request<{ total?: number | string }>('GET', `/v2/emails?${query}`);
-    const total = Number(res.total);
-    if (res.total === undefined || !Number.isInteger(total) || total < 0) throw new Error('toSend returned no email count');
+    const res = await this.call('count emails', (sdk) => sdk.listEmails({ page: 1, per_page: 1, search, from, ...(status && { status }) }));
+    const total = Number(res?.total);
+    if (res?.total === undefined || !Number.isInteger(total) || total < 0) throw new Error('toSend returned no email count');
     return total;
   }
 }

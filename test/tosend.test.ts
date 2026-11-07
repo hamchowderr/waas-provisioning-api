@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToSendAdmin } from '../src/tosend.ts';
 
 describe('ToSendAdmin', () => {
+  // toSend's SDK calls the global fetch.
+  afterEach(() => vi.unstubAllGlobals());
+
   function api(handler: (method: string, path: string, body: unknown) => [number, unknown]) {
     const calls: { method: string; path: string; auth: string | null; body: unknown }[] = [];
     const fetchFn = (async (url: string, init: RequestInit) => {
@@ -11,7 +14,8 @@ describe('ToSendAdmin', () => {
       const [status, json] = handler(init.method!, u.pathname, body);
       return new Response(JSON.stringify(json), { status });
     }) as typeof fetch;
-    return { calls, admin: new ToSendAdmin('tsend_admin_test', 'anypress.io', 'https://api.tosend.test', fetchFn) };
+    vi.stubGlobal('fetch', fetchFn);
+    return { calls, admin: new ToSendAdmin('tsend_admin_test', 'anypress.io', 'https://api.tosend.test') };
   }
 
   it('mints a key restricted to the sending domain, looking the domain up once', async () => {
