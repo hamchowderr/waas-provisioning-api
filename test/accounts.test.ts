@@ -8,6 +8,8 @@ import { createAuth, type AuthConfig } from '../src/auth.ts';
 import { createApiKey } from '../src/keys.ts';
 import { createAjv } from '../src/openapi.ts';
 import { Status } from '../src/status.ts';
+import { configurePush } from '../src/push.ts';
+import { recordNotification } from '../src/notifications.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
 
 const AUTH: AuthConfig = { url: 'https://app.waas.example', secret: 'test-auth-secret-not-a-secret-0123456789' };
@@ -295,6 +297,49 @@ describe('a signed-in owner', () => {
     expect((await admin('GET', '/notifications')).status).toBe(400);
     const all = await (await admin('GET', `/notifications?userId=${randomUUID()}&limit=50`)).json();
     expect(all.items.map((n: { tenantId: string }) => n.tenantId)).toEqual(expect.arrayContaining([mine.id, theirs.id]));
+  });
+
+  it('gets phone and computer alerts for their storefront only, and the platform admin gets all', async () => {
+    const sent: { endpoint: string; payload: string }[] = [];
+    let gone = '';
+    configurePush({ publicKey: 'BPublicKey', privateKey: 'private', dashboardUrl: AUTH.url }, async (sub, payload) => {
+      if (sub.endpoint === gone) throw Object.assign(new Error('gone'), { statusCode: 410 });
+      sent.push({ endpoint: sub.endpoint, payload });
+      return { statusCode: 201 };
+    });
+    try {
+      expect(await (await asUser(owner.cookie, 'GET', '/account/notifications/push')).json()).toEqual({ enabled: true, publicKey: 'BPublicKey' });
+      const subscription = { endpoint: 'https://push.example.com/owner-phone', keys: { p256dh: 'p', auth: 'a' } };
+      expect((await asUser(owner.cookie, 'POST', '/account/notifications/push', { subscription: { ...subscription, endpoint: 'http://x' } })).status).toBe(400);
+      expect((await asUser(owner.cookie, 'POST', '/account/notifications/push', { subscription })).status).toBe(201);
+      const adminUser = await signedIn('platform@anypress.example');
+      const adminSub = { endpoint: 'https://push.example.com/admin-laptop', keys: { p256dh: 'p', auth: 'a' } };
+      expect((await admin('POST', '/notifications/push', { userId: adminUser.userId, subscription: adminSub })).status).toBe(201);
+
+      await recordNotification(t.pool, { productId: t.productId, type: 'tenant.ready', title: 'Owner store is ready', tenantId: mine.id });
+      await waitFor(async () => sent.length === 2);
+      const toOwner = JSON.parse(sent.find((x) => x.endpoint === subscription.endpoint)!.payload);
+      expect(toOwner).toMatchObject({ title: 'Owner store is ready', url: `${AUTH.url}/stores/${mine.id}` });
+
+      // Another storefront's notice reaches only the platform admin; a small one reaches nobody.
+      sent.length = 0;
+      await recordNotification(t.pool, { productId: otherProductId, type: 'tenant.failed', title: 'A job on Other store failed', tenantId: theirs.id });
+      await recordNotification(t.pool, { productId: t.productId, type: 'tenant.live', title: 'Owner store is live', tenantId: mine.id });
+      await waitFor(async () => sent.length === 1);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(sent.map((x) => x.endpoint)).toEqual([adminSub.endpoint]);
+
+      // A subscription the push service says is gone is dropped.
+      gone = subscription.endpoint;
+      await recordNotification(t.pool, { productId: t.productId, type: 'tenant.ready', title: 'Again', tenantId: mine.id });
+      await waitFor(async () => (await t.pool.query('SELECT 1 FROM push_subscriptions WHERE endpoint = $1', [gone])).rowCount === 0);
+
+      expect((await admin('POST', '/notifications/push/remove', { userId: adminUser.userId, endpoint: adminSub.endpoint })).status).toBe(200);
+      expect((await t.pool.query('SELECT count(*)::int AS n FROM push_subscriptions')).rows[0].n).toBe(0);
+    } finally {
+      configurePush(undefined);
+    }
+    expect(await (await asUser(owner.cookie, 'GET', '/account/notifications/push')).json()).toEqual({ enabled: false, publicKey: null });
   });
 
   it("can't reach what only the platform admin may do", async () => {

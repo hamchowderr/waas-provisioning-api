@@ -1896,6 +1896,80 @@ paths:
                   readUntil: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/notifications/push:
+    get:
+      operationId: adminPushSettings
+      summary: Whether phone and computer alerts are on, and the key to sign up with
+      description: '`publicKey` is the VAPID application server key for PushManager.subscribe. See docs/notifications.md.'
+      responses:
+        '200':
+          description: Alert settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, publicKey]
+                properties:
+                  enabled: { type: boolean }
+                  publicKey: { type: string, nullable: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminSavePushSubscription
+      summary: Turn alerts on for a device
+      description: >-
+        Saves the browser's push subscription. On /account it is the session's own and hears about their
+        storefront; on /admin it is `userId`'s and hears about every storefront. View-only members may call it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subscription]
+              properties:
+                userId: { type: string, format: uuid, description: Required on /admin. }
+                subscription:
+                  type: object
+                  required: [endpoint, keys]
+                  properties:
+                    endpoint: { type: string, format: uri }
+                    keys:
+                      type: object
+                      required: [p256dh, auth]
+                      properties:
+                        p256dh: { type: string }
+                        auth: { type: string }
+      responses:
+        '201':
+          description: Saved
+          content:
+            application/json:
+              schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: The server has no push keys }
+  /admin/notifications/push/remove:
+    post:
+      operationId: adminRemovePushSubscription
+      summary: Turn alerts off for a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                userId: { type: string, format: uuid, description: Required on /admin. }
+                endpoint: { type: string }
+      responses:
+        '200':
+          description: Removed
+          content:
+            application/json:
+              schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /admin/webhooks:
     get:
       operationId: adminListWebhooks
