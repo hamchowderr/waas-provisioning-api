@@ -63,6 +63,17 @@ describe('a new production version', () => {
     expect(await store(c)).toEqual({ status: Status.Done, version_id: current });
   });
 
+  it('moves a busy store too, once its job is done (waas-api-lca1)', async () => {
+    const e = await newStore('Store E');
+    // E is busy: a job of its own (a site type change, say) still runs when the new version goes live.
+    await t.pool.query('UPDATE tenants SET status = $2 WHERE id = $1', [e, Status.Pending]);
+    const v5 = await newVersion('v5');
+    const { movingStores } = await setProduction(v5);
+    expect(movingStores).toBeGreaterThanOrEqual(1);
+    await waitFor(async () => (await store(e)).version_id === v5 && (await store(e)).status === Status.Done);
+    expect(t.provisioner.stores.get(e)?.versionId).toBe(v5);
+  });
+
   it('puts a store back on its version when its move fails', async () => {
     const [{ id: current }] = (await t.pool.query('SELECT id FROM versions WHERE product_id = $1 AND is_production', [t.productId])).rows;
     const d = await newStore('Store D');

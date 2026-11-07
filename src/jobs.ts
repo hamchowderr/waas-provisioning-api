@@ -103,7 +103,13 @@ export function createJobHandlers(
         return;
       }
       case 'tenant.move': {
-        const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [data.tenantId]);
+        // A move queued behind another job (src/promote.ts) starts once that job has set the store Done: show it
+        // as busy again. A store that failed or is being deleted meanwhile stays where it is.
+        const { rows } = await pool.query(
+          'UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status IN ($2, $3) RETURNING own_code',
+          [data.tenantId, Status.Pending, Status.Done],
+        );
+        if (!rows[0]) return;
         await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
         await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
         await forgetHostUpdate(pool, data.tenantId);
