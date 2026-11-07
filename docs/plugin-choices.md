@@ -67,7 +67,7 @@ Some plugins clash with the hosting and are refused:
 
 - page caching (WP Super Cache, W3 Total Cache, LiteSpeed Cache, …): the hosting caches pages;
 - backups and site moving (UpdraftPlus, Duplicator, All-in-One WP Migration, WP Staging, …): the hosting backs stores up and moves sites;
-- SMTP plugins (WP Mail SMTP, FluentSMTP, Post SMTP, …): stores send through the platform's relay, which counts their email against the plan;
+- SMTP plugins (WP Mail SMTP, Post SMTP, …): stores send through the platform's relay, which counts their email against the plan. The template already has FluentSMTP, which hands email to the relay until the owner connects their own service in it; a storefront can switch it off but not add a second copy;
 - file managers: a store's code is replaced with each version's;
 - firewalls that rewrite the server setup (Wordfence, Solid Security, All-In-One Security, …);
 - update managers: updates come with each new version;

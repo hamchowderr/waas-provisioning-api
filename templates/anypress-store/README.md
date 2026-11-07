@@ -1,7 +1,8 @@
 # AnyPress store
 
 The store template AnyPress's own shop sells: WordPress with the Fluent suite for selling, marketing,
-bookings, support, affiliates and an online community with courses, plus SEO, automation and login security.
+bookings, support, affiliates, video and an online community with courses, plus SEO, automation and login security.
+Plugins are listed in the order AnyPress shows them everywhere.
 
 | | |
 |---|---|
@@ -11,18 +12,20 @@ bookings, support, affiliates and an online community with courses, plus SEO, au
 
 | Plugin | Slug | Version |
 |---|---|---|
-| FluentCart | `fluent-cart` | 2.2.0 |
+| FluentAuth | `fluent-security` | 3.1.0 |
+| FluentSMTP | `fluent-smtp` | 2.4.5 |
 | FluentCRM | `fluent-crm` | 3.3.1 |
 | Fluent Forms | `fluentform` | 6.2.16 |
 | FluentBooking | `fluent-booking` | 2.5.0 |
-| Fluent Support | `fluent-support` | 2.4.7 |
+| FluentCart | `fluent-cart` | 2.2.0 |
+| FluentCommunity | `fluent-community` | 2.12.0 |
+| FluentPlayer | `fluent-player` | 1.4.0 |
 | FluentAffiliate | `fluent-affiliate` | 1.7.0 |
+| Fluent Support | `fluent-support` | 2.4.7 |
 | FluentSnippets | `easy-code-manager` | 10.58 |
 | Rank Math SEO | `seo-by-rank-math` | 1.0.280 |
-| WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 | AutomatorWP | `automatorwp` | 6.0.5 |
-| FluentAuth | `fluent-security` | 3.1.0 |
-| FluentCommunity | `fluent-community` | 2.12.0 |
+| WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 
 Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
@@ -140,8 +143,11 @@ page. Stores created without these options keep `admin@example.invalid` until th
 The owner's address, phone, time zone, currency and name are filled in by the provisioner's `waas-owner` mu-plugin
 ([details](../../docs/coolify.md#the-owners-details)).
 
-Store email is not a plugin: the provisioner's `waas-mail` mu-plugin sends it, and fills in each plugin's own sender
-to match ([store email](../../docs/store-email.md#the-plugins-own-senders)). Don't add an SMTP plugin.
+Store email goes through AnyPress's mail service: the provisioner's `waas-mail` mu-plugin sends it, and fills in each
+plugin's own sender to match ([store email](../../docs/store-email.md#the-plugins-own-senders)). FluentSMTP is on so an
+owner can connect their own email service; until they add a connection, its default mailer still hands every email to
+`waas-mail` (the build checks this), and the mu-plugin hides its "no connection" warning on stores that have the
+service. Don't add another SMTP plugin.
 
 Pro versions aren't included. They are licensed per site, so a store owner adds their own licence.
 
@@ -152,12 +158,12 @@ store's plugins to that role's list:
 
 | Role | Site type | Plugins on |
 |---|---|---|
-| `website` | Website | FluentCRM, Fluent Forms, FluentSnippets, Rank Math, WP Fusion Lite, AutomatorWP, FluentAuth, FluentToolkit |
+| `website` | Website | FluentAuth, FluentSMTP, FluentCRM, Fluent Forms, FluentPlayer, FluentSnippets, Rank Math, AutomatorWP, WP Fusion Lite, FluentToolkit |
 | `bookings` | Bookings | Website's, plus FluentBooking, FluentCart (to take payment for bookings, with no Shop or Cart page) and Fluent Support |
 | `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
-| `highlevel` | HighLevel site, for a HighLevel agency's sites | LeadConnector, WP Fusion Lite, FluentSnippets, Rank Math, FluentAuth, FluentToolkit. HighLevel is the CRM, forms, calendars and payments, so none of FluentCRM, Fluent Forms, FluentCart, FluentBooking, Fluent Support, FluentAffiliate, FluentCommunity or AutomatorWP |
+| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector. HighLevel is the CRM, forms, calendars, payments and email, so no other Fluent plugin |
 | `store` | Everything, for stores bought before site types | all of them |
 
 A store made without a site type keeps every plugin on, so the API gives one to the sites it makes for a HighLevel

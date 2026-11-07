@@ -22,6 +22,22 @@ add_filter('fluent_booking/allow_share_stats', '__return_false');
 add_filter('fluentsupport_allow_share_essential', '__return_false');
 add_filter('wp_fusion_hide_upgrade_nags', '__return_true');
 
+// FluentSMTP warns on every admin page until it has a connection, but the store's email already goes out through
+// AnyPress's mail service (waas-mail.php, which FluentSMTP's default mailer still runs). Keep the warning only on
+// stores without that service; once the owner adds their own connection in FluentSMTP, it sends instead.
+add_action('admin_notices', function () {
+    global $wp_filter;
+    if (!getenv('WAAS_MAIL_B64') || !isset($wp_filter['admin_notices'])) return;
+    foreach ($wp_filter['admin_notices']->callbacks as $priority => $callbacks) {
+        foreach ($callbacks as $callback) {
+            $fn = $callback['function'];
+            if (is_array($fn) && $fn[0] instanceof \FluentMail\App\Hooks\Handlers\AdminMenuHandler && $fn[1] === 'maybeAdminNotice') {
+                remove_action('admin_notices', $fn, $priority);
+            }
+        }
+    }
+}, PHP_INT_MIN);
+
 // The template ships without Akismet and Hello Dolly, but the WordPress image puts WordPress's bundled copies back
 // when a store's container first starts. Nobody chose them and store owners can't manage plugins, so delete them
 // (only while they're switched off). Checked on admin and WP-CLI requests only; two file_exists calls when gone.

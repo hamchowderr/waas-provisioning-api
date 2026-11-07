@@ -64,6 +64,18 @@ The From is the site title and the sending address; the Reply-To is the site tit
 
 A value the owner typed is kept: only empty values, the ones the mu-plugin set last time, and a From holding the administration email (what older stores got from the store template) are changed. What was set last is in the option `waas_mail_senders`. The recipients of the plugins' own notices (orders, forms, bookings, logins, support, affiliates) already follow the administration email through each plugin's `{wp.admin_email}` placeholder or the store template, and Fluent Forms' per-form senders are left empty, which sends under the site title from the sending address.
 
+## FluentSMTP: the owner's own email service
+
+The AnyPress store template has FluentSMTP on, with no connection. It replaces WordPress's `wp_mail()` but keeps what the relay relies on: `pre_wp_mail` first (the hold, the outreach routing, the template's and AnyPress Client's checks), then `phpmailer_init`, where `waas-mail.php` sets the relay, and `wp_mail_succeeded` and `wp_mail_failed` after. With no connection it hands the email to PHPMailer as set there, so nothing changes. The template's build checks this, and its mu-plugin hides FluentSMTP's "no email connection" warning on stores that have the relay.
+
+When the owner adds their own connection (their SMTP server, toSend account, SES and so on), FluentSMTP sends through it, choosing the connection by the email's From after `phpmailer_init`. So, for an email FluentSMTP will send through such a connection (`anypress_own_mail_service()` in `waas-outreach.php`; its "Default (none)" connection and simulation mode don't count):
+
+- `waas-mail.php` leaves it alone: no relay settings, From, Reply-To or envelope sender, so it goes out as the owner set it up.
+- `waas-plan.php` doesn't count it against the plan's monthly emails, so the owner's own sending can't hold FluentCRM's campaigns back.
+- A prospect email still goes only through the seller's mailbox: `waas-outreach.php` sends it itself (PHPMailer, the same settings) from a `pre_wp_mail` filter it adds as the last one, after every hold and recipient check, and fires `wp_mail_succeeded` or `wp_mail_failed` as `wp_mail()` would.
+
+FluentSMTP keeps a log of the email it sends through a connection (on by default, 14 days); with no connection there is none.
+
 ## The platform's count
 
 A store counts its own email (the plan's monthly emails and email packs, see [coolify.md](coolify.md)), but a store administrator can edit that count. So the platform counts too, with `TOSEND_ADMIN_KEY`:
