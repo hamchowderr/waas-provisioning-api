@@ -11,12 +11,28 @@ THEME_REPO=hamchowderr/anypress-theme
 THEME_VERSION=${THEME_VERSION:-0.14.0}
 THEME_SHA256=${THEME_SHA256:-a7a701ce790bf19b6b2f7edc27dbfd5577589c0142be40de955eb1aaab5ac270}
 
+# Downloads <url> to <file>. A GitHub release link that keeps failing (github.com answers 504 at times) is fetched
+# through GitHub's API instead, which serves the same file; GITHUB_TOKEN is sent there when set.
+anypress_download() { # <url> <file>
+    local url=$1 file=$2 repo tag name api auth=()
+    curl -sSfL --retry 4 --retry-all-errors -o "$file" "$url" && return
+    [[ $url =~ ^https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)$ ]] || return 1
+    repo=${BASH_REMATCH[1]} tag=${BASH_REMATCH[2]} name=${BASH_REMATCH[3]}
+    [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+    echo "GitHub release link failed; fetching $name through the API" >&2
+    api=$(curl -sSfL --retry 4 --retry-all-errors "${auth[@]}" "https://api.github.com/repos/$repo/releases/tags/$tag" \
+        | awk -v want="$name" '/"url": *"https:\/\/api\.github\.com\/repos\/.*\/releases\/assets\// { gsub(/[",]/, "", $2); u = $2 }
+            /"name":/ { n = $2; gsub(/[",]/, "", n); if (n == want && u != "") { print u; exit } }')
+    [ -n "$api" ] || { echo "no asset $name in $repo $tag" >&2; return 1; }
+    curl -sSfL --retry 4 --retry-all-errors "${auth[@]}" -H "Accept: application/octet-stream" -o "$file" "$api"
+}
+
 anypress_theme_fetch() { # <dir>: download (or reuse), verify and unpack the theme zip into <dir>/anypress
     local dest=$1 zip
     mkdir -p "$dest"
     zip="$dest/anypress-$THEME_VERSION.zip"
     if ! { [ -f "$zip" ] && echo "$THEME_SHA256  $zip" | sha256sum -c --quiet 2>/dev/null; }; then
-        curl -sSfL --retry 8 --retry-all-errors -o "$zip" "https://github.com/$THEME_REPO/releases/download/v$THEME_VERSION/anypress.zip"
+        anypress_download "https://github.com/$THEME_REPO/releases/download/v$THEME_VERSION/anypress.zip" "$zip"
         echo "$THEME_SHA256  $zip" | sha256sum -c --quiet || { echo "checksum mismatch: AnyPress theme $THEME_VERSION" >&2; return 1; }
     fi
     rm -rf "$dest/anypress" && unzip -q "$zip" -d "$dest"

@@ -34,6 +34,8 @@ jobs:
           fetch-depth: 0
       - name: Templates (what a templates-v* release carries)
         if: ${{ !inputs.release }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           host=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'anypress-host-v*' --sort=-v:refname | head -1 | sed 's/^anypress-host-v//')
           templates/release.sh "$PWD/waas-plugins" "$host" 0.0.0 /tmp/templates
