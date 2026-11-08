@@ -3,9 +3,11 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SITE_LINK_ROUTE } from '../src/highlevel.ts';
 import { createApiKey } from '../src/keys.ts';
+import { signSiteRequest, siteKey, siteKeyMaster } from '../src/sitekeys.ts';
 import { Status } from '../src/status.ts';
-import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
+import { setup, TEST_ADMIN_TOKEN, TEST_SECRETS_KEY, waitFor, type TestContext } from './helpers.ts';
 
 interface Received {
   method: string;
@@ -263,5 +265,42 @@ describe('install and triggers', () => {
     const hit = await waitFor(async () => received.find((r) => r.path === '/elsewhere' && JSON.parse(r.body).event === 'tenant.ready'));
     expect(hit.headers.authorization).toBeUndefined();
     t.deps.config.webhooks!.highlevel = { clientId: 'client-1', clientSecret: 'client-secret', apiUrl: base };
+  });
+});
+
+describe("a HighLevel site's CRM link", () => {
+  const keyOf = (storeId: string) => siteKey(siteKeyMaster(TEST_SECRETS_KEY), storeId);
+  const ask = (site: string, key: string | null) => {
+    const raw = JSON.stringify({ site });
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (key) headers['X-AnyPress-Signature'] = signSiteRequest(key, 'POST', SITE_LINK_ROUTE, raw);
+    return t.call('POST', SITE_LINK_ROUTE, { auth: null, headers, body: raw });
+  };
+  const make = async (name: string, extras: Record<string, string>) => {
+    const made = await app('POST', '/v1/apps/actions/create-site', { data: { name, email: 'owner@example.com' }, extras });
+    const siteId = ((await made.json()) as { siteId: string }).siteId;
+    await ready(siteId);
+    const [site] = (await (await t.call('GET', `/v1/tenants?tenantId=${siteId}`)).json()) as { domainName: string }[];
+    return { siteId, domain: site!.domainName };
+  };
+
+  it("gives a sub-account's site that sub-account and its token, signed requests only", async () => {
+    const { siteId, domain } = await make('Linked Site', { contactId: 'contact-c1', locationId: 'loc-c', companyId: 'company-1' });
+    expect((await ask(domain, null)).status).toBe(403);
+    expect((await ask(domain, keyOf('another-store'))).status).toBe(403);
+
+    const res = await ask(domain.toUpperCase(), keyOf(siteId));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    const answer = (await res.json()) as { crm: string; locationId: string; accessToken: string; expiresAt: string };
+    expect(answer).toMatchObject({ crm: 'highlevel', locationId: 'loc-c', accessToken: 'location-token-loc-c' });
+    expect(new Date(answer.expiresAt).getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+  });
+
+  it('answers crm null for a site with no sub-account', async () => {
+    const { siteId, domain } = await make('Unlinked Site', { contactId: 'contact-c2' });
+    const res = await ask(domain, keyOf(siteId));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ crm: null });
   });
 });

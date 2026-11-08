@@ -163,13 +163,15 @@ store's plugins to that role's list:
 | `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
-| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector. HighLevel is the CRM, forms, calendars, payments and email, so no other Fluent plugin |
+| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector. HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin |
 | `store` | Everything, for stores bought before site types | all of them |
 
 A store made without a site type keeps every plugin on, so the API gives one to the sites it makes for a HighLevel
-agency's storefront (`highlevel`), and the dashboard's New site asks for one. On a HighLevel site the agency connects
-LeadConnector (Settings, LeadConnector) and WP Fusion Lite (Settings, WP Fusion, CRM HighLevel) to its sub-account in
-wp-admin; both stay unconnected in the template.
+agency's storefront (`highlevel`), and the dashboard's New site asks for one. On a HighLevel site made by a
+sub-account's workflow, AnyPress Client connects WP Fusion Lite to that sub-account by itself (a token from the agency's
+install of the AnyPress app, [integrations/highlevel](../../integrations/highlevel/README.md)): new users become contacts
+tagged `website user`, and profile changes follow them. The agency connects LeadConnector (Settings, LeadConnector) in
+wp-admin; it stays unconnected in the template.
 
 Pages that need one plugin carry the post meta `_anypress_needs` (FluentCart's six pages and the Support Portal). The
 mu-plugin puts them back to draft while that plugin is off, and the home page shows the latest posts while the shop is

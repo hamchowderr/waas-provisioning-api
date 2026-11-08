@@ -10,7 +10,7 @@ HighLevel refuses addresses that mention it, so the routes are under `/v1/apps` 
 |---|---|
 | Name | AnyPress |
 | Target user | Sub-account. Agencies and sub-accounts can both install it; bulk install on, so an agency installs it on all its sub-accounts at once |
-| Scopes | `workflows.readonly` (the app's actions and trigger), `oauth.readonly` and `oauth.write` (sub-account tokens from an agency's install) |
+| Scopes | `workflows.readonly` (the app's actions and trigger), `oauth.readonly` and `oauth.write` (sub-account tokens from an agency's install), and for WP Fusion on each site (below): `contacts.readonly`, `contacts.write`, `locations.readonly`, `locations/tags.readonly`, `locations/tags.write`, `locations/customFields.readonly` |
 | Redirect URL | `API/apps/oauth/callback` |
 | Client ID and secret | Set them on the API as `HIGHLEVEL_CLIENT_ID` and `HIGHLEVEL_CLIENT_SECRET` (both or neither). `HIGHLEVEL_API_URL` changes HighLevel's address, for tests |
 
@@ -124,3 +124,11 @@ HighLevel bills marketplace actions and triggers per run (LC Premium Triggers & 
 ## Tests
 
 `test/highlevel.test.ts` runs the actions, the trigger and the install against a fake HighLevel.
+
+## Contacts from each site: WP Fusion
+
+Sites made by a sub-account's workflow belong to that sub-account, and their WP Fusion sends it the site's users as contacts, with their tags and fields. Nobody connects WP Fusion by hand: AnyPress Client on the site asks `POST API/apps/site/crm-link`, signed with the site's own key, for its sub-account and that sub-account's token, which comes from the agency's install like the triggers' (so it carries the contacts scopes above). The token lasts a day, and the site asks again before it ends. A site with no sub-account, or one the agency's install gives no token for, gets `{"crm": null}` and its WP Fusion is left alone.
+
+An agency that installed the app before the contacts scopes were added approves them once in HighLevel (the app's page in the agency's Marketplace shows the request); until then its sites' WP Fusion stays unconnected.
+
+New users reach the sub-account tagged `website user`, so a workflow can start on "Contact Tag added". Where they first came from goes with them: `utm_source` to the contact's Source, and the other UTM details, `gclid`, `fbclid`, `original_ref` and `landing_page` to the sub-account's custom fields of the same name ("UTM Campaign" or `utm_campaign`), when it has them. On a reseller's site, WP Fusion reads "<brand> Contact Sync" and HighLevel "<brand> CRM" in wp-admin. HighLevel refuses a contact whose phone number another contact already has, unless the sub-account allows it: turn on **Allow Duplicate Contact** (Settings, Business Profile) in each sub-account whose sites take sign-ups. WP Fusion Lite sends from the site to HighLevel only; changes made in HighLevel reach the site with the paid WP Fusion and its webhooks.

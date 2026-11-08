@@ -117,6 +117,7 @@
         "title": "HighLevel site",
         "plugins": [
             "fluent-security/fluent-security.php",
+            "fluent-player/fluent-player.php",
             "seo-by-rank-math/rank-math.php",
             "automatorwp/automatorwp.php",
             "wp-fusion-lite/wp-fusion-lite.php",
