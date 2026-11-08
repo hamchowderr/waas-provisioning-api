@@ -1,0 +1,72 @@
+# Builds WordPress Playground from its official source for demo.anypress.site (playground/README.md), so the dashboard's
+# demo pages run Playground on an AnyPress address instead of embedding playground.wordpress.net. Runs from the Actions
+# tab (or the API) with a Playground release tag, and attaches the built site to a GitHub release
+# playground-<tag>; playground/Dockerfile serves that release.
+name: Build Playground
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Playground release tag, e.g. v3.1.62
+        required: true
+  push:
+    branches: ['claude/demo-playground-*']
+    paths: ['playground/**', '.github/workflows/playground.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version || 'v3.1.62' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: WordPress/wordpress-playground
+          ref: ${{ env.VERSION }}
+          path: upstream
+          submodules: recursive
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: upstream/.nvmrc
+      # The website bundles Reprint (an optional site-moving tool the demos don't use) from a GitHub release download
+      # that often fails or times out; build without it rather than fail.
+      - name: Make Reprint optional
+        working-directory: upstream
+        run: |
+          perl -0pi -e 's/\tawait main\(\);\n\}/\tawait main().catch((error) => console.warn(`Reprint skipped: \${error}`));\n}/' packages/playground/website/bin/reprint-assets.mts
+          grep -n "Reprint skipped" packages/playground/website/bin/reprint-assets.mts
+      - name: Build the Playground website
+        working-directory: upstream
+        # Install scripts are skipped: the only one that matters here (sharp, for the docs site's images) downloads
+        # libvips from a release that no longer answers, and the website build doesn't use it.
+        run: |
+          npm ci --ignore-scripts
+          npm run build:website
+      - name: Keep only what the demos use
+        run: playground/prune.sh upstream/dist/packages/playground/wasm-wordpress-net
+      - name: Pack
+        run: |
+          tar -C upstream/dist/packages/playground/wasm-wordpress-net -czf playground.tar.gz .
+          ls -l playground.tar.gz
+          sha256sum playground.tar.gz | tee playground.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playground-${{ env.VERSION }}
+          path: playground.tar.gz*
+          retention-days: 7
+      - name: Release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "playground-$VERSION" playground.tar.gz playground.tar.gz.sha256 \
+            --title "Playground $VERSION for demo.anypress.site" \
+            --notes "WordPress Playground $VERSION built from source, with PHP 8.3 and the current WordPress only." \
+            --latest=false
