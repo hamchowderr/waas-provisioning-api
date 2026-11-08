@@ -1,0 +1,12 @@
+{
+  "name": "anypress-make-app",
+  "private": true,
+  "type": "module",
+  "description": "Deploys the AnyPress custom app to Make.",
+  "scripts": {
+    "deploy": "node deploy.mjs"
+  },
+  "dependencies": {
+    "@makehq/sdk": "1.10.0"
+  }
+}

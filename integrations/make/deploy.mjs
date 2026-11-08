@@ -1,5 +1,6 @@
-// Deploys this folder to a Make custom app through Make's API: the same calls the Make Apps
-// VS Code extension makes for "Deploy to Make". Run by .github/workflows/release-make.yml.
+// Deploys this folder to the AnyPress custom app on Make with Make's official SDK (@makehq/sdk):
+// the same steps as the Make Apps VS Code extension's "Deploy to Make". Run by
+// .github/workflows/release-make.yml after `npm ci` in this folder.
 //
 //   MAKE_API_TOKEN  a Make API token with the sdk-apps:read and sdk-apps:write scopes
 //   MAKE_ZONE       the Make zone the account is in, such as us1.make.com or eu2.make.com
@@ -7,119 +8,132 @@
 //                   the app (anypress becomes anypress-ab12cd). Created the first time
 //
 // Components are matched by name (modules) or by label (the connection and the webhook, whose
-// names Make picks), so running it again updates the same app.
+// names Make picks), so running it again updates the same app. The SDK has no method for a few
+// settings (a webhook's update code, and a module's webhook, connection and crud together), so
+// those go through the SDK's own authenticated make.fetch.
 import { readFileSync } from 'node:fs';
+import { Make, MakeError } from '@makehq/sdk';
 
 const dir = new URL('./', import.meta.url);
 const { MAKE_API_TOKEN: token, MAKE_ZONE: zone, MAKE_APP_ID: appId } = process.env;
 if (!token || !zone || !appId) throw new Error('MAKE_API_TOKEN, MAKE_ZONE and MAKE_APP_ID are required');
 const version = 1;
-const api = `https://${zone}/api/v2/sdk/apps`;
 const app = JSON.parse(readFileSync(new URL('makecomapp.json', dir), 'utf8'));
 const MODULE_TYPES = { trigger: 1, action: 4, search: 9, instant_trigger: 10, responder: 11, universal: 12 };
+// The AnyPress ribbon "A": black on transparent, which Make shows as white on the theme colour.
+const THEME = '#EE2F5E';
+const ICON = 'assets/icon.png';
 
-async function call(method, url, body, contentType = 'application/json') {
-  const res = await fetch(url, {
-    method,
-    headers: { Authorization: `Token ${token}`, ...(body === undefined ? {} : { 'Content-Type': contentType }) },
-    // Code files arrive as text already; only objects get encoded here.
-    body: body === undefined || typeof body === 'string' ? body : JSON.stringify(body),
-  });
-  const text = await res.text();
-  if (method === 'GET' && res.status === 404) return null;
-  if (!res.ok) throw new Error(`${method} ${url}: ${res.status} ${text.slice(0, 500)}`);
-  return text ? JSON.parse(text) : {};
-}
+const make = new Make(token, zone);
+const { apps, connections, webhooks, modules } = make.sdk;
+const read = (file) => readFileSync(new URL(file, dir), 'utf8');
 
-/** Uploads one code file. IML files go up as written, comments included, as the extension sends them. */
-async function putCode(url, file) {
+/** Runs one upload when the file is set, and logs it. IML files go up as written, comments included. */
+async function upload(file, put) {
   if (!file) return;
-  const type = file.endsWith('.md') ? 'text/markdown' : file.endsWith('.jsonc') ? 'application/jsonc' : 'application/json';
-  await call('PUT', url, readFileSync(new URL(file, dir), 'utf8'), type);
+  await put(read(file));
   console.log(`  ${file}`);
 }
 
 // The app itself. Make adds a suffix to new app names (anypress becomes anypress-ab12cd), and
 // answers 403 rather than 404 for a name the token can't see, so find it among the token's own apps.
-const ownApps = (await call('GET', api)).apps ?? [];
+const ownApps = await apps.list();
 let found = ownApps.find((a) => a.name === appId || a.name.startsWith(`${appId}-`));
 if (!found) {
   console.log(`Creating app ${appId}`);
-  const created = await call('POST', api, {
+  found = await apps.create({
     name: appId,
     label: 'AnyPress',
     version,
     description: 'Create and manage WordPress sites on AnyPress, and start a scenario when a site is ready.',
-    theme: '#EE2F5E',
+    theme: THEME,
     language: 'en',
     audience: 'global',
   });
-  found = created.app ?? created;
 }
 const appName = found.name;
 console.log(`App ${appName}`);
-// groups goes up last: Make checks that the modules it names exist.
-const general = { base: 'base', common: 'common', readme: 'readme' };
-for (const [code, path] of Object.entries(general)) await putCode(`${api}/${appName}/${version}/${path}`, app.generalCodeFiles[code]);
+await apps.update(appName, version, { theme: THEME });
+await apps.setIcon(appName, version, readFileSync(new URL(ICON, dir)));
+console.log(`  ${ICON} (theme ${THEME})`);
+await upload(app.generalCodeFiles.base, (code) => apps.setSection(appName, version, 'base', code));
+await upload(app.generalCodeFiles.common, (code) => apps.setCommon(appName, version, JSON.parse(code)));
+await upload(app.generalCodeFiles.readme, (code) => apps.setDocs(appName, version, code));
 
 // The connection.
 const connectionNames = {};
-const connections = (await call('GET', `${api}/${appName}/connections`)).appConnections ?? [];
+const existingConnections = await connections.list(appName);
 for (const [localId, meta] of Object.entries(app.components.connection)) {
-  let name = connections.find((c) => c.label === meta.label)?.name;
-  if (!name) name = (await call('POST', `${api}/${appName}/connections`, { label: meta.label, type: meta.connectionType })).appConnection.name;
+  let name = existingConnections.find((c) => c.label === meta.label)?.name;
+  if (!name) name = (await connections.create(appName, { label: meta.label, type: meta.connectionType })).name;
   connectionNames[localId] = name;
   console.log(`Connection ${localId} = ${name}`);
-  await putCode(`${api}/connections/${name}/api`, meta.codeFiles.communication);
-  await putCode(`${api}/connections/${name}/parameters`, meta.codeFiles.params);
+  await upload(meta.codeFiles.communication, (code) => connections.setSection(name, 'api', code));
+  await upload(meta.codeFiles.params, (code) => connections.setSection(name, 'parameters', code));
 }
 
 // The webhook.
 const webhookNames = {};
-const webhooks = (await call('GET', `${api}/${appName}/webhooks`)).appWebhooks ?? [];
+const existingWebhooks = await webhooks.list(appName);
 for (const [localId, meta] of Object.entries(app.components.webhook)) {
-  let name = webhooks.find((w) => w.label === meta.label)?.name;
+  let name = existingWebhooks.find((w) => w.label === meta.label)?.name;
   const connection = connectionNames[meta.connection] ?? null;
-  if (!name) name = (await call('POST', `${api}/${appName}/webhooks`, { label: meta.label, type: meta.webhookType, connection })).appWebhook.name;
+  if (!name) {
+    const created = await make.fetch(`/sdk/apps/${appName}/webhooks`, { method: 'POST', body: { label: meta.label, type: meta.webhookType, connection } });
+    name = created.appWebhook.name;
+  }
   webhookNames[localId] = name;
   console.log(`Webhook ${localId} = ${name}`);
-  await call('PATCH', `${api}/webhooks/${name}`, { label: meta.label, connection, altConnection: null });
+  await make.fetch(`/sdk/apps/webhooks/${name}`, { method: 'PATCH', body: { label: meta.label, connection, altConnection: null } });
   const files = meta.codeFiles;
-  await putCode(`${api}/webhooks/${name}/api`, files.communication);
-  await putCode(`${api}/webhooks/${name}/parameters`, files.params);
-  await putCode(`${api}/webhooks/${name}/attach`, files.attach);
-  await putCode(`${api}/webhooks/${name}/detach`, files.detach);
-  await putCode(`${api}/webhooks/${name}/update`, files.update);
-  await putCode(`${api}/webhooks/${name}/scope`, files.requiredScope);
+  await upload(files.communication, (code) => webhooks.setSection(name, 'api', code));
+  await upload(files.params, (code) => webhooks.setSection(name, 'parameters', code));
+  await upload(files.attach, (code) => webhooks.setSection(name, 'attach', code));
+  await upload(files.detach, (code) => webhooks.setSection(name, 'detach', code));
+  // "update" isn't in the SDK's list of webhook sections yet; it's the same call.
+  await upload(files.update, (code) =>
+    make.fetch(`/sdk/apps/webhooks/${name}/update`, { method: 'PUT', headers: { 'Content-Type': 'application/jsonc' }, body: code }),
+  );
+  await upload(files.requiredScope, (code) => webhooks.setSection(name, 'scope', code));
 }
 
 // The modules, named as in makecomapp.json.
 for (const [name, meta] of Object.entries(app.components.module)) {
-  const url = `${api}/${appName}/${version}/modules/${name}`;
+  const typeId = MODULE_TYPES[meta.moduleType];
   const metadata = {
     label: meta.label,
     description: meta.description,
-    typeId: MODULE_TYPES[meta.moduleType],
+    typeId,
     connection: connectionNames[meta.connection] ?? null,
     altConnection: null,
     ...(meta.moduleType === 'action' ? { crud: meta.actionCrud } : {}),
     ...(meta.moduleType === 'instant_trigger' ? { webhook: webhookNames[meta.webhook] } : {}),
   };
-  if (!(await call('GET', url))) {
+  const exists = await modules.get(appName, version, name).then(
+    () => true,
+    (err) => {
+      if (err instanceof MakeError && err.statusCode === 404) return false;
+      throw err;
+    },
+  );
+  if (!exists) {
     console.log(`Creating module ${name}`);
-    await call('POST', `${api}/${appName}/${version}/modules`, { name, moduleInitMode: 'blank', ...metadata });
+    await make.fetch(`/sdk/apps/${appName}/${version}/modules`, { method: 'POST', body: { name, moduleInitMode: 'blank', ...metadata } });
   }
   console.log(`Module ${name}`);
-  await call('PATCH', url, metadata);
+  // modules.update only takes label, description and connection; the webhook and crud go too.
+  await make.fetch(`/sdk/apps/${appName}/${version}/modules/${name}`, { method: 'PATCH', body: metadata });
   const files = meta.codeFiles;
-  await putCode(`${url}/api`, files.communication);
-  await putCode(`${url}/parameters`, files.staticParams);
-  await putCode(`${url}/expect`, files.mappableParams);
-  await putCode(`${url}/interface`, files.interface);
-  await putCode(`${url}/samples`, files.samples);
-  await putCode(`${url}/scope`, files.scope);
+  const section = (s) => (code) => modules.setSection(appName, version, name, s, code);
+  await upload(files.communication, section('api'));
+  await upload(files.staticParams, section('parameters'));
+  await upload(files.mappableParams, section('expect'));
+  await upload(files.interface, section('interface'));
+  await upload(files.samples, section('samples'));
+  await upload(files.scope, section('scope'));
 }
 
-await putCode(`${api}/${appName}/${version}/groups`, app.generalCodeFiles.groups);
+// groups goes up last: Make checks that the modules it names exist.
+await upload(app.generalCodeFiles.groups, (code) => apps.setSection(appName, version, 'groups', code));
 
 console.log(`Deployed ${appName} to ${zone}`);

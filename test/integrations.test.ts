@@ -367,8 +367,17 @@ describe('Make app', () => {
     for (const file of listed) if (file.endsWith('json') || file.endsWith('jsonc')) expect(() => readJsonc(file), file).not.toThrow();
     const walk = (dir: string): string[] =>
       readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)).map((x) => `${f}/${x}`) : [f]));
-    const onDisk = walk(makeDir.pathname).filter((f) => !['makecomapp.json', '.gitignore', 'deploy.mjs'].includes(f));
+    // The deploy script, its package and the logo it uploads aren't app code files.
+    const tooling = ['makecomapp.json', '.gitignore', 'deploy.mjs', 'package.json', 'package-lock.json'];
+    const onDisk = walk(makeDir.pathname).filter((f) => !tooling.includes(f) && !f.startsWith('assets/') && !f.startsWith('node_modules/'));
     expect(onDisk.sort()).toEqual([...listed].sort());
+  });
+
+  it('has a logo Make accepts: a 512x512 PNG under 500 kB', () => {
+    const icon = readFileSync(new URL('assets/icon.png', makeDir));
+    expect(icon.subarray(1, 4).toString()).toBe('PNG');
+    expect([icon.readUInt32BE(16), icon.readUInt32BE(20)]).toEqual([512, 512]);
+    expect(icon.length).toBeLessThan(500 * 1024);
   });
 
   it('sends only fields the API knows, and asks only for events it sends', () => {
