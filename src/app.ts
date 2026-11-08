@@ -25,6 +25,7 @@ import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.
 import { pluginChoiceRoutes } from './pluginchoices.ts';
 import type { WpOrg } from './wporg.ts';
 import { importRoutes } from './imports.ts';
+import { referenceRoutes } from './references.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { ReleaseStore } from './releases.ts';
@@ -224,6 +225,8 @@ export function createApp(deps: Deps) {
   app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
   app.route('/v1', partnerRoutes(deps));
+  // References to build a site from: a website, Shopify shop, Figma file or document (src/references.ts).
+  referenceRoutes(app, deps);
   // The AnyPress app for HighLevel: its actions, trigger and install (src/highlevel.ts).
   highLevelRoutes(app, deps);
 

@@ -2326,6 +2326,100 @@ paths:
           description: Forbidden
       x-phase: 2
       operationId: deleteBaseSnapshot
+  /v1/references:
+    post:
+      tags:
+      - Reference
+      summary: Read a reference to build a site from
+      description: 'Added for AnyPress.
+
+
+        Reads a website link, a Shopify shop, a Figma file, a document link or an uploaded document into one bundle: design tokens (colours, fonts, sizes, radius, logo), each page''s text and a screenshot, its images, and a Shopify shop''s products and collections. Reading takes up to a few minutes: poll `getReference` until `statusCode` leaves Pending (0). Each storefront has a monthly allowance (`getReferenceUsage`); a read that fails is not counted. With someone else''s site, take the layout and style, never their text.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReferenceRequest'
+      responses:
+        '200':
+          description: The read has started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reference'
+        '400':
+          description: Not a link or file that can be read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '429':
+          description: This month's reads are used up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '503':
+          description: Reading this kind of reference is not set up on this server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: startReference
+    get:
+      tags:
+      - Reference
+      summary: A reference and its bundle
+      description: 'Added for AnyPress. The reference''s `statusCode` (0 Pending, 1 Done, 2 Failed), its `bundle` once Done, or `error` saying why it could not be read.'
+      parameters:
+      - name: id
+        in: query
+        required: true
+        description: The reference's id, from `startReference`
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reference'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: No reference with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getReference
+  /v1/references/usage:
+    get:
+      tags:
+      - Reference
+      summary: This month's reference reads
+      description: Added for AnyPress. How many references this storefront has read this month, its allowance, and whether reading is set up on this server.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferenceUsage'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      operationId: getReferenceUsage
   /imports/upload:
     post:
       tags:
@@ -2626,6 +2720,140 @@ paths:
       operationId: getDemoBrand
 components:
   schemas:
+    ReferenceRequest:
+      type: object
+      description: A `url` or a `file`, not both.
+      properties:
+        url:
+          type: string
+          maxLength: 2000
+          description: A website or Shopify shop, a Figma file or frame link, or a link to a PDF, Word or Excel document
+          example: https://example.com
+        file:
+          type: object
+          description: An uploaded document (PDF, Word, Excel, OpenDocument, RTF or HTML), up to 10 MB
+          required: [name, data]
+          properties:
+            name: { type: string, maxLength: 200, example: brief.pdf }
+            contentType: { type: string, example: application/pdf }
+            data: { type: string, description: The file, base64-encoded }
+        maxPages:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+          description: Pages of a website, or frames of a Figma page, to read
+    Reference:
+      type: object
+      required: [id, kind, source, statusCode, error, bundle, createdAt, finishedAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [website, figma, document] }
+        source: { type: string, description: The link, or an uploaded file's name }
+        statusCode: { type: integer, enum: [0, 1, 2], description: '0 Pending, 1 Done, 2 Failed' }
+        error: { type: string, nullable: true, description: Why it could not be read }
+        bundle:
+          $ref: '#/components/schemas/ReferenceBundle'
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    ReferenceBundle:
+      type: object
+      nullable: true
+      description: What a reference was read into, null until it is Done. Every kind fills the same shape; what a kind can't tell is left empty.
+      required: [kind, source, title, design, pages, products, collections, notes]
+      properties:
+        kind: { type: string, enum: [website, figma, document] }
+        source: { type: string }
+        title: { type: string, nullable: true }
+        design:
+          type: object
+          required: [colors, fonts, fontSizes, radius, colorScheme, logo]
+          properties:
+            colors:
+              type: object
+              additionalProperties: { type: string }
+              description: Named colours (primary, secondary, accent, background, text and so on), mapped to the theme's palette when building
+            fonts:
+              type: object
+              required: [heading, body, all]
+              properties:
+                heading: { type: string, nullable: true }
+                body: { type: string, nullable: true }
+                all: { type: array, items: { type: string } }
+            fontSizes:
+              type: object
+              additionalProperties: { type: string }
+            radius: { type: string, nullable: true }
+            colorScheme: { type: string, nullable: true, enum: [light, dark, null] }
+            logo: { type: string, nullable: true }
+        pages:
+          type: array
+          items:
+            type: object
+            required: [url, title, text, sections, screenshot, images]
+            properties:
+              url: { type: string, description: The page's address, or the Figma frame's name }
+              title: { type: string, nullable: true }
+              text: { type: string, description: The page's text as Markdown }
+              sections:
+                type: array
+                description: For a Figma frame, its top-level layers in order with their text
+                items:
+                  type: object
+                  required: [name, text]
+                  properties:
+                    name: { type: string }
+                    text: { type: array, items: { type: string } }
+              screenshot: { type: string, nullable: true, description: A picture of the page; the link expires }
+              images: { type: array, items: { type: string } }
+        products:
+          type: array
+          description: A Shopify shop's products
+          items:
+            type: object
+            required: [title, handle, description, vendor, type, tags, price, compareAtPrice, images, variants]
+            properties:
+              title: { type: string }
+              handle: { type: string }
+              description: { type: string }
+              vendor: { type: string, nullable: true }
+              type: { type: string, nullable: true }
+              tags: { type: array, items: { type: string } }
+              price: { type: string, nullable: true }
+              compareAtPrice: { type: string, nullable: true }
+              images: { type: array, items: { type: string } }
+              variants:
+                type: array
+                items:
+                  type: object
+                  required: [title, sku, price, compareAtPrice, available]
+                  properties:
+                    title: { type: string }
+                    sku: { type: string, nullable: true }
+                    price: { type: string, nullable: true }
+                    compareAtPrice: { type: string, nullable: true }
+                    available: { type: boolean }
+        collections:
+          type: array
+          items:
+            type: object
+            required: [title, handle, description]
+            properties:
+              title: { type: string }
+              handle: { type: string }
+              description: { type: string }
+        notes:
+          type: array
+          items: { type: string }
+          description: Notes for whoever builds from it, such as links that expire
+    ReferenceUsage:
+      type: object
+      required: [available, used, limit, resetsAt]
+      properties:
+        available: { type: boolean, description: False until this server can read websites and documents }
+        used: { type: integer }
+        limit: { type: integer }
+        resetsAt: { type: string, format: date-time }
     DemoBrand:
       type: object
       required: [name, brand, shopUrl]
@@ -4440,5 +4668,7 @@ tags:
 - name: BaseSnapshot
   description: Phase 2, reseller feature. Endpoint to BaseSnapshots - _Only available using a Partner API Key_
   x-phase: 2
+- name: Reference
+  description: 'Added for AnyPress. Read a website, Shopify shop, Figma file or document into one bundle to build a site from.'
 - name: Branding
   description: The public look of a seller's or reseller's branded pages

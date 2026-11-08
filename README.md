@@ -250,7 +250,7 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 ## MCP server
 
-[`mcp/`](mcp) lets an AI agent (Claude, ChatGPT or any MCP client) create and manage stores, and edit a store's pages, sections, styles, header, footer and menus ([docs/site-editing.md](docs/site-editing.md)). The API serves it at `/mcp`, with OAuth sign-in for Claude and ChatGPT connectors, or Basic auth with your API key. It also runs locally over stdio, and comes with store screens (MCP Apps) and an Agent Skill it serves over MCP too (Skills extension). Its twenty tools are grouped by area, most with an `action`. See [mcp/README.md](mcp/README.md).
+[`mcp/`](mcp) lets an AI agent (Claude, ChatGPT or any MCP client) create and manage stores, and edit a store's pages, sections, styles, header, footer and menus ([docs/site-editing.md](docs/site-editing.md)), and read a website, Shopify shop, Figma file or document to build a site from ([docs/references.md](docs/references.md)). The API serves it at `/mcp`, with OAuth sign-in for Claude and ChatGPT connectors, or Basic auth with your API key. It also runs locally over stdio, and comes with store screens (MCP Apps) and an Agent Skill it serves over MCP too (Skills extension). Its twenty tools are grouped by area, most with an `action`. See [mcp/README.md](mcp/README.md).
 
 ## Website assistant
 

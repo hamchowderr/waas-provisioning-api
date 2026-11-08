@@ -25,6 +25,8 @@ import { resolvePlatformProducts } from './platformproducts.ts';
 import { Secrets } from './secrets.ts';
 import { siteKey, siteKeyMaster } from './sitekeys.ts';
 import { startStoreBackups } from './storebackups.ts';
+import Firecrawl from '@mendable/firecrawl-js';
+import { startReferences } from './references.ts';
 import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webhooks.ts';
 
 const config = loadConfig();
@@ -56,6 +58,11 @@ const dbBackups = config.dbBackup
 await startDbBackups(boss, dbBackups, config.dbBackup?.schedule ?? '');
 // Nightly backup of every live store (docs/store-backups.md), unless STORE_BACKUP=off.
 await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
+// References to build sites from (docs/references.md): read with Firecrawl and Figma's API when their keys are set.
+await startReferences(boss, pool, {
+  firecrawl: config.references?.firecrawlApiKey ? new Firecrawl({ apiKey: config.references.firecrawlApiKey }) : undefined,
+  figmaToken: config.references?.figmaToken,
+});
 // Nightly, one store's latest backup restored into a throwaway copy and checked (docs/store-backups.md), unless RESTORE_TEST=off.
 // Phone and computer alerts for the bell's important notices (src/push.ts); off without VAPID keys.
 configurePush(loadPushConfig(process.env, config.auth?.url));

@@ -1,5 +1,6 @@
 import { platformBrandOf } from './brand.ts';
 import { loadProspectConfig, type ProspectConfig } from './prospects.ts';
+import { loadReferenceConfig, type ReferenceConfig } from './references.ts';
 import { loadAuthConfig, type AuthConfig } from './auth.ts';
 import { loadCrmConfig, type CrmConfig } from './crm.ts';
 import { loadDbBackupConfig, type DbBackupConfig } from './dbbackup.ts';
@@ -108,6 +109,8 @@ export interface Config {
   resellerInvoices?: ResellerInvoiceConfig;
   /** The Sales Kit's prospect finder (src/prospects.ts): GOOGLE_PLACES_API_KEY and PROSPECT_SEARCHES_PER_MONTH (100). */
   prospects?: ProspectConfig;
+  /** Reading references to build sites from (src/references.ts): FIRECRAWL_API_KEY, FIGMA_TOKEN and REFERENCE_READS_PER_MONTH (50). */
+  references?: ReferenceConfig;
 }
 
 function requestLogDays(value: string | undefined): number {
@@ -247,6 +250,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     resellerInvoices: loadResellerInvoiceConfig(env),
     prospects: loadProspectConfig(env),
+    references: loadReferenceConfig(env),
   };
 }
 
