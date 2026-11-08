@@ -1,4 +1,4 @@
-# Builds WordPress Playground from its official source for demo.anypress.io (playground/README.md), so the dashboard's
+# Builds WordPress Playground from its official source for demo.anypress.site (playground/README.md), so the dashboard's
 # demo pages run Playground on an AnyPress address instead of embedding playground.wordpress.net. Runs from the Actions
 # tab (or the API) with a Playground release tag, and attaches the built site to a GitHub release
 # playground-<tag>; playground/Dockerfile serves that release.
@@ -67,6 +67,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "playground-$VERSION" playground.tar.gz playground.tar.gz.sha256 \
-            --title "Playground $VERSION for demo.anypress.io" \
+            --title "Playground $VERSION for demo.anypress.site" \
             --notes "WordPress Playground $VERSION built from source, with PHP 8.3 and the current WordPress only." \
             --latest=false

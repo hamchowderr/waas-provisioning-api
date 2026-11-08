@@ -1,4 +1,4 @@
-# demo.anypress.io: WordPress Playground, built from its official source by the Build Playground workflow and served as
+# demo.anypress.site: WordPress Playground, built from its official source by the Build Playground workflow and served as
 # static files. The dashboard's demo pages (/demo) embed it.
 FROM caddy:2.10-alpine
 ARG PLAYGROUND=playground-v3.1.62
