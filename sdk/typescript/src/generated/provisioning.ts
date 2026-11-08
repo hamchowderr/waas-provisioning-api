@@ -495,7 +495,7 @@ export interface paths {
         put?: never;
         /**
          * Buy a domain for the store
-         * @description Checks the domain is available at a normal price, holds it and sends the buyer (contact.email) a Stripe invoice to pay within 2 days. Answers at once with status awaiting_payment and payUrl, the invoice page. Once it is paid (checked every 5 minutes) the domain is registered for one year in the contact's name with WHOIS privacy on, its DNS is pointed at the store, and it becomes the store's main address (www too). 409 when the domain is taken, premium, not sold here or already being bought. See docs/domains.md.
+         * @description Checks the domain is available at a normal price, holds it and sends the buyer (contact.email) a Stripe invoice to pay within 2 days. Answers at once with status awaiting_payment and payUrl, the invoice page. With `reference` (a storefront that took the payment at its own checkout) no invoice is sent: the answer is status registering, and the domain is registered within a minute. Once it is paid (checked every 5 minutes) the domain is registered for one year in the contact's name with WHOIS privacy on, its DNS is pointed at the store, and it becomes the store's main address (www too). 409 when the domain is taken, premium, not sold here or already being bought. See docs/domains.md.
          */
         post: operations["buyDomain"];
         delete?: never;
@@ -538,6 +538,26 @@ export interface paths {
          */
         put: operations["setBoughtDomainAutoRenew"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/domains/bought/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew a domain paid for at the storefront
+         * @description For a domain bought with a `reference`: once the shop has taken the renewal payment (its subscription renewed), renews the domain for one more year at the registrar. A repeat with the same reference renews nothing more. A reseller's storefront is charged the renewal price on its monthly bill.
+         */
+        post: operations["renewBoughtDomain"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1687,6 +1707,13 @@ export interface components {
             /** @example mybakery.com */
             domainName: string;
             contact: components["schemas"]["DomainContact"];
+            /** @description Only when the storefront has already taken the payment at its own checkout: the shop's order. No invoice is sent and the domain is registered straight away; a repeat with the same reference answers the same domain. Allowed for a reseller's storefronts (charged on the reseller's monthly bill) and the platform's own shop. */
+            reference?: string;
+        };
+        RenewBoughtDomainParams: {
+            domainName: string;
+            /** @description The shop's renewal order; a repeat renews nothing more */
+            reference: string;
         };
         /** @description The person or business the domain is registered to (its owner). The registry may email them to confirm the address. */
         DomainContact: {
@@ -1722,7 +1749,14 @@ export interface components {
             tenantId: string | null;
             domainName: string;
             /**
-             * @description awaiting_payment: the invoice isn't paid yet. registering: paid, being registered. active: registered and pointed at the store. cancelled: the invoice wasn't paid. failed: paid but not registered (refunded by the platform). expired: not renewed.
+             * @description invoice: the buyer pays our invoices. storefront: the shop took the payment and renews it with its own orders.
+             * @enum {string}
+             */
+            paidBy: "invoice" | "storefront";
+            /** @description The shop order */
+            reference: string | null;
+            /**
+             * @description awaiting_payment: the invoice isn't paid yet. registering: paid, being registered. active: registered and pointed at the store. cancelled: the invoice wasn't paid. failed: paid but not registered (refunded by the platform, or by the shop for a domain paid for there). expired: not renewed.
              * @enum {string}
              */
             status: "awaiting_payment" | "registering" | "active" | "cancelled" | "failed" | "expired";
@@ -3930,7 +3964,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The order, waiting for its invoice to be paid */
+            /** @description The order, waiting for its invoice to be paid (or registering, with a reference) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3954,6 +3988,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description This storefront can't take payment for domains itself (with a reference) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
             /** @description The domain can't be bought */
             409: {
@@ -4073,6 +4116,62 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    renewBoughtDomain: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /** @description The Id of the Tenant (required if tenantId is omitted) */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenewBoughtDomainParams"];
+            };
+        };
+        responses: {
+            /** @description The domain, with its new expiry date */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoughtDomain"];
+                };
+            };
+            /** @description Not a domain paid for at the storefront for this store */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Buying domains is not set up on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

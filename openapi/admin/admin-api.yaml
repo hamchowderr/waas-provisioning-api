@@ -3303,7 +3303,7 @@ components:
     ResellerBill:
       type: object
       additionalProperties: false
-      required: [resellerId, resellerName, billingEmail, month, from, to, complete, currency, wholesalePercent, lines, totalCents]
+      required: [resellerId, resellerName, billingEmail, month, from, to, complete, currency, wholesalePercent, lines, domainLines, totalCents]
       properties:
         resellerId: { type: string, format: uuid }
         resellerName: { type: string }
@@ -3330,7 +3330,21 @@ components:
               listPriceCents: { type: integer }
               wholesalePriceCents: { type: integer, description: 'Monthly price of one store after the discount' }
               amountCents: { type: integer }
-        totalCents: { type: integer }
+        domainLines:
+          type: array
+          description: Domains its storefronts sold at their own checkout this month, one per registration or renewal
+          items:
+            type: object
+            additionalProperties: false
+            required: [productId, name, domainName, kind, date, amountCents]
+            properties:
+              productId: { type: string, format: uuid }
+              name: { type: string, nullable: true, description: 'null once the storefront is deleted' }
+              domainName: { type: string }
+              kind: { type: string, enum: [registration, renewal] }
+              date: { type: string, format: date-time }
+              amountCents: { type: integer }
+        totalCents: { type: integer, description: Store lines plus domain lines }
     ResellerInvoice:
       type: object
       additionalProperties: false

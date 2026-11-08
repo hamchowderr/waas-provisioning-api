@@ -138,11 +138,13 @@ describe('domain sales', () => {
     const on = loadDomainSalesConfig({ NAMECOM_USERNAME: 'anypress', NAMECOM_TEST_TOKEN: 'tok', STRIPE_SECRET_KEY: 'rk_test_x' })!;
     expect(on.markupCents).toBe(500);
     expect(on.tlds).toContain('com');
+    expect(on.shopProducts).toEqual([]);
+    expect(loadDomainSalesConfig({ NAMECOM_USERNAME: 'a', NAMECOM_TOKEN: 't', STRIPE_SECRET_KEY: 'rk_test_x', DOMAIN_SHOP_PRODUCTS: ' p1, p2 ' })!.shopProducts).toEqual(['p1', 'p2']);
     expect(() => loadDomainSalesConfig({ NAMECOM_USERNAME: 'a', NAMECOM_TOKEN: 't', STRIPE_SECRET_KEY: 'rk_test_x', DOMAIN_MARKUP_CENTS: '1.5' })).toThrow();
 
     registrar = new FakeRegistrar();
     stripe = new FakeStripe();
-    const config: DomainSalesConfig = { registrar, stripe, markupCents: 500, tlds: ['com', 'net', 'shop'] };
+    const config: DomainSalesConfig = { registrar, stripe, markupCents: 500, tlds: ['com', 'net', 'shop'], shopProducts: [] };
     t.deps.domainSales = config;
     t.deps.domainConnectNet = net;
     work = { pool: t.pool, config, storesDomain: 'stores.waas.example', net, attach: storeAttacher(t.deps), log: { error: () => {} } };
@@ -267,6 +269,53 @@ describe('domain sales', () => {
     const row = ((await (await t.call('GET', `/v1/tenants/domains/bought?externalId=${store.externalId}`)).json()) as any).domains[0];
     expect(row.status).toBe('expired');
     expect((await t.call('GET', `/v1/tenants/domains/bought/transfer-code?externalId=${store.externalId}&domainName=mybakery.com`)).status).toBe(400);
+  });
+
+  it('registers a domain paid for at a reseller storefront at once, renews it from the shop and bills the reseller', async () => {
+    const cakes = await newTenant('Cakes');
+    const buy = (reference: string, domainName = 'cakes.shop') =>
+      t.call('POST', `/v1/tenants/domains/buy?externalId=${cakes.externalId}`, { body: { domainName, contact: CONTACT, reference } });
+    // A storefront without a reseller, not listed as the platform's shop, gets invoices instead.
+    expect((await buy('order-1')).status).toBe(403);
+
+    const resellerId = (await t.pool.query("INSERT INTO resellers (name) VALUES ('Cake Partners') RETURNING id")).rows[0].id;
+    await t.pool.query('UPDATE products SET reseller_id = $2 WHERE id = $1', [t.productId, resellerId]);
+    try {
+      const invoices = stripe.invoices.size;
+      const res = await buy('order-1');
+      expect(res.status).toBe(200);
+      const order = (await res.json()) as any;
+      valid('buyDomain', order);
+      expect(order).toMatchObject({ domainName: 'cakes.shop', status: 'registering', paidBy: 'storefront', reference: 'order-1', payUrl: null, priceCents: 1500 });
+      expect(stripe.invoices.size).toBe(invoices);
+      // The shop retrying its order gets the same domain; another order for it is refused.
+      expect(((await (await buy('order-1')).json()) as any).id).toBe(order.id);
+      expect((await buy('order-1', 'other.shop')).status).toBe(409);
+
+      await processDomainSales(work);
+      expect(registrar.registered.map((r) => r.domain)).toContain('cakes.shop');
+      const renew = (reference: string) =>
+        t.call('POST', `/v1/tenants/domains/bought/renew?externalId=${cakes.externalId}`, { body: { domainName: 'cakes.shop', reference } });
+      const renewed = (await (await renew('renewal-1')).json()) as any;
+      valid('renewBoughtDomain', renewed);
+      expect(renewed).toMatchObject({ status: 'active', expiresAt: '2028-11-08T00:00:00.000Z' });
+      expect((await renew('renewal-1')).status).toBe(200);
+      expect(registrar.renewed.filter((d) => d === 'cakes.shop')).toHaveLength(1);
+      // It renews with the shop's subscription, never with our invoices.
+      expect((await t.call('PUT', `/v1/tenants/domains/bought/auto-renew?externalId=${cakes.externalId}`, { body: { domainName: 'cakes.shop', autoRenew: false } })).status).toBe(400);
+      await processDomainSales({ ...work, now: () => new Date('2028-10-20T00:00:00Z') });
+      expect(stripe.invoices.size).toBe(invoices);
+
+      const month = new Date().toISOString().slice(0, 7);
+      const bill = (await (await t.call('GET', `/admin/resellers/${resellerId}/bill?month=${month}`, { auth: 'Bearer test-admin-token-not-a-secret' })).json()) as any;
+      expect(bill.domainLines.map((l: any) => [l.domainName, l.kind, l.amountCents])).toEqual([
+        ['cakes.shop', 'registration', 1500],
+        ['cakes.shop', 'renewal', 1700],
+      ]);
+      expect(bill.totalCents).toBe(bill.lines.reduce((sum: number, l: any) => sum + l.amountCents, 0) + 3200);
+    } finally {
+      await t.pool.query('UPDATE products SET reseller_id = NULL WHERE id = $1', [t.productId]);
+    }
   });
 
   it('answers on the admin API for the dashboard', async () => {

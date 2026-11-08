@@ -7,7 +7,7 @@
 import { NamecomClient, NamecomEnvironment, NamecomError } from '@namecom/core-api';
 import type { PgBoss } from 'pg-boss';
 import type { Deps } from './app.ts';
-import type { Pool } from './db.ts';
+import { withTransaction, type Pool } from './db.ts';
 import { defaultNet, storeAddresses, type DomainConnectNet } from './domainconnect.ts';
 import { badRequest, conflict, HttpError } from './errors.ts';
 import { Stripe, type InvoiceSender } from './stripe.ts';
@@ -80,6 +80,11 @@ export interface DomainSalesConfig {
   /** Added to the registrar's price for each year, in cents. */
   markupCents: number;
   tlds: string[];
+  /**
+   * Storefronts without a reseller that may sell domains at their own checkout (the platform's own shop). A reseller's
+   * storefronts always may: their domains are on the reseller's monthly bill.
+   */
+  shopProducts: string[];
 }
 
 const cents = (dollars: number | null | undefined) => (typeof dollars === 'number' ? Math.round(dollars * 100) : null);
@@ -183,7 +188,8 @@ export class RegistrarError extends Error {
  * On when NAMECOM_USERNAME, a Name.com token and STRIPE_SECRET_KEY are set. NAMECOM_SANDBOX (default on) uses Name.com's
  * test system with NAMECOM_TEST_TOKEN (and NAMECOM_TEST_USERNAME, else the username plus -test): set it to off, with
  * NAMECOM_TOKEN, only for real sales. DOMAIN_MARKUP_CENTS (default 500) is added to each year's price;
- * DOMAIN_TLDS lists the endings sold.
+ * DOMAIN_TLDS lists the endings sold. DOMAIN_SHOP_PRODUCTS lists storefronts without a reseller (the platform's own shop)
+ * that may take payment for domains at their own checkout.
  */
 export function loadDomainSalesConfig(env: NodeJS.ProcessEnv, fetchFn?: typeof fetch): DomainSalesConfig | undefined {
   const username = env.NAMECOM_USERNAME?.trim();
@@ -197,7 +203,8 @@ export function loadDomainSalesConfig(env: NodeJS.ProcessEnv, fetchFn?: typeof f
   // Name.com's test system uses the username with -test appended (NAMECOM_TEST_USERNAME, when set).
   const testUser = env.NAMECOM_TEST_USERNAME?.trim();
   const login = !sandbox ? username : testUser && testUser !== 'paste-here' ? testUser : username.endsWith('-test') ? username : `${username}-test`;
-  return { registrar: new NameCom(login, token, sandbox, fetchFn), stripe: new Stripe(stripeKey, fetchFn), markupCents, tlds };
+  const shopProducts = (env.DOMAIN_SHOP_PRODUCTS ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+  return { registrar: new NameCom(login, token, sandbox, fetchFn), stripe: new Stripe(stripeKey, fetchFn), markupCents, tlds, shopProducts };
 }
 
 function salesOf(deps: Deps): DomainSalesConfig {
@@ -255,6 +262,10 @@ export interface BoughtDomain {
   tenantId: string | null;
   domainName: string;
   status: 'awaiting_payment' | 'registering' | 'active' | 'cancelled' | 'failed' | 'expired';
+  /** invoice: the buyer pays our Stripe invoices. storefront: the shop took the payment and renews it with its own orders. */
+  paidBy: 'invoice' | 'storefront';
+  /** The shop's order, for a domain paid for at a storefront. */
+  reference: string | null;
   priceCents: number;
   renewalPriceCents: number;
   /** Where the buyer pays: the Stripe invoice page while the order waits for payment, else null. */
@@ -272,6 +283,8 @@ const toBought = (r: Record<string, any>): BoughtDomain => ({
   tenantId: r.tenant_id ?? null,
   domainName: r.domain_name,
   status: r.status,
+  paidBy: r.paid_by ?? 'invoice',
+  reference: r.reference ?? null,
   priceCents: r.price_cents,
   renewalPriceCents: r.renewal_price_cents,
   payUrl: r.status === 'awaiting_payment' ? (r.hosted_invoice_url ?? null) : null,
@@ -315,13 +328,53 @@ export function parseContact(input: unknown): Contact {
   return contact;
 }
 
+export interface PaidAtStorefront {
+  /** The shop's order. A repeat with the same reference answers the domain already bought and registers nothing. */
+  reference: string;
+}
+
+/** Wakes the worker so a domain paid for at a storefront is registered now, not at the next 5-minute pass. */
+async function wakeWorker(deps: Deps) {
+  try {
+    await deps.boss.send(DOMAIN_SALES_QUEUE, {});
+  } catch {
+    // The 5-minute pass registers it.
+  }
+}
+
+/** Whether a storefront may take the payment for domains itself: a reseller's storefront, or one listed as a shop. */
+async function maySellAtStorefront(deps: Deps, config: DomainSalesConfig, productId: string): Promise<boolean> {
+  if (config.shopProducts.includes(productId)) return true;
+  const { rows } = await deps.pool.query<{ reseller_id: string | null }>('SELECT reseller_id FROM products WHERE id = $1', [productId]);
+  return !!rows[0]?.reseller_id;
+}
+
 /**
  * Orders a domain for a store: confirms it is available at a normal price, holds the name, and sends the buyer a
- * Stripe invoice. Registration happens once it is paid (processDomainSales).
+ * Stripe invoice. Registration happens once it is paid (processDomainSales). With `paid`, the storefront has already
+ * taken the payment at its own checkout: no invoice is sent and the domain is registered straight away. A reseller's
+ * storefront then pays for it on its monthly bill.
  */
-export async function buyDomain(deps: Deps, tenant: { id: string; product_id: string }, domainName: string, contactInput: unknown): Promise<BoughtDomain> {
+export async function buyDomain(
+  deps: Deps,
+  tenant: { id: string; product_id: string },
+  domainName: string,
+  contactInput: unknown,
+  paid?: PaidAtStorefront,
+): Promise<BoughtDomain> {
   const config = salesOf(deps);
   const domain = normalizeDomain(domainName);
+  if (paid) {
+    const reference = paid.reference.trim();
+    if (!reference || reference.length > 200) throw badRequest('reference must be the shop order, at most 200 characters');
+    paid = { reference };
+    const { rows: earlier } = await deps.pool.query('SELECT * FROM bought_domains WHERE product_id = $1 AND reference = $2', [tenant.product_id, reference]);
+    if (earlier[0]) {
+      if (earlier[0].domain_name !== domain || earlier[0].tenant_id !== tenant.id) throw conflict(`The order ${reference} already bought ${earlier[0].domain_name}`);
+      return toBought(earlier[0]);
+    }
+    if (!(await maySellAtStorefront(deps, config, tenant.product_id))) throw new HttpError(403, 'This storefront does not take payment for domains itself; buy without a reference to get an invoice');
+  }
   const contact = parseContact(contactInput);
   if (await domainInUse(deps.pool, domain, deps.config.platformDomain, deps.config.brandDomain)) throw conflict(`${domain} is already in use on this platform`);
   const [result] = await config.registrar.check([domain]);
@@ -330,14 +383,41 @@ export async function buyDomain(deps: Deps, tenant: { id: string; product_id: st
 
   let row: Record<string, any>;
   try {
-    row = (await deps.pool.query(
-      `INSERT INTO bought_domains (product_id, tenant_id, domain_name, status, cost_cents, price_cents, renewal_cost_cents, renewal_price_cents, contact)
-       VALUES ($1, $2, $3, 'awaiting_payment', $4, $5, $6, $7, $8) RETURNING *`,
-      [tenant.product_id, tenant.id, domain, result!.costCents, o.priceCents, result!.renewalCostCents ?? result!.costCents, o.renewalPriceCents, JSON.stringify(contact)],
-    )).rows[0]!;
+    row = await withTransaction(deps.pool, async (client) => {
+      const made = (await client.query(
+        `INSERT INTO bought_domains (product_id, tenant_id, domain_name, status, cost_cents, price_cents, renewal_cost_cents, renewal_price_cents, contact, paid_by, reference)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        [
+          tenant.product_id,
+          tenant.id,
+          domain,
+          paid ? 'registering' : 'awaiting_payment',
+          result!.costCents,
+          o.priceCents,
+          result!.renewalCostCents ?? result!.costCents,
+          o.renewalPriceCents,
+          JSON.stringify(contact),
+          paid ? 'storefront' : 'invoice',
+          paid?.reference ?? null,
+        ],
+      )).rows[0]!;
+      if (paid) {
+        await client.query("INSERT INTO bought_domain_charges (bought_domain_id, product_id, kind, amount_cents, reference) VALUES ($1, $2, 'registration', $3, $4)", [
+          made.id,
+          tenant.product_id,
+          o.priceCents,
+          paid.reference,
+        ]);
+      }
+      return made;
+    });
   } catch (err) {
     if ((err as { code?: string }).code === '23505') throw conflict(`${domain} is already being bought`);
     throw err;
+  }
+  if (paid) {
+    await wakeWorker(deps);
+    return toBought(row);
   }
 
   try {
@@ -390,8 +470,45 @@ async function activeDomain(pool: Pool, tenantId: string, domainName: string) {
 /** Turns renewal on or off. Off: the domain expires at the end of its year unless it is moved to another registrar. */
 export async function setAutoRenew(deps: Deps, tenantId: string, domainName: string, autoRenew: boolean): Promise<BoughtDomain> {
   const row = await activeDomain(deps.pool, tenantId, domainName);
+  if (row.paid_by === 'storefront') throw badRequest(`${row.domain_name} renews with its subscription at the shop; cancel it there to stop renewing`);
   const { rows } = await deps.pool.query('UPDATE bought_domains SET auto_renew = $2, date_updated = now() WHERE id = $1 RETURNING *', [row.id, autoRenew]);
   return toBought(rows[0]);
+}
+
+/**
+ * Renews a domain paid for at a storefront, once the shop has taken the renewal payment (its subscription renewed).
+ * `reference` is the renewal order: a repeat renews nothing more. Answers the domain with its new expiry date.
+ */
+export async function renewAtStorefront(deps: Deps, tenantId: string, domainName: string, reference: string): Promise<BoughtDomain> {
+  const config = salesOf(deps);
+  const ref = reference.trim();
+  if (!ref || ref.length > 200) throw badRequest('reference must be the shop order, at most 200 characters');
+  const domain = normalizeDomain(domainName);
+  const { rows } = await deps.pool.query("SELECT * FROM bought_domains WHERE tenant_id = $1 AND domain_name = $2 AND status IN ('active', 'expired') ORDER BY date_created DESC LIMIT 1", [
+    tenantId,
+    domain,
+  ]);
+  const row = rows[0];
+  if (!row) throw badRequest(`${domain} is not a domain bought for this store`);
+  if (row.paid_by !== 'storefront') throw badRequest(`${domain} is renewed by its own invoice, not at the storefront`);
+  // Held for the whole renewal, so a repeat racing the first waits for it and then finds its charge.
+  return withTransaction(deps.pool, async (client) => {
+    await client.query('SELECT id FROM bought_domains WHERE id = $1 FOR UPDATE', [row.id]);
+    const { rows: done } = await client.query('SELECT 1 FROM bought_domain_charges WHERE bought_domain_id = $1 AND reference = $2', [row.id, ref]);
+    if (!done[0]) {
+      const renewed = await config.registrar.renew(domain);
+      const base = row.expires_at ? new Date(row.expires_at).getTime() : Date.now();
+      const next = renewed.expiresAt ?? new Date(base + 365 * 86400_000).toISOString();
+      await client.query("UPDATE bought_domains SET status = 'active', expires_at = $2, error = NULL, date_updated = now() WHERE id = $1", [row.id, next]);
+      await client.query("INSERT INTO bought_domain_charges (bought_domain_id, product_id, kind, amount_cents, reference) VALUES ($1, $2, 'renewal', $3, $4)", [
+        row.id,
+        row.product_id,
+        row.renewal_price_cents,
+        ref,
+      ]);
+    }
+    return toBought((await client.query('SELECT * FROM bought_domains WHERE id = $1', [row.id])).rows[0]);
+  });
 }
 
 /** The code that moves the domain to another registrar: the owner can always take it with them. */
@@ -435,8 +552,11 @@ async function register(work: DomainSalesWork, row: Record<string, any>) {
     const [live] = await config.registrar.check([domain]);
     if (!live?.purchasable || live.premium || live.costCents === null || live.costCents > row.cost_cents) {
       const why = !live?.purchasable ? 'it was taken before the payment came in' : 'its price went up at the registrar';
-      await setStatus(pool, row.id, 'failed', { error: `Paid, but ${domain} could not be registered: ${why}. Refund the invoice.` });
-      work.log?.error(`domain ${domain} (${row.id}): paid but not registered: ${why}; refund invoice ${row.stripe_invoice_id}`);
+      const refund = row.paid_by === 'storefront' ? `Refund the shop order ${row.reference}` : 'Refund the invoice';
+      await setStatus(pool, row.id, 'failed', { error: `Paid, but ${domain} could not be registered: ${why}. ${refund}.` });
+      // Nothing is owed for a domain that was never registered.
+      await pool.query("DELETE FROM bought_domain_charges WHERE bought_domain_id = $1 AND kind = 'registration'", [row.id]);
+      work.log?.error(`domain ${domain} (${row.id}): paid but not registered: ${why}; ${refund.toLowerCase()} ${row.stripe_invoice_id ?? ''}`.trim());
       return;
     }
     registered = await config.registrar.register(domain, live.costCents, row.contact as Contact);
@@ -481,7 +601,7 @@ export async function processDomainSales(work: DomainSalesWork): Promise<void> {
 
   // Renewals: invoice those expiring within RENEW_DAYS, renew those whose invoice is paid.
   const soon = new Date(now.getTime() + RENEW_DAYS * 86400_000);
-  const { rows: due } = await pool.query("SELECT * FROM bought_domains WHERE status = 'active' AND auto_renew AND expires_at IS NOT NULL AND (expires_at < $1 OR renewal_invoice_id IS NOT NULL)", [soon]);
+  const { rows: due } = await pool.query("SELECT * FROM bought_domains WHERE status = 'active' AND paid_by = 'invoice' AND auto_renew AND expires_at IS NOT NULL AND (expires_at < $1 OR renewal_invoice_id IS NOT NULL)", [soon]);
   for (const row of due) {
     try {
       if (!row.renewal_invoice_id) {
