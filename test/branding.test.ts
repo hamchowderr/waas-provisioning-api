@@ -217,6 +217,7 @@ describe('demo page zips (public)', () => {
     const res = await app.request('/branding/demo-files/not-a-zip.zip');
     expect(res.status).toBe(404);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
   });
 });
 
