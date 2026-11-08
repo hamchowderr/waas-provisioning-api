@@ -78,7 +78,8 @@ function curlTransfer(string $url, string $file, bool $upload): void
 {
     $fh = fopen($file, $upload ? 'rb' : 'wb');
     $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_FAILONERROR => true, CURLOPT_FOLLOWLOCATION => !$upload, CURLOPT_CONNECTTIMEOUT => 30]);
+    // A User-Agent: wordpress.org answers 403 to a request without one (PHP's curl sends none).
+    curl_setopt_array($ch, [CURLOPT_FAILONERROR => true, CURLOPT_FOLLOWLOCATION => !$upload, CURLOPT_CONNECTTIMEOUT => 30, CURLOPT_USERAGENT => 'AnyPress-store-agent']);
     if ($upload) {
         curl_setopt_array($ch, [CURLOPT_UPLOAD => true, CURLOPT_INFILE => $fh, CURLOPT_INFILESIZE => filesize($file), CURLOPT_RETURNTRANSFER => true]);
     } else {
