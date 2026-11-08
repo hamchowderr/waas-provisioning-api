@@ -16,7 +16,7 @@ anypress_theme_fetch() { # <dir>: download (or reuse), verify and unpack the the
     mkdir -p "$dest"
     zip="$dest/anypress-$THEME_VERSION.zip"
     if ! { [ -f "$zip" ] && echo "$THEME_SHA256  $zip" | sha256sum -c --quiet 2>/dev/null; }; then
-        curl -sSfL -o "$zip" "https://github.com/$THEME_REPO/releases/download/v$THEME_VERSION/anypress.zip"
+        curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$zip" "https://github.com/$THEME_REPO/releases/download/v$THEME_VERSION/anypress.zip"
         echo "$THEME_SHA256  $zip" | sha256sum -c --quiet || { echo "checksum mismatch: AnyPress theme $THEME_VERSION" >&2; return 1; }
     fi
     rm -rf "$dest/anypress" && unzip -q "$zip" -d "$dest"
