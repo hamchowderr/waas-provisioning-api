@@ -37,8 +37,10 @@ jobs:
           node-version-file: upstream/.nvmrc
       - name: Build the Playground website
         working-directory: upstream
+        # Install scripts are skipped: the only one that matters here (sharp, for the docs site's images) downloads
+        # libvips from a release that no longer answers, and the website build doesn't use it.
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm run build:website
       - name: Keep only what the demos use
         run: playground/prune.sh upstream/dist/packages/playground/wasm-wordpress-net
