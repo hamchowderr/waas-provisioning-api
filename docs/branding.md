@@ -60,3 +60,5 @@ The dashboard's `/demo` page opens the AnyPress theme's demo websites on WordPre
 
 `GET /branding/demo/{id}` (public) gives the page that look: `{"name": "…", "brand": {…} | null, "shopUrl": "…" | null}`, or 404 for an id that is neither. `name` is the brand's name, else the storefront's or reseller's own. `shopUrl` is the brand's `shopUrl` (a storefront's empty one comes from its reseller), else the storefront's ready-made storefront address, else the reseller's `brandUrl`; with none, the page leaves the button out.
 
+`GET /branding/demo-files/anypress-theme-v{version}.zip` and `GET /branding/demo-files/anypress-blocks-v{version}.zip` (public) hand Playground the AnyPress theme and AnyPress Blocks release zips the demos install, readable from any site (GitHub's release downloads are not). Any other name is a 404.
+
