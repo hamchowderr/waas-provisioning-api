@@ -1365,6 +1365,135 @@ paths:
           description: Forbidden
       x-phase: 1
       operationId: checkDomainAvailability
+  /v1/tenants/domains/search:
+    get:
+      tags: [TenantDomain]
+      operationId: searchDomainsToBuy
+      summary: Find domains to buy
+      description: >-
+        Names a store can buy, with the price of the first year and of each later year (cents, USD). An exact
+        name (with a dot, such as mybakery.com) is checked live; a keyword gets suggestions across the endings
+        sold. Names that are taken, premium or end in an ending that isn't sold come back with available false
+        and a reason. 503 when buying domains is not set up on the server. See docs/domains.md.
+      parameters:
+      - { name: query, in: query, required: true, description: 'A keyword (mybakery) or an exact domain (mybakery.com)', schema: { type: string } }
+      - { name: productId, in: query, description: 'Reseller (partner) keys only: the product to act on.', schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The names found, available ones first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results: { type: array, items: { $ref: '#/components/schemas/DomainOffer' } }
+        '400': { description: The query is missing or not a name, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '401': { description: Unauthorized }
+        '503': { description: Buying domains is not set up on this server, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+  /v1/tenants/domains/buy:
+    post:
+      tags: [TenantDomain]
+      operationId: buyDomain
+      summary: Buy a domain for the store
+      description: >-
+        Checks the domain is available at a normal price, holds it and sends the buyer (contact.email) a Stripe
+        invoice to pay within 2 days. Answers at once with status awaiting_payment and payUrl, the invoice page.
+        Once it is paid (checked every 5 minutes) the domain is registered for one year in the contact's name with
+        WHOIS privacy on, its DNS is pointed at the store, and it becomes the store's main address (www too).
+        409 when the domain is taken, premium, not sold here or already being bought. See docs/domains.md.
+      parameters:
+      - { name: tenantId, in: query, description: The Id of the Tenant (required if externalId is omitted), schema: { type: string, format: uuid } }
+      - { name: externalId, in: query, description: The Id of the Tenant (required if tenantId is omitted), schema: { type: string } }
+      - { name: productId, in: query, description: 'Reseller (partner) keys only: the product to act on.', schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BuyDomainParams' }
+      responses:
+        '200':
+          description: The order, waiting for its invoice to be paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BoughtDomain' }
+        '400': { description: The request is not valid, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '401': { description: Unauthorized }
+        '409': { description: The domain can't be bought, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '502': { description: The invoice could not be made, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '503': { description: Buying domains is not set up on this server, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+  /v1/tenants/domains/bought:
+    get:
+      tags: [TenantDomain]
+      operationId: listBoughtDomains
+      summary: Domains bought for the store
+      description: Every domain ordered for the store, newest first, with its status, prices, expiry date and any invoice to pay.
+      parameters:
+      - { name: tenantId, in: query, description: The Id of the Tenant (required if externalId is omitted), schema: { type: string, format: uuid } }
+      - { name: externalId, in: query, description: The Id of the Tenant (required if tenantId is omitted), schema: { type: string } }
+      - { name: productId, in: query, description: 'Reseller (partner) keys only: the product to act on.', schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The store's bought domains
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domains]
+                properties:
+                  domains: { type: array, items: { $ref: '#/components/schemas/BoughtDomain' } }
+        '400': { description: The tenant was not found, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '401': { description: Unauthorized }
+  /v1/tenants/domains/bought/auto-renew:
+    put:
+      tags: [TenantDomain]
+      operationId: setBoughtDomainAutoRenew
+      summary: Turn a bought domain's renewal on or off
+      description: >-
+        On (the default): 30 days before the domain expires the buyer gets a renewal invoice, charged to their card
+        when one is on file, and the domain is renewed once it is paid. Off: the domain expires at the end of its year.
+      parameters:
+      - { name: tenantId, in: query, description: The Id of the Tenant (required if externalId is omitted), schema: { type: string, format: uuid } }
+      - { name: externalId, in: query, description: The Id of the Tenant (required if tenantId is omitted), schema: { type: string } }
+      - { name: productId, in: query, description: 'Reseller (partner) keys only: the product to act on.', schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetDomainAutoRenewParams' }
+      responses:
+        '200':
+          description: The domain
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BoughtDomain' }
+        '400': { description: Not a domain bought for this store, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '401': { description: Unauthorized }
+  /v1/tenants/domains/bought/transfer-code:
+    get:
+      tags: [TenantDomain]
+      operationId: getBoughtDomainTransferCode
+      summary: The code that moves a bought domain to another registrar
+      description: The transfer (EPP) code of an active bought domain, so its owner can always take it elsewhere.
+      parameters:
+      - { name: tenantId, in: query, description: The Id of the Tenant (required if externalId is omitted), schema: { type: string, format: uuid } }
+      - { name: externalId, in: query, description: The Id of the Tenant (required if tenantId is omitted), schema: { type: string } }
+      - { name: domainName, in: query, required: true, schema: { type: string } }
+      - { name: productId, in: query, description: 'Reseller (partner) keys only: the product to act on.', schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The transfer code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domainName, authCode]
+                properties:
+                  domainName: { type: string }
+                  authCode: { type: string }
+        '400': { description: Not a domain bought for this store, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
+        '401': { description: Unauthorized }
+        '503': { description: Buying domains is not set up on this server, content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionResult' } } } }
   /v1/versions:
     get:
       tags:
@@ -3427,6 +3556,66 @@ components:
           type: boolean
           description: Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UseCustomUpload is true.
       additionalProperties: false
+    DomainOffer:
+      type: object
+      description: A domain name that can be bought, or why it can't. Prices are in cents (USD) and include the platform's markup.
+      required: [domainName, available, priceCents, renewalPriceCents, reason]
+      properties:
+        domainName: { type: string, example: mybakery.com }
+        available: { type: boolean }
+        priceCents: { type: integer, nullable: true, description: The first year's price; null when not available }
+        renewalPriceCents: { type: integer, nullable: true, description: Each later year's price; null when not available }
+        reason: { type: string, nullable: true, description: 'Why it can''t be bought: taken, premium, or an ending not sold here' }
+    BuyDomainParams:
+      type: object
+      required: [domainName, contact]
+      properties:
+        domainName: { type: string, example: mybakery.com }
+        contact: { $ref: '#/components/schemas/DomainContact' }
+    DomainContact:
+      type: object
+      description: The person or business the domain is registered to (its owner). The registry may email them to confirm the address.
+      required: [firstName, lastName, address1, city, state, zip, country, email, phone]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        companyName: { type: string }
+        address1: { type: string }
+        address2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        zip: { type: string }
+        country: { type: string, description: Two-letter country code, example: US }
+        email: { type: string, format: email }
+        phone: { type: string, description: '+<country code>.<number>', example: '+1.5555555555' }
+    SetDomainAutoRenewParams:
+      type: object
+      required: [domainName, autoRenew]
+      properties:
+        domainName: { type: string }
+        autoRenew: { type: boolean }
+    BoughtDomain:
+      type: object
+      required: [id, tenantId, domainName, status, priceCents, renewalPriceCents, payUrl, autoRenew, renewalPayUrl, expiresAt, error, dateCreated]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid, nullable: true }
+        domainName: { type: string }
+        status:
+          type: string
+          enum: [awaiting_payment, registering, active, cancelled, failed, expired]
+          description: >-
+            awaiting_payment: the invoice isn't paid yet. registering: paid, being registered. active: registered and
+            pointed at the store. cancelled: the invoice wasn't paid. failed: paid but not registered (refunded by the
+            platform). expired: not renewed.
+        priceCents: { type: integer }
+        renewalPriceCents: { type: integer }
+        payUrl: { type: string, nullable: true, description: The invoice page to pay while the order waits for payment }
+        autoRenew: { type: boolean }
+        renewalPayUrl: { type: string, nullable: true, description: The renewal invoice page, while one is open }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+        dateCreated: { type: string, format: date-time }
     ExceptionResult:
       type: object
       properties:

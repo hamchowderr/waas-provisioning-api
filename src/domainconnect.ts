@@ -59,7 +59,7 @@ export interface DomainConnectNet {
 }
 
 // The settings host and urlAPI come from the domain's own DNS, so their fetches refuse private addresses.
-const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, resolveNs, fetch: publicFetch };
+export const defaultNet: DomainConnectNet = { resolveTxt, resolve4, resolve6, resolveNs, fetch: publicFetch };
 
 /** The zone a name sits in at a Domain Connect DNS host, and its settings there; null when none. */
 async function discover(name: string, net: DomainConnectNet): Promise<{ zone: string; host: string; settings: Settings } | null> {
@@ -108,6 +108,17 @@ export async function domainConnectLink(
   let query = params.toString();
   if (config.privateKey) query += `&sig=${encodeURIComponent(sign(query, config.privateKey))}&key=${encodeURIComponent(config.keyHost)}`;
   return { dnsProvider, supported: true, url: `${settings.urlSyncUX.replace(/\/$/, '')}${template}/apply?${query}` };
+}
+
+/**
+ * The stores' server addresses (IPv4, and IPv6 when there is one): where custom domains point. The
+ * wildcard (www.<storesDomain>) tells us; DOMAIN_CONNECT_IPV6 stands in for a missing AAAA record.
+ */
+export async function storeAddresses(storesDomain: string, net: DomainConnectNet = defaultNet, fallbackIpv6?: string): Promise<{ ip: string; ipv6?: string }> {
+  const [ip] = await net.resolve4(`www.${storesDomain}`).catch(() => [] as string[]);
+  if (!ip) throw badRequest(`The address of ${storesDomain} could not be looked up`);
+  const [ipv6 = fallbackIpv6] = await net.resolve6(`www.${storesDomain}`).catch(() => [] as string[]);
+  return ipv6 ? { ip, ipv6 } : { ip };
 }
 
 /**

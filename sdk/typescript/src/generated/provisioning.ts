@@ -464,6 +464,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/domains/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find domains to buy
+         * @description Names a store can buy, with the price of the first year and of each later year (cents, USD). An exact name (with a dot, such as mybakery.com) is checked live; a keyword gets suggestions across the endings sold. Names that are taken, premium or end in an ending that isn't sold come back with available false and a reason. 503 when buying domains is not set up on the server. See docs/domains.md.
+         */
+        get: operations["searchDomainsToBuy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/domains/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buy a domain for the store
+         * @description Checks the domain is available at a normal price, holds it and sends the buyer (contact.email) a Stripe invoice to pay within 2 days. Answers at once with status awaiting_payment and payUrl, the invoice page. Once it is paid (checked every 5 minutes) the domain is registered for one year in the contact's name with WHOIS privacy on, its DNS is pointed at the store, and it becomes the store's main address (www too). 409 when the domain is taken, premium, not sold here or already being bought. See docs/domains.md.
+         */
+        post: operations["buyDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/domains/bought": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Domains bought for the store
+         * @description Every domain ordered for the store, newest first, with its status, prices, expiry date and any invoice to pay.
+         */
+        get: operations["listBoughtDomains"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/domains/bought/auto-renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn a bought domain's renewal on or off
+         * @description On (the default): 30 days before the domain expires the buyer gets a renewal invoice, charged to their card when one is on file, and the domain is renewed once it is paid. Off: the domain expires at the end of its year.
+         */
+        put: operations["setBoughtDomainAutoRenew"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/domains/bought/transfer-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The code that moves a bought domain to another registrar
+         * @description The transfer (EPP) code of an active bought domain, so its owner can always take it elsewhere.
+         */
+        get: operations["getBoughtDomainTransferCode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/versions": {
         parameters: {
             query?: never;
@@ -1570,6 +1670,74 @@ export interface components {
             useCustomUpload?: boolean;
             /** @description Whether you want to upload a snapshot as a ZIP file. This flag can only be used when UseCustomUpload is true. */
             asZip?: boolean;
+        };
+        /** @description A domain name that can be bought, or why it can't. Prices are in cents (USD) and include the platform's markup. */
+        DomainOffer: {
+            /** @example mybakery.com */
+            domainName: string;
+            available: boolean;
+            /** @description The first year's price; null when not available */
+            priceCents: number | null;
+            /** @description Each later year's price; null when not available */
+            renewalPriceCents: number | null;
+            /** @description Why it can't be bought: taken, premium, or an ending not sold here */
+            reason: string | null;
+        };
+        BuyDomainParams: {
+            /** @example mybakery.com */
+            domainName: string;
+            contact: components["schemas"]["DomainContact"];
+        };
+        /** @description The person or business the domain is registered to (its owner). The registry may email them to confirm the address. */
+        DomainContact: {
+            firstName: string;
+            lastName: string;
+            companyName?: string;
+            address1: string;
+            address2?: string;
+            city: string;
+            state: string;
+            zip: string;
+            /**
+             * @description Two-letter country code
+             * @example US
+             */
+            country: string;
+            /** Format: email */
+            email: string;
+            /**
+             * @description +<country code>.<number>
+             * @example +1.5555555555
+             */
+            phone: string;
+        };
+        SetDomainAutoRenewParams: {
+            domainName: string;
+            autoRenew: boolean;
+        };
+        BoughtDomain: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenantId: string | null;
+            domainName: string;
+            /**
+             * @description awaiting_payment: the invoice isn't paid yet. registering: paid, being registered. active: registered and pointed at the store. cancelled: the invoice wasn't paid. failed: paid but not registered (refunded by the platform). expired: not renewed.
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "registering" | "active" | "cancelled" | "failed" | "expired";
+            priceCents: number;
+            renewalPriceCents: number;
+            /** @description The invoice page to pay while the order waits for payment */
+            payUrl: string | null;
+            autoRenew: boolean;
+            /** @description The renewal invoice page */
+            renewalPayUrl: string | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            error: string | null;
+            /** Format: date-time */
+            dateCreated: string;
         };
         ExceptionResult: {
             /**
@@ -3687,6 +3855,280 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    searchDomainsToBuy: {
+        parameters: {
+            query: {
+                /** @description A keyword (mybakery) or an exact domain (mybakery.com) */
+                query: string;
+                /** @description Reseller (partner) keys only: the product to act on. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The names found, available ones first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        results: components["schemas"]["DomainOffer"][];
+                    };
+                };
+            };
+            /** @description The query is missing or not a name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Buying domains is not set up on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    buyDomain: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /** @description The Id of the Tenant (required if tenantId is omitted) */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyDomainParams"];
+            };
+        };
+        responses: {
+            /** @description The order, waiting for its invoice to be paid */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoughtDomain"];
+                };
+            };
+            /** @description The request is not valid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The domain can't be bought */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The invoice could not be made */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Buying domains is not set up on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    listBoughtDomains: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /** @description The Id of the Tenant (required if tenantId is omitted) */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The store's bought domains */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        domains: components["schemas"]["BoughtDomain"][];
+                    };
+                };
+            };
+            /** @description The tenant was not found */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setBoughtDomainAutoRenew: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /** @description The Id of the Tenant (required if tenantId is omitted) */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDomainAutoRenewParams"];
+            };
+        };
+        responses: {
+            /** @description The domain */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoughtDomain"];
+                };
+            };
+            /** @description Not a domain bought for this store */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getBoughtDomainTransferCode: {
+        parameters: {
+            query: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /** @description The Id of the Tenant (required if tenantId is omitted) */
+                externalId?: string;
+                domainName: string;
+                /** @description Reseller (partner) keys only: the product to act on. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The transfer code */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        domainName: string;
+                        authCode: string;
+                    };
+                };
+            };
+            /** @description Not a domain bought for this store */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Buying domains is not set up on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

@@ -32,6 +32,7 @@ import { baseSnapshotService } from './basesnapshots.ts';
 import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { websiteSetup } from '../domainconnect.ts';
+import { buyDomain, listBoughtDomains, searchDomains, setAutoRenew, transferCode } from '../domainsales.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
@@ -783,6 +784,45 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     const domainName = c.req.query('domainName');
     if (!domainName?.trim()) throw badRequest('domainName is required');
     return c.json(await websiteSetup(pool, config, tenant.id, domainName, deps.domainConnectNet));
+  });
+
+  // Buying a domain for the store (src/domainsales.ts, docs/domains.md), as the storefront's /v1/tenants/domains/* calls do.
+  async function salesTenant(c: Context) {
+    const id = c.req.param('id');
+    if (!id || !isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query('SELECT id, product_id, external_id, status FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)', [id, scopedProduct(c)]);
+    if (!rows[0]) throw notFound(`Tenant ${id} not found`);
+    return rows[0];
+  }
+
+  app.get('/tenants/:id/domains/search', async (c) => {
+    await salesTenant(c);
+    return c.json({ results: await searchDomains(deps, c.req.query('query') ?? '') });
+  });
+
+  app.post('/tenants/:id/domains/buy', async (c) => {
+    const tenant = await salesTenant(c);
+    assertChangeable(tenant);
+    const body = (await readJson(c)) as { domainName?: unknown; contact?: unknown };
+    if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
+    return c.json(await buyDomain(deps, tenant, body.domainName, body.contact));
+  });
+
+  app.get('/tenants/:id/domains/bought', async (c) => {
+    const tenant = await salesTenant(c);
+    return c.json({ domains: await listBoughtDomains(pool, tenant.id) });
+  });
+
+  app.put('/tenants/:id/domains/bought/auto-renew', async (c) => {
+    const tenant = await salesTenant(c);
+    const body = (await readJson(c)) as { domainName?: unknown; autoRenew?: unknown };
+    if (typeof body?.domainName !== 'string' || typeof body.autoRenew !== 'boolean') throw badRequest('domainName and autoRenew (true or false) are required');
+    return c.json(await setAutoRenew(deps, tenant.id, body.domainName, body.autoRenew));
+  });
+
+  app.get('/tenants/:id/domains/bought/transfer-code', async (c) => {
+    const tenant = await salesTenant(c);
+    return c.json(await transferCode(deps, tenant.id, c.req.query('domainName') ?? ''));
   });
 
   app.delete('/tenants/:id/mail-domain', async (c) => {

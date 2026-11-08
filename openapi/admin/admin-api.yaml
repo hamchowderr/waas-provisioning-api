@@ -1285,6 +1285,109 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domains/search:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminSearchDomainsToBuy
+      summary: Find domains to buy for the store
+      description: As GET /v1/tenants/domains/search. See docs/domains.md.
+      parameters:
+        - { name: query, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The names found, available ones first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results: { type: array, items: { $ref: '../waas-provisioning-api.yaml#/components/schemas/DomainOffer' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domains/buy:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminBuyDomain
+      summary: Buy a domain for the store
+      description: As POST /v1/tenants/domains/buy. The buyer gets a Stripe invoice; the domain is registered and made the store's main address once it is paid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../waas-provisioning-api.yaml#/components/schemas/BuyDomainParams' }
+      responses:
+        '200':
+          description: The order, waiting for its invoice to be paid
+          content:
+            application/json:
+              schema: { $ref: '../waas-provisioning-api.yaml#/components/schemas/BoughtDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domains/bought:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminListBoughtDomains
+      summary: Domains bought for the store
+      responses:
+        '200':
+          description: The store's bought domains, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domains]
+                properties:
+                  domains: { type: array, items: { $ref: '../waas-provisioning-api.yaml#/components/schemas/BoughtDomain' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domains/bought/auto-renew:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: adminSetBoughtDomainAutoRenew
+      summary: Turn a bought domain's renewal on or off
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../waas-provisioning-api.yaml#/components/schemas/SetDomainAutoRenewParams' }
+      responses:
+        '200':
+          description: The domain
+          content:
+            application/json:
+              schema: { $ref: '../waas-provisioning-api.yaml#/components/schemas/BoughtDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/domains/bought/transfer-code:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetBoughtDomainTransferCode
+      summary: The code that moves a bought domain to another registrar
+      parameters:
+        - { name: domainName, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The transfer code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domainName, authCode]
+                properties:
+                  domainName: { type: string }
+                  authCode: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}/imports:
     post:
       operationId: adminCreateImport
