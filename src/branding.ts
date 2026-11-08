@@ -373,7 +373,8 @@ export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
   // GitHub's release downloads don't let other sites read them, so Playground's site gets them here.
   app.get('/demo-files/:file', async (c) => {
     const zip = await demoZip(c.req.param('file'));
-    if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*' });
+    // Not kept by any cache: a release published later, or a download that failed once, must work on the next try.
+    if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
     return c.body(new Uint8Array(zip), 200, {
       'Content-Type': 'application/zip',
       'Access-Control-Allow-Origin': '*',
