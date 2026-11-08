@@ -8,8 +8,8 @@
 #
 # build.sh sources this file for THEME_VERSION and anypress_theme_fetch.
 THEME_REPO=hamchowderr/anypress-theme
-THEME_VERSION=${THEME_VERSION:-0.14.0}
-THEME_SHA256=${THEME_SHA256:-a7a701ce790bf19b6b2f7edc27dbfd5577589c0142be40de955eb1aaab5ac270}
+THEME_VERSION=${THEME_VERSION:-0.19.0}
+THEME_SHA256=${THEME_SHA256:-13caf442f2f22f58f5d3bb3346eeb730c7da4a5a6189556f0672047bba1aea25}
 
 # Downloads <url> to <file>. A GitHub release link that keeps failing (github.com answers 504 at times) is fetched
 # through GitHub's API instead, which serves the same file; GITHUB_TOKEN is sent there when set.
