@@ -3700,7 +3700,7 @@ components:
         zip: { type: string }
         country: { type: string, description: Two-letter country code, example: US }
         email: { type: string, format: email }
-        phone: { type: string, description: '+<country code>.<number>', example: '+1.5555555555' }
+        phone: { type: string, description: 'The country code and number, such as +15555555555. Spaces, dots, dashes and brackets are ignored.', example: '+15555555555' }
     SetDomainAutoRenewParams:
       type: object
       required: [domainName, autoRenew]

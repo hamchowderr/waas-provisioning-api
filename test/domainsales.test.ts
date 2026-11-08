@@ -165,7 +165,9 @@ describe('domain sales', () => {
   });
 
   it('checks the contact the domain is registered to', () => {
-    expect(parseContact(CONTACT)).toMatchObject({ country: 'US', email: 'ada@example.com' });
+    expect(parseContact(CONTACT)).toMatchObject({ country: 'US', email: 'ada@example.com', phone: '+15125550100' });
+    // Name.com only takes +<country code><number>, so the usual ways of writing a number are tidied first.
+    expect(parseContact({ ...CONTACT, phone: '+1 (512) 555-0100' }).phone).toBe('+15125550100');
     expect(() => parseContact({ ...CONTACT, phone: '512-555-0100' })).toThrow(/phone/);
     expect(() => parseContact({ ...CONTACT, country: 'USA' })).toThrow(/country/);
     expect(() => parseContact({ ...CONTACT, city: undefined })).toThrow(/city/);

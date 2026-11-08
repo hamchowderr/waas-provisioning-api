@@ -1759,8 +1759,8 @@ export interface components {
             /** Format: email */
             email: string;
             /**
-             * @description +<country code>.<number>
-             * @example +1.5555555555
+             * @description The country code and number, such as +15555555555. Spaces, dots, dashes and brackets are ignored.
+             * @example +15555555555
              */
             phone: string;
         };

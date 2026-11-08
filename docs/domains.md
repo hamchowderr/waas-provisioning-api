@@ -13,7 +13,7 @@ Domains are registered at [Name.com](https://www.name.com) through its official 
    each later year's price, in cents (USD), with your markup included. Premium names (with a special registry price)
    and endings you don't sell come back as not available, with the reason.
 2. **Buy.** `POST /v1/tenants/domains/buy?externalId=<store>` with the domain and the owner's contact details (name,
-   address, email, and phone as `+1.5555555555`). The name is held and the owner is emailed a Stripe invoice to pay
+   address, email, and phone with its country code, such as `+15555555555`). The name is held and the owner is emailed a Stripe invoice to pay
    within 2 days. The answer has `status: awaiting_payment` and `payUrl`, the invoice page, to show or link to.
 3. **Registered.** Every 5 minutes the API checks open invoices. Once one is paid, the domain is registered for one
    year in the owner's name with WHOIS privacy on, its A and AAAA records (the domain and `www`) point at the stores,

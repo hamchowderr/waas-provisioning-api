@@ -295,7 +295,9 @@ const toBought = (r: Record<string, any>): BoughtDomain => ({
   dateCreated: new Date(r.date_created).toISOString(),
 });
 
-const PHONE = /^\+\d{1,3}\.\d{4,14}$/;
+// Name.com wants E.164 (+15555555555). People type +1.555 555 5555 or (555) 555-5555 after the country code, so
+// spaces, dots, dashes and brackets are dropped first.
+const PHONE = /^\+[1-9]\d{7,14}$/;
 
 /** Checks a registrant contact; every field the registries need is there. */
 export function parseContact(input: unknown): Contact {
@@ -320,11 +322,11 @@ export function parseContact(input: unknown): Contact {
     zip: text('zip', true, 20)!,
     country: text('country', true, 2)!.toUpperCase(),
     email: text('email')!.toLowerCase(),
-    phone: text('phone', true, 20)!,
+    phone: text('phone', true, 30)!.replace(/[\s.()-]/g, ''),
   };
   if (!/^[A-Z]{2}$/.test(contact.country)) throw badRequest('contact.country must be a two-letter country code, such as US');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact.email)) throw badRequest('contact.email must be an email address');
-  if (!PHONE.test(contact.phone)) throw badRequest('contact.phone must look like +1.5555555555 (country code, a dot, then the number)');
+  if (!PHONE.test(contact.phone)) throw badRequest('contact.phone must start with + and the country code, such as +15555555555');
   return contact;
 }
 
