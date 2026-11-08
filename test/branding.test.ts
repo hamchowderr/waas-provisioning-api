@@ -156,6 +156,44 @@ describe('branding (admin)', () => {
     const other = await (await admin('GET', `/products/${salon}/branding`)).json();
     expect(other.shown).toMatchObject({ name: 'Partner Co', color: '#111111' });
   });
+
+  it('keeps a shop link, refusing anything but http and https', async () => {
+    expect((await admin('PUT', `/products/${salon}/branding`, { shopUrl: 'javascript:alert(1)' })).status).toBe(400);
+    expect((await admin('PUT', `/products/${salon}/branding`, { shopUrl: `https://x.example/${'a'.repeat(500)}` })).status).toBe(400);
+    const set = await (await admin('PUT', `/resellers/${resellerId}/branding`, { shopUrl: 'https://partner.example/buy' })).json();
+    expect(set.shopUrl).toBe('https://partner.example/buy');
+    const view = await (await admin('GET', `/products/${salon}/branding`)).json();
+    expect(view.shopUrl).toBeNull();
+    expect(view.shown.shopUrl).toBe('https://partner.example/buy');
+  });
+});
+
+describe('demo page look (public)', () => {
+  const demo = (id: string) => app.request(`/branding/demo/${id}`);
+
+  it("answers a storefront's look with its reseller's filling the gaps, and where to buy", async () => {
+    const res = await demo(salon);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=60');
+    const body = await res.json();
+    expect(body).toMatchObject({ name: 'Partner Co', shopUrl: 'https://partner.example/buy' });
+    expect(body.brand).toMatchObject({ color: '#111111', supportEmail: 'help@partner.example' });
+    await admin('PUT', `/products/${salon}/branding`, { shopUrl: 'https://salon.example' });
+    expect((await (await demo(salon)).json()).shopUrl).toBe('https://salon.example');
+  });
+
+  it("answers a reseller's own look", async () => {
+    const body = await (await demo(resellerId)).json();
+    expect(body).toMatchObject({ name: 'Partner Co', shopUrl: 'https://partner.example/buy' });
+    expect(body.brand.iconUrl).toMatch(/\/icon\?v=/);
+  });
+
+  it('uses the storefront name when nobody branded it, and 404s for anything else', async () => {
+    const plain = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Plain Sites') RETURNING id")).rows[0]!.id;
+    expect(await (await demo(plain)).json()).toEqual({ name: 'Plain Sites', brand: null, shopUrl: null });
+    expect((await demo('00000000-0000-4000-8000-000000000000')).status).toBe(404);
+    expect((await demo('not-a-uuid')).status).toBe(404);
+  });
 });
 
 describe('branding (signed in)', () => {

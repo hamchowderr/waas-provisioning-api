@@ -2595,8 +2595,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: getImportStatus
+  /branding/demo/{id}:
+    get:
+      tags:
+      - Branding
+      summary: A seller's or reseller's demo page look
+      description: 'The name, look and shop link a branded demo page shows (docs/branding.md, "Demo page"), for a product id (a storefront, whose empty fields come from its reseller) or a reseller id. Public: the page is for customers who have not signed in.'
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: A product id or a reseller id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemoBrand'
+        '404':
+          description: No product or reseller has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getDemoBrand
 components:
   schemas:
+    DemoBrand:
+      type: object
+      required: [name, brand, shopUrl]
+      properties:
+        name:
+          type: string
+          description: The name the page shows, the brand's or else the storefront's or reseller's own
+        brand:
+          type: object
+          nullable: true
+          description: The look set on the Branding page; null when none was set
+          required: [name, color, supportEmail, shopUrl, logoUrl, iconUrl]
+          properties:
+            name: { type: string, nullable: true }
+            color: { type: string, nullable: true, description: 'Main color, #rrggbb' }
+            supportEmail: { type: string, nullable: true }
+            shopUrl: { type: string, nullable: true }
+            logoUrl: { type: string, nullable: true }
+            iconUrl: { type: string, nullable: true }
+        shopUrl:
+          type: string
+          nullable: true
+          description: Where "Start your website" goes, the brand's shop link, else the ready-made storefront's address, else the reseller's link
     AddTenantDomainCommandResult:
       type: object
       properties:
@@ -4388,3 +4440,5 @@ tags:
 - name: BaseSnapshot
   description: Phase 2, reseller feature. Endpoint to BaseSnapshots - _Only available using a Partner API Key_
   x-phase: 2
+- name: Branding
+  description: The public look of a seller's or reseller's branded pages

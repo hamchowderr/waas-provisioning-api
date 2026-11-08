@@ -16,6 +16,7 @@ A storefront nobody branded shows the platform's own look.
 | `name` | Shown in place of the platform's name: the browser tab, the sidebar and the sign-in page. Up to 60 characters. |
 | `color` | Main color, `#rrggbb`. |
 | `supportEmail` | Where the team is told to write for help. |
+| `shopUrl` | Where customers buy: the "Start your website" button on the demo page. An `http` or `https` link, up to 500 characters. |
 | `logoUrl` | The logo, up to 256 KB: PNG, JPEG or WebP. |
 | `iconUrl` | The small icon for the browser tab, up to 64 KB: PNG, JPEG, WebP or `.ico`. |
 
@@ -25,7 +26,7 @@ The image type is read from the file itself, not from what the upload says. SVG 
 
 Platform admin (admin token):
 
-- `GET`, `PUT /admin/products/{productId}/branding` and `/admin/resellers/{id}/branding`. `PUT` takes any of `{"name": "…", "color": "#1d4ed8", "supportEmail": "…"}`; fields left out stay, and `null` or `""` clears one.
+- `GET`, `PUT /admin/products/{productId}/branding` and `/admin/resellers/{id}/branding`. `PUT` takes any of `{"name": "…", "color": "#1d4ed8", "supportEmail": "…", "shopUrl": "https://…"}`; fields left out stay, and `null` or `""` clears one.
 - `PUT`, `DELETE …/branding/logo` and `…/branding/icon`. The image is the request body.
 
 A signed-in owner or admin brands their own storefront the same way under `/account/products/{productId}/branding`; members may look. A reseller's branding is set by the platform admin.
@@ -51,4 +52,11 @@ Once an address is `active`, people sign in there with emailed links (GitHub and
 
 Email to a storefront's team comes in its look too: sign-in links asked for on its own address, and invitations to its team, are sent in its brand's name (its own name when it has an address but no brand name), with a small "Powered by" line for the platform. Invitations are accepted on its own address once that is live. The sending address stays the platform's.
 
-`GET /branding/host/{host}` (public) gives the sign-in page on such an address its look before anyone signs in: `{"productName": "…", "brand": {…} | null}`, or 404 for an address that isn't a live dashboard address.
+`GET /branding/host/{host}` (public) gives the sign-in page on such an address its look before anyone signs in: `{"productId": "…", "productName": "…", "brand": {…} | null}`, or 404 for an address that isn't a live dashboard address.
+
+## Demo page
+
+The dashboard's `/demo` page opens the AnyPress theme's demo websites on WordPress Playground, in the visitor's own browser, so a seller can show a prospect a working site without making a store. On the platform's address it carries the platform's look; at `/demo/{id}`, with a storefront's (product) or reseller's id, and at `/demo` on a storefront's own dashboard address, it carries that brand's name, logo and color, and its "Start your website" button goes to the brand's shop.
+
+`GET /branding/demo/{id}` (public) gives the page that look: `{"name": "…", "brand": {…} | null, "shopUrl": "…" | null}`, or 404 for an id that is neither. `name` is the brand's name, else the storefront's or reseller's own. `shopUrl` is the brand's `shopUrl` (a storefront's empty one comes from its reseller), else the storefront's ready-made storefront address, else the reseller's `brandUrl`; with none, the page leaves the button out.
+

@@ -888,10 +888,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/branding/demo/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A seller's or reseller's demo page look
+         * @description The name, look and shop link a branded demo page shows (docs/branding.md, "Demo page"), for a product id (a storefront, whose empty fields come from its reseller) or a reseller id. Public: the page is for customers who have not signed in.
+         */
+        get: operations["getDemoBrand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        DemoBrand: {
+            /** @description The name the page shows, the brand's or else the storefront's or reseller's own */
+            name: string;
+            /** @description The look set on the Branding page; null when none was set */
+            brand: {
+                name: string | null;
+                /** @description Main color, #rrggbb */
+                color: string | null;
+                supportEmail: string | null;
+                shopUrl: string | null;
+                logoUrl: string | null;
+                iconUrl: string | null;
+            } | null;
+            /** @description Where "Start your website" goes, the brand's shop link, else the ready-made storefront's address, else the reseller's link */
+            shopUrl: string | null;
+        };
         /** @description Response when tenant domain addition was succesfully scheduled */
         AddTenantDomainCommandResult: {
             /**
@@ -4703,6 +4739,38 @@ export interface operations {
                 };
             };
             /** @description The import code is not valid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getDemoBrand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A product id or a reseller id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoBrand"];
+                };
+            };
+            /** @description No product or reseller has this id */
             404: {
                 headers: {
                     [name: string]: unknown;
