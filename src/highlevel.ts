@@ -9,6 +9,7 @@ import { HIGHLEVEL_SITE_TYPE } from './tenants.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import type { Secrets } from './secrets.ts';
+import { siteKeys, verifySiteRequest } from './sitekeys.ts';
 import { checkEndpointUrl, EVENT_TYPES, generateSecret, type WebhookConfig } from './webhooks.ts';
 
 /**
@@ -51,6 +52,9 @@ export function loadHighLevelConfig(env: NodeJS.ProcessEnv): HighLevelConfig | u
 
 /** The API version HighLevel's OAuth and trigger calls are made with. */
 const API_VERSION = '2021-07-28';
+
+/** Where a HighLevel site asks for its sub-account and token, signed with its site key (outside /v1: no API key). */
+export const SITE_LINK_ROUTE = '/apps/site/crm-link';
 
 /** /v1 paths that take the app's headers and need no productId with a partner key. */
 export const APP_PATHS = /^\/v1\/apps(\/|$)/;
@@ -106,7 +110,7 @@ async function saveToken(pool: Pool, secrets: Secrets, answer: TokenAnswer, fall
        expires_at = EXCLUDED.expires_at, date_changed = now()`,
     [userType, companyId, userType === 'Location' ? locationId : null, secrets.encrypt(answer.access_token), answer.refresh_token ? secrets.encrypt(answer.refresh_token) : null, expiresAt],
   );
-  return { userType, companyId, locationId };
+  return { userType, companyId, locationId, expiresAt };
 }
 
 /** The code HighLevel's install sends to the redirect URL, turned into the install's token. */
@@ -117,32 +121,42 @@ export async function exchangeCode(pool: Pool, secrets: Secrets, hl: HighLevelCo
   return saveToken(pool, secrets, answer);
 }
 
+interface Token {
+  token: string;
+  expiresAt: Date;
+}
+
 /** A token of this kind, refreshed when it ends within five minutes. Null when there is none. */
-async function storedToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, userType: 'Company' | 'Location', id: string): Promise<string | null> {
+async function storedToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, userType: 'Company' | 'Location', id: string): Promise<Token | null> {
   const column = userType === 'Company' ? 'company_id' : 'location_id';
   const { rows } = await pool.query(`SELECT * FROM highlevel_tokens WHERE user_type = $1 AND ${column} = $2`, [userType, id]);
   const row = rows[0];
   if (!row) return null;
-  if (row.expires_at.getTime() - Date.now() > 5 * 60_000) return secrets.decrypt(row.access_token);
+  if (row.expires_at.getTime() - Date.now() > 5 * 60_000) return { token: secrets.decrypt(row.access_token), expiresAt: row.expires_at };
   if (!row.refresh_token) return null;
   const refresh = secrets.decrypt(row.refresh_token);
   const answer = await oauthCall(hl, '/oauth/token', (client, options) => client.oauth.refreshToken(refresh, hl.clientId, hl.clientSecret, 'refresh_token', userType, options));
-  await saveToken(pool, secrets, answer, { userType, companyId: row.company_id ?? undefined, locationId: row.location_id ?? undefined });
-  return answer.access_token;
+  const saved = await saveToken(pool, secrets, answer, { userType, companyId: row.company_id ?? undefined, locationId: row.location_id ?? undefined });
+  return { token: answer.access_token, expiresAt: saved.expiresAt };
 }
 
 /**
- * A sub-account token: its own install's, or one made from its agency's install
+ * A sub-account token and when it ends: its own install's, or one made from its agency's install
  * (POST /oauth/locationToken), which is kept for next time. Null when neither was installed.
  */
-export async function locationToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<string | null> {
+export async function locationTokenWithExpiry(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<Token | null> {
   const own = await storedToken(pool, secrets, hl, 'Location', locationId);
   if (own || !companyId) return own;
   const agency = await storedToken(pool, secrets, hl, 'Company', companyId);
   if (!agency) return null;
-  const answer = await oauthCall(hl, '/oauth/locationToken', (client, options) => client.oauth.getLocationAccessToken({ companyId, locationId }, options), agency);
-  await saveToken(pool, secrets, answer, { userType: 'Location', companyId, locationId });
-  return answer.access_token;
+  const answer = await oauthCall(hl, '/oauth/locationToken', (client, options) => client.oauth.getLocationAccessToken({ companyId, locationId }, options), agency.token);
+  const saved = await saveToken(pool, secrets, answer, { userType: 'Location', companyId, locationId });
+  return { token: answer.access_token, expiresAt: saved.expiresAt };
+}
+
+/** A sub-account token (locationTokenWithExpiry), without when it ends. */
+export async function locationToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<string | null> {
+  return (await locationTokenWithExpiry(pool, secrets, hl, locationId, companyId))?.token ?? null;
 }
 
 // --- Trigger deliveries ---
@@ -443,5 +457,43 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
       return page('Something went wrong', 'The install could not be finished. Try installing the app again, or write to support@anypress.io.', 400);
     }
     return page('AnyPress is connected', 'Your workflows can now use AnyPress. You can close this tab.', 200);
+  });
+
+  // A HighLevel site's CRM link (AnyPress Client's HighLevel link): the store, signing with its site key, asks which
+  // sub-account it belongs to and for that sub-account's token, so WP Fusion sends its users there as contacts.
+  // The token is short-lived; the store asks again before it ends. {crm: null} when the site has no sub-account,
+  // or the agency's install gives no token for it (the store then leaves WP Fusion alone).
+  const keyFor = siteKeys(config.secretsKey);
+  app.post(SITE_LINK_ROUTE, async (c) => {
+    const raw = await c.req.text();
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      throw badRequest('The body must be JSON');
+    }
+    const domain = typeof body.site === 'string' ? body.site.toLowerCase() : '';
+    if (!domain) throw badRequest('site is required');
+    const { rows } = await pool.query<{ id: string; status: number; is_suspended: boolean; loc: string | null; company: string | null }>(
+      `SELECT t.id, t.status, t.is_suspended, t.highlevel_location_id AS loc, t.highlevel_company_id AS company
+         FROM tenants t JOIN tenant_domains d ON d.tenant_id = t.id WHERE d.domain_name = $1 LIMIT 1`,
+      [domain],
+    );
+    const tenant = rows[0];
+    if (!tenant || !verifySiteRequest(keyFor(tenant.id), c.req.header('X-AnyPress-Signature'), 'POST', SITE_LINK_ROUTE, raw)) {
+      throw new HttpError(403, 'This request is not signed by that website');
+    }
+    const headers = { 'Cache-Control': 'no-store' };
+    const hl = config.webhooks?.highlevel;
+    if (!hl || !tenant.loc || tenant.is_suspended) return c.json({ crm: null }, 200, headers);
+    let token: Awaited<ReturnType<typeof locationTokenWithExpiry>>;
+    try {
+      token = await locationTokenWithExpiry(pool, secrets, hl, tenant.loc, tenant.company);
+    } catch (err) {
+      console.error(`highlevel: no token for sub-account ${tenant.loc} (site ${tenant.id}): ${(err as Error).message}`);
+      throw new HttpError(502, 'HighLevel gave no token for this sub-account; try again later');
+    }
+    if (!token) return c.json({ crm: null }, 200, headers);
+    return c.json({ crm: 'highlevel', locationId: tenant.loc, accessToken: token.token, expiresAt: token.expiresAt.toISOString() }, 200, headers);
   });
 }
