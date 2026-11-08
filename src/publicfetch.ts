@@ -12,8 +12,16 @@ const MAX_BODY = 256 * 1024;
  * link-local addresses, both as IP literals and as what a name resolves to at connect time. Never follows
  * redirects (a 3xx comes back as is, which callers treat as not ok).
  */
-export const publicFetch: typeof fetch = (input, init) =>
-  new Promise((resolve, reject) => {
+export const publicFetch: typeof fetch = (input, init) => guardedGet(input, init, MAX_BODY);
+
+/** publicFetch with a larger body cap, for a known-large public document (a Shopify shop's products.json). */
+export const publicFetchUpTo =
+  (maxBody: number): typeof fetch =>
+  (input, init) =>
+    guardedGet(input, init, maxBody);
+
+function guardedGet(input: Parameters<typeof fetch>[0], init: RequestInit | undefined, maxBody: number): Promise<Response> {
+  return new Promise((resolve, reject) => {
     let url: URL;
     try {
       url = new URL(input instanceof Request ? input.url : String(input));
@@ -34,7 +42,7 @@ export const publicFetch: typeof fetch = (input, init) =>
       const chunks: Buffer[] = [];
       let size = 0;
       res.on('data', (chunk: Buffer) => {
-        if (size < MAX_BODY) chunks.push(chunk);
+        if (size < maxBody) chunks.push(chunk);
         size += chunk.length;
       });
       res.on('end', () => {
@@ -43,7 +51,7 @@ export const publicFetch: typeof fetch = (input, init) =>
           if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
         }
         const status = res.statusCode ?? 502;
-        const body = status === 204 || status === 304 ? null : Buffer.concat(chunks).subarray(0, MAX_BODY);
+        const body = status === 204 || status === 304 ? null : Buffer.concat(chunks).subarray(0, maxBody);
         resolve(new Response(body, { status, statusText: res.statusMessage, headers }));
       });
       res.on('error', reject);
@@ -51,3 +59,4 @@ export const publicFetch: typeof fetch = (input, init) =>
     req.on('error', reject);
     req.end();
   });
+}

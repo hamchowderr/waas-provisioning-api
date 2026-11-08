@@ -748,6 +748,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A reference and its bundle
+         * @description Added for AnyPress. The reference's `statusCode` (0 Pending, 1 Done, 2 Failed), its `bundle` once Done, or `error` saying why it could not be read.
+         */
+        get: operations["getReference"];
+        put?: never;
+        /**
+         * Read a reference to build a site from
+         * @description Added for AnyPress.
+         *
+         *     Reads a website link, a Shopify shop, a Figma file, a document link or an uploaded document into one bundle: design tokens (colours, fonts, sizes, radius, logo), each page's text and a screenshot, its images, and a Shopify shop's products and collections. Reading takes up to a few minutes: poll `getReference` until `statusCode` leaves Pending (0). Each storefront has a monthly allowance (`getReferenceUsage`); a read that fails is not counted. With someone else's site, take the layout and style, never their text.
+         */
+        post: operations["startReference"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/references/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This month's reference reads
+         * @description Added for AnyPress. How many references this storefront has read this month, its allowance, and whether reading is set up on this server.
+         */
+        get: operations["getReferenceUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/imports/upload": {
         parameters: {
             query?: never;
@@ -912,6 +958,122 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A `url` or a `file`, not both. */
+        ReferenceRequest: {
+            /**
+             * @description A website or Shopify shop, a Figma file or frame link, or a link to a PDF, Word or Excel document
+             * @example https://example.com
+             */
+            url?: string;
+            /** @description An uploaded document (PDF, Word, Excel, OpenDocument, RTF or HTML), up to 10 MB */
+            file?: {
+                /** @example brief.pdf */
+                name: string;
+                /** @example application/pdf */
+                contentType?: string;
+                /** @description The file */
+                data: string;
+            };
+            /**
+             * @description Pages of a website, or frames of a Figma page, to read
+             * @default 5
+             */
+            maxPages?: number;
+        };
+        Reference: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "website" | "figma" | "document";
+            /** @description The link */
+            source: string;
+            /**
+             * @description 0 Pending, 1 Done, 2 Failed
+             * @enum {integer}
+             */
+            statusCode: 0 | 1 | 2;
+            /** @description Why it could not be read */
+            error: string | null;
+            bundle: components["schemas"]["ReferenceBundle"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            finishedAt: string | null;
+        };
+        /** @description What a reference was read into, null until it is Done. Every kind fills the same shape; what a kind can't tell is left empty. */
+        ReferenceBundle: {
+            /** @enum {string} */
+            kind: "website" | "figma" | "document";
+            source: string;
+            title: string | null;
+            design: {
+                /** @description Named colours (primary, secondary, accent, background, text and so on), mapped to the theme's palette when building */
+                colors: {
+                    [key: string]: string;
+                };
+                fonts: {
+                    heading: string | null;
+                    body: string | null;
+                    all: string[];
+                };
+                fontSizes: {
+                    [key: string]: string;
+                };
+                radius: string | null;
+                /** @enum {string|null} */
+                colorScheme: "light" | "dark" | null;
+                logo: string | null;
+            };
+            pages: {
+                /** @description The page's address */
+                url: string;
+                title: string | null;
+                /** @description The page's text as Markdown */
+                text: string;
+                /** @description For a Figma frame, its top-level layers in order with their text */
+                sections: {
+                    name: string;
+                    text: string[];
+                }[];
+                /** @description A picture of the page; the link expires */
+                screenshot: string | null;
+                images: string[];
+            }[];
+            /** @description A Shopify shop's products */
+            products: {
+                title: string;
+                handle: string;
+                description: string;
+                vendor: string | null;
+                type: string | null;
+                tags: string[];
+                price: string | null;
+                compareAtPrice: string | null;
+                images: string[];
+                variants: {
+                    title: string;
+                    sku: string | null;
+                    price: string | null;
+                    compareAtPrice: string | null;
+                    available: boolean;
+                }[];
+            }[];
+            collections: {
+                title: string;
+                handle: string;
+                description: string;
+            }[];
+            /** @description Notes for whoever builds from it, such as links that expire */
+            notes: string[];
+        } | null;
+        ReferenceUsage: {
+            /** @description False until this server can read websites and documents */
+            available: boolean;
+            used: number;
+            limit: number;
+            /** Format: date-time */
+            resetsAt: string;
+        };
         DemoBrand: {
             /** @description The name the page shows, the brand's or else the storefront's or reseller's own */
             name: string;
@@ -4362,6 +4524,151 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getReference: {
+        parameters: {
+            query: {
+                /** @description The reference's id, from `startReference` */
+                id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reference"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No reference with this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    startReference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description The read has started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reference"];
+                };
+            };
+            /** @description Not a link or file that can be read */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description This month's reads are used up */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Reading this kind of reference is not set up on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getReferenceUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceUsage"];
                 };
             };
             /** @description Unauthorized */

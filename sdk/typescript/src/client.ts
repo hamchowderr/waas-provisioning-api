@@ -29,6 +29,8 @@ export type TenantDomain = Schemas['GetTenantDomainsQueryResult'];
 export type Version = Schemas['GetVersionQueryResult'];
 export type Snapshot = Schemas['GetSnapshotQueryResult'];
 export type Template = Schemas['GetBaseSnapshotsQueryResult'];
+export type Reference = Schemas['Reference'];
+export type ReferenceBundle = NonNullable<Schemas['ReferenceBundle']>;
 export type CreateTenantParams = Schemas['CreateTenantParams'];
 export type UpdateTenantParams = Schemas['UpdateTenantParams'];
 export type MailDomain = mailComponents['schemas']['MailDomain'];
@@ -146,6 +148,14 @@ export class WaasClient {
      * answered with the store's status and body. A 4xx from the store is in `status`, not thrown.
      */
     editSite: (ref: TenantRef, request: BodyOf<'editTenantSite'>) => this.#call('editTenantSite', 'POST', '/v1/tenants/site', ref, request),
+  };
+
+  /** References to build a site from: a website, Shopify shop, Figma file or document, read into one bundle. */
+  readonly references = {
+    /** Starts reading a `url` or an uploaded `file`; poll `get` until `statusCode` leaves Pending. */
+    start: (params: BodyOf<'startReference'>) => this.#call('startReference', 'POST', '/v1/references', undefined, params),
+    get: (id: string) => this.#call('getReference', 'GET', '/v1/references', { id }),
+    usage: () => this.#call('getReferenceUsage', 'GET', '/v1/references/usage'),
   };
 
   readonly domains = {
