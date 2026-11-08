@@ -191,7 +191,39 @@ export interface ResellerBill {
   currency: 'usd';
   wholesalePercent: number;
   lines: ResellerBillLine[];
+  /** Domains its storefronts sold at their own checkout this month (src/domainsales.ts), registered or renewed. */
+  domainLines: ResellerDomainLine[];
   totalCents: number;
+}
+
+export interface ResellerDomainLine {
+  productId: string;
+  name: string | null;
+  domainName: string;
+  kind: 'registration' | 'renewal';
+  date: string;
+  amountCents: number;
+}
+
+/** A reseller's domain charges in [from, to), oldest first. */
+async function domainCharges(pool: Pool, resellerId: string, from: Date, to: Date): Promise<ResellerDomainLine[]> {
+  const { rows } = await pool.query(
+    `SELECT c.product_id, p.name, d.domain_name, c.kind, c.date_created, c.amount_cents
+       FROM bought_domain_charges c
+       JOIN products p ON p.id = c.product_id
+       JOIN bought_domains d ON d.id = c.bought_domain_id
+      WHERE p.reseller_id = $1 AND c.date_created >= $2 AND c.date_created < $3
+      ORDER BY c.date_created, d.domain_name`,
+    [resellerId, from, to],
+  );
+  return rows.map((r) => ({
+    productId: r.product_id,
+    name: r.name ?? null,
+    domainName: r.domain_name,
+    kind: r.kind,
+    date: new Date(r.date_created).toISOString(),
+    amountCents: r.amount_cents,
+  }));
 }
 
 /** Resellers with their storefronts and store counts: all of them, or the one with `id`. */
@@ -260,6 +292,7 @@ export async function resellerBill(pool: Pool, reseller: Reseller, month: string
       amountCents: Math.round((r.seconds / monthSeconds) * wholesalePriceCents),
     };
   });
+  const domainLines = await domainCharges(pool, reseller.id, from, to);
   return {
     resellerId: reseller.id,
     resellerName: reseller.name,
@@ -271,7 +304,8 @@ export async function resellerBill(pool: Pool, reseller: Reseller, month: string
     currency: 'usd',
     wholesalePercent: reseller.wholesalePercent,
     lines,
-    totalCents: lines.reduce((sum, line) => sum + line.amountCents, 0),
+    domainLines,
+    totalCents: lines.reduce((sum, line) => sum + line.amountCents, 0) + domainLines.reduce((sum, line) => sum + line.amountCents, 0),
   };
 }
 

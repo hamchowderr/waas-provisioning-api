@@ -1,7 +1,7 @@
 import type { PgBoss } from 'pg-boss';
 import type { Pool } from './db.ts';
 import { HttpError } from './errors.ts';
-import { loadResellers, monthRange, resellerBill, type Reseller, type ResellerBillLine } from './resellers.ts';
+import { loadResellers, monthRange, resellerBill, type Reseller, type ResellerBillLine, type ResellerDomainLine } from './resellers.ts';
 import { Stripe, type InvoiceSender, type StripeInvoice } from './stripe.ts';
 
 /**
@@ -73,6 +73,11 @@ export function lineDescription(line: ResellerBillLine): string {
   const size = line.size[0]!.toUpperCase() + line.size.slice(1);
   const stores = line.stores === 1 ? `1 ${size} store` : `${line.stores} ${size} stores`;
   return `${line.name ?? 'Removed storefront'}: ${stores} (${line.storeDays} store-days) at ${dollars(line.wholesalePriceCents)} a month`;
+}
+
+/** One domain line, in words: "Acme shop: mybakery.com, 1 year (registered 2026-11-08)". */
+export function domainLineDescription(line: ResellerDomainLine): string {
+  return `${line.name ?? 'Removed storefront'}: ${line.domainName}, 1 year (${line.kind === 'renewal' ? 'renewed' : 'registered'} ${line.date.slice(0, 10)})`;
 }
 
 /** A reseller's invoices, newest month first. */
@@ -179,9 +184,12 @@ export async function invoiceReseller(
         customer,
         chargeAutomatically,
         daysUntilDue: config.daysUntilDue,
-        description: `Wholesale bill for ${month}: ${reseller.wholesalePercent}% off list price for each store, for the days it was live.`,
+        description: `Wholesale bill for ${month}: ${reseller.wholesalePercent}% off list price for each store, for the days it was live${bill.domainLines.length ? ', and the domains your storefronts sold' : ''}.`,
         metadata: { reseller_id: reseller.id, month },
-        lines: bill.lines.filter((l) => l.amountCents > 0).map((l) => ({ amountCents: l.amountCents, description: lineDescription(l) })),
+        lines: [
+          ...bill.lines.filter((l) => l.amountCents > 0).map((l) => ({ amountCents: l.amountCents, description: lineDescription(l) })),
+          ...bill.domainLines.filter((l) => l.amountCents > 0).map((l) => ({ amountCents: l.amountCents, description: domainLineDescription(l) })),
+        ],
         idempotencyKey: key,
       },
       async (invoiceId) => {

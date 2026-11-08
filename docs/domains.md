@@ -32,6 +32,27 @@ has the same calls under `/admin/tenants/{id}/domains/...`.
 The registry may email the owner once to confirm their email address. A domain whose address isn't confirmed within
 15 days is paused by the registry until it is.
 
+## Selling Domains at a Storefront
+
+A storefront can also sell domains at its own checkout, at its own price and in its own brand. The shop takes the
+payment, then tells the API:
+
+1. **Quote.** The same search shows what the domain costs the storefront (`priceCents`, `renewalPriceCents`). The shop
+   adds its own margin.
+2. **Paid.** Once the shop's order is paid, `POST /v1/tenants/domains/buy` with the domain, the contact and
+   `reference` (the shop's order). No invoice is sent: the answer is `status: registering`, `paidBy: storefront`, and
+   the domain is registered within a minute, as above. Sending the same `reference` again answers the same domain, so
+   the shop can safely retry.
+3. **Renewed.** The shop sells the domain as a yearly subscription. When a renewal is paid,
+   `POST /v1/tenants/domains/bought/renew` with the domain and the renewal order as `reference` renews it for one more
+   year. The API sends no renewal invoices for these domains; one that isn't renewed expires at the end of its year.
+4. **Failed.** If the name was taken before the order came in, the domain is marked `failed` and the shop should
+   refund the order. Nothing is charged for it.
+
+A reseller's storefronts can do this, and each registration and renewal is on the reseller's monthly bill
+(`domainLines`) at the storefront's price. Storefronts without a reseller need to be listed in `DOMAIN_SHOP_PRODUCTS`;
+the others get invoices as above.
+
 ## Setting It Up
 
 1. Make a [Name.com](https://www.name.com/account/signup) reseller account. Pick a shared username, not Google sign-in.
@@ -44,4 +65,5 @@ The registry may email the owner once to confirm their email address. A domain w
 5. For real sales, set `NAMECOM_TOKEN` and `NAMECOM_SANDBOX=off`.
 
 `DOMAIN_MARKUP_CENTS` (default 500, $5) is added to each year's price. `DOMAIN_TLDS` lists the endings sold
-(default: com, net, org, co, io, shop, store, online, site, biz, info, app, dev, xyz).
+(default: com, net, org, co, io, shop, store, online, site, biz, info, app, dev, xyz). `DOMAIN_SHOP_PRODUCTS` lists,
+comma-separated, the storefronts without a reseller (such as your own shop) that take payment for domains themselves.
