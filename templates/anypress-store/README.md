@@ -36,7 +36,8 @@ in [`plugins/`](plugins/) the same way and installed switched off, so it doesn't
 switch (`wp anypress shop switch`) turns it on when it runs.
 
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
-for signups, offers and booking forms, and Carousel, Counter and Map blocks. A release is pinned by version and checksum in [`build.sh`](build.sh)
+for signups, offers and booking forms, and Carousel, Counter, Map, Countdown, Before and After, Star Rating, Notice Bar,
+Phone Bar, Location Finder and Age Check blocks (0.4.0). A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
 And HighLevel's [LeadConnector](https://wordpress.org/plugins/leadconnector/) 4.0.7 (`leadconnector`): HighLevel forms,
