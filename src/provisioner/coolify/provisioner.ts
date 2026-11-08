@@ -632,7 +632,9 @@ export class CoolifyProvisioner implements Provisioner {
    */
   private async buildStore(input: Omit<CreateStoreInput, 'snapshotId'>, sourceKey: string, imported = false): Promise<{ check?: SiteCheck; moved?: MoveReport }> {
     const version = await this.versionMeta(input.versionId);
-    if ((await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
+    // A site copied with Reprint has no archive: the agent fetches it from its host.
+    const reprint = imported ? input.reprint : undefined;
+    if (!reprint && (await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
     if (input.user?.password) envs.WAAS_INIT_PASSWORD = input.user.password;
     Object.assign(envs, this.siteKeyEnvs(input.storeId));
@@ -654,7 +656,8 @@ export class CoolifyProvisioner implements Provisioner {
     let check: SiteCheck | undefined;
     let moved: MoveReport | undefined;
     try {
-      const restored = await this.exec(uuid, 'restore', { url: await this.s3.presign('GET', sourceKey), home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
+      const from = reprint ? { reprint: { site: reprint.site, key: reprint.privateKey } } : { url: await this.s3.presign('GET', sourceKey) };
+      const restored = await this.exec(uuid, 'restore', { ...from, home, ...(imported && { import: true }), ...(hold && !imported && { hold: true }) });
       if (imported) moved = moveReport(restored);
       if (!input.ownCode && !imported) await this.exec(uuid, 'code-import', { url: await this.s3.presign('GET', keys.code(input.versionId)) });
       // A site from elsewhere may come from an older WordPress than the version runs.

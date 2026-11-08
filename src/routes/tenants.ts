@@ -7,7 +7,7 @@ import { compact, isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE, type Size } from '../plans.ts';
 import type { PhpConstant } from '../provisioner/provisioner.ts';
-import { createImport, importCode, importDetail, renewImport } from '../imports.ts';
+import { createImport, importCode, importDetail, newReprintKey, renewImport, reprintSite, startReprintCopy } from '../imports.ts';
 import { publicBase } from '../oauth.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
@@ -107,7 +107,7 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
   // why it failed, what to check, and what's on the moved site (src/sitereport.ts).
   app.get('/import', async (c) => {
     const tenant = await findTenant(pool, c, { allowWaiting: true });
-    const detail = await importDetail(pool, tenant.id);
+    const detail = await importDetail(pool, tenant.id, secrets);
     if (!detail) throw new HttpError(404, `Tenant ${tenant.external_id} was not moved in from another host`);
     const status = !detail.startedAt ? 'waiting' : tenant.status === Status.Done ? 'done' : tenant.status === Status.Failed ? 'failed' : 'moving';
     return c.json({
@@ -120,7 +120,24 @@ export function tenantRoutes({ config, pool, boss, secrets, provisioner }: Deps)
       ...(detail.reason && { reason: detail.reason }),
       warnings: detail.warnings,
       ...(detail.siteReport && { siteReport: detail.siteReport }),
+      // A copy with Reprint: the token to paste on the old site until the store is live, and the address copied from.
+      ...(detail.migrationToken && tenant.status !== Status.Removing && (status !== 'done' || tenant.on_hold === true) && { migrationToken: detail.migrationToken }),
+      reprintSite: detail.reprintSite,
+      reprintCopies: detail.reprintCopies,
     });
+  });
+
+  // Copies the store's site from its old host with WordPress's Reprint (src/imports.ts): once the Reprint plugin there
+  // has authorized the store's Migration Token. Again while the store is on hold, to bring the old site's latest.
+  app.post('/import-reprint', async (c) => {
+    const tenant = await findTenant(pool, c, { allowWaiting: true });
+    const site = reprintSite(validateBody<{ siteUrl: string }>('ImportReprintParams', await readJson(c)).siteUrl);
+    const started = await startReprintCopy(pool, boss, secrets, tenant.id, site);
+    if (started === null) throw new HttpError(404, `Tenant ${tenant.external_id} was not moved in from another host`);
+    if (!started) {
+      throw new HttpError(409, tenant.on_hold === false && tenant.status === Status.Done ? 'This site is live: it can no longer be copied again.' : 'This site is being moved in right now. Wait until it is done.');
+    }
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, status: 'moving', siteUrl: site });
   });
 
   app.post('/version', async (c) => {
@@ -239,6 +256,8 @@ export async function createTenant(
 
   // The checks above give the usual answer; these constraints settle two requests racing past them.
   let token: string | undefined;
+  // Its key for a copy with Reprint (src/imports.ts), made before the transaction: an RSA key takes a moment.
+  const reprintKey = imported ? await newReprintKey(secrets) : null;
   const raced = await withTransaction(pool, async (client) => {
     await checkTenantCap(client, productId);
     await client.query(
@@ -267,7 +286,7 @@ export async function createTenant(
     }
     // A site moved in is built once its archive is uploaded and the move started (src/imports.ts).
     if (imported) {
-      token = await createImport(client, id);
+      token = await createImport(client, id, reprintKey);
       return;
     }
     await enqueue(boss, client, {

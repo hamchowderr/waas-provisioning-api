@@ -78,7 +78,8 @@ function curlTransfer(string $url, string $file, bool $upload): void
 {
     $fh = fopen($file, $upload ? 'rb' : 'wb');
     $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_FAILONERROR => true, CURLOPT_FOLLOWLOCATION => !$upload, CURLOPT_CONNECTTIMEOUT => 30]);
+    // A User-Agent: wordpress.org answers 403 to a request without one (PHP's curl sends none).
+    curl_setopt_array($ch, [CURLOPT_FAILONERROR => true, CURLOPT_FOLLOWLOCATION => !$upload, CURLOPT_CONNECTTIMEOUT => 30, CURLOPT_USERAGENT => 'AnyPress-store-agent']);
     if ($upload) {
         curl_setopt_array($ch, [CURLOPT_UPLOAD => true, CURLOPT_INFILE => $fh, CURLOPT_INFILESIZE => filesize($file), CURLOPT_RETURNTRANSFER => true]);
     } else {
@@ -133,6 +134,98 @@ function find_content(string $dir): ?string
     if (is_dir("$dir/wp-content")) return "$dir/wp-content";
     if (is_dir("$dir/plugins") || is_dir("$dir/themes") || is_dir("$dir/uploads")) return $dir;
     return null;
+}
+
+/** WordPress's Reprint client (wordpress.org plugin `reprint`), pinned: its version and the download's SHA-256. */
+const REPRINT_VERSION = '0.11.6';
+const REPRINT_SHA256 = 'd410c0b4faf6823e988435aed0f288bb43cd280dff8cef95e0c2bd3aa08e3618';
+/** Where a copy with Reprint keeps its progress and files until it is in: outside the site, and kept between runs. */
+const REPRINT_DIR = '/tmp/waas-reprint';
+/**
+ * How long one run copies before it stops, within the agent task's 30 minutes: a bigger site goes on in the job's
+ * next attempt, from where this one stopped.
+ */
+const REPRINT_SECONDS = 1500;
+
+/**
+ * Runs one Reprint command until it completes: Reprint stops with exit code 2 when there is more to do and 3 after a
+ * temporary failure (a rate limit, a busy host), and carries on from its saved progress when run again. Fails with
+ * Reprint's error code and message ("reprint AUTH_UNKNOWN_KEY: ...", read by src/imports.ts).
+ */
+function reprint_run(string $phar, array $args, array $ok = ['complete']): void
+{
+    static $started = null;
+    $started = $started ?? time();
+    for ($run = 0, $waits = 0; $run < 200; $run++) {
+        $left = REPRINT_SECONDS - (time() - $started);
+        if ($left <= 0) fail('reprint: still copying, it carries on in the next attempt');
+        // Stopped at the time limit like an interruption: Reprint has saved where it was.
+        $out = run("timeout $left php -d memory_limit=512M " . escapeshellarg($phar) . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' --progress=compact 2>&1; echo "::$?"', true);
+        $at = strrpos($out, '::');
+        [$text, $code] = $at === false ? [$out, '1'] : [substr($out, 0, $at), substr($out, $at + 2)];
+        $report = null;
+        foreach (array_reverse(explode("\n", $text)) as $line) {
+            $record = json_decode($line, true);
+            if (is_array($record) && ($record['type'] ?? null) === 'reprint_report') { $report = $record; break; }
+        }
+        $code = (int) trim($code);
+        if ($code === 0 && in_array($report['status'] ?? null, $ok, true)) return;
+        if ($code === 2 || $code === 124 || $code === 143) continue;
+        if ($code === 3 && $waits++ < 5) { sleep(30); continue; }
+        $error = is_array($report) ? (string) ($report['error'] ?? '') : substr(trim($text), -300);
+        fail('reprint ' . (is_array($report) && $report['error_code'] ? $report['error_code'] : "exit $code") . ': ' . substr(str_replace("\n", ' ', $error), 0, 300));
+    }
+    fail('reprint: the copy did not finish');
+}
+
+/**
+ * Copies a site from another host with WordPress's Reprint (docs/site-imports.md): the Reprint plugin on the old site
+ * has authorized this store's key (the Migration Token its owner pasted there), and the client pulls its wp-content
+ * and its database over HTTPS. Progress is kept in REPRINT_DIR, so a run cut short carries on where it stopped.
+ * Answers where the files and database.sql are, and what Reprint found about the site (anypress.json's fields).
+ */
+function reprint_fetch(array $source): array
+{
+    $site = (string) ($source['site'] ?? '');
+    $key = (string) ($source['key'] ?? '');
+    // Plain http only for the tests' old site (test/docker): Reprint then needs --insecure.
+    $http = getenv('WAAS_REPRINT_ALLOW_HTTP') === '1';
+    if (!preg_match($http ? '#^https?://[^/?\#\s]+#i' : '#^https://[^/?\#\s]+#i', $site) || strpos($key, 'PRIVATE KEY') === false) fail('reprint: the old site address and the key are required');
+    $api = rtrim((string) strtok($site, '?#'), '/') . '/?reprint-api';
+    is_dir(REPRINT_DIR) || mkdir(REPRINT_DIR, 0700, true);
+    $phar = REPRINT_DIR . '/reprint-' . REPRINT_VERSION . '.phar';
+    if (!is_file($phar) || hash_file('sha256', $phar) !== REPRINT_SHA256) {
+        curlTransfer('https://plugins.svn.wordpress.org/reprint/downloads/' . REPRINT_VERSION . '/reprint.phar', "$phar.part", false);
+        hash_file('sha256', "$phar.part") === REPRINT_SHA256 || fail('reprint: the client download did not match its checksum');
+        rename("$phar.part", $phar) || fail('reprint: cannot keep the client');
+    }
+    $base = REPRINT_DIR . '/' . substr(hash('sha256', $api), 0, 16);
+    $state = "$base/state";
+    $files = "$base/files";
+    is_dir($state) || mkdir($state, 0700, true);
+    is_dir($files) || mkdir($files, 0700, true);
+    $keyFile = "$base/key.pem";
+    file_put_contents($keyFile, $key) !== false && chmod($keyFile, 0600) || fail('reprint: cannot write the key');
+    $common = ['--private-key-path=' . $keyFile, '--state-dir=' . $state, '--fs-root=' . $files, ...(stripos($site, 'http://') === 0 ? ['--insecure'] : [])];
+    // Only wp-content, as AnyPress Export sends: the store has its own WordPress and wp-config.php.
+    reprint_run($phar, ['pull-files', $api, ...$common, '--include=:wp-content:']);
+    // The whole database as SQL, fresh each time (an earlier copy's is dropped): a copy taken again brings the old site's latest rows.
+    reprint_run($phar, ['db-pull', $api, ...$common, '--abort'], ['complete', 'aborted']);
+    reprint_run($phar, ['db-pull', $api, ...$common]);
+    $meta = null;
+    foreach (explode("\n", run('php ' . escapeshellarg($phar) . ' pull-metadata ' . escapeshellarg($api) . ' --state-dir=' . escapeshellarg($state) . (stripos($site, 'http://') === 0 ? ' --insecure' : '') . ' 2>/dev/null', true)) as $line) {
+        $record = json_decode($line, true);
+        if (is_array($record) && isset($record['sourceSite'])) { $meta = $record['sourceSite']; break; }
+    }
+    $contentDir = is_array($meta) && is_string($meta['contentDirectory'] ?? null) ? $meta['contentDirectory'] : '';
+    $content = $contentDir !== '' && strpos($contentDir, '..') === false && is_dir($files . '/' . ltrim($contentDir, '/')) ? $files . '/' . ltrim($contentDir, '/') : null;
+    $text = fn ($v) => is_string($v) && $v !== '' ? $v : null;
+    return [
+        'base' => $base,
+        'content' => $content,
+        'sql' => is_file("$state/db.sql") ? "$state/db.sql" : null,
+        'info' => array_filter(['home' => $text($meta['homeUrl'] ?? null), 'siteurl' => $text($meta['siteUrl'] ?? null), 'tablePrefix' => $text($meta['tablePrefix'] ?? null)]),
+    ];
 }
 
 function set_home(string $home): void
@@ -211,7 +304,7 @@ function set_import_home(string $oldHome, array $oldSiteurls, ?string $contentUr
  */
 const IMPORT_DROP = [
     'object-cache.php', 'advanced-cache.php', 'db.php', 'wp-cache-config.php', 'cache', 'upgrade', 'upgrade-temp-backup',
-    'ai1wm-backups', 'updraft', 'backups-dup-lite', 'backups-dup-pro', 'wpvividbackups', 'backup-db', 'plugins/anypress-export',
+    'ai1wm-backups', 'updraft', 'backups-dup-lite', 'backups-dup-pro', 'wpvividbackups', 'backup-db', 'plugins/anypress-export', 'plugins/reprint',
     'uploads/elementor/css', 'uploads/bb-plugin/cache', 'uploads/oxygen/css', 'uploads/bricks/css',
 ];
 const IMPORT_DROP_MU = [
@@ -329,6 +422,10 @@ function clean_import_db(string $prefix, string $home): array
         $cleared[] = 'anypress_export_state';
     }
     if (wpMayFail('cron', 'event', 'delete', 'anypress_export_cleanup') !== null) $cleared[] = 'anypress_export_cleanup';
+    // Reprint's access settings from the old site (the store's own key among them); the plugin itself is left behind (IMPORT_DROP).
+    foreach (['reprint_server_public_keys', 'reprint_server_connection_token', 'reprint_server_push_authorized_token_fingerprint'] as $option) {
+        if (wpMayFail('option', 'get', $option) !== null && wpMayFail('option', 'delete', $option) !== null) $cleared[] = $option;
+    }
     return $cleared;
 }
 
@@ -2002,21 +2099,30 @@ switch ($op) {
         // a site moved in from another host (the AnyPress Export plugin's archive, with a anypress.json
         // describing it), cleaned up on the way in and held until it goes live (HOLD_FLAG). `hold`: hold
         // the store after the restore too (a held store restored after deletion). A held store stays held.
+        // `reprint`: instead of an archive, the site is copied from its host with WordPress's Reprint (reprint_fetch).
         $import = !empty($args['import']);
         $tmp = tempDir();
-        curlTransfer($args['url'], "$tmp/archive", false);
-        mkdir("$tmp/x");
-        extract_archive("$tmp/archive", "$tmp/x");
+        $fetched = $import && is_array($args['reprint'] ?? null) ? reprint_fetch($args['reprint']) : null;
+        if ($fetched) {
+            $content = $fetched['content'];
+            $sql = $fetched['sql'];
+            if (!$content || !$sql) fail('the copy must hold database.sql and wp-content');
+            $info = $fetched['info'];
+        } else {
+            curlTransfer($args['url'], "$tmp/archive", false);
+            mkdir("$tmp/x");
+            extract_archive("$tmp/archive", "$tmp/x");
+            $content = find_content("$tmp/x");
+            $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
+            if ($import && (!$content || !$sql)) fail('the export must hold database.sql and wp-content');
+            $info = $import && is_file("$tmp/x/anypress.json") ? json_decode((string) file_get_contents("$tmp/x/anypress.json"), true) : null;
+            $info = is_array($info) ? $info : [];
+        }
         $suspended = file_exists(FLAG);
         $cron = file_exists(CRON_FLAG);
         $hold = $import || !empty($args['hold']) || file_exists(HOLD_FLAG);
         $page = is_file(PAGE) ? file_get_contents(PAGE) : null;
-        $content = find_content("$tmp/x");
-        $sql = is_file("$tmp/x/database.sql") ? "$tmp/x/database.sql" : null;
-        if ($import && (!$content || !$sql)) fail('the export must hold database.sql and wp-content');
-        $info = $import && is_file("$tmp/x/anypress.json") ? json_decode((string) file_get_contents("$tmp/x/anypress.json"), true) : null;
-        $info = is_array($info) ? $info : [];
-        $result = [];
+        $result = $fetched ? ['source' => $info] : [];
         if ($content) {
             run('rm -rf ' . CONTENT . '/* ' . CONTENT . '/.[!.]*', true);
             run('cp -a ' . escapeshellarg($content) . '/. ' . CONTENT . '/');
@@ -2060,6 +2166,8 @@ switch ($op) {
         }
         if ($page !== null) file_put_contents(PAGE, $page);
         install_guard();
+        // The copy is in the store: Reprint's files, progress and key go.
+        if ($fetched) run('rm -rf ' . escapeshellarg($fetched['base']), true);
         done(['database' => $sql !== null, 'content' => $content !== null, 'held' => $hold] + $result);
     }
 

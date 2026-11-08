@@ -24,6 +24,17 @@ For whoever runs the API. A WordPress site running on another host can be moved 
    When the owner is ready (usually once the domain points at the store), `POST /v1/tenants/go-live` (the dashboard's *Go live*, `POST /admin/tenants/:id/go-live`, or the connector's `store_status` with `go_live`) ends the hold: cron starts, email goes to everyone and it may be indexed. Webhooks get `tenant.live`. Restoring, rolling back or moving a held store keeps it held, and a held store restored after deletion comes back held.
 9. **Afterwards** the store is an ordinary store that keeps its own code: moving it to another version, rolling it back, restoring it and restoring it after deletion never replace its plugins and themes (`keepsOwnCode: true`). Its updates are the site owner's, as on any WordPress. The upload is deleted once the store is Done.
 
+## Copying the site with Reprint instead
+
+The other way in needs no export: the store copies the old site from its host with WordPress's own [Reprint](https://wordpress.org/plugins/reprint/) (its Reprint Server plugin on the old site, and the official `reprint.phar` client in the store's agent). The upload above stays for sites the store can't reach.
+
+1. **Every waiting store has a Migration Token.** `GET /v1/tenants/import` answers `migrationToken`: the public half of an RSA key made for the store (`tenant_imports.reprint_key`, the private half encrypted under `SECRETS_KEY`). A new import code keeps the same key.
+2. **The owner authorizes it on the old site.** They install Reprint (Plugins → Add New Plugin, search "Reprint"), open Tools → Reprint Server, paste the token under *Authorize a client to copy this site* and choose **Authorize client**.
+3. **The copy starts.** `POST /v1/tenants/import-reprint` with `{"siteUrl": "https://old.example.com"}` (https only) records the address and queues `tenant.create`. The agent's `restore` gets `reprint: {site, key}` instead of an archive link: it downloads the pinned client (`REPRINT_VERSION` and its SHA-256 in `agent.php`), runs `pull-files` (only `wp-content`) and `db-pull` against `<site>/?reprint-api`, and goes on exactly as with an export (step 4 onwards). Reprint's progress is kept in the agent container's `/tmp/waas-reprint`, so a job attempt that runs out of time (25 minutes) carries on where it stopped in the next one; it is removed once the copy is in. The old site's Reprint plugin and its access settings are left behind.
+4. **Copy again before going live.** While the store is on hold, the same call copies the old site again, so orders, posts and form entries made there since come along. It replaces the store's content: changes made on the store meanwhile are lost. A copy again that can't fetch the site leaves the store as it was (still Done and held) and `reason` says why. Once live, the store can't be copied again.
+
+A copy that fails (Reprint's error code is in the job's error) gives `reason` in plain words: Reprint not installed at that address, the token not authorized yet, a security service (Cloudflare's browser challenge, Wordfence) in the way, the address not reachable. The owner can fix it and start the copy again, or move the site with the AnyPress Export plugin instead: its code still works after a failed copy.
+
 ## When a move fails
 
 `/imports/status` and the dashboard give a `reason` the owner can act on: the export is missing its database or files, the upload could not be read (run the export again), the database could not be imported, the database has two sets of WordPress tables whose names collide, or the site is a multisite network. Anything else says to contact support; the full error is on the Jobs page.
@@ -35,7 +46,7 @@ For whoever runs the API. A WordPress site running on another host can be moved 
 - The old host needs PHP 7.4+, zlib and cURL, and room in its uploads folder for the archive.
 - `wp-config.php` is not moved: licence keys and other constants kept there (and its salts, so everyone signs in again) must be added to the store's constants.
 - Links to the old site inside theme and plugin files (CSS and JavaScript) are not rewritten; page builders' CSS caches are cleared and written again.
-- Changes on the old site after the export (new orders, form entries) are not in the store.
+- Changes on the old site after the export (new orders, form entries) are not in the store. A site copied with Reprint can be copied again before it goes live.
 - Store email, domains, backups and the cron task are the store's, as for any store. The old site's address keeps working where it is until its DNS is moved.
 
 ## Housekeeping

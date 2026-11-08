@@ -8,7 +8,7 @@ import type { PgBoss } from 'pg-boss';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
-import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure } from './imports.ts';
+import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure, reprintSource } from './imports.ts';
 import { failMailbox, pushMailbox } from './outreach.ts';
 import { failAutomations, pushAutomations } from './outreachautomation.ts';
 import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
@@ -292,11 +292,18 @@ export function createJobHandlers(
           await pool.query('UPDATE versions SET status = $2, date_changed = now() WHERE id = $1', [data.versionId, Status.Failed]);
           await pool.query('UPDATE snapshots SET status = $2 WHERE version_id = $1 AND status = $3', [data.versionId, Status.Failed, Status.Removing]);
           return;
-        case 'tenant.create':
+        case 'tenant.create': {
           // A site being moved in: why, in words its owner can act on (/imports/status).
-          await recordImportFailure(pool, data.tenantId, error instanceof Error ? error.message : String(error));
+          const message = error instanceof Error ? error.message : String(error);
+          await recordImportFailure(pool, data.tenantId, message);
+          // A copy again with Reprint that could not fetch the site changed nothing: the store built before stays as it was.
+          if (/\breprint[ :]/.test(message)) {
+            const { rowCount } = await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3 AND on_hold', [data.tenantId, Status.Done, Status.Pending]);
+            if (rowCount) return;
+          }
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
+        }
         case 'tenant.move':
           if (data.rollbackVersionId && (await moveBack(data.tenantId, data.rollbackVersionId))) return;
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
@@ -457,6 +464,8 @@ async function createTenant(
     mailbox,
     user,
     ...(imported && { hold: true, holdAllow: await holdAllowList(pool, tenant.id) }),
+    // Copied from its host with Reprint, rather than built from an uploaded archive.
+    ...(imported && { reprint: (await reprintSource(pool, secrets, tenant.id)) ?? undefined }),
   });
   await recordMailSender(pool, provisioner, tenant.id, { mailbox });
   if (imported) await recordImportBuilt(pool, tenant.id, built?.check, built?.moved);
