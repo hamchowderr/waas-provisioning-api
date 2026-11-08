@@ -47,6 +47,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: templates/release.sh "$PWD/waas-plugins" "$HOST_VERSION" "$VERSION" out
       - name: Release
         env:

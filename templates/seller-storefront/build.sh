@@ -54,7 +54,7 @@ SITE=$WORK/site
 
 fetch() { # url sha256 file
     [ -f "$3" ] && echo "$2  $3" | sha256sum -c --quiet 2>/dev/null && return
-    curl -sSfL -o "$3" "$1"
+    anypress_download "$1" "$3"
     echo "$2  $3" | sha256sum -c --quiet || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 

@@ -49,8 +49,8 @@ fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a290
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.3.0}
-BLOCKS_SHA256=${BLOCKS_SHA256:-79721b6151064d97ceb66636a1d9d29470803c18d4377d50cfe47b7e30399c28}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.0}
+BLOCKS_SHA256=${BLOCKS_SHA256:-403ab60793ce0f8b29ee3be75948b351e0806cf1d43038c292509b07532300e7}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh
@@ -73,7 +73,7 @@ SITE=$WORK/site
 
 fetch() { # url sha256 file
     [ -f "$3" ] && echo "$2  $3" | sha256sum -c --quiet 2>/dev/null && return
-    curl -sSfL -o "$3" "$1"
+    anypress_download "$1" "$3"
     echo "$2  $3" | sha256sum -c --quiet || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 
