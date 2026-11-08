@@ -7,6 +7,7 @@ import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { createAuth, type AuthConfig } from '../src/auth.ts';
+import { demoZip } from '../src/branding.ts';
 import { createAjv } from '../src/openapi.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
@@ -193,6 +194,29 @@ describe('demo page look (public)', () => {
     expect(await (await demo(plain)).json()).toEqual({ name: 'Plain Sites', brand: null, shopUrl: null });
     expect((await demo('00000000-0000-4000-8000-000000000000')).status).toBe(404);
     expect((await demo('not-a-uuid')).status).toBe(404);
+  });
+});
+
+describe('demo page zips (public)', () => {
+  it('downloads only the theme and Blocks release zips, once each, and lets any site read them', async () => {
+    const urls: string[] = [];
+    const download = (async (url: string) => {
+      urls.push(url);
+      return new Response(url.includes('v9.9.9') ? 'missing' : 'PK zip', { status: url.includes('v9.9.9') ? 404 : 200 });
+    }) as typeof fetch;
+    expect((await demoZip('anypress-theme-v0.10.0.zip', download))?.toString()).toBe('PK zip');
+    expect((await demoZip('anypress-theme-v0.10.0.zip', download))?.toString()).toBe('PK zip');
+    expect(await demoZip('anypress-blocks-v0.4.0.zip', download)).not.toBeNull();
+    expect(await demoZip('anypress-blocks-v9.9.9.zip', download)).toBeNull();
+    for (const bad of ['anypress-theme-main.zip', 'other-v1.0.0.zip', '../anypress-theme-v1.0.0.zip', 'anypress-theme-v1.0.0.zip?x']) expect(await demoZip(bad, download)).toBeNull();
+    expect(urls).toEqual([
+      'https://github.com/hamchowderr/anypress-theme/releases/download/v0.10.0/anypress.zip',
+      'https://github.com/hamchowderr/anypress-blocks/releases/download/v0.4.0/anypress-blocks.zip',
+      'https://github.com/hamchowderr/anypress-blocks/releases/download/v9.9.9/anypress-blocks.zip',
+    ]);
+    const res = await app.request('/branding/demo-files/not-a-zip.zip');
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
   });
 });
 

@@ -46,7 +46,7 @@ const TAGS: Record<string, [string, string]> = {
   Webhooks: ['Webhooks', 'Endpoints that get a signed POST when a store or version finishes a change, and their deliveries. How to verify them: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/webhooks.md).'],
   PluginChoices: ['Plugin choices', "wordpress.org plugins your stores get on top of your template, or that it switches off, per site type. Applied to each new version as it builds. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/plugin-choices.md)."],
   PluginUpdates: ['Plugin updates', 'Update checks made by the WaaS plugins. The response points at a signed release package.'],
-  Branding: ['Demo page look', "The name, look and shop link of a seller's or reseller's demo page. Public, no key needed. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/branding.md)."],
+  Branding: ['Demo page', "The name, look and shop link of a seller's or reseller's demo page, and the theme zips its demos install. Public, no key needed. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/branding.md)."],
 };
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head'];

@@ -33,6 +33,40 @@ const IMAGES = {
 type ImageKind = keyof typeof IMAGES;
 
 const COLOR = /^#[0-9a-f]{6}$/;
+
+/** Demo page zips: anypress-theme-v1.2.3.zip and anypress-blocks-v1.2.3.zip, from those repositories' releases. */
+const DEMO_ZIP = /^anypress-(theme|blocks)-(v\d{1,3}\.\d{1,3}\.\d{1,3})\.zip$/;
+const DEMO_ZIP_ASSET = { theme: 'anypress.zip', blocks: 'anypress-blocks.zip' } as const;
+const DEMO_ZIP_MAX = 20 * 1024 * 1024;
+const demoZips = new Map<string, Promise<Buffer | null>>();
+
+/**
+ * A release zip of the AnyPress theme or AnyPress Blocks, kept in memory once fetched (a release never changes). A
+ * plain download of a public file: GitHub's SDK has no call for it. Null for any other name, or when GitHub has no such
+ * release.
+ */
+export function demoZip(file: string, download: typeof fetch = fetch): Promise<Buffer | null> {
+  const match = DEMO_ZIP.exec(file);
+  if (!match) return Promise.resolve(null);
+  const [, repo, tag] = match as unknown as [string, keyof typeof DEMO_ZIP_ASSET, string];
+  let zip = demoZips.get(file);
+  if (!zip) {
+    const url = `https://github.com/hamchowderr/anypress-${repo}/releases/download/${tag}/${DEMO_ZIP_ASSET[repo]}`;
+    zip = download(url, { signal: AbortSignal.timeout(20_000) })
+      .then(async (r) => {
+        if (!r.ok) return null;
+        const bytes = Buffer.from(await r.arrayBuffer());
+        return bytes.length <= DEMO_ZIP_MAX ? bytes : null;
+      })
+      .catch(() => null)
+      .then((bytes) => {
+        if (!bytes) demoZips.delete(file);
+        return bytes;
+      });
+    demoZips.set(file, zip);
+  }
+  return zip;
+}
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const URL_RE = /^https?:\/\/[^\s]+$/;
 
@@ -334,6 +368,19 @@ export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
     const demo = isUuid(id) ? await demoBrand(deps, publicBase(c, deps.config.publicUrl), id) : null;
     if (!demo) return c.json({ statusCode: 404, message: 'Not found' }, 404);
     return c.json(demo, 200, { 'Cache-Control': 'public, max-age=60' });
+  });
+  // The theme and AnyPress Blocks zips the demo pages install on WordPress Playground (docs/branding.md, "Demo page").
+  // GitHub's release downloads don't let other sites read them, so Playground's site gets them here.
+  app.get('/demo-files/:file', async (c) => {
+    const zip = await demoZip(c.req.param('file'));
+    if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*' });
+    return c.body(new Uint8Array(zip), 200, {
+      'Content-Type': 'application/zip',
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      // A release never changes, and the name carries its version.
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    });
   });
   app.get('/:id/:kind{logo|icon}', async (c) => {
     const id = c.req.param('id');

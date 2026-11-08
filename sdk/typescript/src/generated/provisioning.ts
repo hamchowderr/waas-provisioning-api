@@ -954,6 +954,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/branding/demo-files/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A theme or AnyPress Blocks release zip for the demo pages
+         * @description The AnyPress theme or AnyPress Blocks release zip the demo pages install on WordPress Playground (docs/branding.md, "Demo page"), readable from any site. Public.
+         */
+        get: operations["getDemoFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5078,6 +5098,38 @@ export interface operations {
                 };
             };
             /** @description No product or reseller has this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getDemoFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip */
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The zip */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            /** @description No such file or release */
             404: {
                 headers: {
                     [name: string]: unknown;
