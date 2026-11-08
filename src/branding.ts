@@ -5,6 +5,7 @@ import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { publicBase } from './oauth.ts';
+import { getStorefront } from './storefronts.ts';
 
 /**
  * Dashboard branding (docs/branding.md): the name, logo, icon, main color and support address a
@@ -19,6 +20,8 @@ export interface Brand {
   name: string | null;
   color: string | null;
   supportEmail: string | null;
+  /** Where customers buy: the "Start your website" button on the brand's demo page. */
+  shopUrl: string | null;
   logoUrl: string | null;
   iconUrl: string | null;
 }
@@ -31,6 +34,7 @@ type ImageKind = keyof typeof IMAGES;
 
 const COLOR = /^#[0-9a-f]{6}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const URL_RE = /^https?:\/\/[^\s]+$/;
 
 /** The image type its first bytes show, whatever the request said. SVG is refused: it can carry script. */
 function sniff(bytes: Uint8Array): string | null {
@@ -49,13 +53,14 @@ interface Row {
   name: string | null;
   color: string | null;
   support_email: string | null;
+  shop_url: string | null;
   has_logo: boolean;
   has_icon: boolean;
   updated_at: Date;
 }
 
 const columns = (t = '') =>
-  `${t}id, ${t}name, ${t}color, ${t}support_email, ${t}logo IS NOT NULL AS has_logo, ${t}icon IS NOT NULL AS has_icon, ${t}updated_at`;
+  `${t}id, ${t}name, ${t}color, ${t}support_email, ${t}shop_url, ${t}logo IS NOT NULL AS has_logo, ${t}icon IS NOT NULL AS has_icon, ${t}updated_at`;
 
 function imageUrl(base: string, row: Row | undefined, kind: ImageKind, has: boolean) {
   return row && has ? `${base}/branding/${row.id}/${kind}?v=${row.updated_at.getTime()}` : null;
@@ -66,6 +71,7 @@ function view(base: string, row: Row | undefined): Brand {
     name: row?.name ?? null,
     color: row?.color ?? null,
     supportEmail: row?.support_email ?? null,
+    shopUrl: row?.shop_url ?? null,
     logoUrl: imageUrl(base, row, 'logo', row?.has_logo ?? false),
     iconUrl: imageUrl(base, row, 'icon', row?.has_icon ?? false),
   };
@@ -87,7 +93,7 @@ export async function effectiveBrand(pool: Deps['pool'], base: string, productId
     `SELECT ${columns('b.')}, CASE WHEN b.product_id IS NULL THEN 'reseller' ELSE 'product' END AS owner, NULL AS reseller_brand
        FROM dashboard_brands b JOIN products p ON b.product_id = p.id OR b.reseller_id = p.reseller_id WHERE p.id = $1
      UNION ALL
-     SELECT NULL, NULL, NULL, NULL, false, false, now(), 'reseller', r.brand_name
+     SELECT NULL, NULL, NULL, NULL, NULL, false, false, now(), 'reseller', r.brand_name
        FROM products p JOIN resellers r ON r.id = p.reseller_id WHERE p.id = $1 AND r.brand_name IS NOT NULL`,
     [productId],
   );
@@ -100,6 +106,7 @@ export async function effectiveBrand(pool: Deps['pool'], base: string, productId
     name: a.name ?? b.name ?? fallbackName,
     color: a.color ?? b.color,
     supportEmail: a.supportEmail ?? b.supportEmail,
+    shopUrl: a.shopUrl ?? b.shopUrl,
     logoUrl: a.logoUrl ?? b.logoUrl,
     iconUrl: a.iconUrl ?? b.iconUrl,
   };
@@ -153,6 +160,7 @@ interface Fields {
   name?: string | null;
   color?: string | null;
   supportEmail?: string | null;
+  shopUrl?: string | null;
 }
 
 function parseFields(body: unknown): Fields {
@@ -176,6 +184,12 @@ function parseFields(body: unknown): Fields {
     if (email === null || email === '') out.supportEmail = null;
     else if (typeof email === 'string' && email.length <= 254 && EMAIL.test(email)) out.supportEmail = email.toLowerCase();
     else throw badRequest('supportEmail must be an email address, or null');
+  }
+  if (b.shopUrl !== undefined) {
+    const url = text(b.shopUrl);
+    if (url === null || url === '') out.shopUrl = null;
+    else if (typeof url === 'string' && url.length <= 500 && URL_RE.test(url)) out.shopUrl = url;
+    else throw badRequest('shopUrl must be an http or https link of at most 500 characters, or null');
   }
   return out;
 }
@@ -228,11 +242,11 @@ export function brandingRoutes(deps: Deps) {
   function routes(prefix: string, find: (c: Context) => Promise<BrandOwner>) {
     app.get(`${prefix}/branding`, async (c) => answer(c, await find(c)));
 
-    // Sets some of name, color and supportEmail; null or "" clears one.
+    // Sets some of name, color, supportEmail and shopUrl; null or "" clears one.
     app.put(`${prefix}/branding`, async (c) => {
       const owner = await find(c);
       const fields = parseFields(await readJson(c));
-      await save(pool, owner, { name: fields.name, color: fields.color, support_email: fields.supportEmail });
+      await save(pool, owner, { name: fields.name, color: fields.color, support_email: fields.supportEmail, shop_url: fields.shopUrl });
       return answer(c, owner);
     });
 
@@ -268,6 +282,38 @@ export function brandingRoutes(deps: Deps) {
   return app;
 }
 
+export interface DemoBrand {
+  /** The name the page shows: the brand's, else the storefront's or reseller's own. */
+  name: string;
+  brand: Brand | null;
+  /** Where "Start your website" goes: the brand's shop link, else the ready-made storefront's address, else the reseller's link. */
+  shopUrl: string | null;
+}
+
+/** The look of a storefront's (product id) or reseller's (reseller id) demo page; null for neither. */
+export async function demoBrand(deps: Pick<Deps, 'pool' | 'config'>, base: string, id: string): Promise<DemoBrand | null> {
+  const { pool } = deps;
+  const product = await pool.query<{ name: string; brand_url: string | null }>(
+    'SELECT p.name, r.brand_url FROM products p LEFT JOIN resellers r ON r.id = p.reseller_id WHERE p.id = $1',
+    [id],
+  );
+  if (product.rows[0]) {
+    const brand = await effectiveBrand(pool, base, id);
+    const storefront = brand?.shopUrl ? null : await getStorefront(deps, id);
+    const shopUrl = brand?.shopUrl ?? (storefront?.domainName ? `https://${storefront.domainName}` : null) ?? product.rows[0].brand_url;
+    return { name: brand?.name ?? product.rows[0].name, brand, shopUrl };
+  }
+  const reseller = await pool.query<{ name: string; brand_name: string | null; brand_url: string | null }>(
+    'SELECT name, brand_name, brand_url FROM resellers WHERE id = $1',
+    [id],
+  );
+  if (!reseller.rows[0]) return null;
+  const own = view(base, await ownBrand(pool, { resellerId: id }));
+  const brand = Object.values(own).some((v) => v !== null) ? own : null;
+  const r = reseller.rows[0];
+  return { name: brand?.name ?? r.brand_name ?? r.name, brand, shopUrl: brand?.shopUrl ?? r.brand_url };
+}
+
 /**
  * GET /branding/:id/logo and /icon: the images, public, so the sign-in page can show them. And
  * GET /branding/host/:host: the look of the sign-in page on a seller's own dashboard address
@@ -280,7 +326,14 @@ export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
     if (!productId) return c.json({ statusCode: 404, message: 'This address is not a dashboard address' }, 404);
     const { rows } = await deps.pool.query('SELECT name FROM products WHERE id = $1', [productId]);
     const brand = await effectiveBrand(deps.pool, publicBase(c, deps.config.publicUrl), productId);
-    return c.json({ productName: rows[0]?.name ?? null, brand }, 200, { 'Cache-Control': 'public, max-age=60' });
+    return c.json({ productId, productName: rows[0]?.name ?? null, brand }, 200, { 'Cache-Control': 'public, max-age=60' });
+  });
+  // A seller's or reseller's demo page (docs/branding.md, "Demo page"): its name, look and where its customers buy.
+  app.get('/demo/:id', async (c) => {
+    const id = c.req.param('id');
+    const demo = isUuid(id) ? await demoBrand(deps, publicBase(c, deps.config.publicUrl), id) : null;
+    if (!demo) return c.json({ statusCode: 404, message: 'Not found' }, 404);
+    return c.json(demo, 200, { 'Cache-Control': 'public, max-age=60' });
   });
   app.get('/:id/:kind{logo|icon}', async (c) => {
     const id = c.req.param('id');

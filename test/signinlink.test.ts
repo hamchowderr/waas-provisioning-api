@@ -174,7 +174,7 @@ describe("sign-in on a seller's own dashboard address", () => {
   it('shows the sign-in page its storefront, and nothing for other addresses', async () => {
     const res = await app.request(`/branding/host/${OWN}`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ productName: 'Seller shop', brand: null });
+    expect(await res.json()).toEqual({ productId: sellerId, productName: 'Seller shop', brand: null });
     expect((await app.request('/branding/host/unknown.example')).status).toBe(404);
   });
 });

@@ -604,7 +604,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       operationId: adminPutProductBranding
-      summary: Set some of the name, main color and support email
+      summary: Set some of the name, main color, support email and shop link
       description: Fields left out stay as they are; null or an empty string clears one.
       requestBody:
         content:
@@ -615,6 +615,7 @@ paths:
                 name: { type: string, maxLength: 60, nullable: true }
                 color: { type: string, pattern: '^#[0-9a-fA-F]{6}$', nullable: true, example: '#1d4ed8' }
                 supportEmail: { type: string, format: email, nullable: true }
+                shopUrl: { type: string, maxLength: 500, pattern: '^https?://', nullable: true, example: 'https://shop.example.com' }
       responses:
         '200':
           description: The branding
@@ -2370,7 +2371,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       operationId: adminPutResellerBranding
-      summary: Set some of the name, main color and support email
+      summary: Set some of the name, main color, support email and shop link
       description: Fields left out stay as they are; null or an empty string clears one.
       requestBody:
         content:
@@ -2381,6 +2382,7 @@ paths:
                 name: { type: string, maxLength: 60, nullable: true }
                 color: { type: string, pattern: '^#[0-9a-fA-F]{6}$', nullable: true, example: '#1d4ed8' }
                 supportEmail: { type: string, format: email, nullable: true }
+                shopUrl: { type: string, maxLength: 500, pattern: '^https?://', nullable: true, example: 'https://shop.example.com' }
       responses:
         '200':
           description: The branding
@@ -2940,11 +2942,12 @@ components:
         emailed: { type: boolean, description: 'Only when just made: whether the invitation was emailed. When false, send acceptUrl yourself.' }
     Branding:
       type: object
-      required: [name, color, supportEmail, logoUrl, iconUrl]
+      required: [name, color, supportEmail, shopUrl, logoUrl, iconUrl]
       properties:
         name: { type: string, nullable: true, description: "The name in place of the platform's" }
         color: { type: string, nullable: true, description: 'Main color, #rrggbb' }
         supportEmail: { type: string, nullable: true }
+        shopUrl: { type: string, nullable: true, description: 'Where customers buy: the "Start your website" button on the demo page' }
         logoUrl: { type: string, nullable: true, description: 'Public address of the logo (GET /branding/{id}/logo)' }
         iconUrl: { type: string, nullable: true, description: Public address of the small icon, for the browser tab }
     BrandingView:
