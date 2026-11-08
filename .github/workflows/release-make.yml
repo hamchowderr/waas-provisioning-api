@@ -1,13 +1,14 @@
 # Deploys integrations/make to the AnyPress custom app on Make when a tag like make-v1.0.0 is pushed.
 # Needs the repository secret MAKE_API_TOKEN (Make profile, API access, with the sdk-apps:read and
 # sdk-apps:write scopes) and the repository variables MAKE_ZONE (us1.make.com, eu2.make.com, ...)
-# and MAKE_APP_ID. The first run creates the app when it doesn't exist yet.
+# and MAKE_APP_ID. The first run creates the app when it doesn't exist yet. Each run also uploads
+# the app's logo (integrations/make/assets/icon.png) and theme colour.
 name: Release Make app
 
 on:
   push:
     tags: ['make-v*']
-  # Or run it by hand on main.
+  # Or run it by hand (any branch, to try a change on the live app).
   workflow_dispatch:
 
 permissions:
@@ -21,6 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install Make's SDK
+        run: npm ci --prefix integrations/make
       - name: Deploy
         env:
           MAKE_API_TOKEN: ${{ secrets.MAKE_API_TOKEN }}
