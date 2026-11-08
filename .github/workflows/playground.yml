@@ -35,6 +35,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: upstream/.nvmrc
+      # The website bundles Reprint (an optional site-moving tool the demos don't use) from a GitHub release download
+      # that currently fails; build without it rather than fail.
+      - name: Make Reprint optional
+        working-directory: upstream
+        run: |
+          perl -0pi -e 's/if \(!response\.ok\) \{\n\t\t\tthrow new Error\(\n\t\t\t\t`Could not download Reprint/if (!response.ok) {\n\t\t\tconsole.warn(`Reprint skipped: HTTP \${response.status}`);\n\t\t\treturn;\n\t\t\tthrow new Error(\n\t\t\t\t`Could not download Reprint/' packages/playground/website/bin/reprint-assets.mts
+          grep -n "Reprint skipped" packages/playground/website/bin/reprint-assets.mts
       - name: Build the Playground website
         working-directory: upstream
         # Install scripts are skipped: the only one that matters here (sharp, for the docs site's images) downloads
