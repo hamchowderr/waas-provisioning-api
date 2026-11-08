@@ -7,7 +7,7 @@ Plugins are listed in the order AnyPress shows them everywhere.
 | | |
 |---|---|
 | WordPress | 7.1.4 for the build; stores run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
-| Theme | The [AnyPress theme](https://github.com/hamchowderr/anypress-theme) (a release pinned by version and checksum in [`theme.sh`](theme.sh)), a block theme with 14 kits (a style, sections and a whole website for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
+| Theme | The [AnyPress theme](https://github.com/hamchowderr/anypress-theme) (a release pinned by version and checksum in [`theme.sh`](theme.sh)), a block theme with 16 kits (a style, sections and a whole website for one kind of business) and AnyPress Blocks (32 sections that work with any kit); the only theme installed. Stores made from versions before v1.1.0 run [Ollie](https://wordpress.org/themes/ollie/) |
 | Plugins | AnyPress Client (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/anypress-client`) and these free wordpress.org plugins, all active: |
 
 | Plugin | Slug | Version |

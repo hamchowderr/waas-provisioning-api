@@ -45,6 +45,8 @@ Pick the kit that fits the trade (each is a style plus its own home page and sec
 | Keystone | Real estate | `anypress/kit-real-estate` |
 | Launch | Software and apps | `anypress/kit-software` |
 | Byline | Blogs and magazines | `anypress/kit-magazine` |
+| Assay | Regulated products: clinics, peptides, supplements, lab-tested goods | `anypress/kit-regulated` |
+| Branch | Franchises and businesses with several locations | `anypress/kit-franchise` |
 
 Shared sections that work with any kit are in `anypress/blocks-*` and `anypress/pages`. Kits with only a home page today need their inner pages from `anypress/pages` and the shared sections, restyled by the kit.
 
