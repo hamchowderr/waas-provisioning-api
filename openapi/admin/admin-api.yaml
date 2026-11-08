@@ -1474,6 +1474,44 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/import-reprint:
+    post:
+      operationId: adminImportReprint
+      summary: Copy a store's old site in with Reprint
+      description: >-
+        Starts copying the old site with Reprint (docs/site-imports.md), for a store waiting for its site, one whose
+        move failed, or one moved in and still held (not live), which is copied again. The old site must run the
+        Reprint plugin and have authorized the store's migrationToken. 400 when the store wasn't made to move a site
+        in, 409 while a move runs or once the site is live.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteUrl]
+              properties:
+                siteUrl: { type: string, description: "The old site's address, such as https://example.com." }
+      responses:
+        '200':
+          description: The copy has started
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, externalId, status, siteUrl]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+                  status: { type: string, enum: [moving] }
+                  siteUrl: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/tenants/{id}/restore:
     post:
       operationId: adminRestoreTenant
@@ -3908,6 +3946,13 @@ components:
               items: { type: string }
               description: What to check after the move (another PHP version, a newer WordPress, a failed check).
             siteReport: { $ref: '#/components/schemas/SiteReport' }
+            migrationToken:
+              type: string
+              description: >-
+                For copying the site with Reprint: the token to paste on the old site under Tools → Reprint Server.
+                Left out once the site is live or being removed.
+            reprintSite: { type: string, nullable: true, description: The address Reprint last copied the site from. }
+            reprintCopies: { type: integer, description: How many times the site was copied with Reprint. }
         emailUsage:
           type: object
           description: >-

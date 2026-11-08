@@ -18,7 +18,7 @@ import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
 import { setHighLevelAgency } from '../highlevel.ts';
 import { listHostUpdates, queueHostUpdates } from '../hostupdates.ts';
-import { importCode, importDetail, renewImport } from '../imports.ts';
+import { importCode, importDetail, renewImport, reprintSite, startReprintCopy } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
 import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
@@ -483,7 +483,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
         [QUEUE, `tenant:${id}`],
       ),
       pool.query('SELECT * FROM job_failures WHERE tenant_id = $1 ORDER BY failed_at DESC LIMIT 20', [id]),
-      importDetail(pool, id),
+      importDetail(pool, id, deps.secrets),
       mailUsage(pool, id),
     ]);
     return c.json({
@@ -504,7 +504,10 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       siteTypes: siteTypesOf(t.php_constants),
       keepsOwnCode: t.own_code,
       // A site moved in from another host (docs/site-imports.md): waiting while it has no startedAt.
-      ...(moveIn && { moveIn }),
+      // The Migration Token only while the site can still be copied (not once it is live or being removed).
+      ...(moveIn && {
+        moveIn: t.status === Status.Removing || (t.status === Status.Done && t.on_hold !== true) ? { ...moveIn, migrationToken: undefined } : moveIn,
+      }),
       // This month's emails as the platform counted them on toSend (docs/store-email.md), once counted.
       ...(emailUsage && { emailUsage }),
       isSuspended: t.is_suspended,
@@ -589,6 +592,22 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     if (!token) throw badRequest('This store is not waiting for a site to be moved in');
     const base = publicBase(c, config.publicUrl);
     return c.json({ tenantId: id, externalId: rows[0].external_id, importCode: importCode(base, token), pluginUrl: `${base}/imports/plugin.zip` });
+  });
+
+  // Copies the old site in with Reprint (docs/site-imports.md), or copies it again while the store is held.
+  app.post('/tenants/:id/import-reprint', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query('SELECT id, external_id, status, on_hold FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)', [id, scopedProduct(c)]);
+    const t = rows[0];
+    if (!t) throw notFound(`Tenant ${id} not found`);
+    const site = reprintSite(((await readJson(c)) as { siteUrl?: unknown } | null)?.siteUrl);
+    const started = await startReprintCopy(pool, boss, deps.secrets, id, site);
+    if (started === null) throw badRequest('This store was not moved in from another host');
+    if (!started) {
+      throw new HttpError(409, t.on_hold === false && t.status === Status.Done ? 'This site is live: it can no longer be copied again.' : 'This site is being moved in right now. Wait until it is done.');
+    }
+    return c.json({ tenantId: id, externalId: t.external_id, status: 'moving', siteUrl: site });
   });
 
   // Makes a domain the store's main address (adding it if new), as the storefront's addTenantDomain

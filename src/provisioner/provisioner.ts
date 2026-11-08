@@ -335,6 +335,8 @@ export interface MoveReport {
   rows?: { table: string; exported: number; loaded: number }[];
   /** What the export told the owner to check once the site is on AnyPress. */
   notes?: string[];
+  /** What a copy with Reprint found about the old site (its address and table prefix). */
+  source?: { home?: string; tablePrefix?: string };
 }
 
 /** What a restored backup holds, as testRestore found it. */
@@ -378,4 +380,9 @@ export interface CreateStoreInput {
   hold?: boolean;
   /** Who else gets email while the store is held: its owner's addresses. */
   holdAllow?: string[];
+  /**
+   * A site moved in by copying it from its host with WordPress's Reprint (src/imports.ts) rather than from an uploaded
+   * archive: the old site's address, and the private key whose Migration Token its Reprint plugin authorized.
+   */
+  reprint?: { site: string; privateKey: string };
 }

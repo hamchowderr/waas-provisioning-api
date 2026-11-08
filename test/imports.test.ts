@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createPublicKey } from 'node:crypto';
 import { importCode, importFailureReason, importPartSize, importWarnings, maxImportBytes, purgeExpiredImports, tokenFromCode } from '../src/imports.ts';
 import { Status } from '../src/status.ts';
 import { setup, TEST_ADMIN_TOKEN, waitFor, type TestContext, OWNER } from './helpers.ts';
@@ -342,6 +343,7 @@ describe('how a move went', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
         tenantId: body.id, externalId: 'report-1', status: 'done', expiresAt: expect.any(String), startedAt: expect.any(String), onHold: true, warnings: [], siteReport: status.siteReport,
+        migrationToken: expect.any(String), reprintSite: null, reprintCopies: 0,
       });
       const detail = (await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` })).json()) as Record<string, any>;
       expect(detail.moveIn.siteReport).toEqual(status.siteReport);
@@ -529,5 +531,124 @@ describe('stores that keep their own code', () => {
     await waitFor(async () => (await tenant(made.tenantId))?.statusCode === Status.Done);
     const after = (await (await t.call('GET', `/admin/tenants/${made.tenantId}`, { auth: ADMIN })).json()) as Record<string, any>;
     expect(after.moveIn.source).toMatchObject({ home: 'https://old.example.com', uploadedBytes: 1024 });
+  });
+});
+
+describe('copying a site in with Reprint', () => {
+  /** Starts (or starts again) a copy with Reprint. */
+  const copy = async (externalId: string, siteUrl: unknown) => {
+    const res = await t.call('POST', `/v1/tenants/import-reprint?externalId=${externalId}`, { body: { siteUrl } });
+    return { status: res.status, body: (await res.json()) as Record<string, any> };
+  };
+  const detail = async (externalId: string) => (await (await t.call('GET', `/v1/tenants/import?externalId=${externalId}`)).json()) as Record<string, any>;
+  const reprintError = 'Store agent restore failed (failed): reprint AUTH_UNKNOWN_KEY: This Migration Token is not enrolled on the site.';
+
+  it('gives each waiting store a Migration Token, and builds the store from the old site with the key behind it', async () => {
+    const { body } = await createImport({ externalId: 'reprint-1' });
+    const waiting = await detail('reprint-1');
+    expect(waiting).toMatchObject({ status: 'waiting', reprintSite: null, reprintCopies: 0 });
+    // The public half of an RSA 3072 key, on one line, as the Reprint plugin takes it.
+    const publicKey = createPublicKey({ key: Buffer.from(waiting.migrationToken, 'base64'), format: 'der', type: 'spki' });
+    expect(publicKey.asymmetricKeyDetails?.modulusLength).toBe(3072);
+    // A new import code keeps the token: one already pasted on the old site still works.
+    const renewed = (await (await t.call('POST', '/v1/tenants/import-code?externalId=reprint-1')).json()) as { importCode: string };
+    expect((await detail('reprint-1')).migrationToken).toBe(waiting.migrationToken);
+
+    expect((await copy('reprint-1', 'http://old.example.com')).status).toBe(400);
+    expect((await copy('reprint-1', 'https://user:pw@old.example.com')).status).toBe(400);
+    const started = await copy('reprint-1', 'old.example.com/shop/');
+    expect(started).toMatchObject({ status: 200, body: { status: 'moving', siteUrl: 'https://old.example.com/shop' } });
+    // Being copied: not again until it is done.
+    expect((await copy('reprint-1', 'https://old.example.com/shop')).status).toBe(409);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+
+    const store = t.provisioner.stores.get(body.id)!;
+    expect(store.reprint?.site).toBe('https://old.example.com/shop');
+    expect(createPublicKey(store.reprint!.privateKey).export({ type: 'spki', format: 'der' }).toString('base64')).toBe(waiting.migrationToken);
+    expect(await detail('reprint-1')).toMatchObject({ status: 'done', onHold: true, reprintSite: 'https://old.example.com/shop', reprintCopies: 1, migrationToken: waiting.migrationToken });
+    // The export plugin's code can't start a move on top of it.
+    expect((await plugin('start', { code: renewed.importCode })).status).toBe(409);
+  });
+
+  it('copies again while the store is on hold, and not once it is live', async () => {
+    const { body } = await createImport({ externalId: 'reprint-2' });
+    await copy('reprint-2', 'https://old2.example.com');
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect((await copy('reprint-2', 'https://old2.example.com')).status).toBe(200);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect((await detail('reprint-2')).reprintCopies).toBe(2);
+
+    // A copy again that cannot reach the old site leaves the store as it was, built and held, and says why.
+    t.provisioner.failNext('createStore', 10, reprintError);
+    await copy('reprint-2', 'https://old2.example.com');
+    await waitFor(async () => (await detail('reprint-2')).reason !== undefined);
+    expect((await tenant(body.id))?.statusCode).toBe(Status.Done);
+    expect((await detail('reprint-2')).reason).toMatch(/^Reprint on the old site hasn't let this store in yet/);
+    t.provisioner.failNext('createStore', 0);
+
+    expect((await t.call('POST', '/v1/tenants/go-live?externalId=reprint-2')).status).toBe(200);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    const live = await copy('reprint-2', 'https://old2.example.com');
+    expect(live.status).toBe(409);
+    expect(live.body.message).toMatch(/live/);
+    expect((await detail('reprint-2')).migrationToken).toBeUndefined();
+  });
+
+  it('lets the dashboard copy the site with Reprint through the admin routes', async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const { body } = await createImport({ externalId: 'reprint-admin' });
+    const adminDetail = async () => ((await (await t.call('GET', `/admin/tenants/${body.id}`, { auth: ADMIN })).json()) as Record<string, any>).moveIn;
+    const waiting = await adminDetail();
+    expect(waiting.migrationToken).toBe((await detail('reprint-admin')).migrationToken);
+    const adminCopy = (siteUrl: unknown) => t.call('POST', `/admin/tenants/${body.id}/import-reprint`, { auth: ADMIN, body: { siteUrl } });
+    expect((await adminCopy('ftp://old.example.com')).status).toBe(400);
+    const started = await adminCopy('https://old-admin.example.com');
+    expect(started.status).toBe(200);
+    expect(await started.json()).toMatchObject({ tenantId: body.id, status: 'moving', siteUrl: 'https://old-admin.example.com' });
+    expect((await adminCopy('https://old-admin.example.com')).status).toBe(409);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect(await adminDetail()).toMatchObject({ reprintSite: 'https://old-admin.example.com', reprintCopies: 1, migrationToken: waiting.migrationToken });
+    expect((await t.call('POST', `/admin/tenants/${body.id}/go-live`, { auth: ADMIN })).status).toBe(200);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect((await adminDetail()).migrationToken).toBeUndefined();
+    expect((await adminCopy('https://old-admin.example.com')).status).toBe(409);
+  });
+
+  it('fails a first copy the old site refused, in plain words, and copies once asked again', async () => {
+    const { body } = await createImport({ externalId: 'reprint-3' });
+    t.provisioner.failNext('createStore', 10, reprintError);
+    await copy('reprint-3', 'https://old3.example.com');
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Failed);
+    expect((await detail('reprint-3')).reason).toMatch(/paste this store's Migration Token, choose Authorize client/);
+    t.provisioner.failNext('createStore', 0);
+    expect((await copy('reprint-3', 'https://old3.example.com')).status).toBe(200);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect((await detail('reprint-3')).reason).toBeUndefined();
+  });
+
+  it('lets the export plugin move the site after a copy with Reprint failed', async () => {
+    const { body } = await createImport({ externalId: 'reprint-4' });
+    t.provisioner.failNext('createStore', 10, 'Store agent restore failed (failed): reprint CLOUDFLARE_CHALLENGE: Cloudflare requires a browser challenge');
+    await copy('reprint-4', 'https://old4.example.com');
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Failed);
+    expect((await detail('reprint-4')).reason).toMatch(/Cloudflare or Wordfence/);
+    t.provisioner.failNext('createStore', 0);
+    t.provisioner.imports.set(body.id, 1024);
+    expect((await plugin('start', { code: body.importCode })).status).toBe(200);
+    await waitFor(async () => (await tenant(body.id))?.statusCode === Status.Done);
+    expect(t.provisioner.stores.get(body.id)!.reprint).toBeUndefined();
+    expect((await detail('reprint-4')).reprintSite).toBeNull();
+  });
+
+  it("explains Reprint's errors in words the owner can act on", () => {
+    const reason = (code: string) => importFailureReason(`Store agent restore failed (failed): reprint ${code}: details`);
+    expect(reason('AUTH_REQUIRES_TOKEN')).toMatch(/no OpenSSL/);
+    expect(reason('NOT_FOUND')).toMatch(/^Reprint isn't installed and active/);
+    expect(importFailureReason('reprint exit 1: The Reprint Server plugin is not installed on the remote site.')).toMatch(/^Reprint isn't installed/);
+    expect(reason('WORDFENCE_BLOCKED')).toMatch(/security service/);
+    expect(reason('CURL_ERROR')).toMatch(/couldn't be reached/);
+    expect(importFailureReason('reprint: still copying, it carries on in the next attempt')).toMatch(/carries on where it stopped/);
+    expect(importFailureReason('the copy must hold database.sql and wp-content')).toMatch(/^Reprint brought no database/);
+    expect(reason('PREFLIGHT_FAILED')).toMatch(/AnyPress Export plugin instead/);
   });
 });

@@ -48,17 +48,18 @@ export class FakeProvisioner implements Provisioner {
   readonly restoreTests: { testId: string; backupId: string }[] = [];
   /** The platform's STORE_MAIL_FROM, as if stores sent email. Unset: they send none, as without a relay. */
   platformMailFrom?: string;
-  private failures = new Map<keyof Provisioner, number>();
+  private failures = new Map<keyof Provisioner, { left: number; message?: string }>();
 
-  failNext(method: keyof Provisioner, times = 1): void {
-    this.failures.set(method, times);
+  /** Makes the next `times` calls of `method` throw, with `message` when given (as a store agent's error would read). */
+  failNext(method: keyof Provisioner, times = 1, message?: string): void {
+    this.failures.set(method, { left: times, message });
   }
 
   private check(method: keyof Provisioner): void {
-    const left = this.failures.get(method) ?? 0;
-    if (left > 0) {
-      this.failures.set(method, left - 1);
-      throw new Error(`FakeProvisioner: ${method} failed (injected)`);
+    const failure = this.failures.get(method);
+    if (failure && failure.left > 0) {
+      failure.left--;
+      throw new Error(failure.message ?? `FakeProvisioner: ${method} failed (injected)`);
     }
   }
 
@@ -174,7 +175,7 @@ export class FakeProvisioner implements Provisioner {
 
   async createStore(input: CreateStoreInput) {
     this.check('createStore');
-    if (input.snapshotId === null && !this.imports.has(input.storeId)) throw new Error(`FakeProvisioner: no import uploaded for ${input.storeId}`);
+    if (input.snapshotId === null && !input.reprint && !this.imports.has(input.storeId)) throw new Error(`FakeProvisioner: no import uploaded for ${input.storeId}`);
     const imported = input.snapshotId === null;
     this.stores.set(input.storeId, {
       ...input,

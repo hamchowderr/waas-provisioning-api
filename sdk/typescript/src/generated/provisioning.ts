@@ -293,6 +293,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/import-reprint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy the site in with Reprint
+         * @description Added for AnyPress.
+         *
+         *     Moves a site in by copying it from its host with WordPress's own Reprint, instead of uploading an export with the AnyPress Export plugin. For a tenant created with `uploadCustomSnapshot`: install Reprint on the old site (Plugins → Add New Plugin), paste the tenant's `migrationToken` (GET /v1/tenants/import) under Tools → Reprint Server and choose Authorize client, then call this with the old site's address. The store copies the site's files and database over HTTPS and builds itself from them, as from an export.
+         *
+         *     Also for a move that failed (to try again), and for a store moved in that is still on hold: a copy again replaces the store's content with the old site's latest, so orders and posts made there meanwhile come along. Changes made on the store since are replaced.
+         *
+         *     Follow it with GET /v1/tenants/import: `moving`, then `done` or `failed` with a `reason`.
+         */
+        post: operations["importReprint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -2282,11 +2308,33 @@ export interface components {
             startedAt: string | null;
             /** @description Whether the site is still on hold (no scheduled jobs, email only to its owner, not indexed) until it goes live */
             onHold: boolean;
-            /** @description Once it failed, why, in words the site's owner can act on */
+            /** @description Once it failed, why, in words the site's owner can act on. Also on a store still on hold whose copy again with Reprint failed (the store stays as it was) */
             reason?: string;
             /** @description What the owner should check once the site is moved */
             warnings: string[];
             siteReport?: components["schemas"]["SiteReport"];
+            /** @description For a copy with WordPress's Reprint: the token to paste into the Reprint plugin on the old site (Tools → Reprint Server, Authorize client). Given until the store goes live. Then POST /v1/tenants/import-reprint */
+            migrationToken?: string;
+            /** @description The old site's address the store was last copied from with Reprint; null when it was not */
+            reprintSite?: string | null;
+            /** @description How many copies with Reprint were started */
+            reprintCopies?: number;
+        };
+        ImportReprintParams: {
+            /**
+             * @description The old site's address, with https://, where Reprint is active and has authorized the store's Migration Token
+             * @example https://old-shop.example.com
+             */
+            siteUrl: string;
+        };
+        ImportReprintResult: {
+            /** Format: uuid */
+            tenantId: string;
+            externalId: string;
+            /** @enum {string} */
+            status: "moving";
+            /** @description The address the copy is made from, as it was understood */
+            siteUrl: string;
         };
         /** @description What is on a site moved in, found by the store once the move is built: one item for each form, shop, CRM, booking, support, affiliate or community plugin it knows, with how much data the plugin holds and how that data could move to a Fluent plugin. Counts only: never the data itself or any key. */
         SiteReport: {
@@ -3403,6 +3451,88 @@ export interface operations {
             };
             /** @description The tenant was not moved in from another host */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    importReprint: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportReprintParams"];
+            };
+        };
+        responses: {
+            /** @description The copy started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReprintResult"];
+                };
+            };
+            /** @description The address is not an https address */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The tenant was not moved in from another host */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The site is being moved in right now, or is live */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The move expired before it started */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };

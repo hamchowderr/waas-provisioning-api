@@ -1,4 +1,6 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createPublicKey, generateKeyPair, randomBytes } from 'node:crypto';
+import { promisify } from 'node:util';
+import type { PgBoss } from 'pg-boss';
 import { Hono } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
 import { withTransaction, type Client, type Pool } from './db.ts';
@@ -8,6 +10,7 @@ import { readJson } from './http.ts';
 import { SIZES, type Size } from './plans.ts';
 import { ImportPartsError, type MoveReport, type Provisioner, type SiteCheck } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
+import type { Secrets } from './secrets.ts';
 import { siteReport, type SiteReport } from './sitereport.ts';
 import { Status } from './status.ts';
 
@@ -18,6 +21,12 @@ import { Status } from './status.ts';
  * anypress.json describing it) and, with the code's token and no API key, gets an upload link, uploads,
  * starts the move and follows it here (POST /imports/upload, /imports/start, /imports/status). The
  * store is then built from the archive and keeps the site's own plugins and themes (tenants.own_code).
+ *
+ * The other way in copies the site from its host with WordPress's own Reprint (wordpress.org plugin `reprint`): each
+ * waiting store has a key, whose public half is the Migration Token the owner pastes into the Reprint plugin on the old
+ * site (Tools → Reprint Server). Given the old site's address (startReprintCopy), the store's agent pulls the site over
+ * HTTPS with the official client and builds the store from it the same way. Until the store goes live it can be
+ * copied again, so orders and posts made on the old site meanwhile come along.
  * Runbook: docs/site-imports.md.
  */
 
@@ -60,23 +69,101 @@ export function tokenFromCode(code: string): string {
 /** The largest archive a store of this size takes: its storage, within one upload's limit. */
 export const maxImportBytes = (size: Size) => Math.min(SIZES[size].storageGb * 1024 ** 3, MAX_IMPORT_BYTES);
 
-/** Records a new import for a store inside the caller's transaction. Returns its token. */
-export async function createImport(client: Client, tenantId: string): Promise<string> {
+/**
+ * A new key for copying a site with Reprint, encrypted to keep: RSA 3072 in PKCS#8 PEM, as Reprint's own `keygen`
+ * makes. The Reprint client signs its requests with it (src/provisioner/coolify/agent.php).
+ */
+export async function newReprintKey(secrets: Secrets): Promise<string> {
+  const { privateKey } = await promisify(generateKeyPair)('rsa', {
+    modulusLength: 3072,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+  return secrets.encrypt(privateKey);
+}
+
+/** The Migration Token for a kept key: its public half on one line (base64 of the DER), as the Reprint plugin takes it. */
+export function migrationToken(secrets: Secrets, storedKey: string): string {
+  return createPublicKey(secrets.decrypt(storedKey)).export({ type: 'spki', format: 'der' }).toString('base64');
+}
+
+/**
+ * Records a new import for a store inside the caller's transaction. Returns its token. `reprintKey` is the store's
+ * encrypted Reprint key (newReprintKey), kept when a code is renewed so a token already pasted on the old site still works.
+ */
+export async function createImport(client: Client, tenantId: string, reprintKey: string | null): Promise<string> {
   const token = randomBytes(32).toString('base64url');
-  await client.query(`INSERT INTO tenant_imports (tenant_id, token_hash, expires_at) VALUES ($1, $2, now() + make_interval(days => $3))`, [
-    tenantId,
-    hashToken(token),
-    IMPORT_DAYS,
-  ]);
+  await client.query(
+    `INSERT INTO tenant_imports (tenant_id, token_hash, expires_at, reprint_key) VALUES ($1, $2, now() + make_interval(days => $3), $4)`,
+    [tenantId, hashToken(token), IMPORT_DAYS, reprintKey],
+  );
   return token;
 }
 
 /** A new token for a store still waiting for its site; the one before stops working. Null when it isn't waiting. */
 export async function renewImport(pool: Pool, tenantId: string): Promise<string | null> {
   return withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query('DELETE FROM tenant_imports WHERE tenant_id = $1 AND started_at IS NULL', [tenantId]);
-    return rowCount ? createImport(client, tenantId) : null;
+    const { rows } = await client.query<{ reprint_key: string | null }>(
+      'DELETE FROM tenant_imports WHERE tenant_id = $1 AND started_at IS NULL RETURNING reprint_key',
+      [tenantId],
+    );
+    return rows[0] ? createImport(client, tenantId, rows[0].reprint_key) : null;
   });
+}
+
+/** The old site's address for a copy with Reprint: https, a host, no user, query or fragment. Throws a 400 otherwise. */
+export function reprintSite(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 500) throw badRequest("siteUrl is required: the old site's address");
+  let url: URL;
+  try {
+    url = new URL(value.trim().includes('://') ? value.trim() : `https://${value.trim()}`);
+  } catch {
+    throw badRequest("siteUrl must be the old site's address, such as https://example.com");
+  }
+  if (url.protocol !== 'https:') throw badRequest('siteUrl must start with https://: Reprint copies a site over HTTPS only');
+  if (url.username || url.password || !url.hostname.includes('.')) throw badRequest("siteUrl must be the old site's address, such as https://example.com");
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+}
+
+/**
+ * Starts copying a store's site from its old host with Reprint: for a store waiting for its site, one whose move
+ * failed (to try again, or after one with the AnyPress Export plugin failed), or one moved in and still on hold (a
+ * copy again, which replaces the store's content with the old site's latest). Answers false when the store is busy or
+ * live, null when it was not moved in.
+ */
+export async function startReprintCopy(pool: Pool, boss: PgBoss, secrets: Secrets, tenantId: string, site: string): Promise<boolean | null> {
+  return withTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ started_at: Date | null; expires_at: Date; reprint_key: string | null; status: number; on_hold: boolean }>(
+      `SELECT i.started_at, i.expires_at, i.reprint_key, t.status, t.on_hold FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id
+        WHERE i.tenant_id = $1 FOR UPDATE OF i, t`,
+      [tenantId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const waiting = !row.started_at;
+    if (waiting && row.expires_at.getTime() < Date.now()) throw new HttpError(410, 'This move has expired. Start again from AnyPress.');
+    const again = row.status === Status.Failed || (row.status === Status.Done && row.on_hold);
+    if (!waiting && !again) return false;
+    await client.query(
+      `UPDATE tenant_imports SET started_at = COALESCE(started_at, now()), reprint_site = $2, reprint_copies = reprint_copies + 1,
+         reprint_key = COALESCE(reprint_key, $3), failure_reason = NULL, source = COALESCE(source, '{}'::jsonb) || jsonb_build_object('home', $2::text)
+        WHERE tenant_id = $1`,
+      [tenantId, site, row.reprint_key ? null : await newReprintKey(secrets)],
+    );
+    await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenantId, Status.Pending]);
+    await enqueue(boss, client, { type: 'tenant.create', tenantId });
+    return true;
+  });
+}
+
+/** How a store's site comes in when it is built: copied with Reprint (the old site's address and the key), or null for the uploaded archive. */
+export async function reprintSource(pool: Pool, secrets: Secrets, tenantId: string): Promise<{ site: string; privateKey: string } | null> {
+  const { rows } = await pool.query<{ reprint_site: string | null; reprint_key: string | null }>(
+    'SELECT reprint_site, reprint_key FROM tenant_imports WHERE tenant_id = $1',
+    [tenantId],
+  );
+  const row = rows[0];
+  return row?.reprint_site && row.reprint_key ? { site: row.reprint_site, privateKey: secrets.decrypt(row.reprint_key) } : null;
 }
 
 /**
@@ -84,9 +171,9 @@ export async function renewImport(pool: Pool, tenantId: string): Promise<string 
  * once built, what the check of the moved site found, any warnings and what's on the site (src/sitereport.ts); once
  * failed, why.
  */
-export async function importDetail(pool: Pool, tenantId: string) {
+export async function importDetail(pool: Pool, tenantId: string, secrets?: Secrets) {
   const { rows } = await pool.query(
-    `SELECT i.expires_at, i.started_at, i.source, i.failure_reason, i.site_check, i.warnings, i.site_report, t.status
+    `SELECT i.expires_at, i.started_at, i.source, i.failure_reason, i.site_check, i.warnings, i.site_report, i.reprint_key, i.reprint_site, i.reprint_copies, t.status
        FROM tenant_imports i JOIN tenants t ON t.id = i.tenant_id WHERE i.tenant_id = $1`,
     [tenantId],
   );
@@ -96,10 +183,15 @@ export async function importDetail(pool: Pool, tenantId: string) {
     expiresAt: row.expires_at.toISOString(),
     startedAt: row.started_at?.toISOString() ?? null,
     source: row.source ?? null,
-    ...(row.status === Status.Failed && { reason: row.failure_reason ?? FAILED }),
+    // Why it failed; for a store still built (a copy again that could not fetch the site), why that copy failed.
+    ...((row.status === Status.Failed || row.failure_reason) && { reason: row.failure_reason ?? FAILED }),
     ...(row.site_check && { check: row.site_check }),
     warnings: (row.warnings ?? []) as string[],
     ...(row.site_report && { siteReport: row.site_report as SiteReport }),
+    // For a copy with Reprint: the token to paste on the old site, and the address it was copied from.
+    ...(secrets && row.reprint_key && { migrationToken: migrationToken(secrets, row.reprint_key) }),
+    reprintSite: (row.reprint_site as string | null) ?? null,
+    reprintCopies: row.reprint_copies as number,
   };
 }
 
@@ -112,6 +204,15 @@ const FAILED = 'The move could not be finished. Contact support with the store\'
  */
 export function importFailureReason(error: string): string {
   const reasons: [RegExp, string][] = [
+    // A copy with Reprint (agent.php: reprint_run), by Reprint's error code.
+    [/reprint AUTH_REQUIRES_TOKEN/, "The old site's host can't check a Migration Token (it has no OpenSSL). Move the site with the AnyPress Export plugin instead."],
+    [/reprint (AUTH_UNKNOWN_KEY|AUTH_NOT_CONFIGURED|AUTH_FAILED|AUTH_NO_CREDENTIAL|AUTH_REQUIRES_KEY)/, "Reprint on the old site hasn't let this store in yet. Under Tools → Reprint Server, paste this store's Migration Token, choose Authorize client, then start the copy again."],
+    [/reprint (NOT_FOUND|HTML_RESPONSE|INVALID_JSON|INVALID_PREFLIGHT_RESPONSE)|Reprint Server plugin is not installed/, "Reprint isn't installed and active on the old site at that address. Install Reprint (Plugins → Add New Plugin), activate it, check the address, then start the copy again."],
+    [/reprint (CLOUDFLARE_CHALLENGE|WORDFENCE_BLOCKED|AUTH_HEADERS_STRIPPED|RATE_LIMITED)/, 'A security service in front of the old site (such as Cloudflare or Wordfence) stopped the copy. Let the copy through, or move the site with the AnyPress Export plugin instead.'],
+    [/reprint (CURL_ERROR|REDIRECT)/, "The old site couldn't be reached at that address. Check it (https:// and with or without www, as the site uses it), then start the copy again."],
+    [/reprint: still copying/, "The site is big and the copy didn't finish in time. Start the copy again: it carries on where it stopped."],
+    [/the copy must hold database\.sql and wp-content/, "Reprint brought no database or no wp-content from the old site. Check that the address is the WordPress site's, or move it with the AnyPress Export plugin."],
+    [/reprint (PREFLIGHT_FAILED|exit \d+)|reprint: /, "Reprint couldn't copy the old site. Move it with the AnyPress Export plugin instead, or contact support with the store's address."],
     [/must hold database\.sql and wp-content/, 'The export is missing its database or its files. Run the export again on the old site.'],
     [/multisite/i, 'Multisite networks can\'t be moved in yet.'],
     [/has both \S+ and \S+/, 'The database holds two sets of WordPress tables whose names collide. Remove the old copy\'s tables from the old site\'s database, then export again.'],
@@ -285,8 +386,9 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     };
   }
 
-  const notStarted = (found: { expires_at: Date; started_at: Date | null }) => {
-    if (found.started_at) throw new HttpError(409, 'This site is already being moved in.');
+  // A move that failed can be done again with the plugin (after a copy with Reprint that could not reach the site, say).
+  const notStarted = (found: { expires_at: Date; started_at: Date | null; status: number }) => {
+    if (found.started_at && found.status !== Status.Failed) throw new HttpError(409, 'This site is already being moved in.');
     if (found.expires_at.getTime() < Date.now()) throw new HttpError(410, 'This import code has expired. Start again from AnyPress.');
   };
 
@@ -359,11 +461,16 @@ export function importRoutes({ pool, boss, provisioner, releases }: Deps) {
     }
     const source = { ...importSource((body as { source?: unknown }).source), uploadedBytes: bytes };
     const started = await withTransaction(pool, async (client) => {
-      const { rowCount } = await client.query('UPDATE tenant_imports SET started_at = now(), source = $2 WHERE tenant_id = $1 AND started_at IS NULL', [
-        found.tenant_id,
-        source,
-      ]);
-      if (rowCount) await enqueue(boss, client, { type: 'tenant.create', tenantId: found.tenant_id });
+      // The archive, not a copy with Reprint, is what the store is built from now.
+      const { rowCount } = await client.query(
+        `UPDATE tenant_imports i SET started_at = now(), source = $2, reprint_site = NULL, failure_reason = NULL FROM tenants t
+          WHERE i.tenant_id = $1 AND t.id = i.tenant_id AND (i.started_at IS NULL OR t.status = $3)`,
+        [found.tenant_id, source, Status.Failed],
+      );
+      if (rowCount) {
+        await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [found.tenant_id, Status.Pending, Status.Failed]);
+        await enqueue(boss, client, { type: 'tenant.create', tenantId: found.tenant_id });
+      }
       return rowCount === 1;
     });
     if (!started) throw new HttpError(409, 'This site is already being moved in.');
