@@ -27,6 +27,7 @@ import { siteKey, siteKeyMaster } from './sitekeys.ts';
 import { startStoreBackups } from './storebackups.ts';
 import Firecrawl from '@mendable/firecrawl-js';
 import { startReferences } from './references.ts';
+import { loadDomainSalesConfig, startDomainSales, storeAttacher } from './domainsales.ts';
 import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webhooks.ts';
 
 const config = loadConfig();
@@ -88,8 +89,13 @@ const auth = config.auth ? createAuth(pool, config.auth) : undefined;
 const cpuWatch = config.cpuWatch ? new CpuWatch(config.cpuWatch) : undefined;
 cpuWatch?.start();
 
-const server = serve({ fetch: createApp({ config, pool, boss, provisioner, secrets, releases, auth, cpuWatch }).fetch, port: config.port }, (info) =>
-  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'})`),
+// Buying domains for stores (docs/domains.md), when Name.com and Stripe are set up: paid orders are registered every 5 minutes.
+const domainSales = loadDomainSalesConfig(process.env);
+const deps = { config, pool, boss, provisioner, secrets, releases, auth, cpuWatch, domainSales };
+await startDomainSales(boss, { pool, config: domainSales, storesDomain: config.storesDomain, ipv6: config.domainConnect?.ipv6, attach: storeAttacher(deps) });
+
+const server = serve({ fetch: createApp(deps).fetch, port: config.port }, (info) =>
+  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'}${domainSales ? '' : '; domain sales off: NAMECOM_* not set'})`),
 );
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

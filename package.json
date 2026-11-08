@@ -30,6 +30,7 @@
     "@modelcontextprotocol/client": "^2.4.0",
     "@modelcontextprotocol/ext-apps": "^2.0.4",
     "@modelcontextprotocol/server": "^2.4.0",
+    "@namecom/core-api": "1.36.2",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "aws4fetch": "1.0.20",

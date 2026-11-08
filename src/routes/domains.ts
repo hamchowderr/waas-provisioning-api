@@ -6,6 +6,7 @@ import { readJson, uuidQuery } from '../http.ts';
 import { validateBody } from '../openapi.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
+import { buyDomain, listBoughtDomains, searchDomains, setAutoRenew, transferCode } from '../domainsales.ts';
 import { domainInUse, findTenant, normalizeDomain } from '../tenants.ts';
 
 interface AddDomainParams {
@@ -115,6 +116,31 @@ export function domainRoutes(deps: Deps) {
   app.get('/domains/available', async (c) => {
     const domain = normalizeDomain(c.req.query('domain') ?? '');
     return c.json({ available: !(await domainInUse(pool, domain, config.platformDomain, config.brandDomain)) });
+  });
+
+  // Buying a domain for the store (src/domainsales.ts, docs/domains.md).
+  app.get('/domains/search', async (c) => c.json({ results: await searchDomains(deps, c.req.query('query') ?? '') }));
+
+  app.post('/domains/buy', async (c) => {
+    const tenant = await changeableTenant(c);
+    const body = validateBody<{ domainName: string; contact: unknown }>('BuyDomainParams', await readJson(c));
+    return c.json(await buyDomain(deps, tenant, body.domainName, body.contact));
+  });
+
+  app.get('/domains/bought', async (c) => {
+    const tenant = await findTenant(pool, c);
+    return c.json({ domains: await listBoughtDomains(pool, tenant.id) });
+  });
+
+  app.put('/domains/bought/auto-renew', async (c) => {
+    const tenant = await findTenant(pool, c);
+    const body = validateBody<{ domainName: string; autoRenew: boolean }>('SetDomainAutoRenewParams', await readJson(c));
+    return c.json(await setAutoRenew(deps, tenant.id, body.domainName, body.autoRenew));
+  });
+
+  app.get('/domains/bought/transfer-code', async (c) => {
+    const tenant = await findTenant(pool, c);
+    return c.json(await transferCode(deps, tenant.id, c.req.query('domainName') ?? ''));
   });
 
   return app;

@@ -8,6 +8,7 @@ import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import type { DomainConnectNet } from './domainconnect.ts';
+import type { DomainSalesConfig } from './domainsales.ts';
 import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
 import { APP_PATHS, highLevelRoutes } from './highlevel.ts';
@@ -55,6 +56,8 @@ export interface Deps {
   releases?: ReleaseStore;
   /** DNS and HTTP for Domain Connect lookups; tests replace it. */
   domainConnectNet?: DomainConnectNet;
+  /** Buying domains for stores (src/domainsales.ts); absent when Name.com or Stripe isn't set up. */
+  domainSales?: DomainSalesConfig;
   /** The wordpress.org plugin directory, for plugin choices (src/wporg.ts); tests replace it. */
   wporg?: WpOrg;
   /** Calls stores' site-editing routes (src/sitekeys.ts); tests replace it. */
