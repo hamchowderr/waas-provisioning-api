@@ -15,4 +15,18 @@ describe('secret hashing', () => {
     expect(await verifySecret('example-secreT', hash)).toBe(false);
     expect(await verifySecret('example-secret', 'plain-text')).toBe(false);
   });
+
+  it('remembers a match, so the next check of the same secret skips scrypt, and never remembers a miss', async () => {
+    const hash = await hashSecret('busy-secret');
+    let started = performance.now();
+    expect(await verifySecret('busy-secret', hash)).toBe(true);
+    const slow = performance.now() - started;
+    started = performance.now();
+    expect(await verifySecret('busy-secret', hash)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(slow);
+    // A different secret against the same hash is still checked in full, and still wrong.
+    expect(await verifySecret('busy-secreT', hash)).toBe(false);
+    // A new hash (a rotated key) is checked in full too.
+    expect(await verifySecret('busy-secret', await hashSecret('other-secret'))).toBe(false);
+  });
 });

@@ -29,7 +29,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # The Node line the API's Docker image runs (the active LTS).
+          node-version: 26
           cache: npm
       - run: npm ci
       # The n8n node and the Zapier app (integrations/) are driven against the app by test/integrations.test.ts.
@@ -105,7 +106,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
       - run: npm ci
       - run: npm run test:docker

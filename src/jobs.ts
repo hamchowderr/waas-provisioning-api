@@ -1,3 +1,4 @@
+import { purgeExpiredSignIns } from './auth.ts';
 import { sendWebsiteReady, type AuthMail } from './authmail.ts';
 import { brandedMail } from './branding.ts';
 import { maintainDashboardDomains } from './dashboarddomains.ts';
@@ -263,6 +264,7 @@ export function createJobHandlers(
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
       await purgeExpiredImports(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
+      await purgeExpiredSignIns(pool);
       await maintainDashboardDomains(pool, dashboardHost());
       await stopBuiltVersions(pool, provisioner);
     },

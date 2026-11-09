@@ -97,6 +97,13 @@ await startDomainSales(boss, { pool, config: domainSales, storesDomain: config.s
 const server = serve({ fetch: createApp(deps).fetch, port: config.port }, (info) =>
   console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'}${domainSales ? '' : '; domain sales off: NAMECOM_* not set'})`),
 );
+// The proxy in front (Coolify's Traefik) keeps idle connections to the API open for up to 90 seconds.
+// Node's own default is 5, so the API could close a connection just as Traefik reused it, and that
+// request failed with a 502. Keeping them open longer than Traefik does stops that.
+if ('keepAliveTimeout' in server) {
+  server.keepAliveTimeout = 95_000;
+  server.headersTimeout = 96_000;
+}
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {

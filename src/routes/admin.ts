@@ -1172,7 +1172,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.post('/products/:productId/prospects/search', async (c) => {
     const productId = await product(c);
     const input = searchInput(await c.req.json().catch(() => null));
-    const found = await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0 }, productId, input, deps.placesFetch);
+    const found = await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0 }, productId, input, deps.placesSearch);
     // Which of them are in the seller's CRM already (src/prospectcrm.ts).
     const marks = await crmMarks(pool, productId, found.prospects.map((p) => p.id));
     return c.json({ ...found, prospects: found.prospects.map((p) => ({ ...p, inCrm: marks[p.id] ?? [] })) }, 200, { 'Cache-Control': 'no-store' });

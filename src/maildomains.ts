@@ -1,3 +1,4 @@
+import { ensureQueue } from './queue.ts';
 import type { PgBoss } from 'pg-boss';
 import type { Pool } from './db.ts';
 import { badRequest } from './errors.ts';
@@ -163,7 +164,7 @@ export async function startMailDomainChecks(
     if (await boss.getQueue(MAIL_DOMAINS_QUEUE)) await boss.unschedule(MAIL_DOMAINS_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(MAIL_DOMAINS_QUEUE))) await boss.createQueue(MAIL_DOMAINS_QUEUE, { retryLimit: 0, expireInSeconds: 3600 });
+  await ensureQueue(boss, MAIL_DOMAINS_QUEUE, { retryLimit: 0, expireInSeconds: 3600 });
   await boss.schedule(MAIL_DOMAINS_QUEUE, '*/10 * * * *');
   await boss.work(MAIL_DOMAINS_QUEUE, { pollingIntervalSeconds: 60 }, () => checkMailDomains(pool, domains, provisioner, mailboxDomains));
 }

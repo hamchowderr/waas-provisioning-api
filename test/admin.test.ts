@@ -359,7 +359,8 @@ describe('admin versions and templates (any product)', () => {
     const created = await admin('POST', `${base}/versions`, 200, { name: 'admin-v2', phpVersion: '8.3', wordPressVersion: '6.8', useCustomUpload: true, snapshotIdsToCopy: [template.id] });
     expect(created).toMatchObject({ name: 'admin-v2', domainName: expect.stringContaining('admin-v2') });
     await waitFor(async () => (await admin('GET', `${base}/versions?versionId=${created.id}`))[0]?.statusCode === Status.Done);
-    expect(await admin('PUT', `${base}/versions/${created.id}/production`)).toMatchObject({ id: created.id });
+    // moveStores=false: the store stays on the old version, so the checks below don't race its move (jobs start at once).
+    expect(await admin('PUT', `${base}/versions/${created.id}/production?moveStores=false`)).toMatchObject({ id: created.id });
     const groups = (await (await t.call('GET', '/v1/snapshots?onlyProductionVersion=true', { auth: otherAuth })).json()) as any[];
     expect(groups.map((g) => g.groupName)).toContain('admin-starter');
 

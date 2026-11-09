@@ -7,6 +7,7 @@ import type { JobWithMetadata, PgBoss } from 'pg-boss';
 import type { Client, Pool } from './db.ts';
 import { badRequest, HttpError } from './errors.ts';
 import type { JobData, JobHandlers } from './queue.ts';
+import { ensureQueue, NOTIFY_POLL_SECONDS } from './queue.ts';
 import type { Secrets } from './secrets.ts';
 import { loadHighLevelConfig, triggerBody, triggerHeaders, type HighLevelConfig } from './highlevel.ts';
 import { TENANT_SELECT, toTenant } from './tenants.ts';
@@ -417,20 +418,18 @@ export async function startWebhookWorker(
   pool: Pool,
   secrets: Secrets,
   config: WebhookConfig,
-  { retryDelaySeconds = 30, retryLimit = 10, pollingIntervalSeconds = 2 } = {},
+  { retryDelaySeconds = 30, retryLimit = 10, pollingIntervalSeconds = 2, notifyPollingIntervalSeconds = NOTIFY_POLL_SECONDS } = {},
 ): Promise<void> {
-  if (!(await boss.getQueue(WEBHOOK_QUEUE))) {
-    await boss.createQueue(WEBHOOK_QUEUE, {
-      retryLimit,
-      retryDelay: retryDelaySeconds,
-      retryBackoff: true,
-      retryDelayMax: 3600,
-      expireInSeconds: TIMEOUT_SECONDS * 6,
-      deleteAfterSeconds: 7 * 24 * 3600,
-    });
-  }
+  await ensureQueue(boss, WEBHOOK_QUEUE, {
+    retryLimit,
+    retryDelay: retryDelaySeconds,
+    retryBackoff: true,
+    retryDelayMax: 3600,
+    expireInSeconds: TIMEOUT_SECONDS * 6,
+    deleteAfterSeconds: 7 * 24 * 3600,
+  });
   // Five workers, so one slow endpoint doesn't hold back the rest.
-  await boss.work(WEBHOOK_QUEUE, { includeMetadata: true, pollingIntervalSeconds, localConcurrency: 5 }, async ([job]: JobWithMetadata<{ deliveryId: string }>[]) => {
+  await boss.work(WEBHOOK_QUEUE, { includeMetadata: true, pollingIntervalSeconds, notifyPollingIntervalSeconds, localConcurrency: 5 }, async ([job]: JobWithMetadata<{ deliveryId: string }>[]) => {
     if (!job) return;
     await deliver(pool, secrets, config, job.data.deliveryId, job.retryCount >= job.retryLimit);
   });

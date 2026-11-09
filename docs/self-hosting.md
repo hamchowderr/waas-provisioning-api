@@ -248,6 +248,20 @@ Not supported for stores yet. Here is what works today and what a Kubernetes dri
 
 Most of the work is already outside Coolify: the archive format, `agent.php`, the guard mu-plugin, backups to S3 through pre-signed URLs and the job queue all stay the same. Kubernetes is the sensible next step past a handful of Coolify servers, when stores need spreading and moving automatically. Until then, Stage 2 is simpler to run.
 
+## Postgres settings
+
+The API runs on Postgres's defaults. To see which queries take the most time, load the query statistics
+library: add these lines to the server's `postgresql.conf` (in Coolify: the database's **Custom PostgreSQL
+Configuration**) and restart the database once. The API adds the `pg_stat_statements` extension itself.
+
+```
+shared_preload_libraries = 'pg_stat_statements'
+pg_stat_statements.track = all
+log_min_duration_statement = 1000
+```
+
+`log_min_duration_statement` writes any query slower than a second to the database's log.
+
 ## Settings reference
 
 Everything the API reads, in `src/config.ts` and the modules it loads:

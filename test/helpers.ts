@@ -54,8 +54,8 @@ export async function setup({ releases }: { releases?: ReleaseStore } = {}): Pro
   const webhooks: WebhookConfig = { allowPrivate: true, logDays: 30 };
   config.webhooks = webhooks;
   const jobs = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, 30, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss), pool, boss, webhooks);
-  await startWorker(boss, jobs, 0.5);
-  await startWebhookWorker(boss, pool, secrets, webhooks, { retryDelaySeconds: 1, retryLimit: 2, pollingIntervalSeconds: 0.5 });
+  await startWorker(boss, jobs, 0.5, 0.5);
+  await startWebhookWorker(boss, pool, secrets, webhooks, { retryDelaySeconds: 1, retryLimit: 2, pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 0.5 });
   const deps: Deps = { config, pool, boss, provisioner, secrets, releases };
   const app = createApp(deps);
 

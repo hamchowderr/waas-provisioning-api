@@ -1,6 +1,7 @@
 // The Sales Kit's prospect finder: local businesses of one kind in one place, from Google Places Text Search, for
-// a storefront's sellers to contact. Each storefront gets PROSPECT_SEARCHES_PER_MONTH searches a calendar month
+// a storefront's sellers to contact, through Google's official Places SDK. Each storefront gets PROSPECT_SEARCHES_PER_MONTH searches a calendar month
 // (UTC); a search that fails isn't counted. Off until GOOGLE_PLACES_API_KEY is set.
+import type { PlacesClient } from '@googlemaps/places';
 import type { Pool } from './db.ts';
 import { HttpError } from './errors.ts';
 
@@ -76,43 +77,87 @@ export function searchInput(body: unknown): { query: string; location: string; p
 }
 
 /** One Text Search, counted against the storefront's month. Throws 503 when off, 429 when the month is spent. */
+/** One Text Search request, as Google's Places SDK takes it. */
+export interface PlacesTextSearch {
+  textQuery: string;
+  pageSize: number;
+  languageCode: string;
+  pageToken?: string;
+}
+
+/** What a search answers: the fields asked for in FIELDS. */
+export interface PlacesAnswer {
+  places?: Array<Record<string, any>> | null;
+  nextPageToken?: string | null;
+}
+
+/** Runs one Text Search; tests replace it. A failure throws Google's error, with its gRPC `code`. */
+export type PlacesSearch = (apiKey: string, request: PlacesTextSearch, fieldMask: string) => Promise<PlacesAnswer>;
+
+const placesClients = new Map<string, PlacesClient>();
+
+/**
+ * Google's official Places SDK (@googlemaps/places), over HTTPS with the API key (fallback mode: plain
+ * REST calls, no gRPC connection kept open). One client per key, made on first use.
+ */
+export const googlePlacesSearch: PlacesSearch = async (apiKey, request, fieldMask) => {
+  let client = placesClients.get(apiKey);
+  if (!client) {
+    // Loaded on the first search, so the API doesn't carry Google's client library until it's used.
+    const { PlacesClient } = await import('@googlemaps/places');
+    client = new PlacesClient({ apiKey, fallback: true });
+    placesClients.set(apiKey, client);
+  }
+  const [answer] = await client.searchText(request, { otherArgs: { headers: { 'X-Goog-FieldMask': fieldMask } }, timeout: 15_000 });
+  return answer as PlacesAnswer;
+};
+
+/** gRPC status names for the codes Google answers a Places search with. */
+const GRPC_STATUS: Record<number, string> = {
+  3: 'INVALID_ARGUMENT',
+  4: 'DEADLINE_EXCEEDED',
+  7: 'PERMISSION_DENIED',
+  8: 'RESOURCE_EXHAUSTED',
+  13: 'INTERNAL',
+  14: 'UNAVAILABLE',
+  16: 'UNAUTHENTICATED',
+};
+/** A bad key, billing or a switched-off API: ours to fix, not worth the seller trying again. */
+const OUR_PROBLEM = new Set([3, 7, 16]);
+
+/** One Text Search, counted against the storefront's month. Throws 503 when off, 429 when the month is spent. */
 export async function searchProspects(
   pool: Pool,
   config: ProspectConfig,
   productId: string,
   input: { query: string; location: string; pageToken?: string },
-  fetchFn: typeof fetch = fetch,
+  search: PlacesSearch = googlePlacesSearch,
   now = new Date(),
 ): Promise<{ prospects: Prospect[]; nextPageToken: string | null; usage: ProspectUsage }> {
   if (!config.apiKey) throw new HttpError(503, "The prospect finder isn't set up yet.");
   const before = await prospectUsage(pool, config, productId, now);
   if (before.used >= before.limit) throw new HttpError(429, `You've used this month's ${before.limit} searches. They start again on the 1st.`);
 
-  let res: Response;
+  let data: PlacesAnswer;
   try {
-    res = await fetchFn('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': config.apiKey, 'X-Goog-FieldMask': FIELDS },
-      // A next page repeats the first page's request with Google's pageToken; each page counts as a search.
-      body: JSON.stringify({ textQuery: `${input.query} in ${input.location}`, pageSize: 20, languageCode: 'en', ...(input.pageToken ? { pageToken: input.pageToken } : {}) }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    // A next page repeats the first page's request with Google's pageToken; each page counts as a search.
+    data = await search(
+      config.apiKey,
+      { textQuery: `${input.query} in ${input.location}`, pageSize: 20, languageCode: 'en', ...(input.pageToken ? { pageToken: input.pageToken } : {}) },
+      FIELDS,
+    );
   } catch (err) {
-    console.error(`Prospect search: Google Places unreachable: ${(err as Error).message}`);
-    throw new HttpError(502, "Google didn't answer. Try again in a minute.");
-  }
-  if (!res.ok) {
     // Google's own reason (never the key) goes to the log, so a bad key, billing or a switched-off API can be told apart.
-    const body = (await res.json().catch(() => null)) as { error?: { status?: string; message?: string } } | null;
-    console.error(`Prospect search: Google Places ${res.status} ${body?.error?.status ?? ''}: ${body?.error?.message ?? ''}`.trim());
-    if (res.status === 400 || res.status === 401 || res.status === 403) {
+    const code = (err as { code?: unknown }).code;
+    const status = typeof code === 'number' ? (GRPC_STATUS[code] ?? String(code)) : 'unreachable';
+    console.error(`Prospect search: Google Places ${status}: ${(err as Error).message ?? ''}`.trim());
+    if (typeof code === 'number' && OUR_PROBLEM.has(code)) {
       throw new HttpError(503, "The prospect finder isn't working right now. We've been told and are fixing it.");
     }
     throw new HttpError(502, "Google didn't answer. Try again in a minute.");
   }
-  const data = (await res.json()) as { places?: Array<Record<string, any>>; nextPageToken?: string };
   const prospects: Prospect[] = (data.places ?? [])
-    .filter((p) => p.businessStatus !== 'CLOSED_PERMANENTLY')
+    .filter((p) => p.businessStatus !== 'CLOSED_PERMANENTLY' && p.businessStatus !== 3)
     .map((p) => ({
       id: String(p.id),
       name: String(p.displayName?.text ?? ''),

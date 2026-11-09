@@ -244,6 +244,12 @@ export class CoolifyProvisioner implements Provisioner {
   readonly s3: S3;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly envIds = new Map<string, number>();
+  /**
+   * Service uuids by environment and name. A Service keeps its uuid for life, so after the first full
+   * list a lookup reads only that one Service: Coolify's full list (every store's compose file, many
+   * megabytes) is slow for Coolify to build on the same server the stores run on.
+   */
+  private readonly serviceUuids = new Map<string, string>();
 
   constructor(private readonly config: CoolifyProvisionerConfig) {
     this.coolify = new CoolifyClient(config.url, config.token, config.fetch);
@@ -276,7 +282,19 @@ export class CoolifyProvisioner implements Provisioner {
   /** The Service with this name in this project's environment, if any. */
   async findService(envName: string, name: string): Promise<CoolifyService | null> {
     const envId = await this.environmentId(envName);
+    const key = `${envId}/${name}`;
+    const known = this.serviceUuids.get(key);
+    if (known) {
+      try {
+        const service = await this.coolify.getService(known);
+        if (service.name === name && service.environment_id === envId && !(service as { deleted_at?: string | null }).deleted_at) return service;
+      } catch (err) {
+        if ((err as { status?: number }).status !== 404) throw err;
+      }
+      this.serviceUuids.delete(key);
+    }
     const services = await this.coolify.listServices();
+    for (const s of services) if (s.environment_id !== undefined) this.serviceUuids.set(`${s.environment_id}/${s.name}`, s.uuid);
     return services.find((s) => s.name === name && s.environment_id === envId) ?? null;
   }
 

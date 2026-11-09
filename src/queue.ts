@@ -1,4 +1,4 @@
-import { PgBoss, type JobWithMetadata } from 'pg-boss';
+import { PgBoss, type JobWithMetadata, type Queue } from 'pg-boss';
 import type { Client } from './db.ts';
 import type { Size } from './plans.ts';
 
@@ -74,27 +74,57 @@ function singletonKey(data: JobData): string {
  */
 export const HEARTBEAT_SECONDS = 60;
 
-export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } = {}): Promise<PgBoss> {
-  const boss = new PgBoss({ connectionString: databaseUrl, schema: 'pgboss' });
-  boss.on('error', (err) => console.error('pg-boss:', err));
-  await boss.start();
-  const queue = await boss.getQueue(QUEUE);
+/**
+ * How long a worker on a notify queue (ensureQueue) waits between checks when nothing woke it. pg-boss's
+ * LISTEN/NOTIFY wakes workers the moment a job is sent, so this check is what picks up a retry once its
+ * delay is over (a retry sends no notification) and covers a missed notification. Before NOTIFY, every
+ * worker checked every 2 seconds.
+ */
+export const NOTIFY_POLL_SECONDS = 10;
+
+/** Store and version jobs run side by side, up to this many at once (different stores only). */
+export const PROVISION_WORKERS = 2;
+
+/**
+ * Creates a queue, or brings an existing one up to date. Every queue is a notify queue: sending a job
+ * wakes its workers at once through Postgres NOTIFY, instead of each worker checking the table every
+ * few seconds all day. `heartbeatSeconds` can be changed on an existing queue too; the other options
+ * stay as the queue was made.
+ */
+export async function ensureQueue(boss: PgBoss, name: string, options: Omit<Queue, 'name'> = {}): Promise<void> {
+  const queue = await boss.getQueue(name);
   if (!queue) {
-    await boss.createQueue(QUEUE, {
-      policy: 'key_strict_fifo',
-      retryLimit: 3,
-      retryDelay: retryDelaySeconds,
-      retryBackoff: true,
-      expireInSeconds: 3600,
-      deleteAfterSeconds: 7 * 24 * 3600,
-      heartbeatSeconds: HEARTBEAT_SECONDS,
-    });
-  } else if (queue.heartbeatSeconds !== HEARTBEAT_SECONDS) {
-    // Queues made before the heartbeat. Jobs take it from the queue when they are sent; the jobs
-    // that waited from before it are long gone, so this only ever changes the queue itself.
-    await boss.updateQueue(QUEUE, { heartbeatSeconds: HEARTBEAT_SECONDS });
+    await boss.createQueue(name, { ...options, notify: true });
+    return;
   }
-  if (!(await boss.getQueue(MAINTENANCE_QUEUE))) await boss.createQueue(MAINTENANCE_QUEUE, { retryLimit: 2 });
+  const changes: { notify?: boolean; heartbeatSeconds?: number } = {};
+  if (!queue.notify) changes.notify = true;
+  if (options.heartbeatSeconds !== undefined && queue.heartbeatSeconds !== options.heartbeatSeconds) changes.heartbeatSeconds = options.heartbeatSeconds;
+  if (Object.keys(changes).length) await boss.updateQueue(name, changes as Parameters<PgBoss['updateQueue']>[1]);
+}
+
+export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } = {}): Promise<PgBoss> {
+  // useListenNotify: one connection listens for new jobs, so workers start them at once (ensureQueue).
+  const boss = new PgBoss({
+    connectionString: databaseUrl, schema: 'pgboss', application_name: 'waas-api-jobs', useListenNotify: true,
+    // Kept 30 days in pgboss.warning, for looking back after a slow day.
+    persistWarnings: true,
+    warningRetentionDays: 30,
+  });
+  boss.on('error', (err) => console.error('pg-boss:', err));
+  // pg-boss's own checks: slow queries, a backlog, index bloat, vacuum falling behind, a lost listener.
+  boss.on('warning', (warning) => console.warn(`pg-boss warning: ${warning.message}`, JSON.stringify(warning.data)));
+  await boss.start();
+  await ensureQueue(boss, QUEUE, {
+    policy: 'key_strict_fifo',
+    retryLimit: 3,
+    retryDelay: retryDelaySeconds,
+    retryBackoff: true,
+    expireInSeconds: 3600,
+    deleteAfterSeconds: 7 * 24 * 3600,
+    heartbeatSeconds: HEARTBEAT_SECONDS,
+  });
+  await ensureQueue(boss, MAINTENANCE_QUEUE, { retryLimit: 2 });
   await boss.schedule(MAINTENANCE_QUEUE, '17 3 * * *');
   return boss;
 }
@@ -114,9 +144,16 @@ export interface JobHandlers {
   maintenance(): Promise<void>;
 }
 
-export async function startWorker(boss: PgBoss, handlers: JobHandlers, pollingIntervalSeconds = 2): Promise<string> {
+export async function startWorker(
+  boss: PgBoss,
+  handlers: JobHandlers,
+  pollingIntervalSeconds = 2,
+  notifyPollingIntervalSeconds = NOTIFY_POLL_SECONDS,
+): Promise<string> {
   await boss.work(MAINTENANCE_QUEUE, { pollingIntervalSeconds: 60 }, () => handlers.maintenance());
-  return boss.work(QUEUE, { includeMetadata: true, pollingIntervalSeconds }, async ([job]: JobWithMetadata<JobData>[]) => {
+  // Two workers: a long store build doesn't hold up another store's quick change. Jobs for the same
+  // store or version still run one at a time, in order (key_strict_fifo).
+  return boss.work(QUEUE, { includeMetadata: true, pollingIntervalSeconds, notifyPollingIntervalSeconds, localConcurrency: PROVISION_WORKERS }, async ([job]: JobWithMetadata<JobData>[]) => {
     if (!job) return;
     try {
       await handlers.run(job.data);

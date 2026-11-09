@@ -1,3 +1,4 @@
+import { ensureQueue } from './queue.ts';
 // Buying a domain for a store (docs/domains.md). The buyer searches, picks an available name and pays a Stripe invoice;
 // once it is paid the domain is registered at the registrar (Name.com, through its official SDK @namecom/core-api), its
 // DNS is pointed at the stores (A and AAAA for the domain and www) and it becomes the store's main address. Nothing is
@@ -651,7 +652,7 @@ export async function startDomainSales(boss: PgBoss, work: Omit<DomainSalesWork,
     if (await boss.getQueue(DOMAIN_SALES_QUEUE)) await boss.unschedule(DOMAIN_SALES_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(DOMAIN_SALES_QUEUE))) await boss.createQueue(DOMAIN_SALES_QUEUE, { retryLimit: 0, expireInSeconds: 1800 });
+  await ensureQueue(boss, DOMAIN_SALES_QUEUE, { retryLimit: 0, expireInSeconds: 1800 });
   await boss.schedule(DOMAIN_SALES_QUEUE, '*/5 * * * *');
   await boss.work(DOMAIN_SALES_QUEUE, { pollingIntervalSeconds: 60 }, () => processDomainSales({ ...work, config }));
 }

@@ -1,7 +1,10 @@
+import { Vercel } from '@vercel/sdk';
+import { HTTPClient } from '@vercel/sdk/lib/http.js';
+import { VercelError as VercelSdkError } from '@vercel/sdk/models/vercelerror.js';
 import { CoolifyDashboardDomains } from './coolifydashboard.ts';
 
 /**
- * The few Vercel REST calls that put a seller's own dashboard address on the dashboard's Vercel
+ * The few Vercel calls (its official SDK) that put a seller's own dashboard address on the dashboard's Vercel
  * project (src/dashboarddomains.ts): add, look up, verify and remove a project domain, and read
  * whether its DNS points at Vercel. VERCEL_TOKEN needs access to the project's team.
  */
@@ -54,54 +57,64 @@ export class VercelError extends Error {
 interface VercelProjectDomain {
   name: string;
   verified: boolean;
-  verification?: { type: string; domain: string; value: string; reason?: string }[];
+  verification?: { type: string; domain: string; value: string; reason?: string }[] | undefined;
 }
 
-interface VercelDomainConfig {
-  misconfigured: boolean;
-  recommendedCNAME?: { rank: number; value: string }[];
-  recommendedIPv4?: { rank: number; value: string[] }[];
+/** The SDK's error for a failed call: its HTTP status and Vercel's own error code and message. */
+function vercelError(err: unknown): VercelError | unknown {
+  if (!(err instanceof VercelSdkError) || (err.statusCode >= 200 && err.statusCode < 300)) return err;
+  let code: string | undefined;
+  let message = err.message;
+  try {
+    const body = JSON.parse(err.body) as { error?: { code?: string; message?: string } };
+    code = body.error?.code;
+    message = body.error?.message ?? `Vercel answered ${err.statusCode}`;
+  } catch {
+    // Not JSON: keep the SDK's message.
+  }
+  return new VercelError(err.statusCode, code, message);
 }
 
+/** Vercel's project domains through its official SDK (@vercel/sdk). */
 export class VercelDomains implements DashboardHost {
   readonly name = 'vercel';
-  private readonly api: string;
+  private readonly vercel: Vercel;
 
   constructor(
     private readonly config: VercelConfig,
-    private readonly fetchFn: typeof fetch = fetch,
+    fetchFn: typeof fetch = fetch,
   ) {
-    this.api = (config.apiUrl ?? 'https://api.vercel.com').replace(/\/+$/, '');
-  }
-
-  private async call<T>(method: string, path: string, body?: unknown, { allow404 = false } = {}): Promise<T | null> {
-    const url = new URL(this.api + path);
-    if (this.config.teamId) url.searchParams.set('teamId', this.config.teamId);
-    const res = await this.fetchFn(url, {
-      method,
-      headers: { Authorization: `Bearer ${this.config.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(20_000),
+    this.vercel = new Vercel({
+      bearerToken: config.token,
+      serverURL: config.apiUrl?.replace(/\/+$/, ''),
+      timeoutMs: 20_000,
+      httpClient: new HTTPClient({ fetcher: (input, init) => fetchFn(input, init) }),
     });
-    if (allow404 && res.status === 404) return null;
-    const text = await res.text();
-    const json: any = text ? JSON.parse(text) : null;
-    if (!res.ok) throw new VercelError(res.status, json?.error?.code, json?.error?.message ?? `Vercel answered ${res.status}`);
-    return json as T;
   }
 
-  private project(domain?: string) {
-    const base = `/projects/${encodeURIComponent(this.config.projectId)}/domains`;
-    return domain ? `${base}/${encodeURIComponent(domain)}` : base;
+  private get scope() {
+    return { idOrName: this.config.projectId, ...(this.config.teamId ? { teamId: this.config.teamId } : {}) };
+  }
+
+  private async call<T>(run: () => Promise<T>, { allow404 = false } = {}): Promise<T | null> {
+    try {
+      return await run();
+    } catch (err) {
+      const e = vercelError(err);
+      if (allow404 && e instanceof VercelError && e.status === 404) return null;
+      throw e;
+    }
   }
 
   private async state(domain: VercelProjectDomain): Promise<HostDomainState> {
-    const config = (await this.call<VercelDomainConfig>('GET', `/v6/domains/${encodeURIComponent(domain.name)}/config`))!;
+    const config = (await this.call(() =>
+      this.vercel.domains.getDomainConfig({ domain: domain.name, ...(this.config.teamId ? { teamId: this.config.teamId } : {}) }),
+    ))!;
     const records: DnsRecord[] = [];
     if (config.misconfigured) {
       const apex = domain.name.split('.').length <= 2;
-      const ip = config.recommendedIPv4?.sort((a, b) => a.rank - b.rank)[0]?.value[0] ?? '76.76.21.21';
-      const cname = config.recommendedCNAME?.sort((a, b) => a.rank - b.rank)[0]?.value ?? 'cname.vercel-dns.com';
+      const ip = [...(config.recommendedIPv4 ?? [])].sort((a, b) => a.rank - b.rank)[0]?.value[0] ?? '76.76.21.21';
+      const cname = [...(config.recommendedCNAME ?? [])].sort((a, b) => a.rank - b.rank)[0]?.value ?? 'cname.vercel-dns.com';
       records.push(apex ? { type: 'A', name: domain.name, value: ip } : { type: 'CNAME', name: domain.name, value: cname.replace(/\.$/, '') });
     }
     if (!domain.verified) {
@@ -112,19 +125,23 @@ export class VercelDomains implements DashboardHost {
     return { verified: domain.verified, configured: !config.misconfigured, records };
   }
 
+  private find(domain: string): Promise<VercelProjectDomain | null> {
+    return this.call(() => this.vercel.projects.getProjectDomain({ ...this.scope, domain }), { allow404: true });
+  }
+
   async add(domain: string): Promise<HostDomainState> {
-    let found = await this.call<VercelProjectDomain>('GET', `/v9${this.project(domain)}`, undefined, { allow404: true });
-    found ??= (await this.call<VercelProjectDomain>('POST', `/v10${this.project()}`, { name: domain }))!;
+    let found = await this.find(domain);
+    found ??= (await this.call(() => this.vercel.projects.addProjectDomain({ ...this.scope, requestBody: { name: domain } })))!;
     return this.state(found);
   }
 
   async check(domain: string): Promise<HostDomainState> {
-    let found = await this.call<VercelProjectDomain>('GET', `/v9${this.project(domain)}`, undefined, { allow404: true });
+    let found = await this.find(domain);
     if (!found) return this.add(domain);
     if (!found.verified) {
       // Vercel answers 400 while the TXT record is missing; the state below says what to add.
       try {
-        found = (await this.call<VercelProjectDomain>('POST', `/v9${this.project(domain)}/verify`)) ?? found;
+        found = (await this.call(() => this.vercel.projects.verifyProjectDomain({ ...this.scope, domain }))) ?? found;
       } catch (err) {
         if (!(err instanceof VercelError) || err.status !== 400) throw err;
       }
@@ -133,7 +150,7 @@ export class VercelDomains implements DashboardHost {
   }
 
   async remove(domain: string): Promise<void> {
-    await this.call('DELETE', `/v9${this.project(domain)}`, undefined, { allow404: true });
+    await this.call(() => this.vercel.projects.removeProjectDomain({ ...this.scope, domain }), { allow404: true });
   }
 }
 
