@@ -89,7 +89,7 @@ To use the dashboard too, set `ADMIN_TOKEN` before `docker compose up`. It turns
 export ADMIN_TOKEN=$(openssl rand -base64 32)
 ```
 
-Without Docker, use Node 22 or newer and your own Postgres 16 or newer:
+Without Docker, use Node 22 or newer and your own Postgres 18 (16 and 17 also work):
 
 ```sh
 npm install

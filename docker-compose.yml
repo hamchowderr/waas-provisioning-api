@@ -1,13 +1,14 @@
 # Local run: the API (with the fake provisioner) and its Postgres, which also holds the job queue.
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: waas
       POSTGRES_PASSWORD: waas
       POSTGRES_DB: waas
     volumes:
-      - db:/var/lib/postgresql/data
+      # Postgres 18 images keep their data in a versioned folder under /var/lib/postgresql.
+      - db:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U waas"]
       interval: 2s

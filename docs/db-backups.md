@@ -7,7 +7,7 @@ For whoever runs the API. The API's own Postgres (products, API keys, versions, 
 | | |
 |---|---|
 | When | Daily at 02:30 UTC (pg-boss schedule on the `db-backup` queue; `DB_BACKUP_SCHEDULE` to change). One retry 10 minutes later if it fails. Also on startup when no backup succeeded in the last 26 hours (first deploy, or the API was down at 02:30). |
-| What | `pg_dump --format=custom --compress=6` of the whole database (all schemas, `pgboss` included), run from the API container (`postgresql16-client` in the image). |
+| What | `pg_dump --format=custom --compress=6` of the whole database (all schemas, `pgboss` included), run from the API container (`postgresql18-client` in the image). |
 | Encryption | AES-256-GCM in the API before upload, under a key derived from `SECRETS_KEY` (HKDF-SHA256, info `waas-db-backup-v1`). Most S3 services, R2 included, also encrypt at rest. |
 | Where | `s3://$S3_BUCKET/db-backups/YYYY/MM/DD/waas-YYYYMMDDTHHMMSSZ.dump.enc` (`DB_BACKUP_PREFIX` to change the prefix). Store archives use other prefixes, so the store lifecycle rule on `uploads/` does not touch these. |
 | Retention | After each successful backup: keep the newest backup of each of the last 14 days that have one and of each of the last 8 ISO weeks; delete the rest (`DB_BACKUP_KEEP_DAILY`, `DB_BACKUP_KEEP_WEEKLY`). Objects under the prefix that don't match the name pattern are never deleted. A second backup on the same day replaces that day's earlier one. |
@@ -43,7 +43,7 @@ A backup is useless without them. If Coolify holds the only copy of each, losing
 
 ## Restore
 
-Everything below runs on any machine with Node 22, a checkout of this repository (`npm ci`) and `pg_restore` 16 or newer. Export the settings first; never paste them into files that get committed:
+Everything below runs on any machine with Node 22, a checkout of this repository (`npm ci`) and `pg_restore` 18 or newer (the backups are written by `pg_dump` 18). Export the settings first; never paste them into files that get committed:
 
 ```sh
 export SECRETS_KEY=...          # the API's SECRETS_KEY
@@ -55,7 +55,7 @@ export S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=...
 2. **Download and decrypt.** `npm run db-backup -- fetch latest waas.dump` (or a key instead of `latest`). It writes a plain `pg_dump` archive (mode 600); a wrong `SECRETS_KEY` or a damaged object fails here, before anything is touched. Check it reads: `pg_restore --list waas.dump | head`.
 3. **Stop the API**, so nothing writes while you restore: stop the API's application in Coolify.
 4. **Get an empty database.**
-   - New server or new database: create Postgres 16 with a database `waas`, and point the API's `DATABASE_URL` at it.
+   - New server or new database: create Postgres 18 with a database `waas`, and point the API's `DATABASE_URL` at it.
    - Existing database: drop and recreate the `waas` database from its Terminal in Coolify: `psql -U <user> -d postgres -c 'DROP DATABASE waas' -c 'CREATE DATABASE waas'`. This deletes everything in it; take a fresh Coolify backup first if the database is still readable.
 5. **Restore.** From a machine that can reach the database (the database's Terminal in Coolify after copying the file in, or a temporary public port):
    ```sh

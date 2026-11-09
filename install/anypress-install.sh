@@ -175,7 +175,7 @@ database() {
   local password response
   password=$(random_hex)
   response=$(coolify POST /databases/postgresql "$(jq -nc --arg s "$SERVER_UUID" --arg p "$API_PROJECT" --arg pw "$password" \
-    '{server_uuid: $s, project_uuid: $p, environment_name: "production", name: "waas-api-db", image: "postgres:16-alpine",
+    '{server_uuid: $s, project_uuid: $p, environment_name: "production", name: "waas-api-db", image: "postgres:18-alpine",
       postgres_user: "waas", postgres_password: $pw, postgres_db: "waas", instant_deploy: true}')")
   DB_UUID=$(jq -r .uuid <<<"$response")
   DATABASE_URL=$(jq -r '.internal_db_url // empty' <<<"$response")
