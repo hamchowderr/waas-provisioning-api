@@ -21,6 +21,12 @@ describe('store template site types', () => {
     expect(roles[role]!.plugins).toEqual(expect.arrayContaining(EVERY_SITE));
   });
 
+  it.each(Object.keys(roles))('%s says what each of its plugins is for (Your plan, and the dashboard)', (role) => {
+    const { plugins, about } = roles[role] as unknown as { plugins: string[]; about?: Record<string, string> };
+    for (const plugin of plugins) expect(about?.[plugin], plugin).toBeTruthy();
+    expect(Object.keys(about ?? {}).sort()).toEqual([...plugins].sort());
+  });
+
   it('HighLevel sites keep WP Fusion and LeadConnector, and no Fluent business plugin', () => {
     const plugins = roles.highlevel!.plugins;
     expect(plugins).toEqual(expect.arrayContaining(['wp-fusion-lite/wp-fusion-lite.php', 'leadconnector/leadconnector.php']));

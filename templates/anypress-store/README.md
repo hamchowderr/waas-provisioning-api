@@ -155,7 +155,8 @@ Pro versions aren't included. They are licensed per site, so a store owner adds 
 ## Roles
 
 [`roles.json`](roles.json) has one role per site type. Each shop product picks one, and AnyPress Client switches the
-store's plugins to that role's list:
+store's plugins to that role's list. Each role's `about` gives one line on what each of its plugins is for; the
+owner sees it in WordPress on Dashboard > Your plan, and the AnyPress dashboard shows it on the store's page.
 
 | Role | Site type | Plugins on |
 |---|---|---|
@@ -164,7 +165,7 @@ store's plugins to that role's list:
 | `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
-| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), FluentSnippets (code snippets and shortcodes), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector, FluentHub (FluentToolkit). HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin. Owners may add plugins of their own (`ownPlugins`), and Your plan says what each included plugin is for (`about`) |
+| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), FluentSnippets (code snippets and shortcodes), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector, FluentHub (FluentToolkit). HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin. Owners may add plugins of their own (`ownPlugins`) |
 | `store` | Everything, for stores bought before site types | all of them |
 
 A store made without a site type keeps every plugin on, so the API gives one to the sites it makes for a HighLevel
