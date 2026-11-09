@@ -164,7 +164,7 @@ store's plugins to that role's list:
 | `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
 | `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
 | `everything` | Everything | all of them |
-| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), FluentSnippets (code snippets and shortcodes), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector, FluentHub (FluentToolkit). HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin |
+| `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), FluentSnippets (code snippets and shortcodes), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector, FluentHub (FluentToolkit). HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin. Owners may add plugins of their own (`ownPlugins`), and Your plan says what each included plugin is for (`about`) |
 | `store` | Everything, for stores bought before site types | all of them |
 
 A store made without a site type keeps every plugin on, so the API gives one to the sites it makes for a HighLevel

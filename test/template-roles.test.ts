@@ -29,3 +29,11 @@ describe('store template site types', () => {
     }
   });
 });
+
+describe('HighLevel site type', () => {
+  it('lets owners add their own plugins and says what each included plugin is for', () => {
+    const highlevel = roles.highlevel as unknown as { ownPlugins?: boolean; plugins: string[]; about?: Record<string, string> };
+    expect(highlevel.ownPlugins).toBe(true);
+    for (const plugin of highlevel.plugins) expect(highlevel.about?.[plugin], plugin).toBeTruthy();
+  });
+});
