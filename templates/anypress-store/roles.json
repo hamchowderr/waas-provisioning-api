@@ -118,10 +118,12 @@
         "plugins": [
             "fluent-security/fluent-security.php",
             "fluent-player/fluent-player.php",
+            "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
             "automatorwp/automatorwp.php",
             "wp-fusion-lite/wp-fusion-lite.php",
             "leadconnector/leadconnector.php",
+            "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
         ]
     }
