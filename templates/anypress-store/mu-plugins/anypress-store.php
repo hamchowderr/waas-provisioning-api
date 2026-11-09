@@ -212,6 +212,7 @@ add_action('init', function () {
         'fluent-support' => 'fluent-support/fluent-support.php',
         'wp-fusion-lite' => 'wp-fusion-lite/wp-fusion-lite.php',
         'rank-math' => 'seo-by-rank-math/rank-math.php',
+        'fluent-toolkit' => 'fluent-toolkit/fluent-toolkit.php',
     ];
     $applied = get_option('anypress_owner_applied');
     if (is_string($applied)) {
@@ -360,6 +361,12 @@ add_action('init', function () {
             $titles['knowledgegraph_name'] = $name;
             $titles['website_name'] = $name;
             update_option('rank-math-options-titles', $titles);
+        },
+        // FluentHub: every Fluent plugin opens in its one workspace, with one menu and no separate app headers.
+        'fluent-toolkit' => function () {
+            $settings = get_option('_fluent_kit_settings', []);
+            $settings = is_array($settings) ? $settings : [];
+            update_option('_fluent_kit_settings', array_merge($settings, ['uinified_ui' => 'yes', 'merge_admin_menus' => 'yes', 'hide_app_headers' => 'yes']));
         },
     ];
     foreach ($due as $plugin) {
