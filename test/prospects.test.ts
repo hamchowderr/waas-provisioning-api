@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { createAjv } from '../src/openapi.ts';
-import { loadProspectConfig } from '../src/prospects.ts';
+import { loadProspectConfig, type PlacesAnswer, type PlacesTextSearch } from '../src/prospects.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
@@ -17,18 +17,20 @@ const valid = (name: string, value: unknown) => {
 
 let t: TestContext;
 const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
-const calls: Array<{ url: string; init: RequestInit }> = [];
-let answer: () => Response;
+const calls: Array<{ apiKey: string; request: PlacesTextSearch; fieldMask: string }> = [];
+/** What the fake Places SDK answers, or the error it throws (Google's gRPC code). */
+let answer: () => PlacesAnswer;
+const googleError = (code: number, message: string) => Object.assign(new Error(message), { code });
 
 const search = (body: unknown) => t.call('POST', `/admin/products/${t.productId}/prospects/search`, { auth: ADMIN, body });
 const usage = async () => (await t.call('GET', `/admin/products/${t.productId}/prospects/usage`, { auth: ADMIN })).json() as Promise<any>;
 
 beforeAll(async () => {
   t = await setup();
-  t.deps.placesFetch = (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), init: init ?? {} });
+  t.deps.placesSearch = async (apiKey, request, fieldMask) => {
+    calls.push({ apiKey, request, fieldMask });
     return answer();
-  }) as typeof fetch;
+  };
 });
 afterAll(async () => t?.close());
 
@@ -44,8 +46,7 @@ describe('the prospect finder', () => {
 
   it('searches Google Places and answers each business, leaving out closed ones', async () => {
     t.deps.config.prospects = { apiKey: 'test-key', searchesPerMonth: 3 };
-    answer = () =>
-      Response.json({
+    answer = () => ({
         places: [
           { id: 'a', displayName: { text: 'Grace Church' }, formattedAddress: '1 Main St, Columbus, OH', nationalPhoneNumber: '(614) 555-0100', rating: 4.8, userRatingCount: 120, googleMapsUri: 'https://maps.google.com/?cid=1', primaryTypeDisplayName: { text: 'Church' }, regularOpeningHours: { weekdayDescriptions: ['Sunday: 9:00 AM – 1:00 PM'] } },
           { id: 'b', displayName: { text: 'Hope Chapel' }, websiteUri: 'https://hope.example', businessStatus: 'OPERATIONAL' },
@@ -64,28 +65,31 @@ describe('the prospect finder', () => {
     expect(body.nextPageToken).toBe('page-2');
     expect(body.usage).toMatchObject({ available: true, used: 1, limit: 3 });
     const sent = calls.at(-1)!;
-    expect(sent.url).toBe('https://places.googleapis.com/v1/places:searchText');
-    expect((sent.init.headers as Record<string, string>)['X-Goog-Api-Key']).toBe('test-key');
-    expect(JSON.parse(String(sent.init.body))).toMatchObject({ textQuery: 'church in Columbus, Ohio', pageSize: 20 });
-    expect(JSON.parse(String(sent.init.body)).pageToken).toBeUndefined();
-    expect((sent.init.headers as Record<string, string>)['X-Goog-FieldMask']).toContain('nextPageToken');
+    expect(sent.apiKey).toBe('test-key');
+    expect(sent.request).toMatchObject({ textQuery: 'church in Columbus, Ohio', pageSize: 20 });
+    expect(sent.request.pageToken).toBeUndefined();
+    expect(sent.fieldMask).toContain('nextPageToken');
 
     // The next page sends Google's token and counts as another search.
-    answer = () => Response.json({ places: [{ id: 'd', displayName: { text: 'New Life' } }] });
+    answer = () => ({ places: [{ id: 'd', displayName: { text: 'New Life' } }] });
     const next = (await (await search({ query: 'church', location: 'Columbus, Ohio', pageToken: 'page-2' })).json()) as any;
-    expect(JSON.parse(String(calls.at(-1)!.init.body))).toMatchObject({ textQuery: 'church in Columbus, Ohio', pageToken: 'page-2' });
+    expect(calls.at(-1)!.request).toMatchObject({ textQuery: 'church in Columbus, Ohio', pageToken: 'page-2' });
     expect(next.nextPageToken).toBeNull();
     expect(next.usage.used).toBe(2);
   });
 
   it("doesn't count a search Google fails", async () => {
-    answer = () => new Response('quota', { status: 429 });
+    answer = () => {
+      throw googleError(8, 'Quota exceeded');
+    };
     expect((await search({ query: 'church', location: 'Dayton' })).status).toBe(502);
     expect((await usage()).used).toBe(2);
   });
 
   it("says the finder isn't working when Google refuses the key, and logs Google's reason", async () => {
-    answer = () => Response.json({ error: { code: 403, status: 'PERMISSION_DENIED', message: 'Places API (New) has not been used in project 1 before or it is disabled.' } }, { status: 403 });
+    answer = () => {
+      throw googleError(7, 'Places API (New) has not been used in project 1 before or it is disabled.');
+    };
     const logged: string[] = [];
     const original = console.error;
     console.error = (msg: unknown) => void logged.push(String(msg));
@@ -94,12 +98,12 @@ describe('the prospect finder', () => {
     } finally {
       console.error = original;
     }
-    expect(logged.join('\n')).toContain('403 PERMISSION_DENIED: Places API (New) has not been used');
+    expect(logged.join('\n')).toContain('PERMISSION_DENIED: Places API (New) has not been used');
     expect(logged.join('\n')).not.toContain('test-key');
   });
 
   it('refuses a search once the month is used up', async () => {
-    answer = () => Response.json({ places: [] });
+    answer = () => ({ places: [] });
     expect((await search({ query: 'church', location: 'Dayton' })).status).toBe(200);
     const spent = await search({ query: 'church', location: 'Dayton' });
     expect(spent.status).toBe(429);

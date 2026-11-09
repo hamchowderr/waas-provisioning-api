@@ -129,6 +129,10 @@ export function createAuth(
     // Its own schema keeps Better Auth's tables apart from ours; migrations/…_accounts.sql creates them.
     database: { dialect: new PostgresDialect({ pool }), type: 'postgres', schemaName: 'auth', casing: 'snake' },
     telemetry: { enabled: false },
+    // The session is also kept in a signed cookie for 5 minutes, so the dashboard's calls (each one
+    // checks the session) don't read the session table every time. Signing out clears the cookie;
+    // a session ended elsewhere stops working within the 5 minutes.
+    session: { cookieCache: { enabled: true, maxAge: 5 * 60, strategy: 'compact' } },
     // The email-code plugin is only for typing the sign-in email's code (POST /sign-in/email-otp).
     disabledPaths: [
       '/email-otp/send-verification-otp',
@@ -212,3 +216,17 @@ export function createAuth(
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/**
+ * Deletes sign-in rows that can no longer be used: expired sessions, links and codes, and AI apps'
+ * expired tokens. Better Auth only skips them, so without this they pile up. A day's grace keeps
+ * anything that just ran out for looking into a sign-in problem. Daily maintenance (src/jobs.ts).
+ */
+export async function purgeExpiredSignIns(pool: Pool): Promise<number> {
+  let removed = 0;
+  for (const table of ['session', 'verification', 'oauthAccessToken', 'oauthRefreshToken', 'oauthClientAssertion']) {
+    const { rowCount } = await pool.query(`DELETE FROM auth."${table}" WHERE "expiresAt" < now() - interval '1 day'`);
+    removed += rowCount ?? 0;
+  }
+  return removed;
+}

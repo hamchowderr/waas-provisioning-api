@@ -185,21 +185,38 @@ describe('the Vercel calls', () => {
   /** A fake Vercel API: answers by method and path, and records each call. */
   function fakeVercel(routes: Record<string, () => { status: number; body?: unknown }>) {
     const calls: string[] = [];
-    const fetchFn = (async (input: URL | string, init?: RequestInit) => {
-      const url = new URL(String(input));
-      const key = `${init?.method ?? 'GET'} ${url.pathname}`;
+    // The SDK sends a Request; a plain call would send a URL and init.
+    const fetchFn = (async (input: URL | string | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      const key = `${(input instanceof Request ? input.method : init?.method) ?? 'GET'} ${url.pathname}`;
       calls.push(`${key}?${url.searchParams}`);
       const route = routes[key];
       const { status, body } = route ? route() : { status: 404, body: { error: { code: 'not_found', message: 'Not found' } } };
-      return new Response(body === undefined ? null : JSON.stringify(body), { status });
+      return new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     }) as typeof fetch;
     return { calls, vercel: new VercelDomains({ token: 'tok', projectId: 'prj_1', teamId: 'team_1' }, fetchFn) };
   }
 
+  /** Vercel's answers, with every field its SDK checks for. */
+  const projectDomain = (name: string, verified: boolean, verification?: { type: string; domain: string; value: string }[]) => ({
+    name,
+    apexName: name.split('.').slice(-2).join('.'),
+    projectId: 'prj_1',
+    verified,
+    ...(verification ? { verification: verification.map((v) => ({ ...v, reason: 'pending_domain_verification' })) } : {}),
+  });
+  const domainConfig = (misconfigured: boolean, recommendedCNAME: { rank: number; value: string }[] = []) => ({
+    configuredBy: misconfigured ? null : 'CNAME',
+    acceptedChallenges: ['http-01'],
+    recommendedIPv4: [{ rank: 1, value: ['76.76.21.21'] }],
+    recommendedCNAME,
+    misconfigured,
+  });
+
   it('adds a new domain to the project and reports the CNAME to add', async () => {
     const { calls, vercel } = fakeVercel({
-      'POST /v10/projects/prj_1/domains': () => ({ status: 200, body: { name: 'dashboard.jane.example', verified: true } }),
-      'GET /v6/domains/dashboard.jane.example/config': () => ({ status: 200, body: { misconfigured: true, recommendedCNAME: [{ rank: 1, value: 'abc.vercel-dns-017.com.' }] } }),
+      'POST /v10/projects/prj_1/domains': () => ({ status: 200, body: projectDomain('dashboard.jane.example', true) }),
+      'GET /v6/domains/dashboard.jane.example/config': () => ({ status: 200, body: domainConfig(true, [{ rank: 1, value: 'abc.vercel-dns-017.com.' }]) }),
     });
     expect(await vercel.add('dashboard.jane.example')).toEqual({
       verified: true,
@@ -213,12 +230,12 @@ describe('the Vercel calls', () => {
     let verified = false;
     const domain = () => ({
       status: 200,
-      body: { name: 'dashboard.jane.example', verified, verification: [{ type: 'TXT', domain: '_vercel.jane.example', value: 'vc-domain-verify=x' }] },
+      body: projectDomain('dashboard.jane.example', verified, [{ type: 'TXT', domain: '_vercel.jane.example', value: 'vc-domain-verify=x' }]),
     });
     const { vercel } = fakeVercel({
       'GET /v9/projects/prj_1/domains/dashboard.jane.example': domain,
       'POST /v9/projects/prj_1/domains/dashboard.jane.example/verify': () => (verified ? domain() : { status: 400, body: { error: { code: 'missing_txt_record', message: 'TXT missing' } } }),
-      'GET /v6/domains/dashboard.jane.example/config': () => ({ status: 200, body: { misconfigured: false } }),
+      'GET /v6/domains/dashboard.jane.example/config': () => ({ status: 200, body: domainConfig(false) }),
     });
     expect((await vercel.check('dashboard.jane.example')).records).toEqual([{ type: 'TXT', name: '_vercel.jane.example', value: 'vc-domain-verify=x' }]);
     verified = true;

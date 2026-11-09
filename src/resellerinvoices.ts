@@ -1,3 +1,4 @@
+import { ensureQueue } from './queue.ts';
 import type { PgBoss } from 'pg-boss';
 import type { Pool } from './db.ts';
 import { HttpError } from './errors.ts';
@@ -223,7 +224,7 @@ export async function startResellerInvoices(
     if (await boss.getQueue(RESELLER_INVOICES_QUEUE)) await boss.unschedule(RESELLER_INVOICES_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(RESELLER_INVOICES_QUEUE))) await boss.createQueue(RESELLER_INVOICES_QUEUE, { retryLimit: 2, retryDelay: 600 });
+  await ensureQueue(boss, RESELLER_INVOICES_QUEUE, { retryLimit: 2, retryDelay: 600 });
   await boss.schedule(RESELLER_INVOICES_QUEUE, config.schedule);
   await boss.work(RESELLER_INVOICES_QUEUE, { pollingIntervalSeconds }, async () => {
     const results = await invoiceAllResellers(pool, config);

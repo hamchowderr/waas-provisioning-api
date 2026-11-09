@@ -74,7 +74,7 @@ class FakeCloud {
       return json(201, { uuid: `env-${body.name}` });
     }
     if (path === '/services' && method === 'GET') {
-      // Coolify's list carries each Service's overall status, as GET /services/:uuid carries each container's.
+      // Coolify's list carries each Service's overall status; GET /services/:uuid carries it too, and each container's.
       return json(200, [...this.services.values()].map(({ compose: _c, envs: _e, urls: _u, ...s }) => ({ ...s, status: s.started ? 'running:healthy' : 'exited' })));
     }
     if (path === '/services' && method === 'POST') {
@@ -108,6 +108,7 @@ class FakeCloud {
           ...service,
           envs: undefined,
           docker_compose_raw: service.compose,
+          status,
           applications: [{ name: 'wordpress', status, fqdn }, { name: 'agent', status }],
           databases: [{ name: 'db', status }],
         });
@@ -858,6 +859,21 @@ describe('CoolifyProvisioner', () => {
     // The plugins step runs with no choices too: it undoes any an earlier version applied to the archive.
     expect(cloud.agentOps.map((o) => o.op)).toEqual(['ping', 'restore', 'plugins', 'code-export']);
     expect(cloud.agentOps[2]!.args).toEqual({ plugins: [] });
+  });
+
+  it("reads one Service by its uuid once it has listed them, and lists again when it's gone", async () => {
+    cloud.objects.set('base/base-1.zip', new Uint8Array([80, 75]));
+    await p.buildVersion({ versionId: 'v9', domain: 'v9.versions.example.com', wordPressVersion: '6.8', phpVersion: '8.2', source: { baseSnapshotId: 'base-1' } });
+    const version = [...cloud.services.values()].find((s) => s.name === 'version-v9')!;
+    const lists = () => cloud.calls.filter((c) => c === 'GET /services').length;
+    await p.findService('versions', 'version-v9');
+    const before = lists();
+    expect((await p.findService('versions', 'version-v9'))?.uuid).toBe(version.uuid);
+    expect(lists()).toBe(before);
+    expect(cloud.calls.at(-1)).toBe(`GET /services/${version.uuid}`);
+    cloud.services.delete(version.uuid);
+    expect(await p.findService('versions', 'version-v9')).toBeNull();
+    expect(lists()).toBe(before + 1);
   });
 
   it('stops a version site, and does nothing for a version without one', async () => {

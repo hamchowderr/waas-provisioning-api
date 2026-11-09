@@ -1,3 +1,4 @@
+import { ensureQueue, NOTIFY_POLL_SECONDS } from './queue.ts';
 // Reading a reference a site is to be built from (docs/references.md): a website link, a Shopify shop, a Figma file or a
 // document, turned into one bundle the site builder works from, whoever asked (the MCP connector, the website assistant,
 // the dashboard, the SDKs or an automation app). Websites and documents are read with Firecrawl (its official SDK); a
@@ -229,11 +230,9 @@ export function referenceRoutes(app: Hono<AppEnv>, deps: { pool: Pool; boss: PgB
 }
 
 /** Works the queue: each job reads one reference and stores its bundle, or why it couldn't be read. */
-export async function startReferences(boss: PgBoss, pool: Pool, readers: ReferenceReaders, { pollingIntervalSeconds = 2, log = console }: { pollingIntervalSeconds?: number; log?: Pick<Console, 'error'> } = {}) {
-  if (!(await boss.getQueue(REFERENCES_QUEUE))) {
-    await boss.createQueue(REFERENCES_QUEUE, { retryLimit: 1, retryDelay: 30, expireInSeconds: 900, deleteAfterSeconds: 7 * 24 * 3600 });
-  }
-  await boss.work(REFERENCES_QUEUE, { includeMetadata: true, pollingIntervalSeconds }, async ([job]: JobWithMetadata<{ referenceId: string }>[]) => {
+export async function startReferences(boss: PgBoss, pool: Pool, readers: ReferenceReaders, { pollingIntervalSeconds = 2, notifyPollingIntervalSeconds = NOTIFY_POLL_SECONDS, log = console }: { pollingIntervalSeconds?: number; notifyPollingIntervalSeconds?: number; log?: Pick<Console, 'error'> } = {}) {
+  await ensureQueue(boss, REFERENCES_QUEUE, { retryLimit: 1, retryDelay: 30, expireInSeconds: 900, deleteAfterSeconds: 7 * 24 * 3600 });
+  await boss.work(REFERENCES_QUEUE, { includeMetadata: true, pollingIntervalSeconds, notifyPollingIntervalSeconds }, async ([job]: JobWithMetadata<{ referenceId: string }>[]) => {
     if (!job) return;
     const { rows } = await pool.query('SELECT id, kind, source, max_pages, upload, upload_type FROM site_references WHERE id = $1 AND status = $2', [job.data.referenceId, Status.Pending]);
     const ref = rows[0];

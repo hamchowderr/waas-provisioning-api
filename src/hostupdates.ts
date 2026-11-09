@@ -2,7 +2,7 @@ import type { PgBoss } from 'pg-boss';
 import { withTransaction, type Pool } from './db.ts';
 import type { Size } from './plans.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
-import { enqueue } from './queue.ts';
+import { enqueue, ensureQueue } from './queue.ts';
 import { channelKey, manifestKey, parseManifest, type PluginSlug, type ReleaseStore } from './releases.ts';
 import { Status } from './status.ts';
 
@@ -142,11 +142,7 @@ export async function startHostUpdates(deps: HostUpdateDeps): Promise<void> {
     if (await boss.getQueue(HOST_UPDATE_QUEUE)) await boss.unschedule(HOST_UPDATE_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(HOST_UPDATE_QUEUE)))
-    await boss.createQueue(HOST_UPDATE_QUEUE, {
-      retryLimit: 0,
-      expireInSeconds: 600,
-    });
+  await ensureQueue(boss, HOST_UPDATE_QUEUE, { retryLimit: 0, expireInSeconds: 600 });
   await boss.schedule(HOST_UPDATE_QUEUE, '*/15 * * * *');
   await boss.work(HOST_UPDATE_QUEUE, { pollingIntervalSeconds: 60 }, async () => {
     const { version, queued } = await queueHostUpdates(deps);

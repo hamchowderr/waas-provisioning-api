@@ -1,3 +1,4 @@
+import { ensureQueue } from './queue.ts';
 import type { PgBoss } from 'pg-boss';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
@@ -203,7 +204,7 @@ export async function startMailCounts(boss: PgBoss, pool: Pool, counter: MailCou
     if (await boss.getQueue(MAIL_COUNT_QUEUE)) await boss.unschedule(MAIL_COUNT_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(MAIL_COUNT_QUEUE))) await boss.createQueue(MAIL_COUNT_QUEUE, { retryLimit: 0, expireInSeconds: 3600 });
+  await ensureQueue(boss, MAIL_COUNT_QUEUE, { retryLimit: 0, expireInSeconds: 3600 });
   await boss.schedule(MAIL_COUNT_QUEUE, '0 * * * *');
   await boss.work(MAIL_COUNT_QUEUE, { pollingIntervalSeconds: 60 }, async () => {
     await countStoreMail(pool, counter, provisioner);

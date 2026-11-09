@@ -1,3 +1,4 @@
+import { ensureQueue } from './queue.ts';
 import { spawn } from 'node:child_process';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import type { PgBoss } from 'pg-boss';
@@ -244,7 +245,7 @@ export async function startDbBackups(boss: PgBoss, backups: DbBackups | undefine
     if (await boss.getQueue(DB_BACKUP_QUEUE)) await boss.unschedule(DB_BACKUP_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(DB_BACKUP_QUEUE))) await boss.createQueue(DB_BACKUP_QUEUE, { retryLimit: 1, retryDelay: 600, expireInSeconds: 3600 });
+  await ensureQueue(boss, DB_BACKUP_QUEUE, { retryLimit: 1, retryDelay: 600, expireInSeconds: 3600 });
   await boss.schedule(DB_BACKUP_QUEUE, schedule);
   await boss.work(DB_BACKUP_QUEUE, { pollingIntervalSeconds }, async () => {
     const { key, sizeBytes } = await backups.run();

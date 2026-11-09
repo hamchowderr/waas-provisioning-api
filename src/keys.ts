@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 import { withTransaction, type Client, type Pool } from './db.ts';
 import { conflict, HttpError } from './errors.ts';
 
@@ -20,7 +20,37 @@ export async function hashSecret(secret: string): Promise<string> {
   return ['scrypt', N, R, P, salt.toString('base64'), hash.toString('base64')].join('$');
 }
 
+/**
+ * Secrets that matched their stored hash lately, as sha256(stored hash + secret). scrypt is slow on
+ * purpose (tens of milliseconds of CPU), and the storefront plugin and the HighLevel app send the same
+ * key and secret on every call, so a match is remembered for a few minutes. Only matches are kept, and
+ * the key's row (revoked or not) is still read on every call. A changed or deleted key has a new hash,
+ * so it never matches an old entry.
+ */
+const VERIFIED_MS = 5 * 60_000;
+const VERIFIED_MAX = 1000;
+const verified = new Map<string, number>();
+
+function verifiedKey(secret: string, stored: string): string {
+  return createHash('sha256').update(stored).update('\0').update(secret).digest('base64');
+}
+
 export async function verifySecret(secret: string, stored: string): Promise<boolean> {
+  const cacheKey = verifiedKey(secret, stored);
+  const until = verified.get(cacheKey);
+  if (until !== undefined && until > Date.now()) return true;
+  const ok = await verifySecretSlow(secret, stored);
+  if (ok) {
+    if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value!);
+    verified.delete(cacheKey);
+    verified.set(cacheKey, Date.now() + VERIFIED_MS);
+  } else {
+    verified.delete(cacheKey);
+  }
+  return ok;
+}
+
+async function verifySecretSlow(secret: string, stored: string): Promise<boolean> {
   const [scheme, n, r, p, salt, hash] = stored.split('$');
   if (scheme !== 'scrypt' || !salt || !hash) return false;
   const expected = Buffer.from(hash, 'base64');

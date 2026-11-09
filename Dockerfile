@@ -1,4 +1,5 @@
-FROM node:22-alpine
+# Node 26, the active LTS line (maintained until April 2029).
+FROM node:26-alpine
 WORKDIR /app
 # pg_dump for the daily off-site database backup (src/dbbackup.ts); matches the server (Postgres 16).
 # Alpine 3.24 has it in community; the build fails here if pg_dump isn't 16.

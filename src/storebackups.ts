@@ -3,6 +3,7 @@ import { withTransaction, type Pool } from './db.ts';
 import { selectExpired } from './dbbackup.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { JobData, JobHandlers } from './queue.ts';
+import { ensureQueue, NOTIFY_POLL_SECONDS } from './queue.ts';
 import { Status } from './status.ts';
 
 /**
@@ -118,16 +119,19 @@ export async function startStoreBackups(
   provisioner: Provisioner,
   handlers: Pick<JobHandlers, 'run' | 'fail'>,
   config: StoreBackupConfig | undefined,
-  { pollingIntervalSeconds = 60, retryDelaySeconds = 600, log = console }: { pollingIntervalSeconds?: number; retryDelaySeconds?: number; log?: Pick<Console, 'log' | 'error'> } = {},
+  {
+    pollingIntervalSeconds = 60,
+    notifyPollingIntervalSeconds = NOTIFY_POLL_SECONDS,
+    retryDelaySeconds = 600,
+    log = console,
+  }: { pollingIntervalSeconds?: number; notifyPollingIntervalSeconds?: number; retryDelaySeconds?: number; log?: Pick<Console, 'log' | 'error'> } = {},
 ): Promise<void> {
   if (!config) {
     if (await boss.getQueue(STORE_BACKUPS_QUEUE)) await boss.unschedule(STORE_BACKUPS_QUEUE);
     return;
   }
-  if (!(await boss.getQueue(STORE_BACKUPS_QUEUE))) await boss.createQueue(STORE_BACKUPS_QUEUE, { retryLimit: 2, retryDelay: 300 });
-  if (!(await boss.getQueue(STORE_BACKUP_QUEUE))) {
-    await boss.createQueue(STORE_BACKUP_QUEUE, { retryLimit: 1, retryDelay: retryDelaySeconds, expireInSeconds: 3600, deleteAfterSeconds: 7 * 24 * 3600 });
-  }
+  await ensureQueue(boss, STORE_BACKUPS_QUEUE, { retryLimit: 2, retryDelay: 300 });
+  await ensureQueue(boss, STORE_BACKUP_QUEUE, { retryLimit: 1, retryDelay: retryDelaySeconds, expireInSeconds: 3600, deleteAfterSeconds: 7 * 24 * 3600 });
   await boss.schedule(STORE_BACKUPS_QUEUE, config.schedule);
 
   await boss.work(STORE_BACKUPS_QUEUE, { pollingIntervalSeconds }, async () => {
@@ -142,7 +146,7 @@ export async function startStoreBackups(
     log.log(`store backups: queued ${queued}`);
   });
 
-  await boss.work(STORE_BACKUP_QUEUE, { includeMetadata: true, pollingIntervalSeconds: Math.min(pollingIntervalSeconds, 5) }, async ([job]: JobWithMetadata<JobData>[]) => {
+  await boss.work(STORE_BACKUP_QUEUE, { includeMetadata: true, pollingIntervalSeconds: Math.min(pollingIntervalSeconds, 5), notifyPollingIntervalSeconds: Math.min(notifyPollingIntervalSeconds, pollingIntervalSeconds) }, async ([job]: JobWithMetadata<JobData>[]) => {
     if (!job) return;
     try {
       await handlers.run(job.data);

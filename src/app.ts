@@ -1,4 +1,7 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { requestId } from 'hono/request-id';
+import { secureHeaders } from 'hono/secure-headers';
 import type { PgBoss } from 'pg-boss';
 import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
 import { publicApplicationRoutes } from './applications.ts';
@@ -11,6 +14,7 @@ import type { DomainConnectNet } from './domainconnect.ts';
 import type { DomainSalesConfig } from './domainsales.ts';
 import { HttpError } from './errors.ts';
 import { isUuid } from './http.ts';
+import type { PlacesSearch } from './prospects.ts';
 import { APP_PATHS, highLevelRoutes } from './highlevel.ts';
 import { authenticateKey } from './keys.ts';
 import type { CpuWatch } from './cpuwatch.ts';
@@ -65,7 +69,7 @@ export interface Deps {
   /** Sign-in for people (src/auth.ts); absent when AUTH_URL and AUTH_SECRET are not set. */
   auth?: Auth;
   /** Google Places, for the prospect finder (src/prospects.ts); tests replace it. */
-  placesFetch?: typeof fetch;
+  placesSearch?: PlacesSearch;
   /** Posts prospects to sellers' HighLevel webhooks (src/prospectcrm.ts); tests replace it. */
   crmFetch?: typeof fetch;
 }
@@ -83,8 +87,23 @@ export type AppEnv = {
   Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string; appScopes?: string[] };
 };
 
+/** The largest request body the API reads. */
+export const MAX_BODY_BYTES = 25 * 1024 ** 2;
+
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
+
+  // Every answer gets an X-Request-Id (or keeps the one the caller sent), which error logs repeat.
+  app.use('*', requestId());
+  // Standard security headers. Logos and icons are shown on other sites (the dashboard, sellers' own
+  // addresses), so they may be loaded cross-origin.
+  app.use('*', secureHeaders({ crossOriginResourcePolicy: 'cross-origin', crossOriginOpenerPolicy: false }));
+  // Files go straight to storage (upload URLs), so no request needs a big body; this stops one from
+  // filling the API's memory. Branding images, the largest bodies, are far below it.
+  app.use(
+    '*',
+    bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ statusCode: 413, message: `The request body is over ${MAX_BODY_BYTES / 1024 ** 2} MB` }, 413) }),
+  );
 
   // For uptime monitoring; outside /v1 and unauthenticated. 503 when Postgres or
   // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
@@ -243,7 +262,7 @@ export function createApp(deps: Deps) {
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ statusCode: err.status, message: err.message }, err.status);
-    console.error(err);
+    console.error(`request ${c.get('requestId')}:`, err);
     return c.json({ statusCode: 500, message: 'Internal server error' }, 500);
   });
 

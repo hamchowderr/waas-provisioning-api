@@ -124,7 +124,7 @@ const done = (id: string) => waitFor(async () => {
 
 beforeAll(async () => {
   t = await setup();
-  await startReferences(t.boss, t.pool, readers, { pollingIntervalSeconds: 0.5, log: { error: () => {} } });
+  await startReferences(t.boss, t.pool, readers, { pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 0.5, log: { error: () => {} } });
 });
 afterAll(async () => t?.close());
 
