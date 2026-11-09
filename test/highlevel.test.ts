@@ -40,6 +40,10 @@ beforeAll(async () => {
         if (req.headers.authorization !== 'Bearer agency-token') return res.writeHead(401).end('{}');
         return res.end(JSON.stringify({ access_token: `location-token-${form.get('locationId')}`, expires_in: 86399, userType: 'Location', companyId: form.get('companyId'), locationId: form.get('locationId') }));
       }
+      if (req.method === 'GET' && req.url?.startsWith('/locations/loc-c')) {
+        if (req.headers.authorization !== 'Bearer location-token-loc-c') return res.writeHead(401).end('{}');
+        return res.end(JSON.stringify({ location: { id: 'loc-c', name: 'Know BS' } }));
+      }
       res.end('{"ok":true}');
     });
   });
@@ -295,6 +299,46 @@ describe("a HighLevel site's CRM link", () => {
     const answer = (await res.json()) as { crm: string; locationId: string; accessToken: string; expiresAt: string };
     expect(answer).toMatchObject({ crm: 'highlevel', locationId: 'loc-c', accessToken: 'location-token-loc-c' });
     expect(new Date(answer.expiresAt).getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+  });
+
+  it("records each check-in, shows it on the site's page, and checks now on request", async () => {
+    const { siteId, domain } = await make('Shown Site', { contactId: 'contact-c3', locationId: 'loc-c', companyId: 'company-1' });
+    const admin = (method: string, path: string) => t.call(method, path, { auth: `Bearer ${TEST_ADMIN_TOKEN}` });
+    const detail = async () => ((await (await admin('GET', `/admin/tenants/${siteId}`)).json()) as { highLevel: any }).highLevel;
+    expect(await detail()).toEqual({ locationId: 'loc-c', locationName: null, connected: false, connectedAt: null, lastCheckAt: null });
+
+    // The site, told to check now, asks the API (signed) before it answers.
+    const calls: string[] = [];
+    let siteStatus = 200;
+    t.deps.siteFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push(`${init?.method} ${String(input)}`);
+      if (siteStatus !== 200) return new Response('{}', { status: siteStatus });
+      const linked = (await (await ask(domain, keyOf(siteId))).json()) as { crm: string | null };
+      return Response.json({ linked: linked.crm !== null, locationId: null, connected: linked.crm !== null });
+    }) as typeof fetch;
+    const res = await admin('POST', `/admin/tenants/${siteId}/highlevel-check`);
+    expect(res.status).toBe(200);
+    const checked = (await res.json()) as any;
+    expect(calls).toEqual([`POST https://${domain}/wp-json/anypress-client/v1/site/crm-link`]);
+    expect(checked).toMatchObject({ siteLinked: true, wpFusionConnected: true, highLevel: { locationId: 'loc-c', locationName: 'Know BS', connected: true } });
+    expect(Date.parse(checked.highLevel.lastCheckAt)).toBeGreaterThan(Date.now() - 60_000);
+    expect(await detail()).toEqual(checked.highLevel);
+
+    // Untied: the next check-in records that it got no token, and the page shows no sub-account.
+    await t.pool.query('UPDATE tenants SET highlevel_location_id = NULL WHERE id = $1', [siteId]);
+    expect(await (await ask(domain, keyOf(siteId))).json()).toEqual({ crm: null });
+    const { rows } = await t.pool.query('SELECT highlevel_connected_at, highlevel_checked_at FROM tenants WHERE id = $1', [siteId]);
+    expect(rows[0].highlevel_connected_at).toBeNull();
+    expect(rows[0].highlevel_checked_at).not.toBeNull();
+    expect(await detail()).toBeNull();
+
+    // A site with an older AnyPress Client has no check-now route.
+    siteStatus = 404;
+    expect((await admin('POST', `/admin/tenants/${siteId}/highlevel-check`)).status).toBe(409);
+    // Members who only look, and other sites, can't.
+    expect((await t.call('POST', `/admin/tenants/${siteId}/highlevel-check`)).status).toBe(403);
+    expect((await admin('POST', '/admin/tenants/00000000-0000-4000-8000-000000000000/highlevel-check')).status).toBe(404);
+    t.deps.siteFetch = undefined;
   });
 
   it('answers crm null for a site with no sub-account', async () => {

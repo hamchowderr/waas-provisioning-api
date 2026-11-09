@@ -16,7 +16,7 @@ import { HttpError, badRequest, conflict } from '../errors.ts';
 import { dbBackupStatus } from '../dbbackup.ts';
 import { checkHealth } from '../health.ts';
 import { booleanQuery, isUuid, readJson, requiredUuidQuery, scopedProduct, uuidQuery } from '../http.ts';
-import { setHighLevelAgency } from '../highlevel.ts';
+import { setHighLevelAgency, siteLinkOf } from '../highlevel.ts';
 import { listHostUpdates, queueHostUpdates } from '../hostupdates.ts';
 import { importCode, importDetail, renewImport, reprintSite, startReprintCopy } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
@@ -36,7 +36,8 @@ import { buyDomain, listBoughtDomains, searchDomains, setAutoRenew, transferCode
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
-import { deleteTenant, goLiveTenant, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
+import { deleteTenant, goLiveTenant, HIGHLEVEL_SITE_TYPE, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
+import { callSite, siteKeys } from '../sitekeys.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
 import { emailWebsiteReady } from '../jobs.ts';
@@ -510,6 +511,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       }),
       // This month's emails as the platform counted them on toSend (docs/store-email.md), once counted.
       ...(emailUsage && { emailUsage }),
+      // A HighLevel site's link to its sub-account, as the site last checked it; null when it has no sub-account.
+      highLevel: siteLinkOf(t),
       isSuspended: t.is_suspended,
       dateSuspended: iso(t.date_suspended),
       // A site moved in, held until it goes live (POST /admin/tenants/:id/go-live).
@@ -690,6 +693,34 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     );
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     return c.json(await wpLogin(deps, rows[0]));
+  });
+
+  // "Check now" for a HighLevel site's sub-account link: tells the site (AnyPress Client 2.16.0 or later, signed with
+  // its site key) to ask for its sub-account and token straight away, as it otherwise does within the hour. For a
+  // site tied to, or untied from, a sub-account after it was made. Members who only look are refused by the session check.
+  app.post('/tenants/:id/highlevel-check', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const select = `SELECT t.*, (SELECT domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
+       FROM tenants t WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`;
+    const { rows } = await pool.query(select, [id, scopedProduct(c)]);
+    const tenant = rows[0];
+    if (!tenant) throw notFound(`Tenant ${id} not found`);
+    if (!siteTypesOf(tenant.php_constants).includes(HIGHLEVEL_SITE_TYPE)) throw conflict('This is not a HighLevel site');
+    if (tenant.status !== Status.Done) throw conflict(`This site is ${statusName(tenant.status)}; check once it is Done`);
+    if (tenant.is_suspended) throw conflict('This site is suspended; resume it to check');
+    if (!tenant.main_domain) throw conflict('This site has no address yet');
+    let answer;
+    try {
+      answer = await callSite(siteKeys(config.secretsKey)(tenant.id), tenant.main_domain, { method: 'POST', path: '/crm-link', body: {} }, deps.siteFetch, 20_000);
+    } catch (error) {
+      throw new HttpError(502, `The site did not answer: ${(error as Error).message}`);
+    }
+    if (answer.status === 404) throw conflict('This site runs an older AnyPress Client; it checks on its own within the hour');
+    if (answer.status !== 200) throw new HttpError(502, `The site answered ${answer.status}`);
+    const after = await pool.query(select, [id, scopedProduct(c)]);
+    const site = (answer.body ?? {}) as { linked?: unknown; connected?: unknown };
+    return c.json({ siteLinked: site.linked === true, wpFusionConnected: site.connected === true, highLevel: siteLinkOf(after.rows[0] ?? tenant) });
   });
 
   // "Send the website-ready email": the email a new store's owner can get when it is made (notifyOwner), sent
