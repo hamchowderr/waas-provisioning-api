@@ -51,7 +51,9 @@ function anypress_remove_bundled_plugins(): void
         if (!file_exists($target) || is_plugin_active($file)) {
             continue;
         }
-        if (is_file($target)) {
+        // Anything but a real folder (a file, or a link) is one file to delete: walking it as a folder would be a
+        // fatal error on every wp-admin page.
+        if (!is_dir($target) || is_link($target)) {
             wp_delete_file($target);
             continue;
         }
@@ -266,13 +268,42 @@ add_action('init', function () {
                 'admin_email' => $email,
             ]));
         },
-        'fluent-booking' => function () use ($country) {
-            if ($country === '') {
+        // FluentBooking: the country, and the owner's own booking calendar with a 30-minute meeting on weekdays,
+        // 9 to 5, so its "create your first booking event" start screen is done. Made through FluentBooking's own
+        // create-calendar route, as its start screen does it; the owner changes the times and the meeting later.
+        'fluent-booking' => function () use ($country, $email) {
+            if ($country !== '') {
+                $settings = get_option('_fluent_booking_settings', []);
+                $settings['administration']['default_country'] = strtolower($country);
+                update_option('_fluent_booking_settings', $settings, false);
+            }
+            $admin = get_user_by('email', $email);
+            if (!$admin || !class_exists('\FluentBooking\App\Models\Calendar') || \FluentBooking\App\Models\Calendar::where('user_id', $admin->ID)->first()) {
                 return;
             }
-            $settings = get_option('_fluent_booking_settings', []);
-            $settings['administration']['default_country'] = strtolower($country);
-            update_option('_fluent_booking_settings', $settings, false);
+            $before = get_current_user_id();
+            wp_set_current_user($admin->ID);
+            $request = new WP_REST_Request('POST', '/fluent-booking/v2/calendars');
+            $request->set_body_params(['calendar' => [
+                'type' => 'simple',
+                'author_timezone' => wp_timezone_string() ?: 'UTC',
+                'slot' => [
+                    'title' => '30 Minute Meeting',
+                    'duration' => 30,
+                    'event_type' => 'single',
+                    'status' => 'active',
+                    'availability_type' => 'existing_schedule',
+                    'schedule_type' => 'weekly_schedules',
+                    'weekly_schedules' => \FluentBooking\App\Services\Helper::getWeeklyScheduleSchema(),
+                    'location_type' => 'phone_guest',
+                    'location_settings' => [['type' => 'phone_guest', 'title' => '', 'display_on_booking' => '']],
+                ],
+            ]]);
+            $response = rest_do_request($request);
+            wp_set_current_user($before);
+            if ($response->is_error()) {
+                error_log('AnyPress store: FluentBooking calendar not made: ' . wp_json_encode($response->get_data()));
+            }
         },
         // Fluent Support: its first mailbox, which tickets need, under the store's name, with its notices to the owner.
         // waas-mail gives it the store's sending address.
