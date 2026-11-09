@@ -36,6 +36,7 @@ import { buyDomain, listBoughtDomains, searchDomains, setAutoRenew, transferCode
 import { addTenantDomain, assertChangeable } from './domains.ts';
 import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
+import { sitePluginsOf } from '../siteplugins.ts';
 import { deleteTenant, goLiveTenant, HIGHLEVEL_SITE_TYPE, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { callSite, siteKeys } from '../sitekeys.ts';
 import { versionService } from './versions.ts';
@@ -693,6 +694,26 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     );
     if (!rows[0]) throw notFound(`Tenant ${id} not found`);
     return c.json(await wpLogin(deps, rows[0]));
+  });
+
+  // What comes installed on the store (its site types' plugins in its version's roles.json, what each is for) and
+  // whether its owner may add plugins: what the owner sees on Dashboard > Your plan in WordPress.
+  app.get('/tenants/:id/plugins', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query(
+      `SELECT t.php_constants, v.id AS version_id, v.roles FROM tenants t JOIN versions v ON v.id = t.version_id
+        WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`,
+      [id, scopedProduct(c)],
+    );
+    const t = rows[0];
+    if (!t) throw notFound(`Tenant ${id} not found`);
+    let roles = t.roles as unknown;
+    if (roles === null) {
+      roles = await deps.provisioner.readVersionRoles({ versionId: t.version_id });
+      if (roles !== null) await pool.query('UPDATE versions SET roles = $2 WHERE id = $1', [t.version_id, JSON.stringify(roles)]);
+    }
+    return c.json(sitePluginsOf(roles, siteTypesOf(t.php_constants)));
   });
 
   // "Check now" for a HighLevel site's sub-account link: tells the site (AnyPress Client 2.16.0 or later, signed with

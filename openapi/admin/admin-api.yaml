@@ -1165,6 +1165,48 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/tenants/{id}/plugins:
+    get:
+      operationId: adminGetTenantPlugins
+      summary: What comes installed on a store
+      description: >-
+        The plugins the store's site types turn on (the site types in its version's roles.json), in order, with a
+        line on what each is for where the site type gives one, and whether the owner may add plugins of their own
+        (ownPlugins: AnyPress Client leaves those alone). The same list the owner sees in WordPress on Dashboard > Your
+        plan. Empty when the store has no site type, or its version has no site types.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The store's plugins
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [siteTypes, ownPlugins, plugins]
+                properties:
+                  siteTypes:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [key, title]
+                      properties:
+                        key: { type: string }
+                        title: { type: string }
+                  ownPlugins: { type: boolean, description: The owner may add plugins of their own and they stay on. }
+                  plugins:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [file, name, about]
+                      properties:
+                        file: { type: string, description: 'Plugin file, e.g. fluent-crm/fluent-crm.php' }
+                        name: { type: string }
+                        about: { type: string, nullable: true, description: What it is for. }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/highlevel-check:
     post:
       operationId: adminCheckTenantHighLevel
