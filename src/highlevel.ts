@@ -59,6 +59,55 @@ export const SITE_LINK_ROUTE = '/apps/site/crm-link';
 /** /v1 paths that take the app's headers and need no productId with a partner key. */
 export const APP_PATHS = /^\/v1\/apps(\/|$)/;
 
+/**
+ * Keeps what a HighLevel site was last told by POST /apps/site/crm-link: when it asked, and whether it was given its
+ * sub-account's token (connected), with the sub-account's name when HighLevel gave it. Never fails the site's request.
+ */
+async function recordSiteLink(pool: Pool, tenantId: string, connected: boolean, locationName?: string | null) {
+  try {
+    await pool.query(
+      `UPDATE tenants SET highlevel_checked_at = now(), highlevel_connected_at = CASE WHEN $2 THEN now() END,
+         highlevel_location_name = COALESCE($3, highlevel_location_name) WHERE id = $1`,
+      [tenantId, connected, locationName ?? null],
+    );
+  } catch (err) {
+    console.error(`highlevel: site ${tenantId}'s check not recorded: ${(err as Error).message}`);
+  }
+}
+
+/** The sub-account's name, read with its own token (locations.readonly); null when HighLevel doesn't say in time. */
+async function subAccountName(hl: HighLevelConfig, locationId: string, token: string): Promise<string | null> {
+  try {
+    const client = new HighLevel({ clientId: hl.clientId, clientSecret: hl.clientSecret, apiVersion: API_VERSION, logLevel: 'warn', locationAccessToken: token });
+    const answer = await client.locations.getLocation({ locationId }, { baseURL: hl.apiUrl, timeout: 5_000, preferredTokenType: 'location' });
+    const name = answer?.location?.name;
+    return typeof name === 'string' && name.trim() ? name.trim().slice(0, 200) : null;
+  } catch (err: any) {
+    console.error(`highlevel: no name for sub-account ${locationId}: ${String(err?.message ?? err).slice(0, 200)}`);
+    return null;
+  }
+}
+
+/**
+ * The link a HighLevel site keeps with its sub-account, for its page in the dashboard: null when it has none.
+ * connected: the site's last check-in was given the sub-account's token.
+ */
+export function siteLinkOf(row: {
+  highlevel_location_id?: string | null;
+  highlevel_location_name?: string | null;
+  highlevel_checked_at?: Date | null;
+  highlevel_connected_at?: Date | null;
+}) {
+  if (!row.highlevel_location_id) return null;
+  return {
+    locationId: row.highlevel_location_id,
+    locationName: row.highlevel_location_name ?? null,
+    connected: row.highlevel_connected_at != null,
+    connectedAt: row.highlevel_connected_at ? row.highlevel_connected_at.toISOString() : null,
+    lastCheckAt: row.highlevel_checked_at ? row.highlevel_checked_at.toISOString() : null,
+  };
+}
+
 /** The site events the trigger can start a workflow on. A function: webhooks.ts imports this file too. */
 const siteEvents = (): string[] => EVENT_TYPES.filter((t) => t.startsWith('tenant.'));
 
@@ -485,15 +534,24 @@ export function highLevelRoutes(app: Hono<AppEnv>, deps: Deps) {
     }
     const headers = { 'Cache-Control': 'no-store' };
     const hl = config.webhooks?.highlevel;
-    if (!hl || !tenant.loc || tenant.is_suspended) return c.json({ crm: null }, 200, headers);
+    // What the site was told, for its page in the dashboard (recordSiteLink).
+    if (!hl || !tenant.loc || tenant.is_suspended) {
+      await recordSiteLink(pool, tenant.id, false);
+      return c.json({ crm: null }, 200, headers);
+    }
     let token: Awaited<ReturnType<typeof locationTokenWithExpiry>>;
     try {
       token = await locationTokenWithExpiry(pool, secrets, hl, tenant.loc, tenant.company);
     } catch (err) {
       console.error(`highlevel: no token for sub-account ${tenant.loc} (site ${tenant.id}): ${(err as Error).message}`);
+      await recordSiteLink(pool, tenant.id, false);
       throw new HttpError(502, 'HighLevel gave no token for this sub-account; try again later');
     }
-    if (!token) return c.json({ crm: null }, 200, headers);
+    if (!token) {
+      await recordSiteLink(pool, tenant.id, false);
+      return c.json({ crm: null }, 200, headers);
+    }
+    await recordSiteLink(pool, tenant.id, true, await subAccountName(hl, tenant.loc, token.token));
     return c.json({ crm: 'highlevel', locationId: tenant.loc, accessToken: token.token, expiresAt: token.expiresAt.toISOString() }, 200, headers);
   });
 }

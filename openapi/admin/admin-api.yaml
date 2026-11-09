@@ -1165,6 +1165,37 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/tenants/{id}/highlevel-check:
+    post:
+      operationId: adminCheckTenantHighLevel
+      summary: Tell a HighLevel site to check its sub-account link now
+      description: >-
+        "Check now": the site (AnyPress Client 2.16.0 or later, signed with its site key) asks for its sub-account and
+        token straight away instead of within the hour, so a site tied to a sub-account connects its WP Fusion at once,
+        and an untied one drops the link. Answers what the site said and its link as recorded after the check. For
+        anyone who may change the store; team members who only look get 403. 409 when it is not a HighLevel site,
+        isn't Done, is suspended, has no address, or runs an older AnyPress Client. 502 when the site doesn't answer.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The check's result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [siteLinked, wpFusionConnected, highLevel]
+                properties:
+                  siteLinked: { type: boolean, description: The site now holds a sub-account token. }
+                  wpFusionConnected: { type: boolean, description: "The site's WP Fusion is set to HighLevel and uses that token." }
+                  highLevel: { $ref: '#/components/schemas/HighLevelSiteLink' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502':
+          description: The site didn't answer, or answered with an error
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   /admin/tenants/{id}/notify-owner:
     post:
       operationId: adminNotifyTenantOwner
@@ -3890,6 +3921,20 @@ components:
             type: string
           description: What to fix or decide before switching
       additionalProperties: false
+    HighLevelSiteLink:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: >-
+        A HighLevel site's link to its sub-account (null when it has none), and what the site was told the last time it checked in (it checks every hour,
+        and at once after POST /admin/tenants/{id}/highlevel-check).
+      required: [locationId, locationName, connected, connectedAt, lastCheckAt]
+      properties:
+        locationId: { type: string, description: The HighLevel sub-account the site belongs to. }
+        locationName: { type: string, nullable: true, description: "The sub-account's name as HighLevel gave it; null until the site was first given a token." }
+        connected: { type: boolean, description: "The site's last check-in was given the sub-account's token, so its WP Fusion can send contacts." }
+        connectedAt: { type: string, format: date-time, nullable: true, description: When the site was last given the token; null when its last check-in got none. }
+        lastCheckAt: { type: string, format: date-time, nullable: true, description: When the site last checked in; null if never. }
     TenantDetail:
       type: object
       additionalProperties: false
@@ -3953,6 +3998,7 @@ components:
                 Left out once the site is live or being removed.
             reprintSite: { type: string, nullable: true, description: The address Reprint last copied the site from. }
             reprintCopies: { type: integer, description: How many times the site was copied with Reprint. }
+        highLevel: { $ref: '#/components/schemas/HighLevelSiteLink' }
         emailUsage:
           type: object
           description: >-
