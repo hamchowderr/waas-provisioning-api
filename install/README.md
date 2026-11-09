@@ -53,7 +53,7 @@ stores; put stores like that on another provider.
    `*.versions` under the store domain, `api` and `app` under the brand domain (`app` is a CNAME to
    `cname.vercel-dns.com` when the dashboard is on Vercel). It corrects records that point
    elsewhere or are proxied, and stops if a name has another type of record (a CNAME, for example).
-4. Creates the projects **WaaS API**, **WaaS Stores** and **WaaS Storefront**, and Postgres 16 in WaaS API.
+4. Creates the projects **WaaS API**, **WaaS Stores** and **WaaS Storefront**, and Postgres 18 in WaaS API.
 5. Deploys the provisioning API on `api.<brand domain>` with generated secrets, and waits for `/health`.
 6. Makes an API key for your storefront.
 7. Publishes the store template and the storefront template from the newest

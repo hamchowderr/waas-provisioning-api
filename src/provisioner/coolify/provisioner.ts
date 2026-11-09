@@ -8,6 +8,21 @@ import { AGENT_GZ, AGENT_SCRIPT, encodeConstants, renderCompose } from './compos
 import { readZipEntry } from '../../zipentry.ts';
 import { step, type StepKey } from '../../progress.ts';
 
+/**
+ * Where Service uuids are kept between restarts (src/coolifyids.ts), keyed by "<environment id>/<name>".
+ * With it, a lookup never needs Coolify's full Service list once every existing Service was saved once.
+ */
+export interface ServiceIdStore {
+  /** The saved uuid; null when a create was started and its uuid not saved; undefined when there is no row. */
+  get(key: string): Promise<string | null | undefined>;
+  set(key: string, uuid: string | null): Promise<void>;
+  delete(key: string): Promise<void>;
+  /** True once `seed` has run. */
+  isSeeded(): Promise<boolean>;
+  /** Saves every Service from a full list and marks the store seeded. */
+  seed(entries: [string, string][]): Promise<void>;
+}
+
 export interface CoolifyProvisionerConfig {
   /** e.g. https://coolify.example.com */
   url: string;
@@ -30,6 +45,8 @@ export interface CoolifyProvisionerConfig {
   /** How long one agent command may run. */
   taskTimeoutSeconds?: number;
   pollMs?: number;
+  /** Keeps Service uuids between restarts. Unset: kept in memory only, so each restart lists once. */
+  serviceIds?: ServiceIdStore;
   /** The relay stores send email through. Unset: stores send none (the WordPress image has no mailer). */
   mail?: StoreMail;
   /**
@@ -250,6 +267,7 @@ export class CoolifyProvisioner implements Provisioner {
    * megabytes) is slow for Coolify to build on the same server the stores run on.
    */
   private readonly serviceUuids = new Map<string, string>();
+  private seeded = false;
 
   constructor(private readonly config: CoolifyProvisionerConfig) {
     this.coolify = new CoolifyClient(config.url, config.token, config.fetch);
@@ -279,23 +297,62 @@ export class CoolifyProvisioner implements Provisioner {
     return env.id;
   }
 
-  /** The Service with this name in this project's environment, if any. */
+  private async serviceKey(envName: string, name: string) {
+    return `${await this.environmentId(envName)}/${name}`;
+  }
+
+  /** True once every existing Service's uuid is saved, so a Service with no saved uuid doesn't exist. */
+  private async allSaved(): Promise<boolean> {
+    if (!this.seeded && this.config.serviceIds) this.seeded = await this.config.serviceIds.isSeeded();
+    return this.seeded;
+  }
+
+  /**
+   * The Service with this name in this project's environment, if any. Reads the one Service by its
+   * saved uuid. Coolify's full list (every Service's compose file, many megabytes) is read only before
+   * the uuids were first saved, or to find a Service whose create stopped before its uuid was saved.
+   */
   async findService(envName: string, name: string): Promise<CoolifyService | null> {
     const envId = await this.environmentId(envName);
     const key = `${envId}/${name}`;
-    const known = this.serviceUuids.get(key);
+    const ids = this.config.serviceIds;
+    let known = this.serviceUuids.get(key);
+    if (known === undefined && ids) {
+      const saved = await ids.get(key);
+      if (saved) known = saved;
+      else if (saved === undefined && (await this.allSaved())) return null;
+    }
     if (known) {
       try {
         const service = await this.coolify.getService(known);
-        if (service.name === name && service.environment_id === envId && !(service as { deleted_at?: string | null }).deleted_at) return service;
+        if (service.name === name && service.environment_id === envId && !(service as { deleted_at?: string | null }).deleted_at) {
+          this.serviceUuids.set(key, known);
+          return service;
+        }
       } catch (err) {
         if ((err as { status?: number }).status !== 404) throw err;
       }
       this.serviceUuids.delete(key);
+      if (ids) {
+        await ids.delete(key);
+        if (await this.allSaved()) return null;
+      }
     }
     const services = await this.coolify.listServices();
-    for (const s of services) if (s.environment_id !== undefined) this.serviceUuids.set(`${s.environment_id}/${s.name}`, s.uuid);
-    return services.find((s) => s.name === name && s.environment_id === envId) ?? null;
+    const entries: [string, string][] = [];
+    for (const s of services) {
+      if (s.environment_id === undefined) continue;
+      this.serviceUuids.set(`${s.environment_id}/${s.name}`, s.uuid);
+      entries.push([`${s.environment_id}/${s.name}`, s.uuid]);
+    }
+    const found = services.find((s) => s.name === name && s.environment_id === envId) ?? null;
+    if (ids) {
+      await ids.seed(entries);
+      this.seeded = true;
+      // A create that stopped before Coolify made the Service: nothing to find next time either.
+      if (!found) await ids.delete(key);
+    }
+    return found;
   }
 
   private async requireService(envName: string, name: string): Promise<CoolifyService> {
@@ -355,6 +412,9 @@ export class CoolifyProvisioner implements Provisioner {
   }): Promise<string> {
     let service = await this.findService(input.envName, input.name);
     if (!service) {
+      const key = await this.serviceKey(input.envName, input.name);
+      // Saved before the create, so a job stopped right after it lists once and finds the Service.
+      await this.config.serviceIds?.set(key, null);
       const created = await this.coolify.createService({
         name: input.name,
         description: formatMeta(input.meta),
@@ -369,6 +429,8 @@ export class CoolifyProvisioner implements Provisioner {
         instant_deploy: false,
       });
       service = { uuid: created.uuid, name: input.name };
+      this.serviceUuids.set(key, created.uuid);
+      await this.config.serviceIds?.set(key, created.uuid);
     }
     if (Object.keys(input.envs).length) await this.coolify.setEnvs(service.uuid, input.envs);
     await this.coolify.startService(service.uuid).catch((err: unknown) => {
@@ -517,12 +579,22 @@ export class CoolifyProvisioner implements Provisioner {
     const service = await this.findService(envName, name);
     if (!service) return;
     await this.coolify.deleteService(service.uuid);
-    // Deletion is queued in Coolify; wait until the name is free again.
+    // Deletion is queued in Coolify; wait until the Service is gone.
     const deadline = Date.now() + (this.config.deployTimeoutMs ?? 10 * 60_000);
-    while (await this.findService(envName, name)) {
+    for (;;) {
+      try {
+        const left = await this.coolify.getService(service.uuid);
+        if ((left as { deleted_at?: string | null }).deleted_at) break;
+      } catch (err) {
+        if ((err as { status?: number }).status !== 404) throw err;
+        break;
+      }
       if (Date.now() > deadline) throw new Error(`Coolify: ${name} was not deleted in time`);
       await this.sleep(this.pollMs);
     }
+    const key = await this.serviceKey(envName, name);
+    this.serviceUuids.delete(key);
+    await this.config.serviceIds?.delete(key);
   }
 
   // Versions

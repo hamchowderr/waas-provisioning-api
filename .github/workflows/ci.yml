@@ -7,12 +7,12 @@ on:
 
 jobs:
   test:
-    # ubuntu-latest moved to 26.04 (Oct 2026): its pg_dump 17+ writes dumps postgres:16 can't restore
-    # and its PHP ICU rejects the und_XX locale the owner mu-plugin test uses. Pinned until both are moved.
+    # ubuntu-latest moved to 26.04 (Oct 2026): its PHP ICU rejects the und_XX locale the owner
+    # mu-plugin test uses. Pinned until that test is moved; pg_dump 18 comes from PGDG below.
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: waas_test
@@ -27,6 +27,14 @@ jobs:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/waas_test
     steps:
       - uses: actions/checkout@v4
+      - name: pg_dump 18 (the database backup tests dump the postgres:18 service)
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-18
+          # The runner's own Postgres 16 would win the pg_wrapper choice; put 18 first.
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_dump --version | grep -q ' 18\.'
       - uses: actions/setup-node@v4
         with:
           # The Node line the API's Docker image runs (the active LTS).
@@ -63,7 +71,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: waas_test

@@ -257,9 +257,30 @@ class FakeMailKeys {
   }
 }
 
+/** ServiceIdStore in memory, as src/coolifyids.ts keeps it in Postgres. */
+class MemoryServiceIds {
+  rows = new Map<string, string | null>();
+  async get(key: string) {
+    return this.rows.has(key) ? this.rows.get(key)! : undefined;
+  }
+  async set(key: string, uuid: string | null) {
+    this.rows.set(key, uuid);
+  }
+  async delete(key: string) {
+    this.rows.delete(key);
+  }
+  async isSeeded() {
+    return this.rows.has('');
+  }
+  async seed(entries: [string, string][]) {
+    for (const [k, u] of entries) this.rows.set(k, u);
+    this.rows.set('', 'seeded');
+  }
+}
+
 function provisioner(
   cloud: FakeCloud,
-  extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL; mailKeys?: FakeMailKeys; siteKey?: (storeId: string) => string } = {},
+  extra: { restartSeenTimeoutMs?: number; mail?: typeof MAIL; mailKeys?: FakeMailKeys; siteKey?: (storeId: string) => string; serviceIds?: MemoryServiceIds } = {},
 ) {
   return new CoolifyProvisioner({
     ...extra,
@@ -874,6 +895,55 @@ describe('CoolifyProvisioner', () => {
     cloud.services.delete(version.uuid);
     expect(await p.findService('versions', 'version-v9')).toBeNull();
     expect(lists()).toBe(before + 1);
+  });
+
+  it('with saved uuids, never lists Services again: not for a new Service, not after a restart, not once one is deleted', async () => {
+    const ids = new MemoryServiceIds();
+    cloud.objects.set('base/base-1.zip', new Uint8Array([80, 75]));
+    const lists = () => cloud.calls.filter((c) => c === 'GET /services').length;
+    // The first lookup ever saves every existing Service once.
+    await provisioner(cloud, { serviceIds: ids }).findService('versions', 'version-existing');
+    expect(lists()).toBe(1);
+    expect(await ids.isSeeded()).toBe(true);
+
+    // A restarted API (a new provisioner, empty memory) creates a new version site without listing.
+    let fresh = provisioner(cloud, { serviceIds: ids });
+    await fresh.buildVersion({ versionId: 'v7', domain: 'v7.versions.example.com', wordPressVersion: '6.8', phpVersion: '8.2', source: { baseSnapshotId: 'base-1' } });
+    const version = [...cloud.services.values()].find((s) => s.name === 'version-v7')!;
+    expect([...ids.rows.values()]).toContain(version.uuid);
+    expect(lists()).toBe(1);
+
+    // Restarted again, it reads that one Service by its saved uuid.
+    fresh = provisioner(cloud, { serviceIds: ids });
+    expect((await fresh.findService('versions', 'version-v7'))?.uuid).toBe(version.uuid);
+    expect(cloud.calls.at(-1)).toBe(`GET /services/${version.uuid}`);
+
+    // Deleting it forgets the uuid; looking it up afterwards answers none, still without a list.
+    await fresh.deleteVersion({ versionId: 'v7' });
+    expect([...ids.rows.values()]).not.toContain(version.uuid);
+    expect(await provisioner(cloud, { serviceIds: ids }).findService('versions', 'version-v7')).toBeNull();
+    // Removed in Coolify by hand: the 404 answers none too.
+    await fresh.buildVersion({ versionId: 'v8', domain: 'v8.versions.example.com', wordPressVersion: '6.8', phpVersion: '8.2', source: { baseSnapshotId: 'base-1' } });
+    cloud.services.delete([...cloud.services.values()].find((s) => s.name === 'version-v8')!.uuid);
+    expect(await provisioner(cloud, { serviceIds: ids }).findService('versions', 'version-v8')).toBeNull();
+    expect(lists()).toBe(1);
+  });
+
+  it('lists once to find a Service whose create stopped before its uuid was saved', async () => {
+    const ids = new MemoryServiceIds();
+    cloud.objects.set('base/base-1.zip', new Uint8Array([80, 75]));
+    await p.buildVersion({ versionId: 'v6', domain: 'v6.versions.example.com', wordPressVersion: '6.8', phpVersion: '8.2', source: { baseSnapshotId: 'base-1' } });
+    const version = [...cloud.services.values()].find((s) => s.name === 'version-v6')!;
+    const fresh = provisioner(cloud, { serviceIds: ids });
+    await fresh.findService('versions', 'other');
+    // As a job stopped between Coolify's create and saving the uuid leaves it.
+    const key = [...ids.rows.entries()].find(([, u]) => u === version.uuid)![0];
+    ids.rows.set(key, null);
+    const lists = () => cloud.calls.filter((c) => c === 'GET /services').length;
+    const before = lists();
+    expect((await provisioner(cloud, { serviceIds: ids }).findService('versions', 'version-v6'))?.uuid).toBe(version.uuid);
+    expect(lists()).toBe(before + 1);
+    expect(ids.rows.get(key)).toBe(version.uuid);
   });
 
   it('stops a version site, and does nothing for a version without one', async () => {

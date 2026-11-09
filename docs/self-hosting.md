@@ -6,7 +6,7 @@ The platform is three repositories:
 
 | Repository | What it is | Where it runs |
 |---|---|---|
-| [waas-provisioning-api](https://github.com/hamchowderr/waas-provisioning-api) | The provisioning API (Hono + pg-boss on Postgres). Creates, changes, backs up and deletes stores. | A container, next to Postgres 16 |
+| [waas-provisioning-api](https://github.com/hamchowderr/waas-provisioning-api) | The provisioning API (Hono + pg-boss on Postgres). Creates, changes, backs up and deletes stores. | A container, next to Postgres 18 |
 | [waas-dashboard](https://github.com/hamchowderr/waas-dashboard) | The admin dashboard (Next.js). Reads and changes everything through the API's `/admin/*`. | Vercel, or any Node host |
 | [waas-plugins](https://github.com/hamchowderr/waas-plugins) | WordPress plugins: **AnyPress Host** (turns a WordPress shop into the storefront that sells stores), **AnyPress Client** (inside every store), **AnyPress Payments** (Authorize.Net for FluentCart) | Your storefront WordPress, and each store |
 
@@ -230,7 +230,7 @@ Not supported for stores yet. Here is what works today and what a Kubernetes dri
 
 **The API and dashboard run on Kubernetes today.** Both are plain containers:
 
-- API: the repository's `Dockerfile`, port 4111, readiness and liveness on `GET /health`, environment from a Secret, Postgres 16 from a managed service or an operator (CloudNativePG, for example). Run **one replica**: jobs are safe to share through pg-boss, but the startup checks (store cron, store email, catch-up backups) have only been run from one instance.
+- API: the repository's `Dockerfile`, port 4111, readiness and liveness on `GET /health`, environment from a Secret, Postgres 18 from a managed service or an operator (CloudNativePG, for example). Run **one replica**: jobs are safe to share through pg-boss, but the startup checks (store cron, store email, catch-up backups) have only been run from one instance.
 - Dashboard: `npm run build && npm start` in a Node 22 image, behind your Ingress, with the environment from section 7.
 
 **Stores need a new provisioner.** All store-side work goes through the `Provisioner` interface (`src/provisioner/provisioner.ts`), and the only real implementation drives Coolify. A `PROVISIONER=kubernetes` would implement the same methods with Kubernetes objects. A sketch of the mapping, not built:
@@ -268,7 +268,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 
 | Variable | Default | |
 |---|---|---|
-| `DATABASE_URL` | required | Postgres 16+ |
+| `DATABASE_URL` | required | Postgres 18 (16 and 17 also work) |
 | `SECRETS_KEY` | required | 32 random bytes, base64 |
 | `PORT` | `4111` | |
 | `ADMIN_TOKEN` | off | Turns on `/admin/*` |
