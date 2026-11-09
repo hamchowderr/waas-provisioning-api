@@ -2468,11 +2468,32 @@ switch ($op) {
             $client = is_dir(CONTENT . '/plugins/anypress-client') && wpMayFail('plugin', 'activate', 'anypress-client') !== null;
             done(['added' => $added, 'client' => $client]);
         }
+        // Plugins the owner added (a site type with its own plugins, e.g. HighLevel sites) stay: anything in the
+        // plugins folder that neither this version nor the last one imported brought. The versions' plugin lists
+        // are kept in wp-content/.anypress-template-plugins.json; without one, every plugin the version lacks stays.
+        $listFile = CONTENT . '/.anypress-template-plugins.json';
+        $incoming = is_dir("$tmp/x/wp-content/plugins") ? array_map('basename', glob("$tmp/x/wp-content/plugins/*") ?: []) : [];
+        $before = is_file($listFile) ? json_decode((string) file_get_contents($listFile), true) : [];
+        $before = is_array($before) ? $before : [];
+        $kept = [];
+        if ($incoming) {
+            mkdir("$tmp/keep");
+            foreach (glob(CONTENT . '/plugins/*') ?: [] as $path) {
+                $name = basename($path);
+                // AnyPress Client's old copy, and WordPress's bundled plugins, never stay.
+                if (in_array($name, [...$incoming, ...$before, 'index.php', 'waas-client', 'hello.php', 'akismet'], true)) continue;
+                if (!is_dir($path) && !str_ends_with($name, '.php')) continue;
+                run('mv ' . escapeshellarg($path) . ' ' . escapeshellarg("$tmp/keep/"));
+                $kept[] = $name;
+            }
+        }
         foreach (['plugins', 'themes'] as $dir) {
             if (!is_dir("$tmp/x/wp-content/$dir")) continue;
             run('rm -rf ' . CONTENT . "/$dir && cp -a " . escapeshellarg("$tmp/x/wp-content/$dir") . ' ' . CONTENT . "/$dir");
         }
-        done(['theme' => keep_theme(), 'client' => old_client_moved()]);
+        foreach ($kept as $name) run('mv ' . escapeshellarg("$tmp/keep/$name") . ' ' . escapeshellarg(CONTENT . '/plugins/'));
+        if ($incoming) file_put_contents($listFile, json_encode(array_values($incoming))) !== false || fail('cannot write the template plugin list');
+        done(['theme' => keep_theme(), 'client' => old_client_moved(), 'kept' => $kept]);
     }
 
     case 'usage': {
