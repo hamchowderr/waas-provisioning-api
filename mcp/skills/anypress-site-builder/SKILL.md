@@ -81,10 +81,11 @@ Run `anypress-site-copy` over every page: headings, button labels, prices, FAQ, 
 
 On each page, in this order, and don't skip a check because the one before it passed:
 
-1. `anypress-slop-gate` over the page's block markup (`site_pages` read gives it).
-2. `anypress-ui-check` on a Playground copy at desktop and phone width.
-3. `anypress-design-critique` on the home page and one inner page.
-4. By hand, the kit checklist: open every menu item, button and link, send every form, open every FAQ answer and gallery, at desktop and at 390px wide. Bookings: book a slot. Shop: add to cart and reach checkout.
+1. Built from a reference: `read_reference` check (the store and the reference id; `ownContent` true when the reference is the owner's own site). Every reference page must come back `pass`, or `warn` with the reason written down; a `fail` (a missing page, a heading not carried over, someone else's text copied) is fixed first. Then compare each `referenceScreenshot` with the store page.
+2. `anypress-slop-gate` over the page's block markup (`site_pages` read gives it).
+3. `anypress-ui-check` on a Playground copy at desktop and phone width.
+4. `anypress-design-critique` on the home page and one inner page.
+5. By hand, the kit checklist: open every menu item, button and link, send every form, open every FAQ answer and gallery, at desktop and at 390px wide. Bookings: book a slot. Shop: add to cart and reach checkout.
 
 Fix every FAIL, re-run the check that found it, and write `check.md`: what each check found, what was fixed, and any WARN left on purpose with the reason.
 

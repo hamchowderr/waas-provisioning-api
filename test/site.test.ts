@@ -23,6 +23,8 @@ interface Seen {
 }
 let seen: Seen[] = [];
 let storeAnswer: { status: number; body: unknown } | Error = { status: 200, body: { ok: true } };
+/** When set, the store answers by path (after /site) instead of with storeAnswer. */
+let storeRoutes: Record<string, unknown> | null = null;
 
 const master = siteKeyMaster(TEST_SECRETS_KEY);
 
@@ -41,6 +43,10 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const method = init?.method ?? 'GET';
   const header = new Headers(init?.headers).get('x-anypress-signature');
   seen.push({ url: String(input), method, body, signatureOk: signatureOk(header, method, url, body) });
+  if (storeRoutes) {
+    const path = url.pathname.replace(/^.*\/site/, '');
+    return path in storeRoutes ? Response.json(storeRoutes[path]) : Response.json({ message: 'No such page' }, { status: 404 });
+  }
   if (storeAnswer instanceof Error) throw storeAnswer;
   return new Response(JSON.stringify(storeAnswer.body), { status: storeAnswer.status, headers: { 'content-type': 'application/json' } });
 }) as typeof fetch;
@@ -189,5 +195,76 @@ describe('MCP site tools', () => {
     expect(JSON.parse(seen[0]!.body)).toMatchObject({ pattern: 'ollie/hero-light', position: 2 });
     const missing = await mcp.callTool({ name: 'page_section', arguments: { action: 'replace', externalId: 'site-1', pageId: 12, content: '<p>x</p>' } });
     expect(missing).toMatchObject({ isError: true, content: [{ text: 'Action replace needs section.' }] });
+  });
+});
+
+describe('POST /v1/tenants/site/reference-check', () => {
+  const page = (url: string, title: string, text: string, images: string[] = [], links: string[] = []) => ({ url, title, text, sections: [], screenshot: `${url}#shot`, mobileScreenshot: null, images, links });
+  const ownText = 'We bake fresh sourdough bread every single morning in our small family kitchen downtown';
+  const bundle = {
+    kind: 'website', source: 'https://oldbakery.example/', title: 'Old Bakery', platform: 'other', design: {}, items: [{ kind: 'post' }], products: [], collections: [], coverage: null, notes: [],
+    pages: [
+      page('https://oldbakery.example/', 'Home', `# Fresh bread daily\n\n${ownText}.\n\n## Visit us\n\nOpen every day.`, ['https://oldbakery.example/a.jpg'], ['https://oldbakery.example/menu', 'https://oldbakery.example/catering']),
+      page('https://oldbakery.example/menu/', 'Menu', '# Our menu\n\n## Breads\n\n## Pastries\n\n## Drinks', ['https://oldbakery.example/b.jpg', 'https://oldbakery.example/c.jpg']),
+      page('https://oldbakery.example/catering/', 'Catering', '# Catering\n\nWe cater weddings.'),
+    ],
+  };
+  let referenceId: string;
+
+  beforeAll(async () => {
+    const { rows } = await t.pool.query("INSERT INTO site_references (product_id, kind, source, status, bundle) VALUES ($1, 'website', $2, 1, $3) RETURNING id", [t.productId, bundle.source, bundle]);
+    referenceId = rows[0].id;
+    storeRoutes = {
+      '': { homePage: 5 },
+      '/pages': [
+        { id: 5, title: 'Welcome', slug: 'welcome', status: 'publish', link: 'https://bakery.example/' },
+        { id: 6, title: 'Menu', slug: 'menu', status: 'draft', link: 'https://bakery.example/?p=6' },
+        { id: 7, title: 'Contact', slug: 'contact', status: 'publish', link: 'https://bakery.example/contact/' },
+      ],
+      '/pages/5': { content: `<!-- wp:heading --><h1>Fresh bread daily</h1><!-- /wp:heading --><p>${ownText}.</p><h2>Visit us</h2><img src="https://bakery.example/a.jpg">` },
+      '/pages/6': { content: '<h1>Our menu</h1><p>Bread.</p>' },
+    };
+  });
+  afterAll(() => {
+    storeRoutes = null;
+  });
+
+  const check = (body: unknown) => t.call('POST', '/v1/tenants/site/reference-check?externalId=site-1', { body });
+
+  it('matches every reference page and says what each is missing, for the owner’s own site', async () => {
+    const res = await check({ referenceId, ownContent: true });
+    expect(res.status).toBe(200);
+    const r = await res.json();
+    expect(r.summary).toEqual({ pages: 3, pass: 0, warn: 1, fail: 2 });
+    const [home, menu, catering] = r.pages;
+    // The home page is matched as the home page, whatever its slug; its link to catering leads nowhere.
+    expect(home).toMatchObject({ storePage: { id: 5 }, status: 'warn', counts: { headings: [2, 2], images: [1, 1] }, referenceScreenshot: 'https://oldbakery.example/#shot' });
+    expect(home.findings).toEqual([{ level: 'warn', message: 'The reference links to pages the store has no page for: /catering.' }]);
+    expect(menu.storePage).toMatchObject({ id: 6, status: 'draft' });
+    expect(menu.findings.map((f: any) => f.message)).toEqual([
+      "The store's page is still draft.",
+      'It has 1 headings; the reference has 4: sections may be missing.',
+      'It has 0 images; the reference has 2.',
+      'Headings not carried over: "Breads", "Pastries", "Drinks".',
+    ]);
+    expect(catering).toMatchObject({ storePage: null, status: 'fail', findings: [{ level: 'fail', message: 'The store has no page for this one ("Catering").' }] });
+    expect(r.extraStorePages).toEqual([{ id: 7, title: 'Contact', link: 'https://bakery.example/contact/' }]);
+    expect(r.notes.join(' ')).toContain('1 posts or other items');
+  });
+
+  it("fails a page that copies someone else's site, and goes through a big reference a part at a time", async () => {
+    const r = await (await check({ referenceId, limit: 1 })).json();
+    expect(r.pages[0].findings).toContainEqual({ level: 'fail', message: expect.stringContaining("copied from the reference, which is someone else's site") });
+    expect(r.notes[0]).toBe('2 more reference pages: check them with offset 1.');
+    const rest = await (await check({ referenceId, offset: 1 })).json();
+    expect(rest.pages.map((p: any) => p.referenceTitle)).toEqual(['Menu', 'Catering']);
+    expect(rest.extraStorePages).toEqual([]);
+  });
+
+  it('refuses a reference that is not read yet', async () => {
+    const { rows } = await t.pool.query("INSERT INTO site_references (product_id, kind, source) VALUES ($1, 'website', 'https://x.example/') RETURNING id", [t.productId]);
+    const res = await check({ referenceId: rows[0].id });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toContain('still being read');
   });
 });

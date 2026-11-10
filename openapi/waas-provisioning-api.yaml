@@ -514,6 +514,54 @@ paths:
           description: Forbidden
       x-phase: 1
       operationId: resumeTenant
+  /v1/tenants/site/reference-check:
+    post:
+      tags:
+      - TenantSite
+      summary: Check the store against its reference
+      operationId: checkSiteReference
+      description: 'Added for AnyPress.
+
+
+        Compares a store built from a reference (`startReference`) with that reference, page by page, through the store''s site API: free, no Firecrawl credits. Each reference page is matched to the store''s page (the home page, then by slug, then by title) and gets `pass`, `warn` or `fail` with what was found: no page on the store (fail), a draft, far fewer headings or images, links to pages the store lacks. With `ownContent` (the reference is the owner''s own site) its headings must be carried over (fail) and most of its text (warn); without it, a page that copies the reference''s text fails. The look is not judged here: compare `referenceScreenshot` with the store page. `offset` and `limit` go through a big reference a part at a time. The tenant must be Done and not suspended.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteReferenceCheckParams'
+      responses:
+        '200':
+          description: Each reference page and what was found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteReferenceCheck'
+        '400':
+          description: The reference isn't read yet, or the store can't be checked now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '502':
+          description: The store did not answer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
   /v1/tenants/site:
     post:
       tags:
@@ -5217,6 +5265,73 @@ components:
           type: string
           description: The assistant's /from-shop address with the one-time handoff
       additionalProperties: false
+    SiteReferenceCheckParams:
+      type: object
+      required: [referenceId]
+      additionalProperties: false
+      properties:
+        referenceId: { type: string, format: uuid, description: The reference the store was built from }
+        ownContent: { type: boolean, default: false, description: 'The reference is the owner''s own site, so its words must be carried over; otherwise they must not be copied' }
+        offset: { type: integer, minimum: 0, default: 0, description: Skip this many reference pages }
+        limit: { type: integer, minimum: 1, maximum: 200, default: 50, description: Check at most this many reference pages }
+    SiteReferenceCheck:
+      type: object
+      required: [summary, pages, extraStorePages, notes]
+      properties:
+        summary:
+          type: object
+          required: [pages, pass, warn, fail]
+          properties:
+            pages: { type: integer }
+            pass: { type: integer }
+            warn: { type: integer }
+            fail: { type: integer }
+        pages:
+          type: array
+          items:
+            type: object
+            required: [referenceUrl, referenceTitle, referenceScreenshot, storePage, status, counts, findings]
+            properties:
+              referenceUrl: { type: string }
+              referenceTitle: { type: string, nullable: true }
+              referenceScreenshot: { type: string, nullable: true, description: A picture of the reference page; the link expires }
+              storePage:
+                type: object
+                nullable: true
+                required: [id, title, status, link]
+                properties:
+                  id: { type: integer }
+                  title: { type: string }
+                  status: { type: string }
+                  link: { type: string }
+              status: { type: string, enum: [pass, warn, fail] }
+              counts:
+                type: object
+                nullable: true
+                description: '[reference, store] for each'
+                required: [headings, images]
+                properties:
+                  headings: { type: array, items: { type: integer }, minItems: 2, maxItems: 2 }
+                  images: { type: array, items: { type: integer }, minItems: 2, maxItems: 2 }
+              findings:
+                type: array
+                items:
+                  type: object
+                  required: [level, message]
+                  properties:
+                    level: { type: string, enum: [warn, fail] }
+                    message: { type: string }
+        extraStorePages:
+          type: array
+          description: Store pages no reference page matched (only on the first part, offset 0)
+          items:
+            type: object
+            required: [id, title, link]
+            properties:
+              id: { type: integer }
+              title: { type: string }
+              link: { type: string }
+        notes: { type: array, items: { type: string } }
     SiteRequestParams:
       type: object
       required:

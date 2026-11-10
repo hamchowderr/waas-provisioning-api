@@ -668,6 +668,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       'Also a Figma file or frame link (each frame’s layers and text, a picture of it, colours and fonts) or a document (a PDF, Word or Excel link, or an uploaded file: its text). ' +
       'A website read spends about one credit a page; it takes every page unless maxPages says fewer. Check coverage before building: every page read, failures retried or reported. ' +
       'Then build with the theme: map design.colors to the palette slugs from site_styles, pick the closest theme fonts, and lay out each page with page_section and header_footer. ' +
+      'After building, run check against the store and fix every fail before calling it done. ' +
       'With someone else’s site or file, take its layout and style, never its text. Screenshot and image links expire: copy what the site keeps with add_image. ' +
       'Each read counts toward the storefront’s monthly reads and credits (usage). A Figma file must be shared with the AnyPress Figma account.',
     input: {
@@ -677,10 +678,12 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         .optional()
         .describe('For start, instead of url: an uploaded PDF, Word, Excel, OpenDocument, RTF or HTML file'),
       maxPages: z.number().int().min(1).max(500).optional().describe('For start: the most pages of a website or frames of a Figma page to read; every page up to the server’s limit when omitted'),
-      id: z.string().optional().describe('For get and wait: the id start answered with'),
+      id: z.string().optional().describe('For get, wait and check: the id start answered with'),
       offset: z.number().int().min(0).optional().describe('For get and wait: skip this many pages, items, products and coverage addresses (0 when omitted)'),
       limit: z.number().int().min(1).max(50).optional().describe('For get and wait: at most this many of each list, 10 when omitted; totals gives the full counts'),
       timeoutSeconds: z.number().int().min(1).max(WAIT_MAX_SECONDS).optional().describe(`For wait: how long to wait, at most ${WAIT_MAX_SECONDS} (the default); call wait again while done is false`),
+      ...ref,
+      ownContent: z.boolean().optional().describe('For check: the reference is the owner’s own site, so its words must be carried over (otherwise they must not be copied)'),
     },
     actions: {
       start: {
@@ -708,6 +711,11 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         run: ({ id, offset, limit }) => client.references.get(need(id, 'id', 'get'), { offset: offset ?? 0, limit: limit ?? 10 }),
       },
       usage: { access: 'read', does: 'this month’s reads and credits, the allowances, the page limit, and whether reading is set up', run: () => client.references.usage() },
+      check: {
+        access: 'read',
+        does: 'after building: compares the store (externalId or tenantId) with the reference id, page by page, free: each page pass, warn or fail with what is missing (the page, sections, images, linked pages, carried-over or copied text); offset and limit go through a big site',
+        run: ({ id, ownContent, offset, limit, ...args }) => client.tenants.checkReference(toRef(args), { referenceId: need(id, 'id', 'check'), ownContent, offset, limit }),
+      },
     },
   });
 
