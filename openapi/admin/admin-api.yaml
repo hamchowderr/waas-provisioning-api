@@ -1243,7 +1243,7 @@ paths:
       operationId: adminGetTenantLanguages
       summary: Read a store's languages
       description: >-
-        Whether the store is in more than one language (AnyPress Client 2.22.0 or later, through Polylang), which
+        Whether the store is in more than one language (AnyPress Client 2.25.0 or later, through Polylang), which
         languages it has (the website's own first) with their pages, and the languages it can add. ready is false for
         a few seconds after Languages is turned on, while translation files download. 409 when the store isn't Done,
         is suspended, has no address, or runs an older AnyPress Client. 502 when the site doesn't answer.

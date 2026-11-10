@@ -53,6 +53,6 @@ Most site tools take an `action`; read actions need the `site:read` scope and wr
 | `site_menus` | `list`, `update`: navigation menus |
 | `add_image` | Copies an image from a link into the media library |
 | `business_profile` | `read`, `save`, `undo`: what the site says about its business (name, place, language, products, booking types, forms) and what the owner has said about it (what it does, who it is for, hours, voice). AnyPress Client 2.11.0 or newer |
-| `site_languages` | `read`, `on`, `off`: the site in more than one language (Polylang). When on, each page has a copy per language, visitors pick a language in the menu, and addresses look like `/es/`. Plugins' buttons and screens follow the visitor's language; text typed into the shop, forms and emails is not translated. AnyPress Client 2.22.0 or newer |
+| `site_languages` | `read`, `on`, `off`: the site in more than one language (Polylang). When on, each page has a copy per language, visitors pick a language in the menu, and addresses look like `/es/`. Plugins' buttons and screens follow the visitor's language; text typed into the shop, forms and emails is not translated. AnyPress Client 2.25.0 or newer |
 
 The read-only server (`/mcp/read-only`) offers only the actions that read.

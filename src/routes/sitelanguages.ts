@@ -31,7 +31,7 @@ export async function askStore(deps: Deps, tenant: { id: string; main_domain: st
   }
 }
 
-// The store's languages (AnyPress Client 2.22.0, through Polylang): which are on, and turning them on or off with
+// The store's languages (AnyPress Client 2.25.0, through Polylang): which are on, and turning them on or off with
 // the languages besides the site's own. What the owner also sees on Dashboard > Your plan in WordPress.
 export function siteLanguageRoutes(app: Hono<AppEnv>, deps: Deps) {
   const answer = (status: number, body: unknown) => {
