@@ -13,7 +13,20 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-smtp/fluent-smtp.php": "Email delivery: makes sure the site's emails (receipts, password resets, forms) arrive. Set up for you.",
+            "fluent-crm/fluent-crm.php": "Contacts and email marketing: your customers and sign-ups in one list, with newsletters and automations.",
+            "fluentform/fluentform.php": "Forms: contact, quote, sign-up and survey forms, with entries kept on the site.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Keeps your contacts in step: new users and buyers go to FluentCRM with tags.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     },
     "bookings": {
         "title": "Bookings",
@@ -32,7 +45,23 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-smtp/fluent-smtp.php": "Email delivery: makes sure the site's emails (receipts, password resets, forms) arrive. Set up for you.",
+            "fluent-crm/fluent-crm.php": "Contacts and email marketing: your customers and sign-ups in one list, with newsletters and automations.",
+            "fluentform/fluentform.php": "Forms: contact, quote, sign-up and survey forms, with entries kept on the site.",
+            "fluent-booking/fluent-booking.php": "Online booking: let visitors book calls and appointments in your calendar.",
+            "fluent-cart/fluent-cart.php": "Your shop: products, checkout, payments, orders and subscriptions.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "fluent-support/fluent-support.php": "Help desk: customer questions come in as tickets you answer from the site.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Keeps your contacts in step: new users and buyers go to FluentCRM with tags.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     },
     "online-store": {
         "title": "Online store",
@@ -51,7 +80,23 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-smtp/fluent-smtp.php": "Email delivery: makes sure the site's emails (receipts, password resets, forms) arrive. Set up for you.",
+            "fluent-crm/fluent-crm.php": "Contacts and email marketing: your customers and sign-ups in one list, with newsletters and automations.",
+            "fluentform/fluentform.php": "Forms: contact, quote, sign-up and survey forms, with entries kept on the site.",
+            "fluent-cart/fluent-cart.php": "Your shop: products, checkout, payments, orders and subscriptions.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "fluent-affiliate/fluent-affiliate.php": "Affiliates: people who send you customers get a link and earn commission.",
+            "fluent-support/fluent-support.php": "Help desk: customer questions come in as tickets you answer from the site.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Keeps your contacts in step: new users and buyers go to FluentCRM with tags.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     },
     "community": {
         "title": "Community & courses",
@@ -69,7 +114,22 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-smtp/fluent-smtp.php": "Email delivery: makes sure the site's emails (receipts, password resets, forms) arrive. Set up for you.",
+            "fluent-crm/fluent-crm.php": "Contacts and email marketing: your customers and sign-ups in one list, with newsletters and automations.",
+            "fluentform/fluentform.php": "Forms: contact, quote, sign-up and survey forms, with entries kept on the site.",
+            "fluent-cart/fluent-cart.php": "Your shop: products, checkout, payments, orders and subscriptions.",
+            "fluent-community/fluent-community.php": "Members' community and courses: spaces, posts, lessons and member profiles.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Keeps your contacts in step: new users and buyers go to FluentCRM with tags.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     },
     "everything": {
         "title": "Everything",
@@ -90,7 +150,25 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-smtp/fluent-smtp.php": "Email delivery: makes sure the site's emails (receipts, password resets, forms) arrive. Set up for you.",
+            "fluent-crm/fluent-crm.php": "Contacts and email marketing: your customers and sign-ups in one list, with newsletters and automations.",
+            "fluentform/fluentform.php": "Forms: contact, quote, sign-up and survey forms, with entries kept on the site.",
+            "fluent-booking/fluent-booking.php": "Online booking: let visitors book calls and appointments in your calendar.",
+            "fluent-cart/fluent-cart.php": "Your shop: products, checkout, payments, orders and subscriptions.",
+            "fluent-community/fluent-community.php": "Members' community and courses: spaces, posts, lessons and member profiles.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "fluent-affiliate/fluent-affiliate.php": "Affiliates: people who send you customers get a link and earn commission.",
+            "fluent-support/fluent-support.php": "Help desk: customer questions come in as tickets you answer from the site.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Keeps your contacts in step: new users and buyers go to FluentCRM with tags.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     },
     "store": {
         "title": "Everything (stores bought before site types)",
@@ -111,18 +189,50 @@
             "wp-fusion-lite/wp-fusion-lite.php",
             "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-smtp/fluent-smtp.php": "Email delivery: makes sure the site's emails (receipts, password resets, forms) arrive. Set up for you.",
+            "fluent-crm/fluent-crm.php": "Contacts and email marketing: your customers and sign-ups in one list, with newsletters and automations.",
+            "fluentform/fluentform.php": "Forms: contact, quote, sign-up and survey forms, with entries kept on the site.",
+            "fluent-booking/fluent-booking.php": "Online booking: let visitors book calls and appointments in your calendar.",
+            "fluent-cart/fluent-cart.php": "Your shop: products, checkout, payments, orders and subscriptions.",
+            "fluent-community/fluent-community.php": "Members' community and courses: spaces, posts, lessons and member profiles.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "fluent-affiliate/fluent-affiliate.php": "Affiliates: people who send you customers get a link and earn commission.",
+            "fluent-support/fluent-support.php": "Help desk: customer questions come in as tickets you answer from the site.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Keeps your contacts in step: new users and buyers go to FluentCRM with tags.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     },
     "highlevel": {
         "title": "HighLevel site",
+        "ownPlugins": true,
         "plugins": [
             "fluent-security/fluent-security.php",
             "fluent-player/fluent-player.php",
+            "easy-code-manager/easy-code-manager.php",
             "seo-by-rank-math/rank-math.php",
             "automatorwp/automatorwp.php",
             "wp-fusion-lite/wp-fusion-lite.php",
             "leadconnector/leadconnector.php",
+            "fluent-toolkit/fluent-toolkit.php",
             "anypress-blocks/anypress-blocks.php"
-        ]
+        ],
+        "about": {
+            "fluent-security/fluent-security.php": "Login protection: blocks password guessing and adds two-step sign-in.",
+            "fluent-player/fluent-player.php": "Video and audio player for pages and posts.",
+            "easy-code-manager/easy-code-manager.php": "Code snippets and shortcodes: add PHP, CSS, JavaScript or a shortcode without another plugin.",
+            "seo-by-rank-math/rank-math.php": "SEO: page titles, descriptions, sitemaps and search previews.",
+            "automatorwp/automatorwp.php": "Automations between WordPress and its plugins: when this happens, do that.",
+            "wp-fusion-lite/wp-fusion-lite.php": "Sends new users and sign-ups to your HighLevel sub-account as contacts. Connected for you.",
+            "leadconnector/leadconnector.php": "HighLevel's own plugin: your HighLevel forms, chat widget and calendars on this site.",
+            "fluent-toolkit/fluent-toolkit.php": "FluentHub: one dashboard to install and update the Fluent plugins.",
+            "anypress-blocks/anypress-blocks.php": "Extra blocks for pages: carousels, popups, maps, countdowns, counters, before-and-after images and more."
+        }
     }
 }

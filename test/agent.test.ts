@@ -877,6 +877,21 @@ esac
     expect(existsSync(join(content(), 'plugins', 'waas-client'))).toBe(false);
   });
 
+  it("keeps plugins the owner added, and drops the last version's plugins this one no longer has", () => {
+    fakeWp(['anypress-client/anypress-client.php']);
+    rmSync(join(content(), 'plugins', 'waas-client'), { recursive: true });
+    // The owner's plugin and a plugin the last version brought (it is in the list the last import wrote).
+    mkdirSync(join(content(), 'plugins', 'shortcodes-ultimate'), { recursive: true });
+    mkdirSync(join(content(), 'plugins', 'retired-template-plugin'), { recursive: true });
+    writeFileSync(join(content(), '.anypress-template-plugins.json'), JSON.stringify(['anypress-client', 'retired-template-plugin']));
+    execFileSync('chmod', ['-R', '777', content()]);
+    expect(run(code())).toContain('"kept":["shortcodes-ultimate"]');
+    expect(existsSync(join(content(), 'plugins', 'shortcodes-ultimate'))).toBe(true);
+    expect(existsSync(join(content(), 'plugins', 'retired-template-plugin'))).toBe(false);
+    expect(existsSync(join(content(), 'plugins', 'anypress-client', 'anypress-client.php'))).toBe(true);
+    expect(JSON.parse(readFileSync(join(content(), '.anypress-template-plugins.json'), 'utf8'))).toEqual(['anypress-client']);
+  });
+
   it('leaves a store that already runs AnyPress Client alone', () => {
     fakeWp(['anypress-client/anypress-client.php']);
     expect(run(code())).toContain('"client":false');

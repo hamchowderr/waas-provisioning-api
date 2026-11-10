@@ -138,6 +138,33 @@ describe('admin endpoints', () => {
     await admin('GET', `/admin/tenants/${crypto.randomUUID()}`, 404);
   });
 
+  it("tenant plugins: what its site types turn on, what each is for, and whether the owner may add plugins", async () => {
+    const { versionId } = await admin('GET', `/admin/tenants/${shop.id}`);
+    await t.pool.query('UPDATE versions SET roles = NULL WHERE id = $1', [versionId]);
+    t.provisioner.versionRoles.set(versionId, {
+      'online-store': {
+        title: 'Online store',
+        ownPlugins: true,
+        plugins: ['fluent-cart/fluent-cart.php', 'easy-code-manager/easy-code-manager.php', 'my-own/my-own.php'],
+        about: { 'fluent-cart/fluent-cart.php': 'Your shop.' },
+      },
+      website: { title: 'Website', plugins: ['fluent-crm/fluent-crm.php'] },
+    });
+    expect(await admin('GET', `/admin/tenants/${shop.id}/plugins`)).toEqual({
+      siteTypes: [{ key: 'online-store', title: 'Online store' }],
+      ownPlugins: true,
+      plugins: [
+        { file: 'fluent-cart/fluent-cart.php', name: 'FluentCart', about: 'Your shop.' },
+        { file: 'easy-code-manager/easy-code-manager.php', name: 'FluentSnippets', about: null },
+        { file: 'my-own/my-own.php', name: 'my-own', about: null },
+      ],
+    });
+    // Kept with the version: read from its code once.
+    t.provisioner.versionRoles.delete(versionId);
+    expect((await admin('GET', `/admin/tenants/${shop.id}/plugins`)).plugins).toHaveLength(3);
+    await admin('GET', `/admin/tenants/${crypto.randomUUID()}/plugins`, 404);
+  });
+
   it('moves a store to a new main domain, keeping the old one as a redirect', async () => {
     const moving = await newTenant({ name: 'Moving Shop' });
     const res = await admin('PUT', `/admin/tenants/${moving.id}/domains/main`, 200, { domainName: 'Moved-Shop.example.com' });
