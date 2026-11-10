@@ -1,11 +1,13 @@
 // Reading a website as a reference (docs/references.md): every page, and the platform's own data first. The site's
-// platform is worked out from its home page; WordPress (its REST API), Shopify (products.json and collections.json)
+// platform is worked out from its home page, and its sitemap (robots.txt, or the usual addresses) is read first, free,
+// so every page it lists is known before a credit is spent; WordPress (its REST API), Shopify (products.json and collections.json)
 // and Squarespace (?format=json) hand over their posts, products and other items as data, free and complete, so
 // Firecrawl only reads what that data can't give: each page's look (a full-page screenshot), its text and images,
 // and one sample of each kind of item for its layout. Firecrawl (its official SDK): one scrape of the home page with
 // the brand and a phone picture, a map of every address it can find, a crawl of the site with the items already read
 // left out, then a batch read of whatever the map found that the crawl didn't reach. Every address found ends up in
 // the coverage list as read, failed or skipped, with the reason.
+import { gunzipSync } from 'node:zlib';
 import type { BrandingProfile, CrawlErrorsResponse, Document, Firecrawl, ProductProfile, ScrapeOptions } from '@mendable/firecrawl-js';
 
 /** A reference that can't be read for a reason the person can act on; its message is shown to them as is. */
@@ -102,6 +104,9 @@ interface Coverage {
   failed: number;
   skipped: number;
   creditsUsed: number;
+  /** The sitemap files read (from robots.txt or the usual addresses), and how many addresses they listed. */
+  sitemaps: string[];
+  fromSitemap: number;
   urls: CoverageEntry[];
 }
 
@@ -285,10 +290,10 @@ class Ledger {
     return [...this.entries.values()].filter((e) => e.pending).map((e) => e.url);
   }
 
-  coverage(creditsUsed: number): Coverage {
+  coverage(creditsUsed: number, sitemap: Sitemap): Coverage {
     const urls = [...this.entries.values()].map(({ pending, ...e }) => (pending ? { ...e, reason: e.reason ?? 'not reached' } : e));
     const count = (status: CoverageEntry['status']) => urls.filter((u) => u.status === status).length;
-    return { found: urls.length, read: count('read'), failed: count('failed'), skipped: count('skipped'), creditsUsed, urls };
+    return { found: urls.length, read: count('read'), failed: count('failed'), skipped: count('skipped'), creditsUsed, sitemaps: sitemap.files, fromSitemap: sitemap.urls.length, urls };
   }
 }
 
@@ -347,6 +352,57 @@ async function probe(home: URL, get: typeof fetch): Promise<{ signals: string; w
   // Only a redirect within the same site (http to https, www or not) moves the start.
   const landed = new URL(got.url);
   return { signals: `${headers}\n${html}`, wpApi: link, home: bareHost(landed.hostname) === bareHost(home.hostname) ? new URL(landed.origin + landed.pathname) : home };
+}
+
+interface Sitemap {
+  files: string[];
+  urls: string[];
+}
+
+const MAX_SITEMAPS = 50;
+const SITEMAP_GUESSES = ['/sitemap.xml', '/sitemap_index.xml', '/wp-sitemap.xml'];
+
+/** A sitemap file's text, unzipped when it is a .gz. */
+async function sitemapText(get: typeof fetch, url: string): Promise<string | null> {
+  const res = (await follow(get, url, 'application/xml,text/xml;q=0.9,*/*;q=0.5'))?.res;
+  if (!res?.ok) return null;
+  const bytes = Buffer.from(await res.arrayBuffer().catch(() => new ArrayBuffer(0)));
+  const text = bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes).toString('utf8') : bytes.toString('utf8');
+  return /<(urlset|sitemapindex)[\s>]/i.test(text) ? text : null;
+}
+
+const locs = (xml: string) => [...xml.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]]+?)\s*(?:\]\]>)?\s*<\/loc>/gi)].map((m) => m[1]!.replace(/&amp;/g, '&'));
+
+/** The sitemaps the site's robots.txt names. */
+async function robotsSitemaps(home: URL, get: typeof fetch): Promise<string[]> {
+  const robots = await follow(get, new URL('/robots.txt', home).toString(), 'text/plain');
+  if (!robots?.res.ok) return [];
+  return [...(await robots.res.text().catch(() => '')).matchAll(/^\s*sitemap:\s*(\S+)/gim)].map((m) => m[1]!);
+}
+
+/**
+ * The site's own list of pages, read before anything that costs credits: the sitemaps robots.txt names, or else the
+ * usual addresses, following sitemap indexes. Free, and it gives the full list of pages (and so the cost) up front.
+ */
+async function readSitemap(home: URL, get: typeof fetch): Promise<Sitemap> {
+  const named = await robotsSitemaps(home, get);
+  const queue = named.length ? named : SITEMAP_GUESSES.map((p) => new URL(p, home).toString());
+  const seen = new Set<string>();
+  const out: Sitemap = { files: [], urls: [] };
+  while (queue.length && seen.size < MAX_SITEMAPS && out.urls.length < MAX_MAP) {
+    const file = queue.shift()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const xml = await sitemapText(get, file);
+    if (!xml) continue;
+    out.files.push(file);
+    if (/<sitemapindex[\s>]/i.test(xml)) queue.push(...locs(xml));
+    else out.urls.push(...locs(xml));
+    // Without robots.txt, the first guess that answers is the sitemap; the others are usually the same list.
+    if (!named.length) for (const g of SITEMAP_GUESSES) seen.add(new URL(g, home).toString());
+  }
+  out.urls = [...new Set(out.urls)].slice(0, MAX_MAP);
+  return out;
 }
 
 interface NativeRead {
@@ -750,6 +806,7 @@ function capOf(run: Run, limits: { maxPages: number; credits: number }): string 
 
 function siteNotes(native: NativeRead | null, coverage: Coverage, unread: number, cap: string | null): string[] {
   const notes = [COPY_NOTE, 'Screenshots expire within a day and image links can change: copy any image the site keeps into its media first.', ...(native?.notes ?? [])];
+  notes.push(coverage.sitemaps.length ? `The sitemap listed ${coverage.fromSitemap} addresses (${coverage.sitemaps.join(', ')}); the rest were found by following links.` : 'The site has no sitemap, so its pages were found by following links.');
   notes.push(`${coverage.found} addresses found: ${coverage.read} read, ${coverage.failed} failed, ${coverage.skipped} skipped. Each one and why is in coverage.urls.`);
   if (unread && cap) notes.push(`${unread} pages were not read because ${cap} was reached. Read again with a higher maxPages to take them in.`);
   return notes;
@@ -770,6 +827,7 @@ export async function readWebsite(requested: string, limits: { maxPages: number;
   const site = await probe(new URL(requested), readers.get);
   const home = site.home;
   const source = home.toString();
+  const sitemap = await readSitemap(home, readers.get);
   const { first, page } = await readHome(fc, source, home, spend);
   const mapped = await fc.map(source, { limit: MAX_MAP, sitemap: 'include', includeSubdomains: false, ignoreQueryParameters: true }).catch(() => ({ links: [] }));
   spend.credits += 1;
@@ -779,7 +837,7 @@ export async function readWebsite(requested: string, limits: { maxPages: number;
   const native = await readNative(platform, home, site.wpApi, links, readers.get);
   const ledger = new Ledger(home);
   ledger.read(page.url, 'firecrawl');
-  for (const l of [...links, ...(native?.pageUrls ?? [])]) ledger.found(l);
+  for (const l of [...sitemap.urls, ...links, ...(native?.pageUrls ?? [])]) ledger.found(l);
   const { samples, excluded } = takeNative(native, platform, ledger);
 
   const run: Run = { fc, pollMs: readers.pollMs ?? 5_000, ledger, out: { pages: [page], products: [] }, samples, spend, timedOut: false };
@@ -795,7 +853,7 @@ export async function readWebsite(requested: string, limits: { maxPages: number;
   const unread = ledger.pending();
   const cap = capOf(run, limits);
   for (const url of unread) ledger.skip(url, cap ? `not read: ${cap} was reached` : 'not reached');
-  const coverage = ledger.coverage(spend.credits);
+  const coverage = ledger.coverage(spend.credits, sitemap);
   return {
     kind: 'website',
     source,

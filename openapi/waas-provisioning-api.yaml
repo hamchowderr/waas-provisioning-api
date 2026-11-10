@@ -3442,13 +3442,18 @@ components:
           type: object
           nullable: true
           description: For a website, every address found (from its sitemap, its links and its platform's own lists) and what became of it
-          required: [found, read, failed, skipped, creditsUsed, urls]
+          required: [found, read, failed, skipped, creditsUsed, sitemaps, fromSitemap, urls]
           properties:
             found: { type: integer }
             read: { type: integer }
             failed: { type: integer }
             skipped: { type: integer }
             creditsUsed: { type: integer }
+            sitemaps:
+              type: array
+              items: { type: string }
+              description: The sitemap files read, from robots.txt or the usual addresses (read first, free); empty when the site has none
+            fromSitemap: { type: integer, description: Addresses the sitemap listed }
             urls:
               type: array
               items:

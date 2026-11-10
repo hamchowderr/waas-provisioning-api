@@ -1400,6 +1400,10 @@ export interface components {
                 failed: number;
                 skipped: number;
                 creditsUsed: number;
+                /** @description The sitemap files read, from robots.txt or the usual addresses (read first, free); empty when the site has none */
+                sitemaps: string[];
+                /** @description Addresses the sitemap listed */
+                fromSitemap: number;
                 urls: {
                     url: string;
                     /** @description page, product, file, listing, or the item kind (post, event and so on) */

@@ -205,7 +205,7 @@ function windowed(bundle: ReferenceBundle | null, { offset, limit }: BundleWindo
       pages: cut(bundle.pages).map((p) => ({ ...p, mobileScreenshot: p.mobileScreenshot ?? null, links: p.links ?? [] })),
       items: cut(items),
       products: cut(bundle.products).map((p) => ({ ...p, url: p.url ?? null })),
-      coverage: legacy.coverage ? { ...legacy.coverage, urls: cut(urls) } : null,
+      coverage: legacy.coverage ? { ...legacy.coverage, sitemaps: legacy.coverage.sitemaps ?? [], fromSitemap: legacy.coverage.fromSitemap ?? 0, urls: cut(urls) } : null,
     },
   };
 }
