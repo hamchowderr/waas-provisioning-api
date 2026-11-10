@@ -10,7 +10,7 @@ on:
   workflow_call:
     inputs:
       ci-workflow:
-        description: The workflow file that runs this repository's CI, started on the pull request's branch
+        description: The workflow files that run this repository's CI (space-separated), started on the pull request's branch
         type: string
         default: ci.yml
       merge:
@@ -75,18 +75,22 @@ jobs:
           # A pull request opened with the workflow's token starts no CI by itself; a workflow_dispatch run does, and its
           # checks count for the branch's newest commit.
           sha=$(git rev-parse HEAD)
-          gh workflow run "$CI_WORKFLOW" --ref "$BRANCH"
-          run=""
-          for _ in $(seq 1 30); do
-            run=$(gh run list --workflow "$CI_WORKFLOW" --branch "$BRANCH" --event workflow_dispatch --commit "$sha" -L 1 --json databaseId -q '.[0].databaseId')
-            [ -n "$run" ] && break
-            sleep 10
+          for workflow in $CI_WORKFLOW; do
+            gh workflow run "$workflow" --ref "$BRANCH"
           done
-          [ -n "$run" ] || { echo "::error::CI did not start on $BRANCH"; exit 1; }
-          if ! gh run watch "$run" --exit-status --interval 30 >/dev/null; then
-            echo "::error::CI failed on the pin update: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
-            exit 1
-          fi
+          for workflow in $CI_WORKFLOW; do
+            run=""
+            for _ in $(seq 1 30); do
+              run=$(gh run list --workflow "$workflow" --branch "$BRANCH" --event workflow_dispatch --commit "$sha" -L 1 --json databaseId -q '.[0].databaseId')
+              [ -n "$run" ] && break
+              sleep 10
+            done
+            [ -n "$run" ] || { echo "::error::$workflow did not start on $BRANCH"; exit 1; }
+            if ! gh run watch "$run" --exit-status --interval 30 >/dev/null; then
+              echo "::error::$workflow failed on the pin update: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+              exit 1
+            fi
+          done
           if [ "$MERGE" = true ]; then
             gh pr merge "$BRANCH" --squash --delete-branch
             echo "Merged: $SUMMARY" >> "$GITHUB_STEP_SUMMARY"
