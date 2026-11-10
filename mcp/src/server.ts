@@ -678,12 +678,13 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         .optional()
         .describe('For start, instead of url: an uploaded PDF, Word, Excel, OpenDocument, RTF or HTML file'),
       maxPages: z.number().int().min(1).max(500).optional().describe('For start: the most pages of a website or frames of a Figma page to read; every page up to the server’s limit when omitted'),
-      id: z.string().optional().describe('For get, wait and check: the id start answered with'),
-      offset: z.number().int().min(0).optional().describe('For get and wait: skip this many pages, items, products and coverage addresses (0 when omitted)'),
+      id: z.string().optional().describe('For get, wait, check and add_products: the id start answered with'),
+      offset: z.number().int().min(0).optional().describe('For get and wait: skip this many pages, items, products and coverage addresses; for check and add_products, this many pages or products (0 when omitted)'),
       limit: z.number().int().min(1).max(50).optional().describe('For get and wait: at most this many of each list, 10 when omitted; totals gives the full counts'),
       timeoutSeconds: z.number().int().min(1).max(WAIT_MAX_SECONDS).optional().describe(`For wait: how long to wait, at most ${WAIT_MAX_SECONDS} (the default); call wait again while done is false`),
       ...ref,
-      ownContent: z.boolean().optional().describe('For check: the reference is the owner’s own site, so its words must be carried over (otherwise they must not be copied)'),
+      ownContent: z.boolean().optional().describe('For check and add_products: the reference is the owner’s own site, so its words (and product photos) are carried over; otherwise they must not be copied'),
+      status: z.enum(['draft', 'publish']).optional().describe('For add_products: how new products are added (draft when omitted)'),
     },
     actions: {
       start: {
@@ -715,6 +716,12 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         access: 'read',
         does: 'after building: compares the store (externalId or tenantId) with the reference id, page by page, free: each page pass, warn or fail with what is missing (the page, sections, images, linked pages, carried-over or copied text); offset and limit go through a big site',
         run: ({ id, ownContent, offset, limit, ...args }) => client.tenants.checkReference(toRef(args), { referenceId: need(id, 'id', 'check'), ownContent, offset, limit }),
+      },
+      add_products: {
+        access: 'write',
+        does: 'adds the reference id’s products to the store’s shop (FluentCart), as drafts unless status is publish: names, options, prices and categories, plus descriptions and photos when ownContent; a product added before is left as it is; offset and limit go through a big catalogue (remaining says how many are left)',
+        run: ({ id, ownContent, status, offset, limit, ...args }) =>
+          client.tenants.addReferenceProducts(toRef(args), { referenceId: need(id, 'id', 'add_products'), ownContent, status, offset, limit }),
       },
     },
   });

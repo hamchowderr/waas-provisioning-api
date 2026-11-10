@@ -562,6 +562,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
+  /v1/tenants/site/reference-products:
+    post:
+      tags:
+      - TenantSite
+      summary: Add a reference's products to the store's shop
+      operationId: addSiteReferenceProducts
+      description: 'Added for AnyPress.
+
+
+        Adds the products read from a reference (`startReference`: a Shopify shop, WooCommerce and the like) to the store''s FluentCart, through the store''s site API (AnyPress Client 2.19.0 or newer), 20 at a time with FluentCart''s own importer. New products are drafts unless `status` is `publish`. Each keeps its name, options (variants with SKU, price, compare-at price and stock), and categories (its type and tags). With `ownContent` (the reference is the owner''s own shop) its description and photos (up to 10) come too; from someone else''s shop they don''t. A product added before from the same address is left as it is (`exists`), so calling again only adds what is missing. `offset` and `limit` go through a big catalogue a part at a time; `remaining` says how many are left. The tenant must be Done and not suspended.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteReferenceProductsParams'
+      responses:
+        '200':
+          description: Each product and what became of it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteReferenceProducts'
+        '400':
+          description: The reference isn't read yet, or the store can't take products now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '502':
+          description: The store did not answer, or its AnyPress Client has no product routes yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
   /v1/tenants/site:
     post:
       tags:
@@ -5331,6 +5379,44 @@ components:
               id: { type: integer }
               title: { type: string }
               link: { type: string }
+        notes: { type: array, items: { type: string } }
+    SiteReferenceProductsParams:
+      type: object
+      required: [referenceId]
+      additionalProperties: false
+      properties:
+        referenceId: { type: string, format: uuid, description: The reference whose products to add }
+        ownContent: { type: boolean, default: false, description: 'The reference is the owner''s own shop, so descriptions and photos are carried over too' }
+        status: { type: string, enum: [draft, publish], default: draft, description: How new products are added }
+        offset: { type: integer, minimum: 0, default: 0, description: Skip this many of the reference's products }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 100, description: Add at most this many products }
+    SiteReferenceProducts:
+      type: object
+      required: [summary, results, remaining, notes]
+      properties:
+        summary:
+          type: object
+          required: [products, created, exists, failed]
+          properties:
+            products: { type: integer }
+            created: { type: integer }
+            exists: { type: integer }
+            failed: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            required: [url, title, status, reason, id, storeStatus, link, images]
+            properties:
+              url: { type: string, nullable: true, description: The product's address on the reference }
+              title: { type: string }
+              status: { type: string, enum: [created, exists, failed] }
+              reason: { type: string, nullable: true, description: Why it failed }
+              id: { type: integer, nullable: true, description: The product's id in the store }
+              storeStatus: { type: string, nullable: true, description: 'The product''s status in the store: draft or publish' }
+              link: { type: string, nullable: true, description: The product's page, or its preview while a draft }
+              images: { type: integer, description: Photos brought into the store for it }
+        remaining: { type: integer, description: Products after this part; call again with offset + limit while above 0 }
         notes: { type: array, items: { type: string } }
     SiteRequestParams:
       type: object

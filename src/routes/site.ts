@@ -9,6 +9,7 @@ import { callSite, siteKeys, type SiteRequest } from '../sitekeys.ts';
 import { Status, statusName } from '../status.ts';
 import { findTenant } from '../tenants.ts';
 import { checkAgainstReference } from '../referencecheck.ts';
+import { addReferenceProducts } from '../referenceproducts.ts';
 import { referenceBundle } from '../references.ts';
 
 /**
@@ -46,23 +47,43 @@ export function siteRoutes(deps: Deps) {
     return c.json({ status: answer.status, body: answer.body });
   });
 
+  /** The store's site API for a reference job: a store too old for it, or not answering, is a 502. */
+  const referenceCall = (tenant: Parameters<typeof siteOf>[0], minimum: string) => {
+    const site = siteOf(tenant);
+    return async (request: SiteRequest) => {
+      const answer = await site(request);
+      if (answer.status === 401) throw new HttpError(502, 'The store refused the request: its AnyPress Client is older than 2.3.0 or it has no site key yet');
+      if (answer.status === 404 && request.path === '/products') throw new HttpError(502, `The store's AnyPress Client is older than ${minimum}: it has no product routes yet`);
+      return answer;
+    };
+  };
+  const storeAnswered = async <T>(work: () => Promise<T>) => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(502, `The store did not answer: ${(error as Error).message}`);
+    }
+  };
+
   // A store built from a reference, checked against it page by page (src/referencecheck.ts): read-only and free.
   app.post('/site/reference-check', async (c) => {
     const tenant = await findTenant(pool, c);
     const body = validateBody<{ referenceId: string; ownContent?: boolean; offset?: number; limit?: number }>('SiteReferenceCheckParams', await readJson(c));
     const bundle = await referenceBundle(pool, c.get('productId'), body.referenceId);
-    const site = siteOf(tenant);
-    const call = async (request: SiteRequest) => {
-      const answer = await site(request);
-      if (answer.status === 401) throw new HttpError(502, 'The store refused the request: its AnyPress Client is older than 2.3.0 or it has no site key yet');
-      return answer;
-    };
-    try {
-      return c.json(await checkAgainstReference(bundle, call, { ownContent: body.ownContent ?? false, offset: body.offset ?? 0, limit: body.limit ?? 50 }));
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      throw new HttpError(502, `The store did not answer: ${(error as Error).message}`);
-    }
+    const call = referenceCall(tenant, '2.3.0');
+    return c.json(await storeAnswered(() => checkAgainstReference(bundle, call, { ownContent: body.ownContent ?? false, offset: body.offset ?? 0, limit: body.limit ?? 50 })));
+  });
+
+  // A reference's products into the store's FluentCart (src/referenceproducts.ts), 20 at a time, drafts unless asked.
+  app.post('/site/reference-products', async (c) => {
+    const tenant = await findTenant(pool, c);
+    const body = validateBody<{ referenceId: string; ownContent?: boolean; status?: 'draft' | 'publish'; offset?: number; limit?: number }>('SiteReferenceProductsParams', await readJson(c));
+    const bundle = await referenceBundle(pool, c.get('productId'), body.referenceId);
+    const call = referenceCall(tenant, '2.19.0');
+    return c.json(
+      await storeAnswered(() => addReferenceProducts(bundle, call, { ownContent: body.ownContent ?? false, status: body.status ?? 'draft', offset: body.offset ?? 0, limit: body.limit ?? 100 })),
+    );
   });
 
   // The storefront vouches for a store's owner it has signed in (its "website assistant" button), so the

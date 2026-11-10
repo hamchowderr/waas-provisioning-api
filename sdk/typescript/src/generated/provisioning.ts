@@ -175,6 +175,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/site/reference-products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a reference's products to the store's shop
+         * @description Added for AnyPress.
+         *
+         *     Adds the products read from a reference (`startReference`: a Shopify shop, WooCommerce and the like) to the store's FluentCart, through the store's site API (AnyPress Client 2.19.0 or newer), 20 at a time with FluentCart's own importer. New products are drafts unless `status` is `publish`. Each keeps its name, options (variants with SKU, price, compare-at price and stock), and categories (its type and tags). With `ownContent` (the reference is the owner's own shop) its description and photos (up to 10) come too; from someone else's shop they don't. A product added before from the same address is left as it is (`exists`), so calling again only adds what is missing. `offset` and `limit` go through a big catalogue a part at a time; `remaining` says how many are left. The tenant must be Done and not suspended.
+         */
+        post: operations["addSiteReferenceProducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/site": {
         parameters: {
             query?: never;
@@ -2870,6 +2892,62 @@ export interface components {
             }[];
             notes: string[];
         };
+        SiteReferenceProductsParams: {
+            /**
+             * Format: uuid
+             * @description The reference whose products to add
+             */
+            referenceId: string;
+            /**
+             * @description The reference is the owner's own shop, so descriptions and photos are carried over too
+             * @default false
+             */
+            ownContent?: boolean;
+            /**
+             * @description How new products are added
+             * @default draft
+             * @enum {string}
+             */
+            status?: "draft" | "publish";
+            /**
+             * @description Skip this many of the reference's products
+             * @default 0
+             */
+            offset?: number;
+            /**
+             * @description Add at most this many products
+             * @default 100
+             */
+            limit?: number;
+        };
+        SiteReferenceProducts: {
+            summary: {
+                products: number;
+                created: number;
+                exists: number;
+                failed: number;
+            };
+            results: {
+                /** @description The product's address on the reference */
+                url: string | null;
+                title: string;
+                /** @enum {string} */
+                status: "created" | "exists" | "failed";
+                /** @description Why it failed */
+                reason: string | null;
+                /** @description The product's id in the store */
+                id: number | null;
+                /** @description The product's status in the store: draft or publish */
+                storeStatus: string | null;
+                /** @description The product's page */
+                link: string | null;
+                /** @description Photos brought into the store for it */
+                images: number;
+            }[];
+            /** @description Products after this part; call again with offset + limit while above 0 */
+            remaining: number;
+            notes: string[];
+        };
         SiteRequestParams: {
             /**
              * @example POST
@@ -3432,6 +3510,56 @@ export interface operations {
                 };
             };
             /** @description The store did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    addSiteReferenceProducts: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteReferenceProductsParams"];
+            };
+        };
+        responses: {
+            /** @description Each product and what became of it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteReferenceProducts"];
+                };
+            };
+            /** @description The reference isn't read yet, or the store can't take products now */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The store did not answer, or its AnyPress Client has no product routes yet */
             502: {
                 headers: {
                     [name: string]: unknown;

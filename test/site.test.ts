@@ -23,8 +23,9 @@ interface Seen {
 }
 let seen: Seen[] = [];
 let storeAnswer: { status: number; body: unknown } | Error = { status: 200, body: { ok: true } };
-/** When set, the store answers by path (after /site) instead of with storeAnswer. */
+/** When set, the store answers by path (after /site) instead of with storeAnswer; a function answers from the request body. */
 let storeRoutes: Record<string, unknown> | null = null;
+const routeAnswer = (route: unknown, body: string) => Response.json(typeof route === 'function' ? route(JSON.parse(body || 'null')) : route);
 
 const master = siteKeyMaster(TEST_SECRETS_KEY);
 
@@ -45,7 +46,7 @@ const storeFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   seen.push({ url: String(input), method, body, signatureOk: signatureOk(header, method, url, body) });
   if (storeRoutes) {
     const path = url.pathname.replace(/^.*\/site/, '');
-    return path in storeRoutes ? Response.json(storeRoutes[path]) : Response.json({ message: 'No such page' }, { status: 404 });
+    return path in storeRoutes ? routeAnswer(storeRoutes[path], body) : Response.json({ message: 'No such page' }, { status: 404 });
   }
   if (storeAnswer instanceof Error) throw storeAnswer;
   return new Response(JSON.stringify(storeAnswer.body), { status: storeAnswer.status, headers: { 'content-type': 'application/json' } });
@@ -266,5 +267,74 @@ describe('POST /v1/tenants/site/reference-check', () => {
     const res = await check({ referenceId: rows[0].id });
     expect(res.status).toBe(400);
     expect((await res.json()).message).toContain('still being read');
+  });
+});
+
+describe('POST /v1/tenants/site/reference-products', () => {
+  const variant = (title: string, price: string, available = true) => ({ title, sku: `SKU-${title}`, price, compareAtPrice: null, available });
+  const product = (n: number, extra: Record<string, unknown> = {}) => ({
+    url: `https://oldbakery.example/products/p${n}`, title: `Product ${n}`, handle: `p${n}`, description: `<p>About ${n}</p>`, vendor: null, type: 'Bread', tags: ['Fresh'],
+    price: '5.00', compareAtPrice: null, images: [`https://cdn.example/p${n}.jpg`], variants: [], ...extra,
+  });
+  const bundle = {
+    kind: 'website', source: 'https://oldbakery.example/', title: 'Old Bakery', platform: 'shopify', design: {}, pages: [], items: [], collections: [], coverage: null, notes: [],
+    products: [product(1, { variants: [variant('Small', '8.50'), variant('Large', '12.00', false)] }), ...Array.from({ length: 22 }, (_, i) => product(i + 2))],
+  };
+  let referenceId: string;
+  const batches: any[][] = [];
+
+  beforeAll(async () => {
+    const { rows } = await t.pool.query("INSERT INTO site_references (product_id, kind, source, status, bundle) VALUES ($1, 'website', $2, 1, $3) RETURNING id", [t.productId, bundle.source, bundle]);
+    referenceId = rows[0].id;
+    storeRoutes = {
+      '/products': ({ products }: { products: any[] }) => {
+        batches.push(products);
+        return { results: products.map((p, i) => (p.title === 'Product 2' ? { url: p.url, status: 'exists', id: 40, link: 'https://bakery.example/p2/', productStatus: 'publish' } : { url: p.url, status: 'created', id: 100 + i, link: `https://bakery.example/?p=${100 + i}`, productStatus: p.status, images: p.images?.length ?? 0 })) };
+      },
+    };
+  });
+  afterAll(() => {
+    storeRoutes = null;
+  });
+
+  const add = (body: unknown) => t.call('POST', '/v1/tenants/site/reference-products?externalId=site-1', { body });
+
+  it("sends the owner's own products 20 at a time as drafts, with options, categories, descriptions and photos", async () => {
+    const res = await add({ referenceId, ownContent: true });
+    expect(res.status).toBe(200);
+    const r = await res.json();
+    expect(batches.map((b) => b.length)).toEqual([20, 3]);
+    expect(batches[0]?.[0]).toEqual({
+      title: 'Product 1', url: 'https://oldbakery.example/products/p1', status: 'draft', categories: ['Bread', 'Fresh'], description: '<p>About 1</p>', images: ['https://cdn.example/p1.jpg'],
+      variants: [{ title: 'Small', sku: 'SKU-Small', price: '8.50', available: true }, { title: 'Large', sku: 'SKU-Large', price: '12.00', available: false }],
+    });
+    // A product with no variants is one option at its own price.
+    expect(batches[0]?.[2].variants).toEqual([{ price: '5.00' }]);
+    expect(r.summary).toEqual({ products: 23, created: 22, exists: 1, failed: 0 });
+    expect(r.results[1]).toMatchObject({ title: 'Product 2', status: 'exists', id: 40, storeStatus: 'publish' });
+    expect(r.results[0]).toMatchObject({ status: 'created', storeStatus: 'draft', images: 1, reason: null });
+    expect(r.remaining).toBe(0);
+    expect(seen.every((s) => s.signatureOk)).toBe(true);
+  });
+
+  it("adds someone else's products without their descriptions or photos, a part at a time", async () => {
+    batches.length = 0;
+    const r = await (await add({ referenceId, limit: 2, offset: 1, status: 'publish' })).json();
+    expect(batches[0]?.map((p) => p.title)).toEqual(['Product 2', 'Product 3']);
+    expect(batches[0]?.[1]).not.toHaveProperty('description');
+    expect(batches[0]?.[1]).not.toHaveProperty('images');
+    expect(batches[0]?.[1].status).toBe('publish');
+    expect(r.remaining).toBe(20);
+    expect(r.notes.join(' ')).toContain('call again with offset 3');
+    expect(r.notes.join(' ')).toContain('someone else');
+  });
+
+  it('says so when the store is too old for products', async () => {
+    const routes = storeRoutes;
+    storeRoutes = {};
+    const res = await add({ referenceId });
+    storeRoutes = routes;
+    expect(res.status).toBe(502);
+    expect((await res.json()).message).toContain('older than 2.19.0');
   });
 });
