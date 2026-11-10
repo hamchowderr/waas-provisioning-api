@@ -44,10 +44,11 @@ And HighLevel's [LeadConnector](https://wordpress.org/plugins/leadconnector/) 4.
 chat widget and calendars on the site. It is installed **off** (`OFF_PLUGINS` in [`build.sh`](build.sh)) and only the
 `highlevel` site type turns it on.
 
-And WordPress's [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) 0.7.1 (`mcp-adapter`), installed but **off**. The store
-owner turns it on in Dashboard → Your plan → AI apps (MCP); then AI apps that speak MCP can work on the site's pages and
-design at `/wp-json/mcp/anypress`, signed in as a WordPress user with an application password. It is pinned in
-[`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in `roles.json`.
+And WordPress's [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) 0.7.1 (`mcp-adapter`), installed off and turned on by
+AnyPress Client on every site type (it is always on, with no switch). AI apps that speak MCP can work on the site's
+pages and design at `/wp-json/mcp/anypress`, signed in as a WordPress user with an application password; Dashboard →
+Your plan → AI apps (MCP) shows the address. It is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in
+`roles.json`.
 
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
