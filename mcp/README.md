@@ -45,7 +45,7 @@ Each area has a scope to see and a scope to change. The Connect page has a box f
 
 | Area | `:read` | `:write` |
 |---|---|---|
-| `stores` | `show_stores`, `show_store`, `get_stores` (list, get, wait, move_in) | `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete) |
+| `stores` | `show_stores`, `show_store`, `get_stores` (list, get, wait, move_in), `support` (list, show) | `create_store`, `import_site` (start, new_code), `update_store` (options, move), `store_status` (suspend, resume, go_live, delete), `support` (open, reply, close) |
 | `backups` | `show_store_backups`, `manage_backups` (list) | `manage_backups` (create, restore) |
 | `domains` | `show_store_domains`, `manage_domain` (list, check, connect_link) | `manage_domain` (add, set_main, remove) |
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
@@ -126,7 +126,7 @@ The server also serves them over MCP, per the [Skills extension](https://modelco
 
 ## Tools
 
-Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) or `tenantId`; most take an `action`. Store writes return as soon as the work is scheduled; `get_stores` with action `wait` waits until the store is Done. Destructive actions are marked; a tool is flagged destructive when any action it offers is.
+Twenty-two tools, grouped by area. Store tools take `externalId` (your own id) or `tenantId`; most take an `action`. Store writes return as soon as the work is scheduled; `get_stores` with action `wait` waits until the store is Done. Destructive actions are marked; a tool is flagged destructive when any action it offers is.
 
 | Area | Tool | Actions |
 |---|---|---|
@@ -137,6 +137,7 @@ Twenty-one tools, grouped by area. Store tools take `externalId` (your own id) o
 | | `import_site` | `start` (a store that waits for a site moved in from another host), `new_code` |
 | | `update_store` | `options` (WordPress options, PHP constants, size), `move` (to another version) |
 | | `store_status` | `suspend` (destructive), `resume`, `go_live` (a moved-in site starts sending email and running its scheduled tasks), `delete` (destructive) |
+| | `support` | `list`, `show`, `open`, `reply`, `close`: the signed-in person's support tickets, filed with whoever helps them ([docs/support.md](../docs/support.md)). Also on a website owner's own connection (`/mcp/site`), under the website area |
 | Backups | `show_store_backups` | Panel of a store's backups |
 | | `manage_backups` | `list`, `create`, `restore` (destructive) |
 | Domains | `show_store_domains` | Panel of a store's domains |

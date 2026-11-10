@@ -17,9 +17,9 @@ const pageId = z.number().int().positive().describe('The page id, from site_page
 const pattern = z.string().describe('A pattern name from site_patterns, e.g. anypress/hero-statement');
 
 /** Tools that never change what visitors see: reads, a new draft page, an image in the media library. */
-export const SAFE_TOOLS = ['get_site', 'site_pages', 'site_patterns', 'site_styles', 'header_footer', 'site_menus', 'add_image', 'business_profile'] as const;
+export const SAFE_TOOLS = ['get_site', 'site_pages', 'site_patterns', 'site_styles', 'header_footer', 'site_menus', 'add_image', 'business_profile', 'support'] as const;
 /** Tools that change the live site, or what the assistant remembers about the business. Each call waits for the owner. */
-export const CHANGE_TOOLS = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change', 'business_profile_change'] as const;
+export const CHANGE_TOOLS = ['site_pages_change', 'page_section', 'site_styles_change', 'header_footer_change', 'site_menus_change', 'business_profile_change', 'support_change'] as const;
 
 /** The owner's own facts about the business, as the site keeps them (AnyPress Client's /site/business). */
 export const BUSINESS_FIELDS = {
@@ -152,6 +152,23 @@ export function createSiteTools(call: CallSite) {
           .describe('For save: only the facts to change, in the owner’s words, short'),
       },
     ),
+    support: site(
+      'support',
+      'support',
+      'The owner’s requests for help with their website and the answers. Actions: list (their requests, newest first); show (one request with its messages).',
+      { action: z.enum(['list', 'show']), ticketId: z.number().int().positive().optional().describe('For show: the request number, from list') },
+    ),
+    support_change: site(
+      'support_change',
+      'support',
+      'Ask a person for help when something on the website is broken or the owner needs what you can’t do; waits for the owner. Write the title and message in the owner’s words and show them first; never include passwords. Actions: open (a new request from title and content; the answer says who got it); reply (add the owner’s reply to request ticketId); close (close request ticketId once it is solved).',
+      {
+        action: z.enum(['open', 'reply', 'close']),
+        ticketId: z.number().int().positive().optional().describe('For reply and close'),
+        title: z.string().max(200).optional().describe('For open: a few words on the problem'),
+        content: z.string().max(20000).optional().describe('For open: what happened; for reply: the reply'),
+      },
+    ),
     add_image: site(
       'add_image',
       'add_image',
@@ -185,6 +202,12 @@ export function describeCall(tool: string, args: Record<string, unknown>): strin
     }
     case 'business_profile_change:undo':
       return 'Put back what I knew about your business before the last change';
+    case 'support_change:open':
+      return `Ask for help: ${String(args.title ?? 'a new request')}`;
+    case 'support_change:reply':
+      return `Reply to help request ${String(args.ticketId)}`;
+    case 'support_change:close':
+      return `Close help request ${String(args.ticketId)}`;
   }
   switch (tool) {
     case 'site_styles_change':

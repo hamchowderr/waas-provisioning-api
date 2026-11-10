@@ -42,6 +42,7 @@ import { siteRoutes } from './routes/site.ts';
 import { keyRoutes } from './routes/keys.ts';
 import { domainConnectRoutes } from './routes/domainconnect.ts';
 import { mailDomainRoutes } from './routes/maildomains.ts';
+import { supportRoutes } from './support.ts';
 import { pluginRoutes } from './routes/plugins.ts';
 import { snapshotRoutes } from './routes/snapshots.ts';
 import { tenantRoutes } from './routes/tenants.ts';
@@ -72,6 +73,8 @@ export interface Deps {
   placesSearch?: PlacesSearch;
   /** Posts prospects to sellers' HighLevel webhooks (src/prospectcrm.ts); tests replace it. */
   crmFetch?: typeof fetch;
+  /** Calls the support desk's storefront (src/support.ts); tests replace it. */
+  supportFetch?: typeof fetch;
 }
 
 /**
@@ -79,12 +82,13 @@ export interface Deps {
  * has already signed the caller in. Requests from outside can't set Bindings.
  */
 export type AppEnv = {
-  Bindings: { internalAuth?: { productId: string; apiKeyId?: string; userId?: string } };
+  Bindings: { internalAuth?: { productId: string; apiKeyId?: string; userId?: string; storeTenantId?: string } };
   /**
    * scopeProductId: the product a signed-in customer acts for on /account (src/routes/admin.ts).
    * resellerId: set for a partner key, which also sets productId from the productId query.
+   * storeTenantId: a store's owner signed in with their website (its MCP connection), who may only reach their own store.
    */
-  Variables: { productId: string; apiKeyId?: string; userId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string; appScopes?: string[] };
+  Variables: { productId: string; apiKeyId?: string; userId?: string; storeTenantId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string; appScopes?: string[] };
 };
 
 /** The largest request body the API reads. */
@@ -172,6 +176,7 @@ export function createApp(deps: Deps) {
       // An API key, or a person who connected an AI app by signing in (src/oauth.ts).
       if (internal.apiKeyId) c.set('apiKeyId', internal.apiKeyId);
       if (internal.userId) c.set('userId', internal.userId);
+      if (internal.storeTenantId) c.set('storeTenantId', internal.storeTenantId);
       c.set('productId', internal.productId);
       return next();
     }
@@ -247,6 +252,8 @@ export function createApp(deps: Deps) {
   app.route('/v1/keys', keyRoutes(deps));
   app.route('/v1/webhooks', webhookRoutes(deps));
   app.route('/v1', partnerRoutes(deps));
+  // Support tickets for the signed-in person, filed with whoever helps them (src/support.ts).
+  app.route('/v1/support', supportRoutes(deps));
   // References to build a site from: a website, Shopify shop, Figma file or document (src/references.ts).
   referenceRoutes(app, deps);
   // The AnyPress app for HighLevel: its actions, trigger and install (src/highlevel.ts).

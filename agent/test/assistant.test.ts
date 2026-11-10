@@ -63,7 +63,7 @@ describe('website assistant', () => {
     const offered = (first?.body as { tools?: { function: { name: string } }[] }).tools?.map((tool) => tool.function.name).sort();
     expect(offered).toEqual([
       'add_image', 'ask_user', 'business_profile', 'business_profile_change', 'editor_change', 'get_site', 'header_footer', 'header_footer_change', 'page_section',
-      'site_menus', 'site_menus_change', 'site_pages', 'site_pages_change', 'site_patterns', 'site_styles', 'site_styles_change', 'skill', 'skill_read', 'skill_search',
+      'site_menus', 'site_menus_change', 'site_pages', 'site_pages_change', 'site_patterns', 'site_styles', 'site_styles_change', 'skill', 'skill_read', 'skill_search', 'support', 'support_change',
     ]);
   });
 
