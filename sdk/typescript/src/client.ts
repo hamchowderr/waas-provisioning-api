@@ -150,6 +150,8 @@ export class WaasClient {
      * answered with the store's status and body. A 4xx from the store is in `status`, not thrown.
      */
     editSite: (ref: TenantRef, request: BodyOf<'editTenantSite'>) => this.#call('editTenantSite', 'POST', '/v1/tenants/site', ref, request),
+    /** The store checked against the reference it was built from, page by page (free; the look is left to you). */
+    checkReference: (ref: TenantRef, params: BodyOf<'checkSiteReference'>) => this.#call('checkSiteReference', 'POST', '/v1/tenants/site/reference-check', ref, params),
   };
 
   /** References to build a site from: a website, Shopify shop, Figma file or document, read into one bundle. */

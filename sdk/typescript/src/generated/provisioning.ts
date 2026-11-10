@@ -153,6 +153,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/site/reference-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check the store against its reference
+         * @description Added for AnyPress.
+         *
+         *     Compares a store built from a reference (`startReference`) with that reference, page by page, through the store's site API: free, no Firecrawl credits. Each reference page is matched to the store's page (the home page, then by slug, then by title) and gets `pass`, `warn` or `fail` with what was found: no page on the store (fail), a draft, far fewer headings or images, links to pages the store lacks. With `ownContent` (the reference is the owner's own site) its headings must be carried over (fail) and most of its text (warn); without it, a page that copies the reference's text fails. The look is not judged here: compare `referenceScreenshot` with the store page. `offset` and `limit` go through a big reference a part at a time. The tenant must be Done and not suspended.
+         */
+        post: operations["checkSiteReference"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/site": {
         parameters: {
             query?: never;
@@ -2787,6 +2809,67 @@ export interface components {
             /** @description The assistant's /from-shop address with the one-time handoff */
             url: string;
         };
+        SiteReferenceCheckParams: {
+            /**
+             * Format: uuid
+             * @description The reference the store was built from
+             */
+            referenceId: string;
+            /**
+             * @description The reference is the owner's own site, so its words must be carried over; otherwise they must not be copied
+             * @default false
+             */
+            ownContent?: boolean;
+            /**
+             * @description Skip this many reference pages
+             * @default 0
+             */
+            offset?: number;
+            /**
+             * @description Check at most this many reference pages
+             * @default 50
+             */
+            limit?: number;
+        };
+        SiteReferenceCheck: {
+            summary: {
+                pages: number;
+                pass: number;
+                warn: number;
+                fail: number;
+            };
+            pages: {
+                referenceUrl: string;
+                referenceTitle: string | null;
+                /** @description A picture of the reference page; the link expires */
+                referenceScreenshot: string | null;
+                storePage: {
+                    id: number;
+                    title: string;
+                    status: string;
+                    link: string;
+                } | null;
+                /** @enum {string} */
+                status: "pass" | "warn" | "fail";
+                /** @description [reference, store] for each */
+                counts: {
+                    headings: number[];
+                    images: number[];
+                } | null;
+                findings: {
+                    /** @enum {string} */
+                    level: "warn" | "fail";
+                    message: string;
+                }[];
+            }[];
+            /** @description Store pages no reference page matched (only on the first part, offset 0) */
+            extraStorePages: {
+                id: number;
+                title: string;
+                link: string;
+            }[];
+            notes: string[];
+        };
         SiteRequestParams: {
             /**
              * @example POST
@@ -3306,6 +3389,56 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    checkSiteReference: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteReferenceCheckParams"];
+            };
+        };
+        responses: {
+            /** @description Each reference page and what was found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteReferenceCheck"];
+                };
+            };
+            /** @description The reference isn't read yet, or the store can't be checked now */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The store did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

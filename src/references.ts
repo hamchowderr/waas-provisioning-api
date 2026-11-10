@@ -231,6 +231,13 @@ async function getReference(pool: Pool, productId: string, id: string, window: B
   };
 }
 
+/** A finished reference's whole bundle, for checking a store against it. */
+export async function referenceBundle(pool: Pool, productId: string, id: string): Promise<ReferenceBundle> {
+  const r = await getReference(pool, productId, id);
+  if (r.statusCode !== Status.Done || !r.bundle) throw new HttpError(400, r.statusCode === Status.Failed ? 'That reference could not be read' : 'That reference is still being read; wait until it is Done');
+  return r.bundle as ReferenceBundle;
+}
+
 /** POST /v1/references and GET /v1/references?id= for any caller of a storefront (openapi: TenantSite). */
 export function referenceRoutes(app: Hono<AppEnv>, deps: { pool: Pool; boss: PgBoss; config: { references?: ReferenceConfig } }) {
   const config = () => deps.config.references ?? { readsPerMonth: 0 };

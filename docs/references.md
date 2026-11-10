@@ -101,6 +101,22 @@ Before building, check `coverage`: every page should be read, and each failed on
 
 With someone else's site or file, take its layout and style, never its text, photos or logo.
 
+## Checking the built store
+
+Once the store is built, compare it with the reference page by page. This is free: it reads the store through its site API, not Firecrawl.
+
+```bash
+curl -u "$KEY:$SECRET" -X POST "https://api.anypress.io/v1/tenants/site/reference-check?externalId=store-1042" \
+  -H 'content-type: application/json' -d '{"referenceId": "<id>", "ownContent": true}'
+```
+
+Each reference page is matched to the store's page (the home page, then by slug, then by title) and comes back `pass`, `warn` or `fail` with what was found:
+
+- `fail`: the store has no page for it; with `ownContent` (the reference is the owner's own site), a heading that wasn't carried over; without it, a page whose text is copied from the reference.
+- `warn`: the page is still a draft; it has far fewer headings or images than the reference; the reference links to a page the store doesn't have; with `ownContent`, less than about 60% of the reference's text is on the page.
+
+`extraStorePages` lists store pages no reference page matched. The look isn't judged here: compare each `referenceScreenshot` with the store page before calling it done. A big reference goes through 50 pages at a time (`offset`, `limit`). Posts and products are counted in `notes` but not checked page by page.
+
 ## Allowance
 
 Each storefront can read `REFERENCE_READS_PER_MONTH` references a calendar month (UTC), 50 by default, and spend `REFERENCE_CREDITS_PER_MONTH` Firecrawl credits, 5,000 by default. A read that fails isn't counted as a read, but the credits it spent are. One read takes at most `REFERENCE_MAX_PAGES` pages, 500 by default. A self-hosted server reads websites and documents once `FIRECRAWL_API_KEY` is set and Figma links once `FIGMA_TOKEN` is set ([self-hosting.md](self-hosting.md)). Until then those reads answer 503.
