@@ -46,8 +46,8 @@ Most site tools take an `action`; read actions need the `site:read` scope and wr
 | `get_site` | Name, tagline, address, theme, home page |
 | `site_pages` | `list`, `read` (one page's numbered sections and block markup), `revisions`, `create` (a draft unless asked to publish), `update` (title, slug, status or whole content), `restore_revision` (undo) |
 | `page_section` | `add`, `replace`, `remove`: one section at a time, from a pattern or blocks |
-| `site_patterns` | `find`, `get`: the theme's ready-made sections and starter pages |
-| `site_styles` | `get`, `update`: colours, fonts, sizes; site-wide style changes |
+| `site_patterns` | `categories`, `find`, `get`, `blocks`: the theme's ready-made sections, starter pages and kit sections by category, and the interactive blocks (AnyPress Blocks) with their settings |
+| `site_styles` | `get`, `update`, `variations`, `apply`: colours, fonts, sizes; site-wide style changes; the theme's kits, palettes, font sets and section styles, and switching one on |
 | `header_footer` | `get`, `update`: the header and footer every page shows |
 | `site_menus` | `list`, `update`: navigation menus |
 | `add_image` | Copies an image from a link into the media library |
