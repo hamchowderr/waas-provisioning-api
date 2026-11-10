@@ -45,6 +45,9 @@ export class CoolifyError extends Error {
   }
 }
 
+/** How many times a request Coolify refused with HTTP 429 is sent again. */
+const RATE_LIMIT_RETRIES = 4;
+
 export class CoolifyClient {
   private readonly base: string;
 
@@ -52,6 +55,7 @@ export class CoolifyClient {
     url: string,
     private readonly token: string | undefined,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   ) {
     this.base = `${url.replace(/\/$/, '')}/api/v1`;
   }
@@ -60,7 +64,16 @@ export class CoolifyClient {
     const headers: Record<string, string> = { accept: 'application/json' };
     if (this.token) headers.authorization = `Bearer ${this.token}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
-    const res = await this.fetchImpl(`${this.base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const send = () => this.fetchImpl(`${this.base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    let res = await send();
+    // Coolify limits requests per minute (HTTP 429, with Retry-After): wait and send again, a few times, as the
+    // startup store maintenance can call it for every store in a burst.
+    for (let attempt = 1; res.status === 429 && attempt <= RATE_LIMIT_RETRIES; attempt++) {
+      const after = Number(res.headers.get('retry-after'));
+      await res.body?.cancel();
+      await this.sleep(Math.min(Number.isFinite(after) && after > 0 ? after * 1000 : 5_000 * 2 ** (attempt - 1), 60_000));
+      res = await send();
+    }
     const text = await res.text();
     if (!res.ok) {
       // Coolify's error bodies carry a message and validation errors, never the request body.

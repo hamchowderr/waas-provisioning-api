@@ -633,7 +633,9 @@ if (file_exists(WP_CONTENT_DIR . '/.waas-suspended')) {
 }
 $waas_home = strtolower((string) parse_url((string) get_option('home'), PHP_URL_HOST));
 $waas_host = strtolower(preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? ''));
-if ($waas_home !== '' && $waas_host !== '' && $waas_host !== $waas_home) {
+// A signed preview (AnyPress Client's PatternPreview, ?anypress_preview=) is answered on any of the store's
+// addresses: AI apps frame it from the platform address, whatever the store's main domain is.
+if ($waas_home !== '' && $waas_host !== '' && $waas_host !== $waas_home && !isset($_GET['anypress_preview'])) {
     header('Location: https://' . $waas_home . ($_SERVER['REQUEST_URI'] ?? '/'), true, 301);
     exit;
 }
