@@ -39,7 +39,7 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
         }) as typeof fetch,
       });
       const icons = deps.config.publicUrl ? mcpIcons(deps.config.publicUrl) : undefined;
-      return createWaasMcpServer(client, { readOnly, scopes, store: tenantId ? { tenantId } : undefined, icons });
+      return createWaasMcpServer(client, { readOnly, scopes, store: tenantId ? { tenantId } : undefined, icons, previewDomain: deps.config.storesDomain });
     },
     { onerror: (error) => console.error('mcp:', error.message) },
   );

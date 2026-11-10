@@ -209,6 +209,44 @@ describe('MCP site tools', () => {
     expect(missing).toMatchObject({ isError: true, content: [{ text: 'Action apply needs slug.' }] });
   });
 
+  it('makes preview links on the store’s platform address, and shows the looks screen (MCP App)', async () => {
+    seen = [];
+    storeRoutes = {
+      '/preview': { url: `https://${mainDomain}/?anypress_preview=abc.def`, siteUrl: `https://${mainDomain}/`, expiresIn: 900 },
+      '/styles/variations': { variations: [{ slug: 'kit-hearth', title: 'Hearth (food and drink)', kind: 'kit', homePage: 'anypress/kit-food' }], blockStyles: [] },
+      '/patterns/categories': [{ name: 'anypress/kit-food', label: 'Kit: Food and drink (Hearth)', patterns: 12 }],
+    };
+    const result = await mcp.callTool({ name: 'site_patterns', arguments: { action: 'preview', externalId: 'site-1', name: 'anypress/kit-food', variation: 'kit-hearth' } });
+    expect(result.isError).toBeFalsy();
+    const base = (await waas.domains.list({ externalId: 'site-1' })).find((d) => d.isBaseDomain)!.domainName;
+    expect(JSON.parse(text(result))).toMatchObject({ url: `https://${base}/?anypress_preview=abc.def`, expiresIn: 900 });
+    expect(base).toMatch(/\.stores\.waas\.example$/);
+    expect(new URL(seen[0]!.url).search).toBe('?name=anypress%2Fkit-food&variation=kit-hearth');
+    const missing = await mcp.callTool({ name: 'site_patterns', arguments: { action: 'preview', externalId: 'site-1' } });
+    expect(missing).toMatchObject({ isError: true, content: [{ text: 'Action preview needs name.' }] });
+
+    const { tools } = await mcp.listTools();
+    expect(tools.find((tool) => tool.name === 'show_looks')?._meta).toMatchObject({ ui: { resourceUri: 'ui://waas/looks.html' } });
+    const looks = await mcp.callTool({ name: 'show_looks', arguments: { externalId: 'site-1' } });
+    expect(looks.structuredContent).toMatchObject({
+      ref: { externalId: 'site-1' },
+      variations: [expect.objectContaining({ slug: 'kit-hearth', homePage: 'anypress/kit-food' })],
+      categories: [expect.objectContaining({ name: 'anypress/kit-food' })],
+      canApply: true,
+      framed: true,
+    });
+    // Hosts frame the store's preview pages only from the stores' domain.
+    const { contents } = await mcp.readResource({ uri: 'ui://waas/looks.html' });
+    expect(contents[0]).toMatchObject({ mimeType: 'text/html;profile=mcp-app', _meta: { ui: { csp: { frameDomains: ['https://*.stores.waas.example'] } } } });
+    const html = (contents[0] as { text: string }).text;
+    for (const marker of ['/*MCP_APPS_BUNDLE*/', '/*VIEW_STYLE*/', '/*VIEW_COMMON*/']) expect(html).not.toContain(marker);
+    // Its buttons call tools and actions that exist.
+    expect(html).toContain("call('site_patterns', { action: 'preview'");
+    expect(html).toContain("call('site_styles', { action: 'apply'");
+    expect(html).toContain("call('site_patterns', { action: 'find'");
+    storeRoutes = null;
+  });
+
   it('sends a page_section add with its position, and asks for what an action needs', async () => {
     seen = [];
     await mcp.callTool({ name: 'page_section', arguments: { action: 'add', externalId: 'site-1', pageId: 12, pattern: 'ollie/hero-light', section: 2 } });

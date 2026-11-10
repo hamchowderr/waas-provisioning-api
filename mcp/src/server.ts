@@ -21,6 +21,11 @@ export interface WaasMcpOptions {
   store?: TenantRef;
   /** How often get_stores' wait action polls (tests shorten it). */
   pollIntervalMs?: number;
+  /**
+   * The domain stores' platform addresses sit under (STORES_DOMAIN, e.g. stores.anypress.site): the
+   * looks screen frames the stores' preview pages from it. Unset: the screen opens previews in the browser.
+   */
+  previewDomain?: string;
   /** Logos AI apps show for this server, e.g. [{ src: 'https://…/icon.png', mimeType: 'image/png' }]. */
   icons?: { src: string; mimeType?: string; sizes?: string[] }[];
 }
@@ -199,18 +204,23 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   // App screens (MCP Apps): render in clients that support them (Claude, ChatGPT, VS Code...);
   // other clients get the same data as text. A store's own connection has no stores to show.
 
-  const SCREENS: Record<View, string> = { stores: 'Store list', store: 'Store details', backups: 'Store backups', domains: 'Store domains' };
-  const screen = (view: View, tool: string) =>
-    registerAppResource(server, SCREENS[view], VIEWS[view], { description: `The ${tool} screen` }, async () => ({
-      contents: [{ uri: VIEWS[view], mimeType: RESOURCE_MIME_TYPE, text: viewHtml(view) }],
+  const SCREENS: Record<View, string> = { stores: 'Store list', store: 'Store details', backups: 'Store backups', domains: 'Store domains', looks: 'Looks and sections' };
+  // The looks screen shows store preview pages in a frame, which hosts only allow from the domains named here.
+  const frames: Partial<Record<View, string[]>> = options.previewDomain ? { looks: [`https://*.${options.previewDomain}`] } : {};
+  const screen = (view: View, tool: string) => {
+    const ui = frames[view] ? { ui: { csp: { frameDomains: frames[view] } } } : undefined;
+    registerAppResource(server, SCREENS[view], VIEWS[view], { description: `The ${tool} screen`, ...(ui ? { _meta: ui } : {}) }, async () => ({
+      contents: [{ uri: VIEWS[view], mimeType: RESOURCE_MIME_TYPE, text: viewHtml(view), ...(ui ? { _meta: ui } : {}) }],
     }));
+  };
 
   const appTool = <Shape extends z.ZodRawShape>(
     name: string,
     config: { title: string; description: string; area: Area; view: View; input: Shape },
     call: (args: z.infer<z.ZodObject<Shape>>) => Promise<{ text: string; data: Record<string, unknown> }>,
   ) => {
-    if (options.store || !may(config.area, 'read')) return;
+    // A store's own connection has only the site screens.
+    if ((options.store && config.area !== 'site') || !may(config.area, 'read')) return;
     registerAppTool(
       server,
       name,
@@ -652,7 +662,13 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the theme offers, whole starter pages (category anypress/pages), ' +
       'each kit’s sections (anypress/kit-*, made to go with the kit’s look in site_styles variations) and the shared AnyPress Blocks sections (anypress/blocks-*). ' +
       'categories names them all; blocks lists the interactive blocks (carousel, popup, counter, countdown, map…) with their settings.',
-    input: { ...ref, search: z.string().optional().describe('For find'), category: z.string().optional().describe('For find: a name from categories'), name: pattern.optional().describe('For get') },
+    input: {
+      ...ref,
+      search: z.string().optional().describe('For find'),
+      category: z.string().optional().describe('For find: a name from categories'),
+      name: pattern.optional().describe('For get and preview'),
+      variation: z.string().regex(/^[a-z0-9_-]+$/).optional().describe('For preview: a style variation slug from site_styles variations, e.g. kit-hearth; the site’s own look when omitted'),
+    },
     actions: {
       categories: { access: 'read', does: 'every pattern category with its label and how many patterns it has: starter pages, each kit, the shared sections', run: (args) => site(args, { method: 'GET', path: '/patterns/categories' }) },
       blocks: {
@@ -666,8 +682,37 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         run: ({ search, category, ...args }) => site(args, { method: 'GET', path: '/patterns', query: { ...(search ? { search } : {}), ...(category ? { category } : {}) } }),
       },
       get: { access: 'read', does: 'one pattern’s block markup, to adapt before adding it', run: ({ name, ...args }) => site(args, { method: 'GET', path: `/patterns/${need(name, 'name', 'get')}` }) },
+      preview: {
+        access: 'read',
+        does: 'a link, good for 15 minutes, to a page showing the pattern in the site’s look or in a variation (a kit’s homePage in its kit shows the whole kit); nothing on the site changes. show_looks shows these in the chat',
+        run: ({ name, variation, ...args }) =>
+          site(args, { method: 'GET', path: '/preview', query: { name: need(name, 'name', 'preview'), ...(variation ? { variation } : {}) } }),
+      },
     },
   });
+
+  appTool(
+    'show_looks',
+    {
+      title: 'Show looks and sections', area: 'site', view: 'looks',
+      description:
+        'Shows the theme’s kits and other looks in a panel, each with its colours and fonts and a live preview of its home page in that look, ' +
+        'plus every section by category, previewed in the chosen look, with a button to switch a look on. Use it when someone wants to see or pick a design; ' +
+        'site_styles variations and site_patterns give the same data as text.',
+      input: ref,
+    },
+    async (args) => {
+      const storeRef = options.store ? {} : toRef(args);
+      const [looks, categories] = await Promise.all([
+        site(storeRef, { method: 'GET', path: '/styles/variations' }) as Promise<{ variations?: unknown[] }>,
+        site(storeRef, { method: 'GET', path: '/patterns/categories' }),
+      ]);
+      return {
+        text: JSON.stringify({ variations: looks?.variations ?? [], categories }, null, 2),
+        data: { ref: storeRef, variations: looks?.variations ?? [], categories, canApply: may('site', 'write'), framed: Boolean(options.previewDomain) },
+      };
+    },
+  );
 
   actionTool('read_reference', {
     title: 'Read a reference', area: 'site',
