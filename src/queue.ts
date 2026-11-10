@@ -83,7 +83,7 @@ export const HEARTBEAT_SECONDS = 60;
 export const NOTIFY_POLL_SECONDS = 10;
 
 /** Store and version jobs run side by side, up to this many at once (different stores only). */
-export const PROVISION_WORKERS = 2;
+const PROVISION_WORKERS = 2;
 
 /**
  * Creates a queue, or brings an existing one up to date. Every queue is a notify queue: sending a job

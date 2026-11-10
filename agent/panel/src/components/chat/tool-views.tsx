@@ -39,10 +39,10 @@ import { cn } from '@/lib/utils';
  * Each takes the real data a tool produced — no static/example props.
  */
 
-export type KnowledgeResult = { title: string; url: string; snippet?: string };
+type KnowledgeResult = { title: string; url: string; snippet?: string };
 
 /** Real `searchKnowledge` results → Sources list + inline citations. */
-export function KnowledgeSources({ results }: { results: KnowledgeResult[] }) {
+function KnowledgeSources({ results }: { results: KnowledgeResult[] }) {
   if (!results?.length) {
     return null;
   }
@@ -121,7 +121,7 @@ export function GeneratedImage({
  * events (see reduceAgentControllerEvent); seeded optimistically by setGoal. `onClear` renders a
  * clear control. States: passed (judge complete) / paused (waiting for the user) / working.
  */
-export function GoalCard({ goal, onClear }: { goal: AgentControllerGoal; onClear?: () => void }) {
+function GoalCard({ goal, onClear }: { goal: AgentControllerGoal; onClear?: () => void }) {
   const passed = goal.passed === true || goal.status === 'done';
   const waiting = goal.waitingForUser === true;
   const paused = !passed && (waiting || goal.status === 'paused' || goal.maxRunsReached === true);
@@ -354,7 +354,7 @@ export function AskUserPrompt({
 }
 
 /** Real step sequence (the agent's actual tool calls) → ChainOfThought. */
-export function StepTrace({ steps }: { steps: string[] }) {
+function StepTrace({ steps }: { steps: string[] }) {
   if (!steps?.length) {
     return null;
   }
@@ -469,7 +469,7 @@ function renderTreeNodes(nodes: TreeNode[]) {
 }
 
 /** `list_files` tree text → the File Tree element. */
-export function WorkspaceFileTree({ tree }: { tree: string }) {
+function WorkspaceFileTree({ tree }: { tree: string }) {
   const nodes = parseFileTree(tree);
   if (nodes.length === 0) {
     return <p className="text-muted-foreground text-xs">Empty workspace.</p>;
@@ -482,7 +482,7 @@ export function WorkspaceFileTree({ tree }: { tree: string }) {
 }
 
 /** `execute_command` → the Terminal element (renders `output` via context). */
-export function WorkspaceTerminal({ title, output }: { title: string; output: string }) {
+function WorkspaceTerminal({ title, output }: { title: string; output: string }) {
   return (
     <Terminal output={output || '(no output)'}>
       <TerminalHeader>
@@ -494,7 +494,7 @@ export function WorkspaceTerminal({ title, output }: { title: string; output: st
 }
 
 /** read/write/edit file → the Code Block element. */
-export function WorkspaceCodeBlock({ path, code }: { path?: string; code: string }) {
+function WorkspaceCodeBlock({ path, code }: { path?: string; code: string }) {
   return (
     <CodeBlock code={code} language={languageFromPath(path)} showLineNumbers>
       {path && <span className="px-1 font-mono text-muted-foreground text-xs">{path}</span>}
@@ -508,7 +508,7 @@ export function WorkspaceCodeBlock({ path, code }: { path?: string; code: string
  * tools without a dedicated element (mkdir/delete/stat) so the caller falls back
  * to the generic <Tool> view. `input`/`output` are whatever the tool produced.
  */
-export function WorkspaceTool({
+function WorkspaceTool({
   toolName,
   input,
   output,
@@ -548,7 +548,7 @@ export function WorkspaceTool({
 }
 
 /** True for any Mastra workspace tool part (`tool-mastra_workspace_*`). */
-export function isWorkspaceTool(toolName?: string): boolean {
+function isWorkspaceTool(toolName?: string): boolean {
   return typeof toolName === 'string' && toolName.startsWith('mastra_workspace_');
 }
 
@@ -562,7 +562,7 @@ const WORKSPACE_VIEW_SUFFIXES = new Set([
 ]);
 
 /** True only for workspace tools that have a dedicated Code element renderer. */
-export function hasWorkspaceView(toolName?: string): boolean {
+function hasWorkspaceView(toolName?: string): boolean {
   if (!isWorkspaceTool(toolName)) {
     return false;
   }

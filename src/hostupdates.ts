@@ -16,7 +16,7 @@ import { Status } from './status.ts';
  * admin API's POST /admin/host-updates tries the failed ones again.
  */
 
-export const HOST_UPDATE_QUEUE = 'host-updates';
+const HOST_UPDATE_QUEUE = 'host-updates';
 
 /** The plugin pushed, and the folders older copies of it may still be in (before it was renamed). */
 export const HOST_SLUG: PluginSlug = 'anypress-host';

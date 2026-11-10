@@ -68,10 +68,10 @@ import {
   withReads,
 } from '../mcp/src/scopes.ts';
 
-export { ALL_SCOPES, APPS_PATH, MCP_PATHS, READ_SCOPES };
+export { MCP_PATHS };
 
 /** The scopes a stored grant means: as written, or, for a grant from before scopes per area, what the old two meant. */
-export function grantedScopes(scope: string, legacy: boolean): string[] {
+function grantedScopes(scope: string, legacy: boolean): string[] {
   return legacy ? expandLegacyScopes(scope) : parseScopes(scope);
 }
 
@@ -946,7 +946,7 @@ async function findStoreByAddress(pool: Pool, typed: string) {
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Exact match, except a loopback redirect may use any port (RFC 8252 7.3). */
-export function sameRedirectUri(registered: string, requested: string): boolean {
+function sameRedirectUri(registered: string, requested: string): boolean {
   if (registered === requested) return true;
   try {
     const a = new URL(registered);

@@ -14,7 +14,7 @@ import { getStorefront } from './storefronts.ts';
  * (storefronts) can change what differs. Logos and icons are public: the sign-in page shows them.
  */
 
-export type BrandOwner = { productId: string } | { resellerId: string };
+type BrandOwner = { productId: string } | { resellerId: string };
 
 export interface Brand {
   name: string | null;
@@ -316,7 +316,7 @@ export function brandingRoutes(deps: Deps) {
   return app;
 }
 
-export interface DemoBrand {
+interface DemoBrand {
   /** The name the page shows: the brand's, else the storefront's or reseller's own. */
   name: string;
   brand: Brand | null;
@@ -325,7 +325,7 @@ export interface DemoBrand {
 }
 
 /** The look of a storefront's (product id) or reseller's (reseller id) demo page; null for neither. */
-export async function demoBrand(deps: Pick<Deps, 'pool' | 'config'>, base: string, id: string): Promise<DemoBrand | null> {
+async function demoBrand(deps: Pick<Deps, 'pool' | 'config'>, base: string, id: string): Promise<DemoBrand | null> {
   const { pool } = deps;
   const product = await pool.query<{ name: string; brand_url: string | null }>(
     'SELECT p.name, r.brand_url FROM products p LEFT JOIN resellers r ON r.id = p.reseller_id WHERE p.id = $1',

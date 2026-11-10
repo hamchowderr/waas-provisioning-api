@@ -92,7 +92,7 @@ export type AppEnv = {
 };
 
 /** The largest request body the API reads. */
-export const MAX_BODY_BYTES = 25 * 1024 ** 2;
+const MAX_BODY_BYTES = 25 * 1024 ** 2;
 
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();

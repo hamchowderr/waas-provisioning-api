@@ -5,7 +5,7 @@ import { compact } from '../http.ts';
 import { channelKey, isChannel, isPluginSlug, manifestKey, parseManifest } from '../releases.ts';
 
 /** How long a package URL works. The plugin asks again just before it downloads. */
-export const PACKAGE_URL_TTL = 600;
+const PACKAGE_URL_TTL = 600;
 
 const INSTALLED_VERSION = /^\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$/;
 const PLATFORM_VERSION = /^[0-9A-Za-z.+-]{1,32}$/;

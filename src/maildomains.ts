@@ -16,7 +16,7 @@ import type { DnsRecord, SendingDomains } from './tosend.ts';
  * sending from the platform's address, so its email never stops.
  */
 
-export const MAIL_DOMAINS_QUEUE = 'mail-domains';
+const MAIL_DOMAINS_QUEUE = 'mail-domains';
 
 export interface MailDomain {
   domainName: string;

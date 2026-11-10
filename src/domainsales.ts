@@ -16,7 +16,7 @@ import { addTenantDomain } from './routes/domains.ts';
 import { Status } from './status.ts';
 import { domainInUse, normalizeDomain } from './tenants.ts';
 
-export const DOMAIN_SALES_QUEUE = 'domain-sales';
+const DOMAIN_SALES_QUEUE = 'domain-sales';
 
 /** Endings sold by default: common, with no extra registry paperwork and no residency rules. */
 const DEFAULT_TLDS = ['com', 'net', 'org', 'co', 'io', 'shop', 'store', 'online', 'site', 'biz', 'info', 'app', 'dev', 'xyz'];
@@ -91,7 +91,7 @@ export interface DomainSalesConfig {
 const cents = (dollars: number | null | undefined) => (typeof dollars === 'number' ? Math.round(dollars * 100) : null);
 
 /** The official Name.com SDK behind the Registrar interface. */
-export class NameCom implements Registrar {
+class NameCom implements Registrar {
   private readonly sdk: NamecomClient;
 
   constructor(username: string, token: string, sandbox: boolean, fetchFn?: typeof fetch) {
@@ -176,7 +176,7 @@ export class NameCom implements Registrar {
   }
 }
 
-export class RegistrarError extends Error {
+class RegistrarError extends Error {
   constructor(
     readonly status: number,
     message: string,

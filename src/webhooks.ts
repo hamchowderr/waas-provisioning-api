@@ -22,7 +22,7 @@ import { notifyEvent, pruneNotifications } from './notifications.ts';
  * retried with growing gaps for several hours, and kept with its last answer for the dashboard.
  */
 
-export const WEBHOOK_QUEUE = 'webhooks';
+const WEBHOOK_QUEUE = 'webhooks';
 
 export const EVENT_TYPES = [
   'tenant.ready',
@@ -46,7 +46,7 @@ export const EVENT_TYPES = [
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /** Endpoints a product may have. */
-export const MAX_ENDPOINTS = 10;
+const MAX_ENDPOINTS = 10;
 /** Seconds an endpoint has to answer. */
 const TIMEOUT_SECONDS = 10;
 /** Characters kept of an endpoint's answer or error. */
@@ -195,7 +195,7 @@ function post(target: string, headers: Record<string, string>, body: string, all
 
 // --- Events ---
 
-export interface WebhookEvent {
+interface WebhookEvent {
   type: EventType;
   data: Record<string, unknown>;
   tenantId?: string;
@@ -207,7 +207,7 @@ export interface WebhookEvent {
  * Nothing is recorded when no endpoint wants it. Pass `endpointId` to send to that endpoint only
  * (a test event). Returns the delivery ids.
  */
-export async function emit(pool: Pool, boss: PgBoss, productId: string, event: WebhookEvent, endpointId?: string): Promise<string[]> {
+async function emit(pool: Pool, boss: PgBoss, productId: string, event: WebhookEvent, endpointId?: string): Promise<string[]> {
   const { rows: endpoints } = await pool.query<{ id: string }>(
     `SELECT id FROM webhook_endpoints
       WHERE product_id = $1 AND ($3::uuid IS NOT NULL OR (enabled AND (cardinality(event_types) = 0 OR $2 = ANY(event_types))))
@@ -363,7 +363,7 @@ export function withWebhooks<H extends JobHandlers>(handlers: H, pool: Pool, bos
   };
 }
 
-export async function pruneWebhookLog(pool: Pool, days: number): Promise<number> {
+async function pruneWebhookLog(pool: Pool, days: number): Promise<number> {
   const { rowCount } = await pool.query('DELETE FROM webhook_events WHERE at < now() - make_interval(days => $1)', [days]);
   return rowCount ?? 0;
 }
@@ -371,7 +371,7 @@ export async function pruneWebhookLog(pool: Pool, days: number): Promise<number>
 // --- Delivery ---
 
 /** One attempt at a delivery. Throws when it should be tried again. */
-export async function deliver(pool: Pool, secrets: Secrets, config: WebhookConfig, deliveryId: string, lastAttempt: boolean): Promise<void> {
+async function deliver(pool: Pool, secrets: Secrets, config: WebhookConfig, deliveryId: string, lastAttempt: boolean): Promise<void> {
   const { rows } = await pool.query(
     `SELECT d.id, d.status, e.id AS event_id, e.body, e.at, w.url, w.secret, w.enabled, w.kind, w.highlevel_location_id, w.highlevel_company_id
        FROM webhook_deliveries d JOIN webhook_events e ON e.id = d.event_id JOIN webhook_endpoints w ON w.id = d.endpoint_id
@@ -468,7 +468,7 @@ export function toDelivery(row: any) {
   };
 }
 
-export const DELIVERY_SELECT = `
+const DELIVERY_SELECT = `
   SELECT d.*, e.type, e.tenant_id, e.version_id FROM webhook_deliveries d JOIN webhook_events e ON e.id = d.event_id`;
 
 interface EndpointInput {

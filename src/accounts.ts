@@ -46,12 +46,12 @@ export interface SessionCaller {
 /** Marks a request whose session cookie the dashboard's server passes on (not a browser's). */
 export const SESSION_HEADER = 'X-Session-Auth';
 /** The storefront the dashboard's switcher picked, among the session's memberships. */
-export const PRODUCT_HEADER = 'X-Product-Id';
+const PRODUCT_HEADER = 'X-Product-Id';
 /**
  * The address the dashboard was opened on. On a seller's own address (src/dashboarddomains.ts) only
  * that storefront's team gets in, and only to that storefront.
  */
-export const DASHBOARD_HOST_HEADER = 'X-Dashboard-Host';
+const DASHBOARD_HOST_HEADER = 'X-Dashboard-Host';
 
 const ROLE_RANK: Record<OrgRole, number> = { member: 0, admin: 1, owner: 2 };
 
@@ -61,7 +61,7 @@ const READ_METHODS = new Set(['GET', 'HEAD']);
 const canChange = (role: string) => role.split(',').some((r) => r.trim() === 'owner' || r.trim() === 'admin');
 
 /** The signed-in person behind a request's session cookie, or null when there is none. */
-export async function sessionCaller(deps: Deps, headers: Headers): Promise<SessionCaller | null> {
+async function sessionCaller(deps: Deps, headers: Headers): Promise<SessionCaller | null> {
   if (!deps.auth) return null;
   const session = await deps.auth.api.getSession({ headers });
   if (!session) return null;

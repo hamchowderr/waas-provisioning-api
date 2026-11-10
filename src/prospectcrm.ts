@@ -111,7 +111,7 @@ export function crmInput(body: unknown): { prospects: CrmProspect[]; group: stri
 }
 
 /** The tags a business gets: "Prospect", and "Prospect: <group>" when the seller searched for one. */
-export function prospectTags(group: string | null): string[] {
+function prospectTags(group: string | null): string[] {
   return group ? ['Prospect', `Prospect: ${group}`] : ['Prospect'];
 }
 
@@ -177,7 +177,7 @@ export async function crmMarks(pool: Pool, productId: string, placeIds: string[]
 }
 
 /** HighLevel's flat fields for one business, as the snapshot's workflow maps them. */
-export function highLevelBody(p: CrmProspect, tags: string[]) {
+function highLevelBody(p: CrmProspect, tags: string[]) {
   const social = (n: string) => p.socials.find((s) => s.network === n)?.url ?? '';
   return {
     companyName: p.name,

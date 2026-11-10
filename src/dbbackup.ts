@@ -29,7 +29,7 @@ export interface BackupStore {
   delete(key: string): Promise<void>;
 }
 
-export const DB_BACKUP_QUEUE = 'db-backup';
+const DB_BACKUP_QUEUE = 'db-backup';
 
 /** Backups are on when the bucket settings are all there, unless DB_BACKUP=off. */
 export function loadDbBackupConfig(env: NodeJS.ProcessEnv): DbBackupConfig | undefined {
@@ -268,7 +268,7 @@ export interface DbBackupStatus {
   stale: boolean;
 }
 
-export const STALE_AFTER_MS = 26 * 3600_000;
+const STALE_AFTER_MS = 26 * 3600_000;
 
 export async function dbBackupStatus(pool: Pool, enabled: boolean, now = new Date()): Promise<DbBackupStatus> {
   if (!enabled) return { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false };

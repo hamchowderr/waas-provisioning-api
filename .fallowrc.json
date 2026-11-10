@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "minimumVersion": "3.41.0",
+  // Each folder with its own package.json is its own package.
+  "workspaces": {
+    "patterns": ["agent", "agent/panel", "voice", "sdk/typescript", "integrations/make", "integrations/n8n", "integrations/zapier"]
+  },
+  "entry": [
+    "src/index.ts",
+    "integrations/n8n/nodes/**/*.node.ts",
+    "integrations/n8n/credentials/*.credentials.ts",
+    "mcp/src/view/**",
+    "mcp/skills/**/scripts/*.mjs"
+  ],
+  // Installed for the packages that run from the root (npm run mcp), for build tools named in config files rather
+  // imported (shadcn's CSS, Tailwind's PostCSS plugin, release-it, the Zapier CLI), and Playwright, which the agent's
+  // browser test takes from the machine.
+  "ignoreDependencies": [
+    "@modelcontextprotocol/ext-apps",
+    "@modelcontextprotocol/client",
+    "shadcn",
+    "@tailwindcss/postcss",
+    "release-it",
+    "zapier-platform-cli",
+    "playwright"
+  ],
+  "ignoreUnresolvedImports": ["shadcn/*"],
+  // Postgres tools in the API image, and the CLIs the n8n and Zapier packages install.
+  "ignoreBinaries": ["pg_dump", "pg_restore", "n8n-node", "zapier-platform"],
+  // shadcn/ui and AI Elements components are copied in whole; the panel uses only some of each.
+  "ignoreFindings": ["agent/panel/src/components/ui/**", "agent/panel/src/components/ai-elements/**"],
+  "rules": {
+    // Same-named types in unrelated modules (a store's Brand, a DNS record) are fine.
+    "duplicate-exports": "off",
+    // Existing import cycles are listed but don't fail yet; they come apart as the files are split.
+    "circular-dependencies": "warn"
+  },
+  "duplicates": {
+    "minOccurrences": 3,
+    "ignore": ["**/generated/**", "sdk/typescript/src/schema.ts"]
+  }
+}

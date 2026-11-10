@@ -125,9 +125,9 @@ export async function authenticateKey(pool: Pool, key: string, secret: string): 
 // share these. A secret appears only in the response that creates it; nothing logs it.
 
 /** The most keys a product (or reseller) may have that still work (active or rotated but not yet expired). */
-export const MAX_LIVE_KEYS = 20;
+const MAX_LIVE_KEYS = 20;
 /** The longest a rotated key may keep working: 30 days. */
-export const MAX_GRACE_HOURS = 720;
+const MAX_GRACE_HOURS = 720;
 const MAX_LABEL = 100;
 
 export type KeyState = 'active' | 'expiring' | 'revoked';

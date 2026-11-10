@@ -8,7 +8,7 @@
  * Fluent Support 2.4, FluentAffiliate 1.7, FluentCommunity 2.12): change them when the Fluent plugins change.
  */
 
-export const REPORT_AREAS = ['forms', 'shop', 'crm', 'booking', 'support', 'affiliates', 'community'] as const;
+const REPORT_AREAS = ['forms', 'shop', 'crm', 'booking', 'support', 'affiliates', 'community'] as const;
 export type ReportArea = (typeof REPORT_AREAS)[number];
 
 /** How a Fluent plugin can take over the data: its own importer, its importer with Pro, a separate add-on, or none yet. */

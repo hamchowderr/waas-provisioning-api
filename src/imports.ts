@@ -31,11 +31,11 @@ import { Status } from './status.ts';
  */
 
 /** How long an import code works before the move is started. */
-export const IMPORT_DAYS = 7;
+const IMPORT_DAYS = 7;
 /** How long an upload link works. */
 const UPLOAD_SECONDS = 12 * 3600;
 /** One PUT to object storage (R2, S3) takes at most 5 GiB. */
-export const MAX_IMPORT_BYTES = 5 * 1024 ** 3;
+const MAX_IMPORT_BYTES = 5 * 1024 ** 3;
 
 /** S3 takes at most 10,000 parts of at least 5 MiB (the last may be smaller). */
 const MAX_PARTS = 10_000;

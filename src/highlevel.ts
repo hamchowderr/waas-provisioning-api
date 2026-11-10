@@ -163,7 +163,7 @@ async function saveToken(pool: Pool, secrets: Secrets, answer: TokenAnswer, fall
 }
 
 /** The code HighLevel's install sends to the redirect URL, turned into the install's token. */
-export async function exchangeCode(pool: Pool, secrets: Secrets, hl: HighLevelConfig, code: string, redirectUri: string) {
+async function exchangeCode(pool: Pool, secrets: Secrets, hl: HighLevelConfig, code: string, redirectUri: string) {
   const answer = await oauthCall(hl, '/oauth/token', (client, options) =>
     client.oauth.getAccessToken({ client_id: hl.clientId, client_secret: hl.clientSecret, grant_type: 'authorization_code', code, redirect_uri: redirectUri }, options),
   );
@@ -193,7 +193,7 @@ async function storedToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, us
  * A sub-account token and when it ends: its own install's, or one made from its agency's install
  * (POST /oauth/locationToken), which is kept for next time. Null when neither was installed.
  */
-export async function locationTokenWithExpiry(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<Token | null> {
+async function locationTokenWithExpiry(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<Token | null> {
   const own = await storedToken(pool, secrets, hl, 'Location', locationId);
   if (own || !companyId) return own;
   const agency = await storedToken(pool, secrets, hl, 'Company', companyId);
@@ -204,7 +204,7 @@ export async function locationTokenWithExpiry(pool: Pool, secrets: Secrets, hl: 
 }
 
 /** A sub-account token (locationTokenWithExpiry), without when it ends. */
-export async function locationToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<string | null> {
+async function locationToken(pool: Pool, secrets: Secrets, hl: HighLevelConfig, locationId: string, companyId: string | null): Promise<string | null> {
   return (await locationTokenWithExpiry(pool, secrets, hl, locationId, companyId))?.token ?? null;
 }
 

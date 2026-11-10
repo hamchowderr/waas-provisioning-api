@@ -16,7 +16,6 @@ import type { SendingDomains } from './tosend.ts';
 
 /** The two templates: the store's website (A record) and its sending domain (toSend's records). */
 export type DomainConnectService = 'website' | 'email';
-export const DOMAIN_CONNECT_SERVICES: DomainConnectService[] = ['website', 'email'];
 
 export interface DomainConnectConfig {
   /** The templates' providerId: the platform's domain (anypress.io). */

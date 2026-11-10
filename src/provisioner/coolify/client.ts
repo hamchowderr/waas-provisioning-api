@@ -19,7 +19,7 @@ export interface CoolifyEnv {
   real_value?: string;
 }
 
-export interface CoolifyTaskExecution {
+interface CoolifyTaskExecution {
   uuid: string;
   status: string;
   message?: string | null;

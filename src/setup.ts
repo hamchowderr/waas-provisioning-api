@@ -47,7 +47,7 @@ export interface ResellerSetup extends Checklist {
   storefronts: { ready: number; total: number };
 }
 
-export const STUCK_DAYS = 7;
+const STUCK_DAYS = 7;
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 

@@ -16,7 +16,7 @@ import { isUuid } from './http.ts';
 import { publicFetchUpTo } from './publicfetch.ts';
 import { Status } from './status.ts';
 
-export const REFERENCES_QUEUE = 'references';
+const REFERENCES_QUEUE = 'references';
 
 export type ReferenceKind = 'website' | 'figma' | 'document';
 
@@ -45,7 +45,7 @@ export interface ReferenceReaders {
 }
 
 /** The bundle a reference is read into. Every reader fills the same shape; what a kind can't tell is left empty. */
-export interface ReferenceBundle {
+interface ReferenceBundle {
   kind: ReferenceKind;
   source: string;
   title: string | null;
@@ -57,7 +57,7 @@ export interface ReferenceBundle {
   notes: string[];
 }
 
-export interface ReferenceDesign {
+interface ReferenceDesign {
   /** Named colours, #rrggbb where the source gives one: primary, secondary, accent, background, text, and so on. */
   colors: Record<string, string>;
   fonts: { heading: string | null; body: string | null; all: string[] };
@@ -68,7 +68,7 @@ export interface ReferenceDesign {
   logo: string | null;
 }
 
-export interface ReferencePage {
+interface ReferencePage {
   /** The page's address, or the Figma frame's name. */
   url: string;
   title: string | null;
@@ -81,7 +81,7 @@ export interface ReferencePage {
   images: string[];
 }
 
-export interface ReferenceProduct {
+interface ReferenceProduct {
   title: string;
   handle: string;
   description: string;
@@ -94,7 +94,7 @@ export interface ReferenceProduct {
   variants: { title: string; sku: string | null; price: string | null; compareAtPrice: string | null; available: boolean }[];
 }
 
-export interface ReferenceUsage {
+interface ReferenceUsage {
   /** False until the platform has a Firecrawl key: only Figma links (with a Figma token) can be read. */
   available: boolean;
   used: number;
@@ -118,7 +118,7 @@ const DOCUMENT_TYPES: Record<string, string> = {
 const monthStart = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 const nextMonth = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
 
-export async function referenceUsage(pool: Pool, config: ReferenceConfig, productId: string, now = new Date()): Promise<ReferenceUsage> {
+async function referenceUsage(pool: Pool, config: ReferenceConfig, productId: string, now = new Date()): Promise<ReferenceUsage> {
   const { rows } = await pool.query<{ used: number }>(
     'SELECT count(*)::int AS used FROM site_references WHERE product_id = $1 AND date_created >= $2 AND status <> $3',
     [productId, monthStart(now), Status.Failed],
@@ -140,7 +140,7 @@ function documentType(name: string): string | null {
   return ext ? (DOCUMENT_TYPES[ext] ?? null) : null;
 }
 
-export interface ReferenceInput {
+interface ReferenceInput {
   url?: string;
   file?: { name: string; data: string; contentType?: string };
   maxPages?: number;
@@ -180,7 +180,7 @@ export function parseReferenceInput(body: unknown): { kind: ReferenceKind; sourc
 }
 
 /** Starts reading a reference: checks the allowance and queues the read. */
-export async function startReference(pool: Pool, boss: PgBoss, config: ReferenceConfig, productId: string, body: unknown, now = new Date()) {
+async function startReference(pool: Pool, boss: PgBoss, config: ReferenceConfig, productId: string, body: unknown, now = new Date()) {
   const input = parseReferenceInput(body);
   if (input.kind === 'figma' ? !config.figmaToken : !config.firecrawlApiKey) {
     throw new HttpError(503, input.kind === 'figma' ? "Reading Figma files isn't set up on this server yet." : "Reading references isn't set up on this server yet.");
@@ -196,7 +196,7 @@ export async function startReference(pool: Pool, boss: PgBoss, config: Reference
   return getReference(pool, productId, id);
 }
 
-export async function getReference(pool: Pool, productId: string, id: string) {
+async function getReference(pool: Pool, productId: string, id: string) {
   if (!isUuid(id)) throw new HttpError(404, 'No reference with this id');
   const { rows } = await pool.query(
     'SELECT id, kind, source, status, bundle, error, date_created, date_finished FROM site_references WHERE id = $1 AND product_id = $2',
@@ -250,9 +250,9 @@ export async function startReferences(boss: PgBoss, pool: Pool, readers: Referen
 }
 
 /** A reference that can't be read for a reason the person can act on; its message is shown to them as is. */
-export class UnreadableReference extends Error {}
+class UnreadableReference extends Error {}
 
-export async function readReference(
+async function readReference(
   ref: { kind: ReferenceKind; source: string; maxPages: number; upload?: { data: Buffer; type: string } },
   readers: ReferenceReaders,
 ): Promise<ReferenceBundle> {
@@ -360,7 +360,7 @@ async function readWebsite(source: string, maxPages: number, readers: ReferenceR
  * A Shopify shop's products and collections from its public /products.json and /collections.json, or null when the site
  * isn't a Shopify shop (or its shop is password-protected). 250 products a page, at most four pages.
  */
-export async function readShopify(home: URL, get: typeof fetch): Promise<{ products: ReferenceProduct[]; collections: ReferenceBundle['collections']; truncated: boolean } | null> {
+async function readShopify(home: URL, get: typeof fetch): Promise<{ products: ReferenceProduct[]; collections: ReferenceBundle['collections']; truncated: boolean } | null> {
   const json = async (path: string) => {
     try {
       const res = await get(`${home.origin}${path}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });

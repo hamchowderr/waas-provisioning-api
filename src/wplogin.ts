@@ -15,7 +15,7 @@ import { Status, statusName } from './status.ts';
  */
 
 /** How long a link works: the store's limit (SignedRequest::MAX_AGE in AnyPress Client). */
-export const LOGIN_LINK_SECONDS = 300;
+const LOGIN_LINK_SECONDS = 300;
 
 export type LoginPlugin = 'anypress-client' | 'anypress-host';
 

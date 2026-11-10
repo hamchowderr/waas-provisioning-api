@@ -13,11 +13,11 @@ import { S3, type S3Config } from './provisioner/s3.ts';
  * site install a package we didn't sign.
  */
 
-export const PLUGIN_SLUGS = ['anypress-host', 'anypress-client', 'anypress-payments', 'anypress-export'] as const;
+const PLUGIN_SLUGS = ['anypress-host', 'anypress-client', 'anypress-payments', 'anypress-export'] as const;
 export type PluginSlug = (typeof PLUGIN_SLUGS)[number];
 export const isPluginSlug = (value: string): value is PluginSlug => (PLUGIN_SLUGS as readonly string[]).includes(value);
 
-export const CHANNELS = ['stable', 'beta'] as const;
+const CHANNELS = ['stable', 'beta'] as const;
 export type Channel = (typeof CHANNELS)[number];
 export const isChannel = (value: string): value is Channel => (CHANNELS as readonly string[]).includes(value);
 

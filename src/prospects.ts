@@ -100,7 +100,7 @@ const placesClients = new Map<string, PlacesClient>();
  * Google's official Places SDK (@googlemaps/places), over HTTPS with the API key (fallback mode: plain
  * REST calls, no gRPC connection kept open). One client per key, made on first use.
  */
-export const googlePlacesSearch: PlacesSearch = async (apiKey, request, fieldMask) => {
+const googlePlacesSearch: PlacesSearch = async (apiKey, request, fieldMask) => {
   let client = placesClients.get(apiKey);
   if (!client) {
     // Loaded on the first search, so the API doesn't carry Google's client library until it's used.

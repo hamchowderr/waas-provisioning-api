@@ -12,7 +12,7 @@ import type {
 	INodeProperties,
 } from 'n8n-workflow';
 
-export const DEFAULT_BASE_URL = 'https://api.anypress.io';
+const DEFAULT_BASE_URL = 'https://api.anypress.io';
 
 type Context = IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions;
 

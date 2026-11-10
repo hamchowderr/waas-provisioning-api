@@ -52,7 +52,7 @@ const INCOMPLETE = 'streamdown:incomplete-link';
  * `/people?tag=x`) is in-app, and so is an absolute URL on `origin`; a protocol-relative
  * `//host/…` is not.
  */
-export function appHref(href: string, origin?: string): string | null {
+function appHref(href: string, origin?: string): string | null {
   if (href.startsWith('/') && !href.startsWith('//')) return href;
   if (!origin) return null;
   try {
@@ -73,7 +73,7 @@ const linkClass = 'wrap-anywhere font-medium text-primary underline';
 type AnchorProps = AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown };
 
 /** Streamdown's `a`: see the module comment. */
-export function ChatLink({
+function ChatLink({
   href = '',
   children,
   className,

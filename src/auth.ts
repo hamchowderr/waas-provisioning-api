@@ -90,14 +90,14 @@ export type OrgRole = 'owner' | 'admin' | 'member';
 export const ORG_ROLES: readonly OrgRole[] = ['owner', 'admin', 'member'];
 
 /** Minutes a sign-in link and its code work. */
-export const SIGN_IN_MINUTES = 15;
+const SIGN_IN_MINUTES = 15;
 
 /**
  * The dashboard's /login/confirm page for a Better Auth sign-in link: the same query, so the page's
  * button goes on to /api/auth/magic-link/verify. Opening the page uses nothing, so a mail scanner
  * that opens every link (INKY, Safe Links) leaves the link working for the person.
  */
-export function confirmPage(verifyUrl: string): string {
+function confirmPage(verifyUrl: string): string {
   const url = new URL(verifyUrl);
   url.pathname = '/login/confirm';
   return url.toString();

@@ -49,4 +49,4 @@ export async function maintainStores(pool: Pool, provisioner: Provisioner, domai
 }
 
 /** How many stores maintainStores works on at once. */
-export const MAINTENANCE_AT_ONCE = 3;
+const MAINTENANCE_AT_ONCE = 3;

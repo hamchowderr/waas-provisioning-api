@@ -3,7 +3,7 @@
  * (else PLATFORM_DOMAIN) as its name; only an install on AnyPress's own domain says AnyPress and
  * carries AnyPress's address, logo and colours. A self-hosted install never shows AnyPress's.
  */
-export const ANYPRESS_DOMAIN = 'anypress.io';
+const ANYPRESS_DOMAIN = 'anypress.io';
 
 export interface PlatformBrand {
   /** On the sign-in button and emails, and on a suspended store's page unless STORE_BRAND_NAME says otherwise. */

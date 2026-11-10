@@ -15,13 +15,13 @@ import { ToSendError, type MailCounter } from './tosend.ts';
  * month's emails from each live store's addresses and tells the store when its count changed.
  */
 
-export const MAIL_COUNT_QUEUE = 'mail-count';
+const MAIL_COUNT_QUEUE = 'mail-count';
 
 /** The platform domains a store's mailbox can be named after (Config.platformDomain and Config.storesDomain). */
 export type MailboxDomains = Pick<Config, 'storesDomain' | 'platformDomain'>;
 
 /** Names a store's mailbox never takes: the platform's own mailboxes, now or later. */
-export const RESERVED_MAILBOXES = new Set([
+const RESERVED_MAILBOXES = new Set([
   'no-reply', 'noreply', 'support', 'admin', 'billing', 'postmaster', 'abuse', 'hostmaster', 'webmaster', 'shop', 'app', 'mail', 'info', 'hello',
 ]);
 

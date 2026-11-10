@@ -22,7 +22,7 @@ function page(c: Context) {
   return { page: pageNumber, pageSize, offset: (pageNumber - 1) * pageSize };
 }
 
-export function webhookServiceFor({ pool, boss, secrets, config }: Deps) {
+function webhookServiceFor({ pool, boss, secrets, config }: Deps) {
   return webhookService(pool, boss, secrets, config.webhooks ?? DEFAULT_WEBHOOK_CONFIG);
 }
 

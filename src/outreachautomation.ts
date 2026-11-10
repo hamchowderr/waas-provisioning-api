@@ -17,7 +17,7 @@ export interface OutreachAutomation {
   emails: { day: number; subject: string; body: string }[];
 }
 
-export interface AutomationState {
+interface AutomationState {
   group: string;
   title: string;
   state: 'adding' | 'added' | 'failed';

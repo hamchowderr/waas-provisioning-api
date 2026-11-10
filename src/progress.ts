@@ -24,7 +24,7 @@ export type StepKey =
   | 'keep';
 
 /** Plain words: the owner and their customers read these. */
-export const STEP_LABELS: Record<StepKey, string> = {
+const STEP_LABELS: Record<StepKey, string> = {
   server: 'Making room for the site',
   version: 'Switching to the new version',
   settings: 'Saving the new settings',

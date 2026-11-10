@@ -275,7 +275,7 @@ export interface SupportConfig {
   deskUrl?: string;
 }
 
-export function loadSupportConfig(env: NodeJS.ProcessEnv): SupportConfig {
+function loadSupportConfig(env: NodeJS.ProcessEnv): SupportConfig {
   const raw = env.SUPPORT_DESK_URL?.trim().replace(/\/+$/, '');
   if (!raw) return {};
   const url = new URL(raw);
