@@ -42,7 +42,7 @@ type Provider = string;
 export type ModelOption = { id: string; name: string; provider: Provider };
 
 // The website assistant runs on the server's own model, so the picker offers none.
-export const MODELS: ModelOption[] = [];
+const MODELS: ModelOption[] = [];
 
 // What the server's /agent-controller/stream accepts (server routes/stream-body.ts):
 // images, PDFs and plain text, at most 4 files of 5 MB each. Checked here too, so a file

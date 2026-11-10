@@ -118,3 +118,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:docker
+
+  fallow:
+    # Fallow: unused files, exports, types and packages fail on every run (.fallowrc.json). On a pull request,
+    # `fallow audit` also fails on duplicated or overly complex code the change adds; what is already there is listed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unused code
+        run: npm run deadcode
+      - name: New duplication and complexity
+        if: github.event_name == 'pull_request'
+        run: npx fallow audit --base origin/${{ github.base_ref }}

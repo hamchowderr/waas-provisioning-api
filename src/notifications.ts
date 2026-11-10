@@ -13,7 +13,7 @@ import { parseSubscription, pushNotice, pushPublicKey, removePushSubscription, s
  * storefront has endpoints. Each person has one "read up to" time, set when they open the bell.
  */
 
-export type NotificationLevel = 'success' | 'error' | 'info';
+type NotificationLevel = 'success' | 'error' | 'info';
 
 /** The events that make a notification, and how each reads. Rollout moves and small updates don't. */
 const TITLES: Partial<Record<EventType, { level: NotificationLevel; title: (name: string) => string }>> = {
@@ -35,12 +35,12 @@ const PLATFORM: Record<string, NotificationLevel> = {
   'restore_test.failed': 'error',
 };
 
-export function levelOf(type: string): NotificationLevel {
+function levelOf(type: string): NotificationLevel {
   return TITLES[type as EventType]?.level ?? PLATFORM[type] ?? 'info';
 }
 
 /** Days notifications are kept. */
-export const NOTIFICATION_DAYS = 30;
+const NOTIFICATION_DAYS = 30;
 
 export interface NewNotification {
   productId: string | null;

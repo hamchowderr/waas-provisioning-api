@@ -18,7 +18,7 @@ export const ENV_VALUE_LIMIT = 128 * 1024 - 64;
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
 /** Per-store limits (docs/coolify.md). WordPress's CPU, memory and Apache workers come from the store's size (plans.ts). */
-export const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 } };
+const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 } };
 
 /**
  * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
@@ -69,7 +69,7 @@ const CONFIG_EXTRA = [
 ].join(' ');
 
 /** The image a store or version site runs, e.g. wordpress:6.8-php8.3-apache. */
-export function wordpressImage(wordPressVersion: string, phpVersion: string): string {
+function wordpressImage(wordPressVersion: string, phpVersion: string): string {
   if (!VERSION.test(wordPressVersion) || !VERSION.test(phpVersion)) throw new Error(`Unsupported WordPress ${wordPressVersion} / PHP ${phpVersion}`);
   return `wordpress:${wordPressVersion}-php${phpVersion}-apache`;
 }
@@ -111,7 +111,7 @@ const HEALTH = { interval: '60s', timeout: '5s', retries: 3, start_period: '180s
  * The Traefik service the website assistant's chat panel declares on its own container (a label in
  * agent/panel/Dockerfile): every store's /.assistant router sends its requests there.
  */
-export const ASSISTANT_PANEL_SERVICE = 'website-assistant-panel';
+const ASSISTANT_PANEL_SERVICE = 'website-assistant-panel';
 
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
@@ -122,7 +122,7 @@ const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+
  * Coolify's own Host(...) && PathPrefix(`/`), so Traefik tries it first; plain http is sent to https by Coolify's
  * router as for every other path. Each domain's certificate is the one the store already has.
  */
-export function assistantLabels(router: string, domains: string[]): string[] {
+function assistantLabels(router: string, domains: string[]): string[] {
   if (!/^[a-z0-9-]+$/.test(router)) throw new Error(`Invalid router name: ${router}`);
   const hosts = domains.map((d) => d.toLowerCase());
   for (const host of hosts) if (!DOMAIN.test(host)) throw new Error(`Invalid store domain: ${host}`);

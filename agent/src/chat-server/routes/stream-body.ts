@@ -15,7 +15,7 @@ import { isTimeZone } from '../lib/time-zone';
 import { readEditor } from '../../editor';
 
 /** The media types a composer attachment may have: images, PDFs and plain text. */
-export const ATTACHMENT_MEDIA_TYPES = [
+const ATTACHMENT_MEDIA_TYPES = [
   'image/png',
   'image/jpeg',
   'image/gif',
@@ -27,16 +27,16 @@ export const ATTACHMENT_MEDIA_TYPES = [
 ] as const;
 
 /** At most this many files per message. */
-export const MAX_ATTACHMENTS = 4;
+const MAX_ATTACHMENTS = 4;
 
 /** At most this many bytes per file, decoded (Anthropic's per-image cap). */
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 /**
  * The route's body cap: every file at its limit as base64 (4 bytes per 3), plus 1 MB
  * for the text and the rest of the JSON.
  */
-export const STREAM_BODY_LIMIT =
+const STREAM_BODY_LIMIT =
   Math.ceil((MAX_ATTACHMENT_BYTES * 4) / 3) * MAX_ATTACHMENTS + 1024 * 1024;
 
 /** The middleware type registerApiRoute takes, from the hono copy @mastra/core uses. */
@@ -135,4 +135,4 @@ export const streamBodySchema = z
     message: 'text or files is required',
   });
 
-export type StreamBody = z.infer<typeof streamBodySchema>;
+type StreamBody = z.infer<typeof streamBodySchema>;

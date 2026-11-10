@@ -148,7 +148,6 @@ const SITE_OUTPUT_FIELDS = [
 ];
 
 module.exports = {
-  DEFAULT_BASE_URL,
   SITE_EVENTS,
   SITE_OUTPUT_FIELDS,
   SITE_SAMPLE,

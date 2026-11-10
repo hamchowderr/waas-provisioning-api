@@ -89,6 +89,6 @@ function isTask(value: unknown): value is WorkThreadTask {
 export const START_THREAD_TOOL = 'start_thread';
 
 /** A link a chat skin turns into "open this thread" (see the chat-project skin). */
-export function threadLink(threadId: string, title: string): string {
+function threadLink(threadId: string, title: string): string {
   return `[${title.replace(/[[\]]/g, '')}](#thread=${encodeURIComponent(threadId)})`;
 }

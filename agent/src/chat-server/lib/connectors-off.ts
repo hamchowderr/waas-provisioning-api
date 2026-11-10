@@ -11,7 +11,7 @@
 export const CONNECTORS_OFF_KEY = 'connectorsOff';
 
 /** At most this many names are read; the rest are ignored. */
-export const MAX_CONNECTORS_OFF = 200;
+const MAX_CONNECTORS_OFF = 200;
 
 /**
  * The names from a turn's body: lower-case slugs, each once. Anything else is dropped rather

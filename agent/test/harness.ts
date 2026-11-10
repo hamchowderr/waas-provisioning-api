@@ -12,7 +12,7 @@ import { setup, type TestContext } from '../../test/helpers.ts';
 import { createAssistant } from '../src/assistant.ts';
 import { createServer } from '../src/server.ts';
 
-export const BASE = 'https://api.example.test';
+const BASE = 'https://api.example.test';
 /** Sign-in on, as in production: the API's AI-app sign-in (Better Auth's MCP plugin) needs it. */
 const AUTH: AuthConfig = { url: 'https://app.example.test', secret: 'test-auth-secret-not-a-secret-0123456789', brand: 'AnyPress', apiUrl: BASE };
 
@@ -121,7 +121,7 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
 type Event = { type: string; [key: string]: unknown };
 
 /** One message's server-sent events, read as they arrive. */
-export class Turn {
+class Turn {
   readonly events: Event[] = [];
   readonly done: Promise<Event[]>;
   status = 0;

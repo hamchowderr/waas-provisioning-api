@@ -28,7 +28,7 @@ const DESK_TIMEOUT_MS = 15_000;
 const MAX_TITLE = 200;
 const MAX_CONTENT = 20_000;
 
-export interface Requester {
+interface Requester {
   email: string;
   name: string;
   /** A store's owner signed in with their website, or a person signed in to the dashboard. */
@@ -37,7 +37,7 @@ export interface Requester {
   tenantId?: string;
 }
 
-export interface DeskTicket {
+interface DeskTicket {
   id: number;
   title: string;
   status: string;
@@ -48,7 +48,7 @@ export interface DeskTicket {
 }
 
 /** Where a new ticket went: the desk (with the ticket) or a support address by email. */
-export type Filed = { sentTo: 'desk'; ticket: DeskTicket } | { sentTo: 'email'; email: string; helper: string };
+type Filed = { sentTo: 'desk'; ticket: DeskTicket } | { sentTo: 'email'; email: string; helper: string };
 
 /** A store's owner email: its admin_email as the create set it (not the template's placeholder), else who was told it's ready. */
 function ownerEmail(row: { wp_options?: Record<string, unknown> | null; owner_notified_to?: string | null }): string | null {
@@ -58,7 +58,7 @@ function ownerEmail(row: { wp_options?: Record<string, unknown> | null; owner_no
 }
 
 /** Who is asking, from the signed-in user. Throws when the caller is only an API key, or has no email to answer. */
-export async function requester(deps: Deps, c: Context<AppEnv>): Promise<Requester> {
+async function requester(deps: Deps, c: Context<AppEnv>): Promise<Requester> {
   const storeTenantId = c.get('storeTenantId');
   if (storeTenantId) return websiteOwner(deps, storeTenantId);
   const userId = c.get('userId');
@@ -95,10 +95,10 @@ async function desk(deps: Deps): Promise<{ url: string; secret: string } | null>
   return { url: row.url.replace(/\/webhook$/, '/support'), secret: deps.secrets.decrypt(row.secret) };
 }
 
-export type DeskAnswer = { status: number; body: any };
+type DeskAnswer = { status: number; body: any };
 
 /** One signed call to the desk. Null when there is no desk; throws when it can't be reached. */
-export async function callDesk(deps: Deps, body: Record<string, unknown>): Promise<DeskAnswer | null> {
+async function callDesk(deps: Deps, body: Record<string, unknown>): Promise<DeskAnswer | null> {
   const target = await desk(deps);
   if (!target) return null;
   const text = JSON.stringify(body);
@@ -172,7 +172,7 @@ async function emailTicket(mail: AuthMail, to: string, who: Requester, title: st
 }
 
 /** Files a new ticket where `who` gets help (see the top of this file). */
-export async function openTicket(
+async function openTicket(
   deps: Deps,
   who: Requester,
   productId: string,

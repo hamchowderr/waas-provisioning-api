@@ -13,7 +13,7 @@ export const operations: Operation[] = Object.entries(spec.paths).flatMap(([path
     .map(([method, op]) => ({ method: method as Method, path, operationId: op.operationId, phase: op['x-phase'] })),
 );
 
-export const operation = (operationId: string) => operations.find((o) => o.operationId === operationId)!;
+const operation = (operationId: string) => operations.find((o) => o.operationId === operationId)!;
 
 /** A checker that records every "operationId status" it has seen, so a test can ask what was covered. */
 export function contractChecker() {

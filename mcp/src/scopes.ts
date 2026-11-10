@@ -21,7 +21,7 @@ export const AREA_LABELS: Record<Area, { name: string; read: string; write: stri
 export const scopeOf = (area: Area, access: Access) => `${area}:${access}`;
 
 export const READ_SCOPES: readonly string[] = AREAS.map((area) => scopeOf(area, 'read'));
-export const WRITE_SCOPES: readonly string[] = AREAS.map((area) => scopeOf(area, 'write'));
+const WRITE_SCOPES: readonly string[] = AREAS.map((area) => scopeOf(area, 'write'));
 /** Every scope, read and write per area. */
 export const ALL_SCOPES: readonly string[] = AREAS.flatMap((area) => [scopeOf(area, 'read'), scopeOf(area, 'write')]);
 

@@ -18,7 +18,8 @@
     "sdk:generate": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false",
     "sdk:check": "openapi-typescript openapi/waas-provisioning-api.yaml -o sdk/typescript/src/generated/provisioning.ts --default-non-nullable false --check && openapi-typescript openapi/store-mail.yaml -o sdk/typescript/src/generated/store-mail.ts --default-non-nullable false --check && openapi-typescript openapi/webhooks.yaml -o sdk/typescript/src/generated/webhooks.ts --default-non-nullable false --check && tsc -p sdk/typescript",
     "mcp": "tsx --tsconfig mcp/tsconfig.json mcp/src/main.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "deadcode": "fallow dead-code"
   },
   "dependencies": {
     "@better-auth/cimd": "^1.7.18",
@@ -59,6 +60,7 @@
     "@types/web-push": "3.6.4",
     "@types/yauzl": "3.4.0",
     "eslint": "^9.39.5",
+    "fallow": "3.41.0",
     "jose": "^6.2.12",
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.3",

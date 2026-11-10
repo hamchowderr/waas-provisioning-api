@@ -107,7 +107,7 @@ export async function checkTenantCap(client: Client, productId: string): Promise
  * Names under the platform domain that stores never get: the platform's own sites and services,
  * now or later. A wildcard DNS record sends every other name to the store server.
  */
-export const RESERVED_LABELS = new Set([
+const RESERVED_LABELS = new Set([
   'about', 'account', 'accounts', 'admin', 'api', 'app', 'assets', 'assistant', 'assistant-server', 'auth', 'billing',
   'blog', 'cdn', 'dashboard', 'demo', 'demos', 'dev', 'docs', 'email', 'ftp', 'help', 'imap', 'login', 'mail', 'mx', 'ns1', 'ns2', 'pop',
   'portal', 'shop', 'smtp', 'staging', 'static', 'status', 'store', 'stores', 'support', 'test', 'versions', 'webmail',

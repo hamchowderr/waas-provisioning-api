@@ -167,7 +167,7 @@ const backupView = (retentionDays: number) => (b: any) => ({
  * Store backups, newest first: every product's, or one product's (`productId`). Shared by
  * GET /admin/backups and the signed-in customer's GET /account/backups (the same route, narrowed).
  */
-export async function listBackups(pool: Pool, retentionDays: number, c: Context, productId: string | null) {
+async function listBackups(pool: Pool, retentionDays: number, c: Context, productId: string | null) {
   const { page: pageNumber, pageSize, offset } = page(c);
   const params = [
     productId,
@@ -210,7 +210,7 @@ const requestOfProduct = (n: number) => `($${n}::uuid IS NULL OR r.product_id = 
  * `from` and `to` (ISO 8601) bound the time: from inclusive, to exclusive.
  * Shared by GET /admin/requests and the signed-in customer's GET /account/requests (the same route, narrowed).
  */
-export async function listRequests(pool: Pool, config: Config, c: Context, productId: string | null) {
+async function listRequests(pool: Pool, config: Config, c: Context, productId: string | null) {
   const { page: pageNumber, pageSize, offset } = page(c);
   const source = c.req.query('source') || null;
   if (source !== null && source !== 'v1' && source !== 'admin' && source !== 'account') throw badRequest('source must be v1, admin or account');

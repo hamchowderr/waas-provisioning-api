@@ -51,7 +51,7 @@ The guide below names the API's tools; here site_pages, site_styles, header_foot
 
 ${siteGuide()}`;
 
-export const ASSISTANT_ID = 'website-assistant';
+const ASSISTANT_ID = 'website-assistant';
 
 /**
  * What the assistant knows about WordPress, loaded when a job needs it (Mastra skills: the model sees each one's
@@ -59,7 +59,7 @@ export const ASSISTANT_ID = 'website-assistant';
  * design tokens, pages and the Site Editor, and plain-words steps for what the owner does themselves. The official
  * WordPress ones (WordPress/agent-skills, pinned in .claude/skills): block patterns and block themes.
  */
-export const SKILLS = [
+const SKILLS = [
   '../skills/site-design',
   '../skills/pages-and-site-editor',
   '../skills/how-do-i',
@@ -67,7 +67,7 @@ export const SKILLS = [
   '../../.claude/skills/wp-block-themes',
 ].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 /** The skill tools only read skills; they never reach the website. */
-export const SKILL_TOOLS = ['skill', 'skill_search', 'skill_read'] as const;
+const SKILL_TOOLS = ['skill', 'skill_search', 'skill_read'] as const;
 
 /** How long a website's business profile is used before it is read again. */
 const BUSINESS_TTL_MS = 2 * 60_000;

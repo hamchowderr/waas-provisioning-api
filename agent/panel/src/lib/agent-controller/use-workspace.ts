@@ -14,7 +14,7 @@ import { withBase } from '@/lib/base-path';
  * UI-free by design: returns data and loading flags, renders nothing.
  */
 
-export type FileNode = {
+type FileNode = {
   name: string;
   path: string;
   type: 'file' | 'dir';
@@ -22,7 +22,7 @@ export type FileNode = {
 };
 
 /** Flatten a tree to the set of paths that are FILES (folders are not readable). */
-export function collectFilePaths(nodes: FileNode[], acc = new Set<string>()): Set<string> {
+function collectFilePaths(nodes: FileNode[], acc = new Set<string>()): Set<string> {
   for (const n of nodes) {
     if (n.type === 'file') acc.add(n.path);
     if (n.children) collectFilePaths(n.children, acc);
@@ -34,7 +34,7 @@ export function collectFilePaths(nodes: FileNode[], acc = new Set<string>()): Se
  * @param status the controller's run status — while `streaming`, the tree polls so
  * files the agent writes appear live, then reloads once more on settle.
  */
-export function useWorkspaceFiles({ status }: { status?: string } = {}) {
+function useWorkspaceFiles({ status }: { status?: string } = {}) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [loadingTree, setLoadingTree] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -100,7 +100,7 @@ export function useWorkspaceFiles({ status }: { status?: string } = {}) {
   return { tree, loadingTree, loadTree, selected, content, loadingFile, selectPath, closeFile };
 }
 
-export type UseWorkspaceFiles = ReturnType<typeof useWorkspaceFiles>;
+type UseWorkspaceFiles = ReturnType<typeof useWorkspaceFiles>;
 
 /**
  * Resolve a generated image by id. `generateImage` returns only a tiny `imageId`

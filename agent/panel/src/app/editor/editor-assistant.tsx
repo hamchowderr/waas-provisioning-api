@@ -57,7 +57,7 @@ const BLOCK_NAMES: Record<string, string> = {
   'core/template-part': 'Header or footer',
   'core/details': 'FAQ item',
 };
-export function blockName(name: string): string {
+function blockName(name: string): string {
   if (BLOCK_NAMES[name]) return BLOCK_NAMES[name];
   const last = name.split('/').pop() ?? name;
   return last.charAt(0).toUpperCase() + last.slice(1).replace(/-/g, ' ');
@@ -68,7 +68,7 @@ const TEXT_BLOCKS = new Set(['core/paragraph', 'core/heading', 'core/list', 'cor
 const IMAGE_BLOCKS = new Set(['core/image', 'core/cover', 'core/media-text', 'core/gallery', 'core/site-logo']);
 
 /** Ideas for an empty chat that fit what is selected. */
-export function suggestionsFor(selected: Selected): Suggestion[] {
+function suggestionsFor(selected: Selected): Suggestion[] {
   if (selected && TEXT_BLOCKS.has(selected.name)) {
     return [
       { label: 'Make it shorter', prompt: 'Make the selected block shorter and clearer.' },

@@ -4,7 +4,7 @@ import addFormats from 'ajv-formats';
 import { parse } from 'yaml';
 import { badRequest } from './errors.ts';
 
-export const specPath = new URL('../openapi/waas-provisioning-api.yaml', import.meta.url);
+const specPath = new URL('../openapi/waas-provisioning-api.yaml', import.meta.url);
 
 export const spec: any = parse(readFileSync(specPath, 'utf8'));
 

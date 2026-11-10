@@ -19,7 +19,7 @@ import { MAX_PLUGIN_ZIP, PLUGIN_SLUG, PLUGIN_VERSION, wordpressOrg } from './wpo
 export type ChoiceOwner = string | { resellerId: string };
 
 /** At most this many plugins added per storefront or reseller. */
-export const MAX_ADDED = 25;
+const MAX_ADDED = 25;
 
 /**
  * Plugins stores can't have, by what clashes with the hosting: it already caches pages, backs stores up,
@@ -38,7 +38,7 @@ const BLOCK_REASON = new Map(BLOCKED.flatMap(([reason, slugs]) => slugs.map((slu
 /** Our own plugins come with the platform. */
 const OWN = new Set(['anypress-client', 'anypress-host', 'anypress-payments']);
 
-export function blockedReason(slug: string): string | null {
+function blockedReason(slug: string): string | null {
   if (OWN.has(slug)) return 'It comes with the platform.';
   return BLOCK_REASON.get(slug) ?? null;
 }

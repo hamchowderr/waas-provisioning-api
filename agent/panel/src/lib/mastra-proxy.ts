@@ -44,7 +44,7 @@ function proxyConfig(): ChatKitProxyConfig {
 const b64url = (v: string | Buffer) => Buffer.from(v).toString('base64url');
 
 /** A short-lived HS256 JWT for the Mastra server's MastraJwtAuth. */
-export function signServerToken(secret: string, sub: string, now = Date.now()): string {
+function signServerToken(secret: string, sub: string, now = Date.now()): string {
   const iat = Math.floor(now / 1000);
   const body = `${b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))}.${b64url(
     JSON.stringify({ sub, iat, exp: iat + 300 }),
@@ -53,13 +53,13 @@ export function signServerToken(secret: string, sub: string, now = Date.now()): 
 }
 
 /** The single-user id the server uses when no user is configured. */
-export const SHARED_USER = 'chat-kit-user';
+const SHARED_USER = 'chat-kit-user';
 
 /**
  * The headers that identify a request to the Mastra server, or a 401 Response when a
  * user hook is configured and nobody is signed in.
  */
-export async function serverHeaders(request: Request): Promise<Headers | Response> {
+async function serverHeaders(request: Request): Promise<Headers | Response> {
   const headers = new Headers();
   const { getUserId, getAuthorization } = proxyConfig();
   if (getAuthorization) {
@@ -118,4 +118,3 @@ export async function forward(
   });
 }
 
-export { SERVER_URL };

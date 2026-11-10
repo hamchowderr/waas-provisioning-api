@@ -10,7 +10,7 @@ import { badRequest } from './errors.ts';
  */
 
 /** The notices worth interrupting someone for. The rest stay in the bell. */
-export const PUSH_TYPES = new Set(['tenant.ready', 'tenant.failed', 'tenant.backup_failed', 'version.failed', 'application.received', 'restore_test.failed']);
+const PUSH_TYPES = new Set(['tenant.ready', 'tenant.failed', 'tenant.backup_failed', 'version.failed', 'application.received', 'restore_test.failed']);
 
 export interface PushConfig {
   publicKey: string;
@@ -84,7 +84,7 @@ export async function removePushSubscription(pool: Pool, userId: string, endpoin
 }
 
 /** Where an alert opens, as the bell's rows do (the dashboard's lib/notifications.ts). */
-export function alertPath(n: { type: string; tenantId?: string | null; versionId?: string | null; applicationId?: string | null }): string {
+function alertPath(n: { type: string; tenantId?: string | null; versionId?: string | null; applicationId?: string | null }): string {
   if (n.applicationId) return `/applications/${n.applicationId}`;
   if (n.type === 'restore_test.failed') return '/backups';
   if (n.tenantId && n.type !== 'tenant.deleted') return `/stores/${n.tenantId}`;

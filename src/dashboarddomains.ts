@@ -13,7 +13,7 @@ import { VercelError, type DashboardHost, type DnsRecord, type HostDomainState }
  * once the domain's DNS points there. Signed-in sellers and resellers set their own.
  */
 
-export type DashboardDomainStatus = 'pending' | 'active' | 'removing';
+type DashboardDomainStatus = 'pending' | 'active' | 'removing';
 
 interface Row {
   id: string;

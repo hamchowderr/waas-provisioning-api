@@ -36,7 +36,7 @@ export type ApprovalViews = Record<string, ApprovalRenderer>;
 const ApprovalViewsContext = createContext<ApprovalViews>({});
 
 /** Gives every approval card below it the host's renderers. */
-export function ApprovalViewsProvider({
+function ApprovalViewsProvider({
   views,
   children,
 }: {
@@ -56,7 +56,7 @@ export function useApprovalViews() {
  * A tool name in words: `createTask` → "Create task", `fluent-crm-upsert-contact` →
  * "Fluent crm upsert contact", `mastra_workspace_write_file` → "Mastra workspace write file".
  */
-export function humanizeToolName(name: string) {
+function humanizeToolName(name: string) {
   const words = name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .split(/[\s_\-.]+/)
@@ -112,7 +112,7 @@ function FieldValue({ value, depth }: { value: unknown; depth: number }) {
 }
 
 /** A call's arguments as labelled fields (the default card's body). */
-export function ArgFields({ value, depth = 0 }: { value: unknown; depth?: number }) {
+function ArgFields({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (!isRecord(value)) return <FieldValue value={value} depth={depth} />;
   const entries = Object.entries(value);
   if (!entries.length) return <p className="text-muted-foreground text-sm">No details.</p>;
@@ -131,7 +131,7 @@ export function ArgFields({ value, depth = 0 }: { value: unknown; depth?: number
 }
 
 /** Before → after for one changed value, for host renderers. */
-export function BeforeAfter({
+function BeforeAfter({
   label,
   before,
   after,

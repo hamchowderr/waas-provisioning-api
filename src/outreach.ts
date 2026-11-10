@@ -36,8 +36,8 @@ export interface MailboxSettings {
   unavailable: string | null;
 }
 
-export const DAILY_DEFAULT = 30;
-export const DAILY_MAX = 200;
+const DAILY_DEFAULT = 30;
+const DAILY_MAX = 200;
 
 const HOST = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 /** The platform's own relays: the whole point is that prospect emails never go through them. */

@@ -39,7 +39,7 @@ export const CONNECT_PAGE = '/connect';
 const ACCESS_TTL_S = 60 * 60;
 
 /** What an app that names no scopes may be given at each resource: everything there, and the person ticks what it gets. */
-export function defaultScopes(resourcePath: string): readonly string[] {
+function defaultScopes(resourcePath: string): readonly string[] {
   if (resourcePath === APPS_PATH) return ['stores:read', 'stores:write', 'webhooks:read', 'webhooks:write'];
   if (resourcePath === '/mcp/read-only') return READ_SCOPES;
   if (resourcePath === '/mcp/site') return ['site:read', 'site:write'];
@@ -55,7 +55,7 @@ export type GrantReference = { kind: 'product'; productId: string } | { kind: 'a
 
 export const referenceId = (ref: GrantReference) => (ref.kind === 'tenant' ? `tenant:${ref.tenantId}` : `${ref.kind}:${ref.productId}`);
 
-export function parseReference(value: string | undefined | null): GrantReference | null {
+function parseReference(value: string | undefined | null): GrantReference | null {
   const match = /^(product|admin|tenant):([0-9a-f-]{36})$/i.exec(value ?? '');
   if (!match) return null;
   const [, kind, id] = match;
@@ -63,7 +63,7 @@ export function parseReference(value: string | undefined | null): GrantReference
 }
 
 /** The storefront (or store) picked for the sign-in a session is in the middle of, set by src/oauth.ts. */
-export async function pickFor(pool: Pool, sessionId: string): Promise<string | null> {
+async function pickFor(pool: Pool, sessionId: string): Promise<string | null> {
   const { rows } = await pool.query<{ reference: string }>(
     "SELECT reference FROM oauth_connect_picks WHERE session_id = $1 AND created_at > now() - interval '10 minutes'",
     [sessionId],
@@ -79,7 +79,7 @@ export const CLAIMS = { product: 'product_id', tenant: 'tenant_id', admin: 'plat
  * storefront's team (or its reseller's); for a platform admin's grant, the storefront still exists.
  * Answers the storefront's product id, or null when the grant is over.
  */
-export async function grantProduct(pool: Pool, ref: GrantReference, userId: string | undefined): Promise<string | null> {
+async function grantProduct(pool: Pool, ref: GrantReference, userId: string | undefined): Promise<string | null> {
   if (ref.kind === 'tenant') {
     const { rows } = await pool.query<{ product_id: string }>('SELECT product_id FROM tenants WHERE id = $1', [ref.tenantId]);
     return rows[0]?.product_id ?? null;

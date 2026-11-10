@@ -28,7 +28,7 @@ export const STORE_BACKUPS_QUEUE = 'store-backups';
  * The backups themselves, one store at a time, on their own queue so a night's backups never
  * hold up store creates and changes on the provision queue.
  */
-export const STORE_BACKUP_QUEUE = 'store-backup';
+const STORE_BACKUP_QUEUE = 'store-backup';
 
 /** A store with a scheduled backup newer than this is skipped, so a re-run never doubles up. */
 const SKIP_IF_NEWER_THAN_HOURS = 20;

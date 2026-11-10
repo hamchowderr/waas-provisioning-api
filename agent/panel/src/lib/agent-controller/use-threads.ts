@@ -17,7 +17,7 @@ import { withBase } from '@/lib/base-path';
  * module dependency-free on anything visual is what makes skins swappable at all.
  */
 
-export type ThreadItem = {
+type ThreadItem = {
   id: string;
   title: string;
   archived: boolean;
@@ -39,17 +39,17 @@ export type ThreadItem = {
   agent?: { id: string; name: string };
 };
 
-export type WorkThreadStatus = 'queued' | 'working' | 'needs_you' | 'done' | 'failed' | 'stopped';
+type WorkThreadStatus = 'queued' | 'working' | 'needs_you' | 'done' | 'failed' | 'stopped';
 
-export type WorkThreadTask = {
+type WorkThreadTask = {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
 };
 
-export type SearchHit = { id: string; title: string; snippet: string; score: number };
+type SearchHit = { id: string; title: string; snippet: string; score: number };
 
 /** Debounce any fast-changing value (the search input) without an extra dependency. */
-export function useDebounced<T>(value: T, ms: number): T {
+function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), ms);
@@ -192,4 +192,4 @@ export function useThreads({ refreshSignal = 0 }: { refreshSignal?: number } = {
   };
 }
 
-export type UseThreads = ReturnType<typeof useThreads>;
+type UseThreads = ReturnType<typeof useThreads>;

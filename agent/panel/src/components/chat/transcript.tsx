@@ -63,7 +63,7 @@ export function partKey(messageId: string, index: number): string {
  * the footer offers Approve / Reject; afterwards it says what happened, including the
  * switch back to Chat mode once `mode_changed` reports it.
  */
-export function SubmittedPlanCard({
+function SubmittedPlanCard({
   path,
   title,
   plan,
@@ -156,7 +156,7 @@ type ApprovalDecision = 'approve' | 'decline' | 'always_allow_category';
  * names that gate's `toolCallId`, so parallel gates are answered independently. Render
  * every parked gate with `ApprovalCards`.
  */
-export function ApprovalCard({
+function ApprovalCard({
   controller,
   views,
   approval,

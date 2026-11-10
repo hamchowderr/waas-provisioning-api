@@ -10,7 +10,7 @@ import { ProtocolError, ProtocolErrorCode, type McpServer } from '@modelcontextp
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
-export const SKILLS_EXTENSION = 'io.modelcontextprotocol/skills';
+const SKILLS_EXTENSION = 'io.modelcontextprotocol/skills';
 
 export interface SkillFile {
   uri: string;
@@ -40,7 +40,7 @@ function filesUnder(dir: string): string[] {
 }
 
 /** A SKILL.md's YAML frontmatter, as written. */
-export function frontmatterOf(markdown: string): Record<string, unknown> {
+function frontmatterOf(markdown: string): Record<string, unknown> {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(markdown);
   if (!match) throw new Error('SKILL.md has no YAML frontmatter');
   const value = parseYaml(match[1]!) as unknown;

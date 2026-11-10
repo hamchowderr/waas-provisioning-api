@@ -51,7 +51,7 @@ async function lineFor(pool: Pool, number: string): Promise<Line> {
 }
 
 /** This month's answered seconds and the plan's limit, in minutes. */
-export async function voiceUsage(pool: Pool, tenantId: string, size: string, now = new Date()) {
+async function voiceUsage(pool: Pool, tenantId: string, size: string, now = new Date()) {
   const limit = SIZES[isSize(size) ? size : DEFAULT_SIZE].voiceMinutesPerMonth;
   const { rows } = await pool.query<{ seconds: number }>('SELECT seconds FROM voice_usage WHERE tenant_id = $1 AND month = $2', [tenantId, monthStart(now)]);
   const usedMinutes = Math.ceil((rows[0]?.seconds ?? 0) / 60);

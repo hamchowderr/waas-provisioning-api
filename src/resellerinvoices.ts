@@ -13,7 +13,7 @@ import { Stripe, type InvoiceSender, type StripeInvoice } from './stripe.ts';
  * (reseller_invoices); a month already sent is never sent again, and a failed one can be retried.
  */
 
-export const RESELLER_INVOICES_QUEUE = 'reseller-invoices';
+const RESELLER_INVOICES_QUEUE = 'reseller-invoices';
 
 /** A try still marked sending after this long was stopped (the API restarted) and may be tried again. */
 const STALE_SENDING_MINUTES = 60;
@@ -70,14 +70,14 @@ export function lastMonth(now = new Date()): string {
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 /** One invoice line, in words: "Acme shop: 2.5 Small stores (75 store-days) at $7.20 a month". */
-export function lineDescription(line: ResellerBillLine): string {
+function lineDescription(line: ResellerBillLine): string {
   const size = line.size[0]!.toUpperCase() + line.size.slice(1);
   const stores = line.stores === 1 ? `1 ${size} store` : `${line.stores} ${size} stores`;
   return `${line.name ?? 'Removed storefront'}: ${stores} (${line.storeDays} store-days) at ${dollars(line.wholesalePriceCents)} a month`;
 }
 
 /** One domain line, in words: "Acme shop: mybakery.com, 1 year (registered 2026-11-08)". */
-export function domainLineDescription(line: ResellerDomainLine): string {
+function domainLineDescription(line: ResellerDomainLine): string {
   return `${line.name ?? 'Removed storefront'}: ${line.domainName}, 1 year (${line.kind === 'renewal' ? 'renewed' : 'registered'} ${line.date.slice(0, 10)})`;
 }
 

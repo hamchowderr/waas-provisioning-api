@@ -41,7 +41,7 @@ export function parseProcStat(text: string): Omit<Sample, 'at'> {
   return { busy, steal, total: busy + idle + iowait + steal };
 }
 
-export const DEFAULT_CPU_WATCH: CpuWatchConfig = { busyLimit: 0.45, stealLimit: 0.2, windowMinutes: 60 };
+const DEFAULT_CPU_WATCH: CpuWatchConfig = { busyLimit: 0.45, stealLimit: 0.2, windowMinutes: 60 };
 
 export class CpuWatch {
   private samples: Sample[] = [];

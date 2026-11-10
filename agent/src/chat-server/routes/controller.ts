@@ -44,7 +44,7 @@ function turnRequestContext({
 }
 
 /** How long an approval card waits for the host's preview before it shows without one. */
-export const APPROVAL_PREVIEW_TIMEOUT_MS = 10_000;
+const APPROVAL_PREVIEW_TIMEOUT_MS = 10_000;
 
 /**
  * Enriches a `tool_approval_required` event before it's sent. It carries only the tool's
@@ -53,7 +53,7 @@ export const APPROVAL_PREVIEW_TIMEOUT_MS = 10_000;
  * host supplies `approvalPreview`, a `preview` of what the call would change. A preview that
  * fails or is slow is left out and the card shows the arguments alone.
  */
-export function approvalDecorator(
+function approvalDecorator(
   deps: ChatServerDeps,
   // Fetched only when an approval comes through.
   getController: () => Promise<{ getToolCategory: (opts: { toolName: string }) => string | null }>,

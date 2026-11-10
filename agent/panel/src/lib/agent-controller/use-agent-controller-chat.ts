@@ -12,7 +12,7 @@ import {
 import { reduceAgentControllerEvent, reduceAgentControllerEvents } from './reduce';
 import { withBase } from '@/lib/base-path';
 
-export type AgentControllerStatus = 'ready' | 'streaming' | 'error';
+type AgentControllerStatus = 'ready' | 'streaming' | 'error';
 
 type ControllerEvent = { type: string; [k: string]: unknown };
 
@@ -95,7 +95,7 @@ export type UseAgentControllerChatOptions = {
  * The browser's IANA time zone (e.g. `America/New_York`), sent with each turn so the
  * agent knows today's date where the user is. Undefined if the runtime can't say.
  */
-export function browserTimeZone(): string | undefined {
+function browserTimeZone(): string | undefined {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
   } catch {

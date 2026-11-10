@@ -28,11 +28,11 @@ import { domainInUse } from './tenants.ts';
  * is told (src/crm.ts), which starts the welcome emails. Declining only emails them.
  */
 
-export const EXPECTED_SITES = ['1-2', '3-9', '10-24', '25+'] as const;
+const EXPECTED_SITES = ['1-2', '3-9', '10-24', '25+'] as const;
 /** The store limit a newly approved seller starts with; the admin raises it on the dashboard. */
 export const DEFAULT_SELLER_STORES = 3;
 /** The storefronts a reseller approved from an application may have; the admin raises it on the dashboard. */
-export const DEFAULT_RESELLER_STOREFRONTS = 3;
+const DEFAULT_RESELLER_STOREFRONTS = 3;
 /** Applications accepted from everyone together per hour, so a flood can't bury real ones. */
 export const APPLICATIONS_PER_HOUR = 20;
 

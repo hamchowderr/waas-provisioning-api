@@ -10,7 +10,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { BASE_PATH } from './base-path';
 
-export const API_URL = (process.env.ANYPRESS_API_URL ?? 'https://api.anypress.io').replace(/\/$/, '');
+const API_URL = (process.env.ANYPRESS_API_URL ?? 'https://api.anypress.io').replace(/\/$/, '');
 const PANEL_URL = () => (process.env.PANEL_URL ?? 'http://localhost:3200').replace(/\/$/, '');
 
 const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
@@ -28,7 +28,7 @@ type Address = {
  * container's (http://localhost:3200), so it comes from the Host header, which the proxy only sends
  * here for the websites' domains. Without a usable one (a direct request to the container), PANEL_URL.
  */
-export async function address(): Promise<Address> {
+async function address(): Promise<Address> {
   const panel = new URL(PANEL_URL());
   const all = await headers();
   const host = (all.get('x-forwarded-host') ?? all.get('host') ?? '').split(',')[0]!.trim().toLowerCase();
@@ -45,7 +45,7 @@ export async function panelLink(path: string): Promise<string> {
   const safe = path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : '/';
   return `${(await address()).base}${safe === '/' ? '' : safe}`;
 }
-export const SITE_RESOURCE = `${API_URL}/mcp/site`;
+const SITE_RESOURCE = `${API_URL}/mcp/site`;
 
 const ACCESS = 'ap_access';
 const REFRESH = 'ap_refresh';
@@ -65,7 +65,7 @@ const CLIENTS = Symbol.for('website-assistant-panel.oauth-clients');
  * The OAuth client id for one return address, registered with the API on first use. Each website's
  * domain has a return address of its own.
  */
-export function clientId(redirectUri: string): Promise<string> {
+function clientId(redirectUri: string): Promise<string> {
   const holder = globalThis as Holder;
   const clients = (holder[CLIENTS] ??= new Map());
   let client = clients.get(redirectUri);
