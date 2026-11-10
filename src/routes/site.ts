@@ -37,6 +37,21 @@ export function siteRoutes(deps: Deps) {
     };
   };
 
+  /**
+   * A preview link (AnyPress Client's /site/preview) moved to the store's platform address, so AI apps
+   * can frame it from one known domain whatever the store's own domain is. The store answers the
+   * preview on any of its addresses before WordPress redirects to its main one.
+   */
+  const onPlatformDomain = async (tenantId: string, body: unknown) => {
+    const preview = body as { url?: unknown } | null;
+    if (typeof preview?.url !== 'string') return;
+    const { rows } = await pool.query<{ domain_name: string }>('SELECT domain_name FROM tenant_domains WHERE tenant_id = $1 AND is_base', [tenantId]);
+    if (!rows[0]) return;
+    const url = new URL(preview.url);
+    url.host = rows[0].domain_name;
+    preview.url = url.toString();
+  };
+
   app.post('/site', async (c) => {
     const tenant = await findTenant(pool, c);
     const request = validateBody<SiteRequest>('SiteRequestParams', await readJson(c));
@@ -44,6 +59,7 @@ export function siteRoutes(deps: Deps) {
     if (answer.status === 401) {
       throw new HttpError(502, 'The store refused the request: it has no site key yet (it gets one on its next setup) or its AnyPress Client is older than 2.3.0');
     }
+    if (request.path === '/preview' && answer.status === 200) await onPlatformDomain(tenant.id, answer.body);
     return c.json({ status: answer.status, body: answer.body });
   });
 

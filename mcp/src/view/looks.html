@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looks</title>
+<style>
+/*VIEW_STYLE*/
+  .preview { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-bottom: 12px; }
+  .preview[hidden] { display: none; }
+  .preview .bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .preview .bar strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .preview .stage { display: flex; justify-content: center; background: color-mix(in srgb, CanvasText 4%, transparent); }
+  .preview iframe { border: 0; width: 100%; height: 460px; background: #fff; }
+  .preview.phone iframe { width: 390px; max-width: 100%; }
+  .preview .wait { padding: 40px 12px; text-align: center; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 6px 0; }
+  .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .card.on { border-color: var(--ok); }
+  .card .about { color: var(--muted); font-size: 12px; }
+  .swatches { display: flex; gap: 3px; }
+  .swatches span { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); }
+  .card .actions { justify-content: start; margin-top: auto; }
+  .sections { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 0; }
+  select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: inherit; max-width: 100%; }
+  #patterns li { grid-template-columns: 1fr auto; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Looks <span class="count" id="count"></span></h1>
+    <button id="refresh">Refresh</button>
+  </header>
+  <div id="status" class="msg">Loading…</div>
+  <section class="preview" id="preview" hidden aria-live="polite">
+    <div class="bar">
+      <strong id="preview-title"></strong>
+      <button id="size" type="button">Phone</button>
+      <button id="open" type="button">Open</button>
+    </div>
+    <div class="stage" id="stage"></div>
+  </section>
+  <div id="groups"></div>
+  <h2 id="sections-head" hidden>Sections</h2>
+  <div class="sections" id="sections" hidden>
+    <select id="category" aria-label="Section category"></select>
+    <span class="meta" id="in-look"></span>
+  </div>
+  <ul id="patterns"></ul>
+</main>
+<script type="module">/*MCP_APPS_BUNDLE*/</script>
+<script type="module">/*VIEW_COMMON*/</script>
+<script type="module">
+  const { $, el, message, errorText, start } = globalThis.WaasView;
+  let data;
+  let view;
+  let look = '';
+  let previewUrl = '';
+  const armed = new Set();
+
+  function show(result) {
+    if (result?.isError || !result?.structuredContent) return message(errorText(result, 'Could not load the looks.'), true);
+    data = result.structuredContent;
+    render();
+  }
+
+  view = await start({ name: 'looks', show, refresh: (app) => app.callServerTool({ name: 'show_looks', arguments: data?.ref ?? {} }) });
+
+  const KINDS = [['kit', 'Kits'], ['style', 'Other looks'], ['colors', 'Colour sets'], ['fonts', 'Font sets']];
+  const name = (v) => v.title.replace(/\s*\(.*\)\s*$/, '');
+  const about = (v) => v.description ?? /\(([^)]*)\)\s*$/.exec(v.title)?.[1] ?? '';
+  const call = (tool, args) => view.app.callServerTool({ name: tool, arguments: { ...data.ref, ...args } }).catch((e) => ({ isError: true, content: [{ text: String(e) }] }));
+  const parsed = (result) => { try { return JSON.parse(result.content?.[0]?.text ?? 'null'); } catch { return null; } };
+  const tell = (text) => view.app.updateModelContext?.({ content: [{ type: 'text', text }] }).catch(() => {});
+
+  /** The page to show a look on: the look's own home page for a kit, else the active kit's (or the first kit's). */
+  function samplePage(v) {
+    if (v?.homePage) return v.homePage;
+    const kits = data.variations.filter((k) => k.homePage);
+    return (kits.find((k) => k.active) ?? kits[0])?.homePage;
+  }
+
+  async function preview(pattern, variation, title) {
+    if (!pattern) return message('This site has no page to preview a look on.', true);
+    $('preview').hidden = false;
+    $('preview').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    $('preview-title').textContent = title;
+    $('stage').replaceChildren(el('div', { className: 'wait', textContent: 'Making the preview…' }));
+    const result = await call('site_patterns', { action: 'preview', name: pattern, ...(variation ? { variation } : {}) });
+    const answer = parsed(result);
+    if (result.isError || !answer?.url) {
+      $('stage').replaceChildren(el('div', { className: 'wait error', textContent: errorText(result, 'Could not make the preview.') }));
+      return;
+    }
+    previewUrl = answer.url;
+    $('stage').replaceChildren(data.framed
+      ? el('iframe', { src: previewUrl, title: `Preview: ${title}`, loading: 'lazy', referrerPolicy: 'no-referrer' })
+      : el('div', { className: 'wait', textContent: 'Open the preview to see it.' }));
+    tell(`User previewed ${title} in the looks screen.`);
+  }
+
+  function apply(v) {
+    const key = `apply:${v.slug}`;
+    const button = el('button', { textContent: armed.has(key) ? 'Confirm switch' : 'Switch on', className: armed.has(key) ? 'confirm' : '' });
+    button.addEventListener('click', async () => {
+      // A whole look replaces the site's colours and fonts (kept as a revision), so it takes a second click.
+      if (!armed.has(key)) {
+        armed.add(key);
+        render();
+        setTimeout(() => { armed.delete(key); render(); }, 4000);
+        return;
+      }
+      armed.delete(key);
+      button.disabled = true;
+      button.textContent = '…';
+      const result = await call('site_styles', { action: 'apply', slug: v.slug });
+      if (!result.isError) tell(`User switched on the ${v.title} look in the looks screen. The old styles were kept as a revision.`);
+      await view.reload();
+      if (result.isError) message(errorText(result, 'Could not switch the look on.'), true);
+    });
+    return button;
+  }
+
+  function card(v) {
+    const colors = Object.values(v.colors ?? {}).slice(0, 7);
+    const fonts = Object.values(v.fonts ?? {}).slice(0, 2);
+    const actions = el('div', { className: 'actions' });
+    const see = el('button', { textContent: 'Preview' });
+    see.addEventListener('click', () => { look = v.slug; renderLook(); preview(samplePage(v), v.slug, v.homePage ? `${name(v)}, home page` : name(v)); });
+    actions.append(see);
+    if (data.canApply && !v.active) actions.append(apply(v));
+    return el('div', { className: `card${v.active ? ' on' : ''}` },
+      el('div', { className: 'name' }, name(v), ...(v.active ? [' ', el('span', { className: 'pill done', textContent: 'On' })] : [])),
+      ...(about(v) ? [el('div', { className: 'about', textContent: about(v) })] : []),
+      ...(colors.length ? [el('div', { className: 'swatches' }, ...colors.map((c) => el('span', { title: c, style: `background:${c}` })))] : []),
+      ...(fonts.length ? [el('div', { className: 'about', textContent: fonts.join(', ') })] : []),
+      actions,
+    );
+  }
+
+  function renderLook() {
+    const v = data.variations.find((x) => x.slug === look);
+    $('in-look').textContent = v ? `Previewed in ${name(v)}` : 'Previewed in this site’s look';
+  }
+
+  function render() {
+    if (!view || !data) return;
+    const variations = data.variations ?? [];
+    $('count').textContent = `(${variations.length})`;
+    message(variations.length ? '' : 'This site’s theme has no ready-made looks.');
+    $('groups').replaceChildren(...KINDS.flatMap(([kind, label]) => {
+      const list = variations.filter((v) => v.kind === kind);
+      return list.length ? [el('h2', { textContent: `${label} (${list.length})` }), el('div', { className: 'grid' }, ...list.map(card))] : [];
+    }));
+    const categories = data.categories ?? [];
+    $('sections-head').hidden = $('sections').hidden = !categories.length;
+    const chosen = $('category').value;
+    $('category').replaceChildren(el('option', { value: '', textContent: 'Choose a category…' }), ...categories.map((c) => el('option', { value: c.name, textContent: `${c.label} (${c.patterns})` })));
+    $('category').value = chosen;
+    renderLook();
+  }
+  view.setRender(render);
+
+  $('category').addEventListener('change', async () => {
+    const category = $('category').value;
+    $('patterns').replaceChildren();
+    if (!category) return;
+    const result = await call('site_patterns', { action: 'find', category });
+    const list = parsed(result);
+    if (result.isError || !Array.isArray(list)) return message(errorText(result, 'Could not load the sections.'), true);
+    $('patterns').replaceChildren(...list.map((p) => {
+      const see = el('button', { textContent: 'Preview' });
+      see.addEventListener('click', () => {
+        const v = data.variations.find((x) => x.slug === look);
+        preview(p.name, look, v ? `${p.title}, in ${name(v)}` : p.title);
+      });
+      return el('li', {}, el('div', {}, el('div', { className: 'name', textContent: p.title }), ...(p.description ? [el('div', { className: 'meta', textContent: p.description })] : [])), el('div', { className: 'actions' }, see));
+    }));
+  });
+
+  $('size').addEventListener('click', () => {
+    const phone = $('preview').classList.toggle('phone');
+    $('size').textContent = phone ? 'Desktop' : 'Phone';
+  });
+  $('open').addEventListener('click', () => { if (previewUrl) view.app.openLink({ url: previewUrl }); });
+</script>
+</body>
+</html>

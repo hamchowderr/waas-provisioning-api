@@ -4,7 +4,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent create an
 
 It comes with:
 
-- **store screens** ([MCP Apps](https://modelcontextprotocol.io/extensions/apps)) that render inline in clients that support MCP Apps (Claude, ChatGPT, VS Code and others): `show_stores` lists your stores with back up, suspend and resume buttons; `show_store` shows one store (status, size, version, domains, and the versions it can move to); `show_store_backups` its backups, with back up and restore buttons; `show_store_domains` its domains, with add, remove and make-main buttons. Other clients get the same data as text.
+- **store screens** ([MCP Apps](https://modelcontextprotocol.io/extensions/apps)) that render inline in clients that support MCP Apps (Claude, ChatGPT, VS Code and others): `show_stores` lists your stores with back up, suspend and resume buttons; `show_store` shows one store (status, size, version, domains, and the versions it can move to); `show_store_backups` its backups, with back up and restore buttons; `show_store_domains` its domains, with add, remove and make-main buttons; `show_looks` the theme's kits and looks with live previews of each in the site, every section by category, and a button to switch a look on (also on a website owner's own connection). Other clients get the same data as text.
 - **Agent Skills** (in [`skills/`](skills)) that the server serves too (below), so clients that support the Skills extension pick them up on their own:
   - [`anypress-stores`](skills/anypress-stores/SKILL.md): the common jobs: launching a store, putting it on a custom domain, setting up its sending domain, backups and restores, and editing a store's pages and design.
   - [`anypress-site-builder`](skills/anypress-site-builder/SKILL.md): building a whole website in seven steps (brief, design, photos, pages, words, checks, launch), with the owner's yes at each step. It uses the skills below.
@@ -51,7 +51,7 @@ Each area has a scope to see and a scope to change. The Connect page has a box f
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
 | `versions` | `manage_versions` (list, snapshots, templates) | `manage_versions` (create, set_production, delete) |
 | `webhooks` | `manage_webhooks` (list, get, deliveries) | `manage_webhooks` (create, update, test, retry, rotate_secret, delete) |
-| `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (categories, find, get, blocks), `site_styles` (get, variations), `header_footer` (get), `site_menus` (list), `business_profile` (read), `read_reference` (wait, get, usage) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update, apply), `header_footer` (update), `site_menus` (update), `add_image`, `business_profile` (save, undo), `read_reference` (start) |
+| `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `show_looks`, `site_patterns` (categories, find, get, blocks, preview), `site_styles` (get, variations), `header_footer` (get), `site_menus` (list), `business_profile` (read), `read_reference` (wait, get, usage) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update, apply), `header_footer` (update), `site_menus` (update), `add_image`, `business_profile` (save, undo), `read_reference` (start) |
 
 So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
 
@@ -148,7 +148,8 @@ Twenty-two tools, grouped by area. Store tools take `externalId` (your own id) o
 | Site editing | `get_site` | The site's name, address, theme and home page |
 | | `site_pages` | `list`, `read`, `revisions`, `create`, `update`, `restore_revision` |
 | | `page_section` | `add`, `replace`, `remove` (destructive) |
-| | `site_patterns` | `categories`, `find`, `get`, `blocks` |
+| | `show_looks` | Panel of the theme's looks and sections, with live previews |
+| | `site_patterns` | `categories`, `find`, `get`, `blocks`, `preview` |
 | | `site_styles` | `get`, `update`, `variations`, `apply` |
 | | `header_footer` | `get`, `update` |
 | | `site_menus` | `list`, `update` |

@@ -49,6 +49,8 @@ Pick the kit that fits the trade (each is a style plus its own home page and sec
 | Assay | Regulated products: clinics, peptides, supplements, lab-tested goods | `anypress/kit-regulated` |
 | Branch | Franchises and businesses with several locations | `anypress/kit-franchise` |
 
+When the owner wants to see the choices, call `show_looks`: it shows every kit with its colours and fonts and a live preview of its home page in its own look, in the chat (in apps without screens, `site_patterns` preview with the kit's `homePage` and `variation` gives a link to open). Let the owner pick from what they saw.
+
 Shared sections that work with any kit are in `anypress/blocks-*` and `anypress/pages`. Kits with only a home page today need their inner pages from `anypress/pages` and the shared sections, restyled by the kit.
 
 ## 4. A locked palette

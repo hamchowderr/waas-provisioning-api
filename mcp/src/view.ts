@@ -7,6 +7,7 @@ export const VIEWS = {
   store: 'ui://waas/store.html',
   backups: 'ui://waas/backups.html',
   domains: 'ui://waas/domains.html',
+  looks: 'ui://waas/looks.html',
 } as const;
 export type View = keyof typeof VIEWS;
 
