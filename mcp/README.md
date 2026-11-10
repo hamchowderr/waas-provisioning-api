@@ -51,7 +51,7 @@ Each area has a scope to see and a scope to change. The Connect page has a box f
 | `email` | `mail_domain` (get) | `mail_domain` (set, remove) |
 | `versions` | `manage_versions` (list, snapshots, templates) | `manage_versions` (create, set_production, delete) |
 | `webhooks` | `manage_webhooks` (list, get, deliveries) | `manage_webhooks` (create, update, test, retry, rotate_secret, delete) |
-| `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (find, get), `site_styles` (get), `header_footer` (get), `site_menus` (list), `business_profile` (read), `read_reference` (wait, get, usage) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update), `header_footer` (update), `site_menus` (update), `add_image`, `business_profile` (save, undo), `read_reference` (start) |
+| `site` (pages and design) | `get_site`, `site_pages` (list, read, revisions), `site_patterns` (categories, find, get, blocks), `site_styles` (get, variations), `header_footer` (get), `site_menus` (list), `business_profile` (read), `read_reference` (wait, get, usage) | `site_pages` (create, update, restore_revision), `page_section` (add, replace, remove), `site_styles` (update, apply), `header_footer` (update), `site_menus` (update), `add_image`, `business_profile` (save, undo), `read_reference` (start) |
 
 So the scopes are `stores:read stores:write backups:read backups:write domains:read domains:write email:read email:write versions:read versions:write site:read site:write`. `/mcp/read-only` offers only the `:read` ones, and `/mcp/site` only `site:read site:write`. Connections made before scopes were per area keep what they had: their `stores:read` still sees everything and their `stores:write` still changes everything, through refreshes too.
 
@@ -148,8 +148,8 @@ Twenty-two tools, grouped by area. Store tools take `externalId` (your own id) o
 | Site editing | `get_site` | The site's name, address, theme and home page |
 | | `site_pages` | `list`, `read`, `revisions`, `create`, `update`, `restore_revision` |
 | | `page_section` | `add`, `replace`, `remove` (destructive) |
-| | `site_patterns` | `find`, `get` |
-| | `site_styles` | `get`, `update` |
+| | `site_patterns` | `categories`, `find`, `get`, `blocks` |
+| | `site_styles` | `get`, `update`, `variations`, `apply` |
 | | `header_footer` | `get`, `update` |
 | | `site_menus` | `list`, `update` |
 | | `add_image` | Copies an image from a link into the media library |

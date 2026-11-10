@@ -63,7 +63,7 @@ Upload each photo with `add_image` when the pages are built, and give every one 
 
 ## 4. Pages: build to the brief
 
-Build every page in the brief's page list as a **draft**, section by section, from the kit's own patterns (`site_patterns` find with `category: "anypress/kit-<kit>"`, then `anypress/pages` and `anypress/blocks-*`). Re-read the brief's section plan before each page; when your habit and the brief disagree, the brief wins.
+Switch on the brief's kit look first (`site_styles` apply with `kit-<kit>`; then a palette or font set from `site_styles` variations if the brief picked one). Build every page in the brief's page list as a **draft**, section by section, from the kit's own patterns (`site_patterns` find with `category: "anypress/kit-<kit>"`, then `anypress/pages` and `anypress/blocks-*`). Re-read the brief's section plan before each page; when your habit and the brief disagree, the brief wins.
 
 - Use only the theme's colour, font-size and spacing slugs (`site_styles` get lists them), never hex colours or pixel sizes, so the owner can restyle the site later in the Site Editor.
 - Put each photo from `photos.md` in its slot.

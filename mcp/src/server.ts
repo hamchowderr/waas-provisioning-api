@@ -648,9 +648,18 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   actionTool('site_patterns', {
     title: 'Patterns', area: 'site',
-    description: 'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the theme offers, and whole starter pages (category anypress/pages).',
-    input: { ...ref, search: z.string().optional().describe('For find'), category: z.string().optional().describe('For find'), name: pattern.optional().describe('For get') },
+    description:
+      'Ready-made sections (heroes, features, pricing, testimonials, contact, footers…) the theme offers, whole starter pages (category anypress/pages), ' +
+      'each kit’s sections (anypress/kit-*, made to go with the kit’s look in site_styles variations) and the shared AnyPress Blocks sections (anypress/blocks-*). ' +
+      'categories names them all; blocks lists the interactive blocks (carousel, popup, counter, countdown, map…) with their settings.',
+    input: { ...ref, search: z.string().optional().describe('For find'), category: z.string().optional().describe('For find: a name from categories'), name: pattern.optional().describe('For get') },
     actions: {
+      categories: { access: 'read', does: 'every pattern category with its label and how many patterns it has: starter pages, each kit, the shared sections', run: (args) => site(args, { method: 'GET', path: '/patterns/categories' }) },
+      blocks: {
+        access: 'read',
+        does: 'the interactive blocks beyond WordPress’s own (AnyPress Blocks), each with its settings and patterns that use it (read one with get for its markup)',
+        run: (args) => site(args, { method: 'GET', path: '/blocks' }),
+      },
       find: {
         access: 'read',
         does: 'patterns, filtered by a search word or category',
@@ -728,15 +737,26 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
 
   actionTool('site_styles', {
     title: 'Site styles', area: 'site',
-    description: 'The whole site’s look, as Styles in the Site Editor.',
+    description: 'The whole site’s look, as Styles in the Site Editor, and the theme’s ready-made looks: kits, palettes, font sets, and section styles.',
     input: {
       ...ref,
+      slug: z.string().regex(/^[a-z0-9_-]+$/).optional().describe('For apply: a variation slug from variations, e.g. kit-ridge or forest'),
       settings: z.record(z.string(), z.unknown()).optional().describe('For update: theme.json settings, e.g. settings.color.palette.custom'),
       styles: z.record(z.string(), z.unknown()).optional().describe('For update: theme.json styles, e.g. styles.elements.button.color.background'),
     },
     actions: {
       get: { access: 'read', does: 'colours, fonts, font sizes and spacing with the slugs to use in blocks, and what the site changed from the theme', run: (args) => site(args, { method: 'GET', path: '/styles' }) },
       update: { access: 'write', does: 'merges settings and styles into the site’s changes', run: ({ settings, styles, ...args }) => site(args, { method: 'PATCH', path: '/styles', body: { settings, styles } }) },
+      variations: {
+        access: 'read',
+        does: 'the theme’s style variations by kind (kit: a whole look for one kind of business, style, colors, fonts) with their colours and fonts and which are on, and the section and block styles to add as className is-style-<slug>',
+        run: (args) => site(args, { method: 'GET', path: '/styles/variations' }),
+      },
+      apply: {
+        access: 'write',
+        does: 'switches on a variation, as the Site Editor does: a kit or style replaces the site’s colours, fonts and styles; colors or fonts change only those (the old styles stay as a revision)',
+        run: ({ slug, ...args }) => site(args, { method: 'POST', path: `/styles/variations/${need(slug, 'slug', 'apply')}` }),
+      },
     },
   });
 

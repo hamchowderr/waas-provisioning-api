@@ -13,7 +13,8 @@ The brief is a contract. Later steps follow it; if one of them needs to change i
 ## Read first
 
 - `intake.md` from step 1 of `anypress-site-builder`, `business_profile` read and `get_site`.
-- `site_styles` get: the store's colour, font-size and spacing slugs, its style variations (kits, palettes, font sets) and its section styles.
+- `site_styles` get: the store's colour, font-size and spacing slugs. `site_styles` variations: the theme's kits, palettes and font sets (which is on), and the section styles (`is-style-<slug>`).
+- `site_patterns` categories: every kit's pattern category and the shared ones; `site_patterns` blocks: the interactive blocks (carousel, popup, counter...) and their settings.
 - `site_patterns` find with the kit's category, so the section plan names patterns that exist.
 - The owner's reference site or brand book, through `anypress-design-md`, if they gave one.
 

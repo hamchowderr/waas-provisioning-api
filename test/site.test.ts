@@ -190,6 +190,25 @@ describe('MCP site tools', () => {
     expect(byName.get('site_styles')?.annotations?.destructiveHint).toBe(false);
   });
 
+  it('lists pattern categories, blocks and looks, and switches a look on', async () => {
+    seen = [];
+    storeAnswer = { status: 200, body: [] };
+    await mcp.callTool({ name: 'site_patterns', arguments: { action: 'categories', externalId: 'site-1' } });
+    await mcp.callTool({ name: 'site_patterns', arguments: { action: 'blocks', externalId: 'site-1' } });
+    storeAnswer = { status: 200, body: {} };
+    await mcp.callTool({ name: 'site_styles', arguments: { action: 'variations', externalId: 'site-1' } });
+    const apply = await mcp.callTool({ name: 'site_styles', arguments: { action: 'apply', externalId: 'site-1', slug: 'kit-ridge' } });
+    expect(apply.isError).toBeFalsy();
+    expect(seen.map((s) => `${s.method} ${new URL(s.url).pathname.replace(/^.*\/site/, '')}`)).toEqual([
+      'GET /patterns/categories',
+      'GET /blocks',
+      'GET /styles/variations',
+      'POST /styles/variations/kit-ridge',
+    ]);
+    const missing = await mcp.callTool({ name: 'site_styles', arguments: { action: 'apply', externalId: 'site-1' } });
+    expect(missing).toMatchObject({ isError: true, content: [{ text: 'Action apply needs slug.' }] });
+  });
+
   it('sends a page_section add with its position, and asks for what an action needs', async () => {
     seen = [];
     await mcp.callTool({ name: 'page_section', arguments: { action: 'add', externalId: 'site-1', pageId: 12, pattern: 'ollie/hero-light', section: 2 } });
