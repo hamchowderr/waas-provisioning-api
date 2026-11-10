@@ -186,3 +186,27 @@ describe('suspend, resume and backups', () => {
     expect(await backups(tenant.externalId)).toEqual([]);
   });
 });
+
+// Found by a statechart model of a store's life: a job used to set the store Done while another job for it still waited.
+describe('a store is Done only when no job for it is waiting', () => {
+  it('a suspend sent while the store is built: Done only once it is offline', async () => {
+    const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Suspended While Built' } })).json()) as Tenant;
+    await t.call('POST', `/v1/tenants/suspend?externalId=${tenant.externalId}`, { body: { takeBackup: false } });
+    const seen = await waitFor(async () => {
+      const row = await getTenant(tenant.externalId);
+      return row.statusCode === Status.Done && { row, offline: t.provisioner.stores.get(tenant.id)?.suspended };
+    });
+    expect(seen.row.isSuspended).toBe(true);
+    expect(seen.offline).toBe(true);
+  });
+
+  it('that suspend failing after its retries leaves the store Failed, not Done', async () => {
+    t.provisioner.failNext('suspendStore', 10);
+    const tenant = (await (await t.call('POST', '/v1/tenants', { body: { ...OWNER, name: 'Suspend Fails' } })).json()) as Tenant;
+    await t.call('POST', `/v1/tenants/suspend?externalId=${tenant.externalId}`, { body: { takeBackup: false } });
+    await waitFor(async () => (await getTenant(tenant.externalId)).statusCode !== Status.Pending, 60_000);
+    const row = await getTenant(tenant.externalId);
+    expect(row.statusCode).toBe(Status.Failed);
+    expect(t.provisioner.stores.get(tenant.id)?.suspended).not.toBe(true);
+  }, 90_000);
+});
