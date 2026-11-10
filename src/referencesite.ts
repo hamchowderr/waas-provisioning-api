@@ -276,6 +276,11 @@ class Ledger {
   }
 
   /** Addresses found but not yet read, failed or skipped. */
+  /** Pages Firecrawl itself failed on (a timeout, its own error), worth one more try; not pages the site refused. */
+  retryable(): string[] {
+    return [...this.entries.values()].filter((e) => e.status === 'failed' && !/^the site answered|^another site/.test(e.reason ?? '')).map((e) => e.url);
+  }
+
   pending(): string[] {
     return [...this.entries.values()].filter((e) => e.pending).map((e) => e.url);
   }
@@ -351,6 +356,8 @@ interface NativeRead {
   collections: ReferenceBundle['collections'];
   /** Pages the platform lists, read or not: so a page no link points to is still found. */
   pageUrls: string[];
+  /** Other addresses its data already covers, such as a shop's collection pages. */
+  listed: { url: string; kind: string }[];
   notes: string[];
 }
 
@@ -400,7 +407,7 @@ const wpContentType = (slug: string, type: WpType) => !WP_INTERNAL.test(slug) &&
 async function readWordPress(root: string, get: typeof fetch): Promise<NativeRead | null> {
   const types = await getJson<Record<string, WpType>>(get, wpUrl(root, 'wp/v2/types', {}));
   if (!types) return null;
-  const read: NativeRead = { via: 'wordpress', items: [], products: [], collections: [], pageUrls: [], notes: [] };
+  const read: NativeRead = { via: 'wordpress', items: [], products: [], collections: [], pageUrls: [], listed: [], notes: [] };
   for (const [slug, type] of Object.entries(types.data).filter(([slug, type]) => wpContentType(slug, type))) {
     if (read.items.length >= MAX_ITEMS) break;
     const entries = await wpAll(get, root, `${type.rest_namespace ?? 'wp/v2'}/${type.rest_base}`, { _fields: 'link,title,content,date,_links,_embedded', _embed: 'wp:featuredmedia' });
@@ -449,18 +456,28 @@ async function readShopify(home: URL, get: typeof fetch): Promise<NativeRead | n
     if (res.data.products.length < 250) break;
     if (page === 20) truncated = true;
   }
-  const c = await getJson(get, `${home.origin}/collections.json?limit=250`);
-  const collections = Array.isArray(c?.data.collections)
-    ? c.data.collections.map((x: Record<string, any>) => ({ title: String(x.title ?? ''), handle: String(x.handle ?? ''), description: stripHtml(String(x.description ?? '')) }))
-    : [];
+  const collections = await shopifyCollections(home, get);
   return {
     via: 'shopify',
     items: [],
     products,
     collections,
     pageUrls: [],
+    listed: collections.map((c) => ({ url: `${home.origin}/collections/${c.handle}`, kind: 'collection' })),
     notes: [`A Shopify shop: ${products.length} products${truncated ? ' (the first 5,000)' : ''} and ${collections.length} collections read from its public product list.`],
   };
+}
+
+/** Every collection from collections.json, 250 a page, at most 20 pages. */
+async function shopifyCollections(home: URL, get: typeof fetch): Promise<ReferenceBundle['collections']> {
+  const out: ReferenceBundle['collections'] = [];
+  for (let page = 1; page <= 20; page++) {
+    const list: unknown = (await getJson(get, `${home.origin}/collections.json?limit=250&page=${page}`))?.data?.collections;
+    if (!Array.isArray(list)) break;
+    out.push(...list.map((x: Record<string, any>) => ({ title: String(x.title ?? ''), handle: String(x.handle ?? ''), description: stripHtml(String(x.description ?? '')) })));
+    if (list.length < 250) break;
+  }
+  return out;
 }
 
 function shopifyProduct(home: URL, p: Record<string, any>): ReferenceProduct {
@@ -523,7 +540,7 @@ async function readSquarespaceCollection(home: URL, folder: string, get: typeof 
 
 /** Squarespace collections (blogs, events, shops, portfolios) from ?format=json: each folder the map found is asked once. */
 async function readSquarespace(home: URL, links: string[], get: typeof fetch): Promise<NativeRead> {
-  const read: NativeRead = { via: 'squarespace', items: [], products: [], collections: [], pageUrls: [], notes: [] };
+  const read: NativeRead = { via: 'squarespace', items: [], products: [], collections: [], pageUrls: [], listed: [], notes: [] };
   for (const folder of squarespaceFolders(home, links)) await readSquarespaceCollection(home, folder, get, read);
   read.notes.push(`A Squarespace site: ${read.items.length} items and ${read.products.length} products read from its collections' own data.`);
   return read;
@@ -667,7 +684,7 @@ function takeNative(native: NativeRead | null, platform: Platform, ledger: Ledge
   const samples = new Map<string, string>();
   const excluded: string[] = [];
   if (!native) return { samples, excluded };
-  const entries = [...native.items.map((i) => ({ url: i.url, kind: i.kind })), ...native.products.flatMap((p) => (p.url ? [{ url: p.url, kind: 'product' }] : []))];
+  const entries = [...native.items.map((i) => ({ url: i.url, kind: i.kind })), ...native.products.flatMap((p) => (p.url ? [{ url: p.url, kind: 'product' }] : [])), ...native.listed];
   const sampled = new Set<string>();
   for (const { url, kind } of entries) {
     const key = url ? ledger.found(url, kind) : null;
@@ -680,7 +697,7 @@ function takeNative(native: NativeRead | null, platform: Platform, ledger: Ledge
     ledger.read(url, native.via, kind);
     excluded.push(exactPath(url));
   }
-  if (platform === 'shopify') excluded.push('^/products/.+', '^/collections/[^/]+/products/.+');
+  if (platform === 'shopify') excluded.push('^/products/.+', '^/collections/[^/]+/products/.+', '^/collections/[^/]+/?$');
   return { samples, excluded };
 }
 
@@ -771,6 +788,9 @@ export async function readWebsite(requested: string, limits: { maxPages: number;
   // What the map or the platform listed that the crawl didn't reach (pages no link points to, the samples).
   const left = ledger.pending().slice(0, Math.max(0, budget()));
   if (left.length) await batchRead(run, left);
+  // Pages Firecrawl failed on get one more try.
+  const retry = ledger.retryable().slice(0, Math.max(0, budget()));
+  if (retry.length) await batchRead(run, retry);
 
   const unread = ledger.pending();
   const cap = capOf(run, limits);

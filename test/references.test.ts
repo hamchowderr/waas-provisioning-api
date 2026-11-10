@@ -253,9 +253,12 @@ describe('reading references', () => {
     expect(crawl.options).toMatchObject({ sitemap: 'include', crawlEntireDomain: true, ignoreQueryParameters: true, deduplicateSimilarURLs: true, limit: 49 });
     expect(crawl.options.scrapeOptions).toMatchObject({ onlyMainContent: true, proxy: 'auto', formats: expect.arrayContaining(['product', { type: 'screenshot', fullPage: true }]) });
     expect(crawl.options.excludePaths).toEqual(expect.arrayContaining(['^/products/.+', '^/products/walker/?$']));
-    // The crawl reached three pages; the batch read what the map found that it didn't: the FAQ and one product for its look.
-    expect(batches.at(-1)).toEqual(['https://example.com/products/runner', 'https://example.com/pages/faq']);
-    expect(b.pages.map((p: any) => p.url)).toEqual(['https://example.com/', 'https://example.com/about', 'https://example.com/services/roofing', 'https://example.com/products/runner', 'https://example.com/pages/faq']);
+    expect(crawl.options.excludePaths).toEqual(expect.arrayContaining(['^/collections/[^/]+/?$']));
+    // The crawl reached three pages; the batch read what the map found that it didn't (the FAQ) and one product and
+    // one collection for their look; then the page Firecrawl timed out on got one more try.
+    expect(batches.at(-2)).toEqual(['https://example.com/products/runner', 'https://example.com/pages/faq', 'https://example.com/collections/shoes']);
+    expect(batches.at(-1)).toEqual(['https://example.com/slow']);
+    expect(b.pages.map((p: any) => p.url)).toEqual(['https://example.com/', 'https://example.com/about', 'https://example.com/services/roofing', 'https://example.com/products/runner', 'https://example.com/pages/faq', 'https://example.com/collections/shoes', 'https://example.com/slow']);
     expect(b.pages[1]).toMatchObject({ images: ['https://cdn.example/a.jpg'], mobileScreenshot: null, links: [] });
     expect(b.products.map((p: any) => [p.title, p.url])).toEqual([['Runner', 'https://example.com/products/runner'], ['Walker', 'https://example.com/products/walker']]);
     expect(b.products[1]).toMatchObject({ price: '88.00', compareAtPrice: '99.00', tags: [], variants: [{ title: '10', sku: null, available: false }] });
@@ -265,14 +268,15 @@ describe('reading references', () => {
     expect(entry(r, '/cart')).toMatchObject({ status: 'skipped', reason: expect.stringContaining('cart') });
     expect(entry(r, '/logo.png')).toMatchObject({ status: 'skipped', kind: 'file' });
     expect(entry(r, '/missing')).toMatchObject({ status: 'failed', reason: 'the site answered 404' });
-    expect(entry(r, '/slow')).toMatchObject({ status: 'failed', reason: 'Timed out' });
+    expect(entry(r, '/slow')).toMatchObject({ status: 'read', via: 'firecrawl' });
+    expect(entry(r, '/collections/shoes')).toMatchObject({ status: 'read', kind: 'collection' });
     expect(entry(r, '/private')).toMatchObject({ status: 'skipped', reason: expect.stringContaining('robots.txt') });
     expect(b.coverage.urls.some((u: any) => u.url.includes('other.example'))).toBe(false);
-    expect(b.coverage).toMatchObject({ found: 11, read: 6, failed: 2, skipped: 3 });
-    // Home page, phone picture and map, then a credit a page: 4 crawled (one a 404) and 2 in the batch.
-    expect(b.coverage.creditsUsed).toBe(9);
-    expect(r.creditsUsed).toBe(9);
-    expect(r.totals).toEqual({ pages: 5, items: 0, products: 2, urls: 11 });
+    expect(b.coverage).toMatchObject({ found: 12, read: 8, failed: 1, skipped: 3 });
+    // Home page, phone picture and map, then a credit a page: 4 crawled (one a 404), 3 in the batch, 1 retried.
+    expect(b.coverage.creditsUsed).toBe(11);
+    expect(r.creditsUsed).toBe(11);
+    expect(r.totals).toEqual({ pages: 7, items: 0, products: 2, urls: 12 });
   });
 
   it('reads a WordPress site from its REST API: posts and products as data, every page including unlinked ones', async () => {
@@ -322,7 +326,7 @@ describe('reading references', () => {
     valid('getReference', part);
     expect(part.bundle.pages.map((p: any) => p.url)).toEqual(['https://example.com/about', 'https://example.com/services/roofing']);
     expect(part.bundle.coverage.urls).toHaveLength(2);
-    expect(part.totals).toEqual({ pages: 5, items: 0, products: 2, urls: 11 });
+    expect(part.totals).toEqual({ pages: 7, items: 0, products: 2, urls: 12 });
     expect((await t.call('GET', `/v1/references?id=${rows[0].id}&limit=0`)).status).toBe(400);
   });
 
@@ -364,7 +368,7 @@ describe('reading references', () => {
     valid('getReferenceUsage', usage);
     // Shop, WordPress, Squarespace, plain site, Figma frame and document were read; the broken site and missing Figma file failed.
     expect(usage).toMatchObject({ available: true, used: 6, limit: 6 });
-    expect(usage.creditsUsed).toBeGreaterThan(9);
+    expect(usage.creditsUsed).toBeGreaterThan(11);
     expect((await start({ url: 'https://example.com' })).status).toBe(429);
     t.deps.config.references!.readsPerMonth = 50;
     t.deps.config.references!.creditsPerMonth = usage.creditsUsed;
