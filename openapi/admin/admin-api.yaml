@@ -1238,6 +1238,62 @@ paths:
         '502':
           description: The site didn't answer, or answered with an error
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /admin/tenants/{id}/languages:
+    get:
+      operationId: adminGetTenantLanguages
+      summary: Read a store's languages
+      description: >-
+        Whether the store is in more than one language (AnyPress Client 2.22.0 or later, through Polylang), which
+        languages it has (the website's own first) with their pages, and the languages it can add. ready is false for
+        a few seconds after Languages is turned on, while translation files download. 409 when the store isn't Done,
+        is suspended, has no address, or runs an older AnyPress Client. 502 when the site doesn't answer.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The store's languages
+          content: { application/json: { schema: { $ref: '#/components/schemas/SiteLanguages' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502':
+          description: The site didn't answer, or answered with an error
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    put:
+      operationId: adminSetTenantLanguages
+      summary: Turn a store's languages on or off
+      description: >-
+        on true turns Languages on with languages, WordPress locales besides the website's own (up to 9): each page
+        can then have a copy per language, visitors pick a language from the menu, and addresses look like /es/.
+        Setting up takes a few seconds; read the languages until ready is true. on false takes the language switcher
+        out of the menus and turns Polylang off; translated pages stay as ordinary pages. For anyone who may change
+        the store; team members who only look get 403. 400 for an unknown locale.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [on]
+              properties:
+                on: { type: boolean }
+                languages:
+                  type: array
+                  items: { type: string, example: es_ES }
+                  description: WordPress locales besides the website's own.
+      responses:
+        '200':
+          description: The store's languages after the change
+          content: { application/json: { schema: { $ref: '#/components/schemas/SiteLanguages' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502':
+          description: The site didn't answer, or answered with an error
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   /admin/tenants/{id}/notify-owner:
     post:
       operationId: adminNotifyTenantOwner
@@ -3963,6 +4019,37 @@ components:
             type: string
           description: What to fix or decide before switching
       additionalProperties: false
+    SiteLanguages:
+      type: object
+      description: >-
+        A store's languages. languages lists the website's own first (default true); once ready, each has its code
+        (as in /es/) and how many pages are in it. choices are the WordPress locales it can add, empty when the
+        store's template has no Polylang. note says what happens next after a change.
+      required: [on, available, ready, languages]
+      properties:
+        on: { type: boolean }
+        available: { type: boolean, description: Polylang is installed on the store. }
+        ready: { type: boolean, description: Set up and in use; false for a few seconds after turning on. }
+        languages:
+          type: array
+          items:
+            type: object
+            required: [locale, name, default]
+            properties:
+              locale: { type: string, example: es_ES }
+              code: { type: string, example: es }
+              name: { type: string, example: Español }
+              default: { type: boolean }
+              pages: { type: integer }
+        choices:
+          type: array
+          items:
+            type: object
+            required: [locale, name]
+            properties:
+              locale: { type: string }
+              name: { type: string }
+        note: { type: string }
     HighLevelSiteLink:
       type: object
       nullable: true

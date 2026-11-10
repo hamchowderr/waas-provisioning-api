@@ -50,6 +50,12 @@ pages and design at `/wp-json/mcp/anypress`, signed in as a WordPress user with 
 Your plan → AI apps (MCP) shows the address. It is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in
 `roles.json`.
 
+And [Polylang](https://wordpress.org/plugins/polylang/) 3.9.2 (`polylang`), installed off. It is on only while the site's
+owner has **Languages** on (Dashboard → Your plan → Languages, the AnyPress dashboard, or the connector's `site_languages`):
+AnyPress Client then sets it up once with the site's own language as the default, addresses like `/es/` for the others,
+WordPress's translation files and a language switcher in the menus. It is pinned in [`build.sh`](build.sh)
+(`OFF_PLUGINS`) and isn't in `roles.json`.
+
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
 change it in Appearance → Editor.

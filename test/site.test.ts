@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StatusCode, WaasClient } from '../sdk/typescript/src/index.ts';
 import { createApiKey } from '../src/keys.ts';
 import { signedRoute, siteKey, siteKeyMaster } from '../src/sitekeys.ts';
-import { basic, setup, TEST_SECRETS_KEY, type TestContext, OWNER } from './helpers.ts';
+import { basic, setup, TEST_ADMIN_TOKEN, TEST_SECRETS_KEY, type TestContext, OWNER } from './helpers.ts';
 
 let t: TestContext;
 let waas: WaasClient;
@@ -393,5 +393,37 @@ describe('POST /v1/tenants/site/reference-products', () => {
     storeRoutes = routes;
     expect(res.status).toBe(502);
     expect((await res.json()).message).toContain('older than 2.19.0');
+  });
+});
+
+describe('a store\'s languages from the dashboard', () => {
+  const admin = (method: string, path: string, body?: unknown) => t.call(method, path, { auth: `Bearer ${TEST_ADMIN_TOKEN}`, body });
+  const languages = { on: true, available: true, ready: false, languages: [{ locale: 'en_US', name: 'English', default: true }, { locale: 'es_ES', name: 'Español', default: false }], choices: [] };
+
+  it('reads and changes them through the store, signed', async () => {
+    seen = [];
+    storeRoutes = { '/languages': (body: unknown) => (body ? { ...languages, note: 'Setting up takes a few seconds' } : languages) };
+    const read = await admin('GET', `/admin/tenants/${tenantId}/languages`);
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual(languages);
+    const set = await admin('PUT', `/admin/tenants/${tenantId}/languages`, { on: true, languages: ['es_ES'] });
+    expect(set.status).toBe(200);
+    expect((await set.json()).note).toContain('few seconds');
+    expect(seen.map((s) => [s.method, s.url.replace(/^.*\/site/, ''), s.body, s.signatureOk])).toEqual([
+      ['GET', '/languages', '', true],
+      ['PUT', '/languages', JSON.stringify({ on: true, languages: ['es_ES'] }), true],
+    ]);
+    storeRoutes = null;
+  });
+
+  it('refuses bad input, other stores and stores too old for Languages', async () => {
+    expect((await admin('PUT', `/admin/tenants/${tenantId}/languages`, { on: 'yes' })).status).toBe(400);
+    expect((await admin('PUT', `/admin/tenants/${tenantId}/languages`, { on: true, languages: 'es_ES' })).status).toBe(400);
+    expect((await admin('GET', '/admin/tenants/00000000-0000-4000-8000-000000000000/languages')).status).toBe(404);
+    storeRoutes = {};
+    const old = await admin('GET', `/admin/tenants/${tenantId}/languages`);
+    storeRoutes = null;
+    expect(old.status).toBe(409);
+    expect((await old.json()).message).toContain('older AnyPress Client');
   });
 });
