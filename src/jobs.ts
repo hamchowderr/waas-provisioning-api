@@ -7,7 +7,7 @@ import { planFor, step, withProgress } from './progress.ts';
 import { promoteVersion } from './promote.ts';
 import type { PgBoss } from 'pg-boss';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
-import type { JobData, JobHandlers } from './queue.ts';
+import { storeJobWaiting, type JobData, type JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure, reprintSource } from './imports.ts';
 import { failMailbox, pushMailbox } from './outreach.ts';
@@ -51,13 +51,19 @@ export function createJobHandlers(
       onlyFrom === undefined ? [tenantId, status] : [tenantId, status, onlyFrom],
     );
 
+  /**
+   * Marks a store Done when its job is finished, unless another job that changes it is still waiting: the store
+   * isn't what its record says until that one runs too, so it stays Pending and the last job sets it Done.
+   */
+  const finishTenant = (tenantId: string) => finishStore(pool, boss, tenantId);
+
   /** Puts a store whose automatic move failed back on the version it was on. False when that fails too. */
   const moveBack = async (tenantId: string, versionId: string) => {
     try {
       const { rows } = await pool.query('SELECT own_code FROM tenants WHERE id = $1', [tenantId]);
       if (!rows[0]) return false;
       await provisioner.moveStore({ storeId: tenantId, targetVersionId: versionId, ownCode: rows[0].own_code === true });
-      await setTenantStatus(tenantId, Status.Done, Status.Pending);
+      await finishTenant(tenantId);
       return true;
     } catch (err) {
       console.error(`store ${tenantId} could not be moved back to version ${versionId}: ${(err as Error).message}`);
@@ -87,7 +93,7 @@ export function createJobHandlers(
         await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
         return;
       case 'tenant.create':
-        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail());
+        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail(), boss);
       case 'tenant.update': {
         const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
         if (!rows[0]) return;
@@ -100,7 +106,7 @@ export function createJobHandlers(
           size: data.size ? rows[0].size : undefined,
         });
         // A move or delete queued meanwhile has set its own status; only finish a Pending one.
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       }
       case 'tenant.move': {
@@ -114,7 +120,7 @@ export function createJobHandlers(
         await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
         await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
         await forgetHostUpdate(pool, data.tenantId);
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       }
       case 'tenant.domains': {
@@ -125,7 +131,7 @@ export function createJobHandlers(
         const mail = mailboxDomains && (sender ? { sender } : { mailbox: await mailbox(data.tenantId) });
         await provisioner.setDomains({ storeId: data.tenantId, mainDomain: rows[0].main_domain, redirectDomains: rows[0].redirect_domains, mail });
         if (mail) await recordMailSender(pool, provisioner, data.tenantId, mail);
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       }
       case 'tenant.delete': {
@@ -178,7 +184,7 @@ export function createJobHandlers(
         });
         await recordMailSender(pool, provisioner, tenant.id, { mailbox: restoredMailbox });
         await forgetHostUpdate(pool, tenant.id);
-        await setTenantStatus(tenant.id, Status.Done, Status.Pending);
+        await finishTenant(tenant.id);
         return;
       }
       case 'tenant.rollback': {
@@ -198,21 +204,21 @@ export function createJobHandlers(
         // Its platform email count is an older one too: the next count tells the store again.
         await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
         await forgetHostUpdate(pool, data.tenantId);
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       }
       case 'tenant.suspend':
         if (data.backupId) await backUp(pool, provisioner, data.tenantId, data.backupId);
         await provisioner.suspendStore({ storeId: data.tenantId, brand: await resellerBrand(pool, data.tenantId) });
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       case 'tenant.resume':
         await provisioner.resumeStore({ storeId: data.tenantId });
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       case 'tenant.go-live':
         await provisioner.goLive({ storeId: data.tenantId });
-        await setTenantStatus(data.tenantId, Status.Done, Status.Pending);
+        await finishTenant(data.tenantId);
         return;
       case 'tenant.backup':
         await backUp(pool, provisioner, data.tenantId, data.backupId);
@@ -349,7 +355,8 @@ export function createJobHandlers(
         case 'tenant.rollback': {
           // The backup taken first never finished: the store was not touched and still works.
           const untouched = data.safetyBackupId && (await failBackup(pool, data.safetyBackupId)).rowCount;
-          await setTenantStatus(data.tenantId, untouched ? Status.Done : Status.Failed, Status.Pending);
+          if (untouched) await finishTenant(data.tenantId);
+          else await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
         }
       }
@@ -433,6 +440,19 @@ async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secr
   await provisioner.stopVersion({ versionId: version.id }).catch((err: unknown) => console.error(`Version ${version.id}: stop failed: ${(err as Error).message}`));
 }
 
+/**
+ * Sets a Pending store Done, unless a job that changes it is still waiting (storeJobWaiting). The row lock makes
+ * this and a request queuing a job for the store take turns: that request updates the same row in its transaction,
+ * so either it waits for this one, or this one waits for it and then sees its job.
+ */
+async function finishStore(pool: Pool, boss: PgBoss | undefined, tenantId: string): Promise<void> {
+  await withTransaction(pool, async (client) => {
+    await client.query('SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
+    if (boss && (await storeJobWaiting(boss, client, tenantId))) return;
+    await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenantId, Status.Done, Status.Pending]);
+  });
+}
+
 async function createTenant(
   pool: Pool,
   provisioner: Provisioner,
@@ -440,6 +460,7 @@ async function createTenant(
   data: Extract<JobData, { type: 'tenant.create' }>,
   mailbox?: string,
   ownerMail?: AuthMail,
+  boss?: PgBoss,
 ) {
   const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
   const tenant = rows[0];
@@ -472,7 +493,7 @@ async function createTenant(
   await recordMailSender(pool, provisioner, tenant.id, { mailbox });
   if (imported) await recordImportBuilt(pool, tenant.id, built?.check, built?.moved);
   if (imported) await pool.query('UPDATE tenants SET on_hold = true, date_held = COALESCE(date_held, now()) WHERE id = $1', [tenant.id]);
-  await pool.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status = $3', [tenant.id, Status.Done, Status.Pending]);
+  await finishStore(pool, boss, tenant.id);
   // A site moved in is built: its upload is no longer needed.
   if (imported) await provisioner.deleteImport({ storeId: tenant.id });  if (data.notifyOwner && user && !imported) await notifyOwner(pool, provisioner, ownerMail, tenant, user);
 }

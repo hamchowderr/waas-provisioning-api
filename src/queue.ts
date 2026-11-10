@@ -129,6 +129,25 @@ export async function startBoss(databaseUrl: string, { retryDelaySeconds = 10 } 
   return boss;
 }
 
+/** Jobs that leave a store Done when they finish (or Removing, for a delete). */
+const STATUS_JOBS = new Set<JobData['type']>([
+  'tenant.create', 'tenant.update', 'tenant.move', 'tenant.domains', 'tenant.delete', 'tenant.suspend', 'tenant.resume',
+  'tenant.go-live', 'tenant.restore', 'tenant.rollback',
+]);
+
+/**
+ * Whether a job that changes the store's status is still waiting behind the one running now. Read inside the
+ * caller's transaction, after it has locked the store's row.
+ */
+export async function storeJobWaiting(boss: PgBoss, client: Client, tenantId: string): Promise<boolean> {
+  const waiting = await boss.findJobs<JobData>(QUEUE, {
+    key: `tenant:${tenantId}`,
+    queued: true,
+    db: { executeSql: (text, values) => client.query(text, values) },
+  });
+  return waiting.some((job) => STATUS_JOBS.has(job.data.type));
+}
+
 /** Queues a job inside the caller's transaction, so the job exists only if the row change commits. */
 export async function enqueue(boss: PgBoss, client: Client, data: JobData): Promise<string | null> {
   return boss.send(QUEUE, data, {
