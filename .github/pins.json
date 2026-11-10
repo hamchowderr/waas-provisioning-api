@@ -297,6 +297,20 @@
           "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`leadconnector`\\)"
         }
       ]
+    },
+    {
+      "name": "polylang",
+      "source": "wordpress-plugin:polylang",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^polylang (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`polylang`\\)"
+        }
+      ]
     }
   ]
 }
