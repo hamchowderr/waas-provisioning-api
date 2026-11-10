@@ -663,43 +663,51 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
   actionTool('read_reference', {
     title: 'Read a reference', area: 'site',
     description:
-      'Reads what someone gave as a reference for their site into one bundle to build from: a website link (its pages’ text, a screenshot of each, images, and its colours, fonts, sizes, radius and logo), ' +
-      'a Shopify shop (also its products, prices, variants and collections), a Figma file or frame link (each frame’s layers and text, a picture of it, colours and fonts), or a document (a PDF, Word or Excel link, or an uploaded file: its text). ' +
+      'Reads what someone gave as a reference for their site into one bundle to build from. A website link: every page (its text, a full-page screenshot, its images), the home page at phone width and its menus, its colours, fonts, sizes, radius and logo, ' +
+      'and what its platform lists as data (WordPress posts, pages and WooCommerce products, a Shopify shop’s products and collections, Squarespace collections), plus coverage: every address found and whether it was read, failed or skipped, and why. ' +
+      'Also a Figma file or frame link (each frame’s layers and text, a picture of it, colours and fonts) or a document (a PDF, Word or Excel link, or an uploaded file: its text). ' +
+      'A website read spends about one credit a page; it takes every page unless maxPages says fewer. Check coverage before building: every page read, failures retried or reported. ' +
       'Then build with the theme: map design.colors to the palette slugs from site_styles, pick the closest theme fonts, and lay out each page with page_section and header_footer. ' +
       'With someone else’s site or file, take its layout and style, never its text. Screenshot and image links expire: copy what the site keeps with add_image. ' +
-      'Each read counts toward the storefront’s monthly allowance (usage). A Figma file must be shared with the AnyPress Figma account.',
+      'Each read counts toward the storefront’s monthly reads and credits (usage). A Figma file must be shared with the AnyPress Figma account.',
     input: {
       url: z.string().optional().describe('For start: the website, Shopify shop, Figma link or document link'),
       file: z
         .object({ name: z.string().describe('The file name, e.g. brief.pdf'), data: z.string().describe('The file, base64-encoded, up to 10 MB'), contentType: z.string().optional() })
         .optional()
         .describe('For start, instead of url: an uploaded PDF, Word, Excel, OpenDocument, RTF or HTML file'),
-      maxPages: z.number().int().min(1).max(10).optional().describe('For start: pages of a website or frames of a Figma page to read, 5 when omitted'),
+      maxPages: z.number().int().min(1).max(500).optional().describe('For start: the most pages of a website or frames of a Figma page to read; every page up to the server’s limit when omitted'),
       id: z.string().optional().describe('For get and wait: the id start answered with'),
+      offset: z.number().int().min(0).optional().describe('For get and wait: skip this many pages, items, products and coverage addresses (0 when omitted)'),
+      limit: z.number().int().min(1).max(50).optional().describe('For get and wait: at most this many of each list, 10 when omitted; totals gives the full counts'),
       timeoutSeconds: z.number().int().min(1).max(WAIT_MAX_SECONDS).optional().describe(`For wait: how long to wait, at most ${WAIT_MAX_SECONDS} (the default); call wait again while done is false`),
     },
     actions: {
       start: {
         access: 'write',
-        does: 'starts reading the url or file (it uses one of this month’s reads) and answers its id; follow it with wait',
+        does: 'starts reading the url or file (it uses one of this month’s reads and about one credit a page) and answers its id; follow it with wait',
         run: ({ url, file, maxPages }) => client.references.start({ url, file, maxPages }),
       },
       wait: {
         access: 'read',
-        does: 'polls until the read is Done (statusCode 1, with its bundle) or Failed (statusCode 2, with error), or returns { done: false, reference } when the time is up so you can call again',
-        run: async ({ id, timeoutSeconds }) => {
+        does: 'polls until the read is Done (statusCode 1, with the first part of its bundle) or Failed (statusCode 2, with error), or returns { done: false, reference } when the time is up so you can call again',
+        run: async ({ id, timeoutSeconds, offset, limit }) => {
           const refId = need(id, 'id', 'wait');
           const deadline = Date.now() + Math.min(timeoutSeconds ?? WAIT_MAX_SECONDS, WAIT_MAX_SECONDS) * 1000;
           for (;;) {
-            const reference = await client.references.get(refId);
+            const reference = await client.references.get(refId, { offset: offset ?? 0, limit: limit ?? 10 });
             if (reference.statusCode !== StatusCode.Pending) return { done: true, reference };
             if (Date.now() + (options.pollIntervalMs ?? 5_000) > deadline) return { done: false, reference };
             await new Promise((resolve) => setTimeout(resolve, options.pollIntervalMs ?? 5_000));
           }
         },
       },
-      get: { access: 'read', does: 'the read as it stands: statusCode, error, and the bundle once Done', run: ({ id }) => client.references.get(need(id, 'id', 'get')) },
-      usage: { access: 'read', does: 'this month’s reads, the allowance, and whether reading is set up', run: () => client.references.usage() },
+      get: {
+        access: 'read',
+        does: 'the read as it stands: statusCode, error, credits spent, and a part of the bundle once Done (offset and limit page through its pages, items, products and coverage; totals gives the counts)',
+        run: ({ id, offset, limit }) => client.references.get(need(id, 'id', 'get'), { offset: offset ?? 0, limit: limit ?? 10 }),
+      },
+      usage: { access: 'read', does: 'this month’s reads and credits, the allowances, the page limit, and whether reading is set up', run: () => client.references.usage() },
     },
   });
 

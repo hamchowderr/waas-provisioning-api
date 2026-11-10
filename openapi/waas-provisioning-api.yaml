@@ -2563,7 +2563,7 @@ paths:
       description: 'Added for AnyPress.
 
 
-        Reads a website link, a Shopify shop, a Figma file, a document link or an uploaded document into one bundle: design tokens (colours, fonts, sizes, radius, logo), each page''s text and a screenshot, its images, and a Shopify shop''s products and collections. Reading takes up to a few minutes: poll `getReference` until `statusCode` leaves Pending (0). Each storefront has a monthly allowance (`getReferenceUsage`); a read that fails is not counted. With someone else''s site, take the layout and style, never their text.'
+        Reads a website link, a Shopify shop, a Figma file, a document link or an uploaded document into one bundle: design tokens (colours, fonts, sizes, radius, logo), every page''s text, a full-page screenshot and its images, the posts, products and other items the site''s platform lists (WordPress, Shopify and Squarespace give these as data, free), and a coverage list of every address found with what became of it. A website read takes every page up to `maxPages` (the server''s limit by default) and spends about one Firecrawl credit a page. Reading takes from a minute to half an hour for a big site: poll `getReference` until `statusCode` leaves Pending (0). Each storefront has a monthly allowance of reads and credits (`getReferenceUsage`); a read that fails is not counted as a read, but the credits it spent are. With someone else''s site, take the layout and style, never their text.'
       requestBody:
         required: true
         content:
@@ -2588,7 +2588,7 @@ paths:
         '403':
           description: Forbidden
         '429':
-          description: This month's reads are used up
+          description: This month's reads or reading credits are used up
           content:
             application/json:
               schema:
@@ -2604,7 +2604,7 @@ paths:
       tags:
       - Reference
       summary: A reference and its bundle
-      description: 'Added for AnyPress. The reference''s `statusCode` (0 Pending, 1 Done, 2 Failed), its `bundle` once Done, or `error` saying why it could not be read.'
+      description: 'Added for AnyPress. The reference''s `statusCode` (0 Pending, 1 Done, 2 Failed), its `bundle` once Done, or `error` saying why it could not be read. A big site''s bundle can be read a part at a time: `offset` and `limit` apply to each of its lists (pages, items, products and coverage addresses), and `totals` gives their full lengths.'
       parameters:
       - name: id
         in: query
@@ -2613,6 +2613,21 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: offset
+        in: query
+        required: false
+        description: Skip this many entries of each list
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: limit
+        in: query
+        required: false
+        description: At most this many entries of each list; all when omitted
+        schema:
+          type: integer
+          minimum: 1
       responses:
         '200':
           description: OK
@@ -3290,31 +3305,46 @@ components:
         maxPages:
           type: integer
           minimum: 1
-          maximum: 10
-          default: 5
-          description: Pages of a website, or frames of a Figma page, to read
+          maximum: 500
+          description: The most pages of a website, or frames of a Figma page, to read. Every page up to the server's limit (`getReferenceUsage` maxPages, 500 by default) when omitted
     Reference:
       type: object
-      required: [id, kind, source, statusCode, error, bundle, createdAt, finishedAt]
+      required: [id, kind, source, statusCode, error, creditsUsed, bundle, totals, createdAt, finishedAt]
       properties:
         id: { type: string, format: uuid }
         kind: { type: string, enum: [website, figma, document] }
         source: { type: string, description: The link, or an uploaded file's name }
         statusCode: { type: integer, enum: [0, 1, 2], description: '0 Pending, 1 Done, 2 Failed' }
         error: { type: string, nullable: true, description: Why it could not be read }
+        creditsUsed: { type: integer, description: Firecrawl credits the read spent }
         bundle:
           $ref: '#/components/schemas/ReferenceBundle'
+        totals:
+          type: object
+          nullable: true
+          description: The full length of each list in the bundle, null until it is Done
+          required: [pages, items, products, urls]
+          properties:
+            pages: { type: integer }
+            items: { type: integer }
+            products: { type: integer }
+            urls: { type: integer, description: Addresses in coverage.urls }
         createdAt: { type: string, format: date-time }
         finishedAt: { type: string, format: date-time, nullable: true }
     ReferenceBundle:
       type: object
       nullable: true
       description: What a reference was read into, null until it is Done. Every kind fills the same shape; what a kind can't tell is left empty.
-      required: [kind, source, title, design, pages, products, collections, notes]
+      required: [kind, source, title, platform, design, pages, items, products, collections, coverage, notes]
       properties:
         kind: { type: string, enum: [website, figma, document] }
         source: { type: string }
         title: { type: string, nullable: true }
+        platform:
+          type: string
+          nullable: true
+          enum: [wordpress, shopify, squarespace, wix, webflow, other, null]
+          description: What the website runs on; null for Figma files and documents
         design:
           type: object
           required: [colors, fonts, fontSizes, radius, colorScheme, logo]
@@ -3340,7 +3370,7 @@ components:
           type: array
           items:
             type: object
-            required: [url, title, text, sections, screenshot, images]
+            required: [url, title, text, sections, screenshot, mobileScreenshot, images, links]
             properties:
               url: { type: string, description: The page's address, or the Figma frame's name }
               title: { type: string, nullable: true }
@@ -3354,15 +3384,31 @@ components:
                   properties:
                     name: { type: string }
                     text: { type: array, items: { type: string } }
-              screenshot: { type: string, nullable: true, description: A picture of the page; the link expires }
+              screenshot: { type: string, nullable: true, description: A picture of the whole page; the link expires }
+              mobileScreenshot: { type: string, nullable: true, description: The home page at phone width; the link expires }
+              images: { type: array, items: { type: string } }
+              links: { type: array, items: { type: string }, description: 'The home page''s links, its menus among them; empty on other pages' }
+        items:
+          type: array
+          description: Posts, events and other repeated entries, read from the platform's own data (WordPress, Squarespace)
+          items:
+            type: object
+            required: [kind, url, title, text, date, images]
+            properties:
+              kind: { type: string, description: 'What the platform calls it: post, event, blog, portfolio and so on' }
+              url: { type: string }
+              title: { type: string }
+              text: { type: string }
+              date: { type: string, nullable: true }
               images: { type: array, items: { type: string } }
         products:
           type: array
-          description: A Shopify shop's products
+          description: The site's products, from a Shopify, WooCommerce or Squarespace shop's own data, or else found on its pages
           items:
             type: object
-            required: [title, handle, description, vendor, type, tags, price, compareAtPrice, images, variants]
+            required: [url, title, handle, description, vendor, type, tags, price, compareAtPrice, images, variants]
             properties:
+              url: { type: string, nullable: true }
               title: { type: string }
               handle: { type: string }
               description: { type: string }
@@ -3392,17 +3438,42 @@ components:
               title: { type: string }
               handle: { type: string }
               description: { type: string }
+        coverage:
+          type: object
+          nullable: true
+          description: For a website, every address found (from its sitemap, its links and its platform's own lists) and what became of it
+          required: [found, read, failed, skipped, creditsUsed, urls]
+          properties:
+            found: { type: integer }
+            read: { type: integer }
+            failed: { type: integer }
+            skipped: { type: integer }
+            creditsUsed: { type: integer }
+            urls:
+              type: array
+              items:
+                type: object
+                required: [url, kind, status, via, reason]
+                properties:
+                  url: { type: string }
+                  kind: { type: string, description: 'page, product, file, listing, or the item kind (post, event and so on)' }
+                  status: { type: string, enum: [read, failed, skipped] }
+                  via: { type: string, nullable: true, enum: [firecrawl, wordpress, shopify, squarespace, null], description: Read by Firecrawl or from the platform's own data }
+                  reason: { type: string, nullable: true, description: Why it failed or was skipped }
         notes:
           type: array
           items: { type: string }
           description: Notes for whoever builds from it, such as links that expire
     ReferenceUsage:
       type: object
-      required: [available, used, limit, resetsAt]
+      required: [available, used, limit, creditsUsed, creditLimit, maxPages, resetsAt]
       properties:
         available: { type: boolean, description: False until this server can read websites and documents }
-        used: { type: integer }
+        used: { type: integer, description: Reads this month that did not fail }
         limit: { type: integer }
+        creditsUsed: { type: integer, description: Firecrawl credits spent this month, failed reads included }
+        creditLimit: { type: integer }
+        maxPages: { type: integer, description: The most pages one read takes in }
         resetsAt: { type: string, format: date-time }
     DemoBrand:
       type: object
