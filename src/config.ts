@@ -71,6 +71,8 @@ export interface Config {
   requestLogDays?: number;
   /** Outgoing webhooks (src/webhooks.ts): WEBHOOK_ALLOW_PRIVATE and WEBHOOK_LOG_DAYS. */
   webhooks?: WebhookConfig;
+  /** Support tickets (src/support.ts): SUPPORT_DESK_URL, the storefront whose Fluent Support answers them. */
+  support?: SupportConfig;
   /**
    * Sellers' own dashboard addresses (src/dashboarddomains.ts): DASHBOARD_DOMAINS=vercel with
    * VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_TEAM_ID. Unset: off.
@@ -241,6 +243,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     requestLogDays: requestLogDays(env.REQUEST_LOG_DAYS),
     publicUrl: env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
     webhooks: loadWebhookConfig(env),
+    support: loadSupportConfig(env),
     auth: loadAuthConfig(env),
     dashboardHost: loadDashboardHost(env),
     storefrontProductId: loadProductId('STOREFRONT_PRODUCT_ID', env.STOREFRONT_PRODUCT_ID),
@@ -265,4 +268,17 @@ function loadEmails(name: string, value: string | undefined): string[] | undefin
   const emails = (value ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
   for (const e of emails) if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw new Error(`${name}: ${e} is not an email address`);
   return emails.length ? emails : undefined;
+}
+
+export interface SupportConfig {
+  /** The storefront whose Fluent Support is the desk (SUPPORT_DESK_URL, e.g. https://shop.anypress.io). Unset: tickets go by email. */
+  deskUrl?: string;
+}
+
+export function loadSupportConfig(env: NodeJS.ProcessEnv): SupportConfig {
+  const raw = env.SUPPORT_DESK_URL?.trim().replace(/\/+$/, '');
+  if (!raw) return {};
+  const url = new URL(raw);
+  if (url.protocol !== 'https:' && url.hostname !== 'localhost') throw new Error('SUPPORT_DESK_URL must be https');
+  return { deskUrl: url.origin + url.pathname.replace(/\/+$/, '') };
 }

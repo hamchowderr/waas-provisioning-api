@@ -20,7 +20,7 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
   const handler = createMcpHandler(
     (ctx) => {
       const { productId, apiKeyId, userId, tenantId, readOnly, scopes } = ctx.authInfo!.extra as unknown as Caller;
-      const internalAuth = { productId, apiKeyId, userId };
+      const internalAuth = { productId, apiKeyId, userId, storeTenantId: tenantId };
       // The /v1 routes sign this caller in from internalAuth; the key and secret here are never checked.
       const client = new WaasClient({
         baseUrl: 'http://in-process',
@@ -30,6 +30,8 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
           const url = new URL(String(input));
           if (tenantId) {
             // One store's owner: its site routes, whatever store the call names.
+            // and its owner's own support tickets (the person is the store's owner, src/support.ts).
+            if (url.pathname.startsWith('/v1/support/')) return app.request(`${url.pathname}${url.search}`, init, { internalAuth });
             if (url.pathname !== '/v1/tenants/site') return Response.json({ statusCode: 403, message: 'This connection can only edit its own website' }, { status: 403 });
             url.search = `?tenantId=${tenantId}`;
           }

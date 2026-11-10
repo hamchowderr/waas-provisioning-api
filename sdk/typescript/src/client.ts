@@ -32,6 +32,8 @@ export type Template = Schemas['GetBaseSnapshotsQueryResult'];
 export type Reference = Schemas['Reference'];
 export type ReferenceBundle = NonNullable<Schemas['ReferenceBundle']>;
 export type CreateTenantParams = Schemas['CreateTenantParams'];
+export type SupportTicket = Schemas['SupportTicket'];
+export type SupportTicketFiled = Schemas['SupportTicketFiled'];
 export type UpdateTenantParams = Schemas['UpdateTenantParams'];
 export type MailDomain = mailComponents['schemas']['MailDomain'];
 export type DomainConnectLink = mailComponents['schemas']['DomainConnectLink'];
@@ -231,6 +233,23 @@ export class WaasClient {
     /** Sends a delivered or failed delivery again, retries included. */
     retryDelivery: (deliveryId: string) =>
       this.#call('retryWebhookDelivery', 'POST', `/v1/webhooks/deliveries/${encodeURIComponent(deliveryId)}/retry`),
+  };
+
+  /**
+   * Support tickets for the signed-in person (docs/support.md): a website owner signed in with their website, or a
+   * dashboard user. An API key alone is no person, so these answer 400 with one.
+   */
+  readonly support = {
+    /** Their tickets at the support desk, newest first. */
+    list: () => this.#call('listSupportTickets', 'GET', '/v1/support/tickets'),
+    /** Files a ticket with whoever helps them: their reseller by email, or the support desk. Pass a ref when it is about a store. */
+    open: (params: BodyOf<'createSupportTicket'>, ref?: TenantRef) => this.#call('createSupportTicket', 'POST', '/v1/support/tickets', ref, params),
+    /** One ticket with its messages. */
+    get: (ticketId: number) => this.#call('getSupportTicket', 'GET', `/v1/support/tickets/${encodeURIComponent(ticketId)}`),
+    /** Adds their reply; a closed ticket opens again. */
+    reply: (ticketId: number, content: string) =>
+      this.#call('replyToSupportTicket', 'POST', `/v1/support/tickets/${encodeURIComponent(ticketId)}/replies`, undefined, { content }),
+    close: (ticketId: number) => this.#call('closeSupportTicket', 'POST', `/v1/support/tickets/${encodeURIComponent(ticketId)}/close`),
   };
 
   /**

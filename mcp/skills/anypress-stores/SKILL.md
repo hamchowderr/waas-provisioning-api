@@ -28,6 +28,10 @@ Most tools take an `action`, e.g. `manage_domain` with `action: "add"`. The tool
 - **Errors carry the API's reason.** A tool error reads `The API refused <operation> (HTTP <status>): <message>`. Relay the message plainly and suggest the fix; don't retry a 400 unchanged.
 - If a tool or action is missing, the server may be read-only (`/mcp/read-only` or `WAAS_MCP_READ_ONLY=1`), or the connection wasn't allowed that area: whoever connected the app ticks what it may see and change per area (stores, backups, domains, email, versions, website pages and design). A tool then offers only the actions it may use. Say so, and that reconnecting can allow more, instead of looking for a workaround.
 
+## Get help from a person
+
+When something is broken that the tools can't fix, or the user wants a person, offer `support` with `action: "open"`. Write a short title and the problem in the user's words, show both, and send only after they say yes. Name the store (`externalId` or `tenantId`) when it is about one; its details are added by themselves. Never put passwords, keys or card numbers in a ticket. The answer says where it went: `sentTo: "desk"` with the ticket number, or `sentTo: "email"` with the address (their website provider answers by email). `list` and `show` read their tickets and the replies; `reply` answers one and `close` closes it once it's solved.
+
 ## Launch a store
 
 1. Pick the version: new stores go on the production version unless the user names one (`manage_versions` list). To start from a specific template or snapshot, find it with `manage_versions` snapshots and pass `snapshotId`, or pass `groupName`.

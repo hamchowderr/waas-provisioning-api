@@ -1120,10 +1120,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/support/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your support tickets
+         * @description Added for AnyPress.
+         *
+         *     The signed-in person's tickets at the support desk, newest first (up to 20). The person is the one the call runs as: a website owner signed in with their website, or a dashboard user. An API key on its own is no person and gets 400. Tickets that went to a reseller by email are not listed: the reseller answers those by email.
+         */
+        get: operations["listSupportTickets"];
+        put?: never;
+        /**
+         * Open a support ticket
+         * @description Added for AnyPress.
+         *
+         *     Files a ticket with whoever helps the signed-in person. A website owner whose store a reseller sells: the reseller's support address, by email (the answer has `sentTo: email`). Everyone else: the support desk, Fluent Support on the platform's storefront (`sentTo: desk`, with the ticket). When the desk is not set up or does not answer, the ticket goes to the platform's support address by email. The store, its address, version and storefront are added to the message, so nobody has to ask. Name a store with `tenantId` or `externalId` when the ticket is about one; a website owner's own store is added by itself.
+         */
+        post: operations["createSupportTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/support/tickets/{ticketId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a support ticket
+         * @description Added for AnyPress.
+         *
+         *     One of the signed-in person's tickets with its messages, as plain text. Someone else's ticket answers 404, the same as no ticket.
+         */
+        get: operations["getSupportTicket"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/support/tickets/{ticketId}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply to a support ticket
+         * @description Added for AnyPress.
+         *
+         *     Adds the signed-in person's reply. A closed ticket opens again.
+         */
+        post: operations["replyToSupportTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/support/tickets/{ticketId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a support ticket
+         * @description Added for AnyPress.
+         *
+         *     Closes one of the signed-in person's tickets, when the problem is solved. A reply opens it again.
+         */
+        post: operations["closeSupportTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CreateSupportTicketParams: {
+            /** @description A few words on the problem. */
+            title: string;
+            /** @description What happened, in the person's words, as plain text. */
+            content: string;
+        };
+        SupportReplyParams: {
+            /** @description The reply, as plain text. */
+            content: string;
+        };
+        SupportTicket: {
+            /** @description The ticket's number. */
+            id?: number;
+            title?: string;
+            /** @description new, active or closed. */
+            status?: string;
+            /** Format: date-time */
+            createdAt?: string | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            /** @description The ticket in the support portal, where the person can also read and answer it. */
+            url?: string | null;
+            /** @description The ticket's messages, oldest first (only when reading one ticket). */
+            messages?: {
+                /** @enum {string} */
+                from?: "you" | "support";
+                content?: string;
+                /** Format: date-time */
+                createdAt?: string | null;
+            }[];
+        };
+        SupportTicketFiled: {
+            /**
+             * @description desk, the support desk (with `ticket`); email, a support address (with `email` and `helper`).
+             * @enum {string}
+             */
+            sentTo?: "desk" | "email";
+            ticket?: components["schemas"]["SupportTicket"];
+            /** @description The support address the ticket was emailed to. */
+            email?: string;
+            /** @description Who answers it, e.g. the reseller's brand. */
+            helper?: string;
+        };
         /** @description A `url` or a `file`, not both. */
         ReferenceRequest: {
             /**
@@ -5801,6 +5938,194 @@ export interface operations {
                 };
             };
             /** @description No such file or release */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    listSupportTickets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"][];
+                };
+            };
+            /** @description No signed-in person */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The support desk did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    createSupportTicket: {
+        parameters: {
+            query?: {
+                /** @description The store the ticket is about (optional) */
+                tenantId?: string;
+                /**
+                 * @description The store the ticket is about, by your own id (optional)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateSupportTicketParams"];
+            };
+        };
+        responses: {
+            /** @description Filed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicketFiled"];
+                };
+            };
+            /** @description The validation of the request failed, or no signed-in person */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Support tickets are not set up on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getSupportTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ticket's number */
+                ticketId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            /** @description No such ticket for this person */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    replyToSupportTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ticket's number */
+                ticketId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SupportReplyParams"];
+            };
+        };
+        responses: {
+            /** @description The ticket with the reply */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            /** @description No such ticket for this person */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    closeSupportTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ticket's number */
+                ticketId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The closed ticket */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            /** @description No such ticket for this person */
             404: {
                 headers: {
                     [name: string]: unknown;

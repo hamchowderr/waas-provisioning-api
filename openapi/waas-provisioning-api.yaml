@@ -2977,8 +2977,299 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: getDemoFile
+  /v1/support/tickets:
+    get:
+      tags:
+      - Support
+      summary: List your support tickets
+      description: 'Added for AnyPress.
+
+
+        The signed-in person''s tickets at the support desk, newest first (up to 20). The person is the one the call runs as: a website owner signed in with their website, or a dashboard user. An API key on its own is no person and gets 400. Tickets that went to a reseller by email are not listed: the reseller answers those by email.'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportTicket'
+              examples:
+                tickets:
+                  summary: One open ticket
+                  value:
+                  - id: 41
+                    title: Booking page shows an error
+                    status: new
+                    createdAt: '2026-11-10T03:20:00+00:00'
+                    updatedAt: '2026-11-10T03:20:00+00:00'
+                    url: https://shop.anypress.io/support/?fs_view=ticket&ticket_id=41
+        '400':
+          description: No signed-in person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '502':
+          description: The support desk did not answer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: listSupportTickets
+    post:
+      tags:
+      - Support
+      summary: Open a support ticket
+      description: 'Added for AnyPress.
+
+
+        Files a ticket with whoever helps the signed-in person. A website owner whose store a reseller sells: the reseller''s support address, by email (the answer has `sentTo: email`). Everyone else: the support desk, Fluent Support on the platform''s storefront (`sentTo: desk`, with the ticket). When the desk is not set up or does not answer, the ticket goes to the platform''s support address by email. The store, its address, version and storefront are added to the message, so nobody has to ask. Name a store with `tenantId` or `externalId` when the ticket is about one; a website owner''s own store is added by itself.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The store the ticket is about (optional)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The store the ticket is about, by your own id (optional)
+        schema:
+          type: string
+        example: store-1042
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupportTicketParams'
+            examples:
+              broken:
+                summary: Something is broken
+                value:
+                  title: Booking page shows an error
+                  content: Since this morning the booking page says "Something went wrong" when I pick a time.
+      responses:
+        '201':
+          description: Filed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTicketFiled'
+              examples:
+                desk:
+                  summary: At the support desk
+                  value:
+                    sentTo: desk
+                    ticket:
+                      id: 41
+                      title: Booking page shows an error
+                      status: new
+                      createdAt: '2026-11-10T03:20:00+00:00'
+                      updatedAt: '2026-11-10T03:20:00+00:00'
+                      url: https://shop.anypress.io/support/?fs_view=ticket&ticket_id=41
+                reseller:
+                  summary: Emailed to the reseller
+                  value:
+                    sentTo: email
+                    email: help@agency.example
+                    helper: Summit Web Studio
+        '400':
+          description: The validation of the request failed, or no signed-in person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '503':
+          description: Support tickets are not set up on this server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: createSupportTicket
+  /v1/support/tickets/{ticketId}:
+    get:
+      tags:
+      - Support
+      summary: Read a support ticket
+      description: 'Added for AnyPress.
+
+
+        One of the signed-in person''s tickets with its messages, as plain text. Someone else''s ticket answers 404, the same as no ticket.'
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        description: The ticket's number
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTicket'
+        '404':
+          description: No such ticket for this person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getSupportTicket
+  /v1/support/tickets/{ticketId}/replies:
+    post:
+      tags:
+      - Support
+      summary: Reply to a support ticket
+      description: 'Added for AnyPress.
+
+
+        Adds the signed-in person''s reply. A closed ticket opens again.'
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        description: The ticket's number
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportReplyParams'
+      responses:
+        '200':
+          description: The ticket with the reply
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTicket'
+        '404':
+          description: No such ticket for this person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: replyToSupportTicket
+  /v1/support/tickets/{ticketId}/close:
+    post:
+      tags:
+      - Support
+      summary: Close a support ticket
+      description: 'Added for AnyPress.
+
+
+        Closes one of the signed-in person''s tickets, when the problem is solved. A reply opens it again.'
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        description: The ticket's number
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: The closed ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTicket'
+        '404':
+          description: No such ticket for this person
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: closeSupportTicket
 components:
   schemas:
+    CreateSupportTicketParams:
+      required:
+      - title
+      - content
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: A few words on the problem.
+        content:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: What happened, in the person's words, as plain text.
+      additionalProperties: false
+    SupportReplyParams:
+      required:
+      - content
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: The reply, as plain text.
+      additionalProperties: false
+    SupportTicket:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The ticket's number.
+        title:
+          type: string
+        status:
+          type: string
+          description: new, active or closed.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        url:
+          type: string
+          nullable: true
+          description: The ticket in the support portal, where the person can also read and answer it.
+        messages:
+          type: array
+          description: The ticket's messages, oldest first (only when reading one ticket).
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                enum:
+                - you
+                - support
+              content:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+                nullable: true
+    SupportTicketFiled:
+      type: object
+      properties:
+        sentTo:
+          type: string
+          enum:
+          - desk
+          - email
+          description: desk, the support desk (with `ticket`); email, a support address (with `email` and `helper`).
+        ticket:
+          $ref: '#/components/schemas/SupportTicket'
+        email:
+          type: string
+          description: The support address the ticket was emailed to.
+        helper:
+          type: string
+          description: Who answers it, e.g. the reseller's brand.
     ReferenceRequest:
       type: object
       description: A `url` or a `file`, not both.
@@ -5023,6 +5314,8 @@ tags:
 - name: TenantLifecycle
   description: 'Phase 1. Added for AnyPress. Suspend, resume, back up and restore tenants, so a cancelled subscription can keep its store for a grace period before it is deleted, and get it back from a backup after.'
   x-phase: 1
+- name: Support
+  description: 'Added for AnyPress. Support tickets for the signed-in person: a website owner, seller or reseller asks for help from an AI app, the website assistant or the dashboard, and the ticket goes to whoever helps them.'
 - name: TenantSite
   description: 'Added for AnyPress. Edit a store''s pages and design for an AI agent, through the store''s AnyPress Client.'
 - name: SiteImport

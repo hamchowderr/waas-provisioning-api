@@ -795,5 +795,41 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     },
   });
 
+  // Support: tickets for the person signed in, with whoever helps them (docs/support.md). Offered to a store's own
+  // connection too, so a website owner can ask for help from the website assistant or their AI app.
+  actionTool('support', {
+    title: 'Get help', area: options.store ? 'site' : 'stores',
+    description:
+      'Support tickets for the person signed in. Use it when something is broken or they need help from a person: ' +
+      'open files a ticket with whoever helps them (their website provider by email, or the AnyPress support desk) and adds the store’s details by itself. ' +
+      'Before open, write the title and message in their words, show them, and send only once they say yes. Never put passwords or keys in a ticket.' +
+      (options.store ? '' : ' Name the store (externalId or tenantId) when the ticket is about one.'),
+    input: {
+      ...(options.store ? {} : ref),
+      ticketId: z.number().int().positive().optional().describe('For show, reply and close: the ticket number, from list or open'),
+      title: z.string().max(200).optional().describe('For open: a few words on the problem'),
+      content: z.string().max(20000).optional().describe('For open: what happened, in their words; for reply: their reply'),
+    },
+    actions: {
+      list: { access: 'read', does: 'their tickets at the support desk, newest first', run: () => client.support.list() },
+      show: { access: 'read', does: 'one ticket with its messages', run: ({ ticketId }) => client.support.get(need(ticketId, 'ticketId', 'show')) },
+      open: {
+        access: 'write',
+        does: 'files a new ticket from title and content; answers where it went (sentTo desk with the ticket, or email with the address)',
+        run: ({ title, content, ...args }) => {
+          const store = args as StoreArgs;
+          const about = options.store ? undefined : store.externalId || store.tenantId ? toRef(store) : undefined;
+          return client.support.open({ title: need(title, 'title', 'open'), content: need(content, 'content', 'open') }, about);
+        },
+      },
+      reply: {
+        access: 'write',
+        does: 'adds their reply to a ticket (content); a closed ticket opens again',
+        run: ({ ticketId, content }) => client.support.reply(need(ticketId, 'ticketId', 'reply'), need(content, 'content', 'reply')),
+      },
+      close: { access: 'write', does: 'closes a ticket once the problem is solved', run: ({ ticketId }) => client.support.close(need(ticketId, 'ticketId', 'close')) },
+    },
+  });
+
   return server;
 }
