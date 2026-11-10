@@ -4,8 +4,17 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The Update pins workflow starts CI on its pull request's branch this way.
+  workflow_dispatch:
 
 jobs:
+  pins:
+    # Fails when a pinned version (.github/pins.json) is behind an AnyPress release; warns for third-party pins.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/pins
+
   test:
     # ubuntu-latest moved to 26.04 (Oct 2026): its PHP ICU rejects the und_XX locale the owner
     # mu-plugin test uses. Pinned until that test is moved; pg_dump 18 comes from PGDG below.

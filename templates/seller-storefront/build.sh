@@ -18,11 +18,11 @@ WP_VERSION=${WP_VERSION:-7.1.4}
 WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f938c5f87}
 # wordpress.org plugins: slug version sha256. All installed and active.
 PLUGINS="
-fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
+fluent-cart 2.3.1 dcd1af4986129b61e933bd07d9d71ca04087bbf0a7e947421a2ed065cc9f98c1
 fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63e
-fluentform 6.2.16 9ec4fce3857a0c069dcb392f6e0e9bd1a5a1231d94a49a76d9768a40e973a7fd
+fluentform 6.2.17 e5dda0290afa0232758017ce63c63c76a57c6f000a0861eb43772a88a39909bc
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
-fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
+fluent-security 3.1.1 e3e21bf941617de72628d0d254435cb87fdf6629ce3e00d847ad627d975c38d8
 "
 # Plugins that aren't on wordpress.org: slug version sha256, the zip shared with the store template
 # (../anypress-store/plugins/<slug>-<version>.zip). FluentKit puts the Fluent plugins and AnyPress in one dashboard.
@@ -30,8 +30,8 @@ VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
 # AnyPress Blocks and the AnyPress theme: the same releases the store template pins (its build.sh and theme.sh).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.3.0}
-BLOCKS_SHA256=${BLOCKS_SHA256:-79721b6151064d97ceb66636a1d9d29470803c18d4377d50cfe47b7e30399c28}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.2}
+BLOCKS_SHA256=${BLOCKS_SHA256:-869ee824b460d0867f217628fe06ef4149c6786241c67508887d718c4f2e7f0b}
 THEME=anypress
 # shellcheck source=../anypress-store/theme.sh
 . "$(dirname "$0")/../anypress-store/theme.sh"

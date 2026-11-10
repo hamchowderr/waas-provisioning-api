@@ -15,19 +15,19 @@ WP_SHA256=${WP_SHA256:-a147146c159362778ecbbbfb07bb20ddf4e85b130f971c824e656a8f9
 # wordpress.org plugins: slug version sha256, in the order AnyPress lists them. All installed and active (roles.json
 # switches them per site type).
 PLUGINS="
-fluent-security 3.1.0 8507006b0506f34546a7227823cb77d8d06ab911aaf068b75736984a1e03bf0e
+fluent-security 3.1.1 e3e21bf941617de72628d0d254435cb87fdf6629ce3e00d847ad627d975c38d8
 fluent-smtp 2.4.5 f495ffcf3c61c4f2b0e20af1092bae256e2a666b9453c8402eb621bc4e444f00
 fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63e
-fluentform 6.2.16 9ec4fce3857a0c069dcb392f6e0e9bd1a5a1231d94a49a76d9768a40e973a7fd
-fluent-booking 2.5.0 1443134ef2f1ae24c17435bab81d6a15ba10136c15095c90e2d07de15f1c0eb0
-fluent-cart 2.2.0 c065fc837bacbd2ba5999d0967c8f5405e86abe6a0d2cb12f57fa80842bd699e
-fluent-community 2.12.0 f20ff8b03a7eaf4cfe5aed6a233d07a8b6e3924f7bd978311b6e3d05b44b9861
+fluentform 6.2.17 e5dda0290afa0232758017ce63c63c76a57c6f000a0861eb43772a88a39909bc
+fluent-booking 2.6.0 83eb315ddb562532ca38a362abae4bc787bd83c3d549e1736739ccb525ddcc34
+fluent-cart 2.3.1 dcd1af4986129b61e933bd07d9d71ca04087bbf0a7e947421a2ed065cc9f98c1
+fluent-community 2.13.0 9bb3d74d8662633083b396464242419366c4582b2a89391a13da074c42118f81
 fluent-player 1.4.0 edba3f48662136605564bb040fda0b51d50c154c167c699cca47ce3f43f20f1c
 fluent-affiliate 1.7.0 f1c617715aaae58657b155c75752adab2db42dd1a8a896469823a19a3b3ee8c8
-fluent-support 2.4.7 606b04ca47e8dfddcd241136953ed426fa7e60dcad03b3b1504285fda7be3e10
+fluent-support 2.5.0 a9525ca9fdc5e6de34a37b3075db01cd7249818f76e93464d7aec44ac5f04899
 easy-code-manager 10.58 39bfd2fe29b099147949086c42dfe715cedd4ddce3631c9ef33165470ed25667
-seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb9686fa8aa290
-automatorwp 6.0.5 541d640bdf4b6f602123e0f1f26a5041f950a13d338f08ca0b665a9a1617144b
+seo-by-rank-math 1.0.282 d4434c5726c62cdd819f0129cac3df5fea0c8efafbcd812856cf87f5e05691a3
+automatorwp 6.0.9 f9540e4be51228b5851e4572f0a0d0eed2d99313958efcea9521a97f9cab74fa
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 "
 # wordpress.org plugins installed but left off: slug version sha256. AnyPress Client turns the MCP Adapter on on every
@@ -49,8 +49,8 @@ fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a290
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.0}
-BLOCKS_SHA256=${BLOCKS_SHA256:-403ab60793ce0f8b29ee3be75948b351e0806cf1d43038c292509b07532300e7}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.2}
+BLOCKS_SHA256=${BLOCKS_SHA256:-869ee824b460d0867f217628fe06ef4149c6786241c67508887d718c4f2e7f0b}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh

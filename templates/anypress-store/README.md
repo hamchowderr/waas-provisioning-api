@@ -12,19 +12,19 @@ Plugins are listed in the order AnyPress shows them everywhere.
 
 | Plugin | Slug | Version |
 |---|---|---|
-| FluentAuth | `fluent-security` | 3.1.0 |
+| FluentAuth | `fluent-security` | 3.1.1 |
 | FluentSMTP | `fluent-smtp` | 2.4.5 |
 | FluentCRM | `fluent-crm` | 3.3.1 |
-| Fluent Forms | `fluentform` | 6.2.16 |
-| FluentBooking | `fluent-booking` | 2.5.0 |
-| FluentCart | `fluent-cart` | 2.2.0 |
-| FluentCommunity | `fluent-community` | 2.12.0 |
+| Fluent Forms | `fluentform` | 6.2.17 |
+| FluentBooking | `fluent-booking` | 2.6.0 |
+| FluentCart | `fluent-cart` | 2.3.1 |
+| FluentCommunity | `fluent-community` | 2.13.0 |
 | FluentPlayer | `fluent-player` | 1.4.0 |
 | FluentAffiliate | `fluent-affiliate` | 1.7.0 |
-| Fluent Support | `fluent-support` | 2.4.7 |
+| Fluent Support | `fluent-support` | 2.5.0 |
 | FluentSnippets | `easy-code-manager` | 10.58 |
-| Rank Math SEO | `seo-by-rank-math` | 1.0.280 |
-| AutomatorWP | `automatorwp` | 6.0.5 |
+| Rank Math SEO | `seo-by-rank-math` | 1.0.282 |
+| AutomatorWP | `automatorwp` | 6.0.9 |
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 
 Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
@@ -37,7 +37,7 @@ switch (`wp anypress shop switch`) turns it on when it runs.
 
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
 for signups, offers and booking forms, and Carousel, Counter, Map, Countdown, Before and After, Star Rating, Notice Bar,
-Phone Bar, Location Finder and Age Check blocks (0.4.0). A release is pinned by version and checksum in [`build.sh`](build.sh)
+Phone Bar, Location Finder and Age Check blocks (0.4.2). A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
 And HighLevel's [LeadConnector](https://wordpress.org/plugins/leadconnector/) 4.0.7 (`leadconnector`): HighLevel forms,
