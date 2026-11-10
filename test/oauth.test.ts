@@ -51,7 +51,7 @@ const TOOLS: Record<string, { area: string; access?: Access; actions?: Record<st
   add_image: { area: 'site', access: 'write' },
   business_profile: { area: 'site', actions: { read: 'read', save: 'write', undo: 'write' } },
   support: { area: 'stores', actions: { list: 'read', show: 'read', open: 'write', reply: 'write', close: 'write' } },
-  read_reference: { area: 'site', actions: { start: 'write', wait: 'read', get: 'read', usage: 'read' } },
+  read_reference: { area: 'site', actions: { start: 'write', wait: 'read', get: 'read', usage: 'read', check: 'read' } },
 };
 /** What the scopes should offer: `tool` or `tool.action`, sorted. */
 const toolsFor = (scopes: readonly string[]) =>
