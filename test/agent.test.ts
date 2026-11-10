@@ -58,6 +58,17 @@ describe.skipIf(!hasPhp)('store agent: suspension page', () => {
     expect(guard()).toBe('SERVED');
   });
 
+  it('sends other addresses to the main domain, but answers a signed preview on any of them', () => {
+    agent('resume');
+    const load = (query: string) =>
+      execFileSync('php', ['-r', `define('WP_CONTENT_DIR', ${JSON.stringify(content())}); function get_option() { return 'https://shop.example'; } $_SERVER['HTTP_HOST'] = 't-1.stores.example'; $_GET = ${query}; include WP_CONTENT_DIR . '/mu-plugins/waas-guard.php'; echo 'SERVED';`], {
+        encoding: 'utf8',
+      });
+    // The CLI drops the Location header; the guard stops before WordPress serves anything.
+    expect(load('[]')).toBe('');
+    expect(load("['anypress_preview' => 'abc.def']")).toBe('SERVED');
+  });
+
   it('escapes the brand and links it only to an http(s) URL', () => {
     agent('suspend', { brand: { name: 'R&D <Hosting>', url: 'https://host.example/' } });
     expect(guard()).toContain('<a class="brand" href="https://host.example/">R&amp;D &lt;Hosting&gt;</a>');

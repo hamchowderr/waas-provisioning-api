@@ -203,8 +203,10 @@ export interface StoreMeta {
  *    relay) and the agent's outreach-mailbox operation (src/outreach.ts).
  * 18: the outreach mu-plugin starts prospects on the Sales Kit's outreach automations a few a day and stops them when
  *    tagged Replied or Customer, and the agent's crm-automation operation makes those automations (src/outreachautomation.ts).
+ * 19: the guard mu-plugin answers a signed preview link (?anypress_preview=) on any of the store's addresses instead
+ *    of redirecting it to the main domain, so AI apps can frame previews from the platform address.
  */
-export const STORE_SETUP = 18;
+export const STORE_SETUP = 19;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
