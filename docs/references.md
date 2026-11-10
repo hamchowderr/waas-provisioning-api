@@ -117,6 +117,21 @@ Each reference page is matched to the store's page (the home page, then by slug,
 
 `extraStorePages` lists store pages no reference page matched. The look isn't judged here: compare each `referenceScreenshot` with the store page before calling it done. A big reference goes through 50 pages at a time (`offset`, `limit`). Posts and products are counted in `notes` but not checked page by page.
 
+## Adding the products to the store
+
+A reference's products (from a Shopify shop, WooCommerce and the like) can go straight into the store's shop, FluentCart. The store needs a plan with a shop and AnyPress Client 2.19.0 or newer.
+
+```bash
+curl -u "$KEY:$SECRET" -X POST "https://api.anypress.io/v1/tenants/site/reference-products?externalId=store-1042" \
+  -H 'content-type: application/json' -d '{"referenceId": "<id>", "ownContent": true}'
+```
+
+- New products are drafts, so the owner can look them over in FluentCart and publish them. Send `"status": "publish"` to publish them at once.
+- Each product keeps its name, its options (each variant's name, SKU, price, compare-at price and whether it's in stock) and its categories (the product's type and tags).
+- With `ownContent` (the reference is the owner's own shop), each product's description and up to 10 photos come too. From someone else's shop they don't: write your own descriptions and add your own photos.
+- A product added before from the same address is left as it is (`exists`), so running it again only adds what's missing.
+- Up to 100 products go per call (`offset`, `limit`). `remaining` says how many are left.
+
 ## Allowance
 
 Each storefront can read `REFERENCE_READS_PER_MONTH` references a calendar month (UTC), 50 by default, and spend `REFERENCE_CREDITS_PER_MONTH` Firecrawl credits, 5,000 by default. A read that fails isn't counted as a read, but the credits it spent are. One read takes at most `REFERENCE_MAX_PAGES` pages, 500 by default. A self-hosted server reads websites and documents once `FIRECRAWL_API_KEY` is set and Figma links once `FIGMA_TOKEN` is set ([self-hosting.md](self-hosting.md)). Until then those reads answer 503.

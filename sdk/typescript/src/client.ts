@@ -152,6 +152,8 @@ export class WaasClient {
     editSite: (ref: TenantRef, request: BodyOf<'editTenantSite'>) => this.#call('editTenantSite', 'POST', '/v1/tenants/site', ref, request),
     /** The store checked against the reference it was built from, page by page (free; the look is left to you). */
     checkReference: (ref: TenantRef, params: BodyOf<'checkSiteReference'>) => this.#call('checkSiteReference', 'POST', '/v1/tenants/site/reference-check', ref, params),
+    /** Adds a reference's products to the store's FluentCart, as drafts unless asked; `remaining` says how many are left. */
+    addReferenceProducts: (ref: TenantRef, params: BodyOf<'addSiteReferenceProducts'>) => this.#call('addSiteReferenceProducts', 'POST', '/v1/tenants/site/reference-products', ref, params),
   };
 
   /** References to build a site from: a website, Shopify shop, Figma file or document, read into one bundle. */
