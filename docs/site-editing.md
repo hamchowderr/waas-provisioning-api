@@ -44,7 +44,7 @@ Most site tools take an `action`; read actions need the `site:read` scope and wr
 | Tool | Actions |
 |---|---|
 | `get_site` | Name, tagline, address, theme, home page |
-| `site_pages` | `list`, `read` (one page's numbered sections and block markup), `revisions`, `create` (a draft unless asked to publish), `update` (title, slug, status or whole content), `restore_revision` (undo) |
+| `site_pages` | `list`, `read` (one page's numbered sections and block markup), `revisions`, `create` (a draft unless asked to publish), `update` (title, slug, status or whole content), `translate` (a draft copy in another of the site's languages, linked to the original), `restore_revision` (undo) |
 | `page_section` | `add`, `replace`, `remove`: one section at a time, from a pattern or blocks |
 | `site_patterns` | `categories`, `find`, `get`, `blocks`: the theme's ready-made sections, starter pages and kit sections by category, and the interactive blocks (AnyPress Blocks) with their settings; `preview`: a link, good for 15 minutes, to a page showing a pattern in the site's look or a variation, on the store's platform address so app screens can frame it |
 | `show_looks` | A screen (MCP App) of the theme's kits and other looks with their colours and fonts, a live preview of each kit's home page in its look, every section by category previewed in the chosen look, and a button to switch a look on |
@@ -53,5 +53,6 @@ Most site tools take an `action`; read actions need the `site:read` scope and wr
 | `site_menus` | `list`, `update`: navigation menus |
 | `add_image` | Copies an image from a link into the media library |
 | `business_profile` | `read`, `save`, `undo`: what the site says about its business (name, place, language, products, booking types, forms) and what the owner has said about it (what it does, who it is for, hours, voice). AnyPress Client 2.11.0 or newer |
+| `site_languages` | `read`, `on`, `off`: the site in more than one language (Polylang). When on, each page has a copy per language, visitors pick a language in the menu, and addresses look like `/es/`. Plugins' buttons and screens follow the visitor's language; text typed into the shop, forms and emails is not translated. AnyPress Client 2.25.0 or newer |
 
 The read-only server (`/mcp/read-only`) offers only the actions that read.

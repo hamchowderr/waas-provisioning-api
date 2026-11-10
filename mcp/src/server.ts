@@ -127,7 +127,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         'Most tools take an action, e.g. manage_domain with action add. ' +
         'Every store write is asynchronous: it returns once scheduled, and the store shows statusCode 0 (Pending) until the work finishes, then 1 (Done) or 2 (Failed). ' +
         'Call get_stores with action wait after creating, restoring, moving or changing domains, and before the next write to the same store. ' +
-        'The site tools (get_site, site_pages, page_section, site_patterns, site_styles, header_footer, site_menus, add_image, business_profile) edit a store’s pages and design directly and take effect at once: ' +
+        'The site tools (get_site, site_pages, page_section, site_patterns, site_styles, header_footer, site_menus, add_image, business_profile, site_languages) edit a store’s pages and design directly and take effect at once: ' +
         'read a page before changing it, build from the theme’s patterns and style slugs, create new pages as drafts, and publish only when the user says so. ' +
         'For a whole new page, start from a starter page (site_patterns with action find and category anypress/pages: home pages per site type, about, services, contact) and then rewrite its text for the business.' +
         (skill ? ` The skill ${skill} walks through the common jobs step by step.` : '') +
@@ -599,6 +599,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
       status: z.enum(['draft', 'publish']).optional().describe('For create and update; publish only when the user says so'),
       content: blocks.optional().describe('For create and update: the whole page as block markup. To change one part, use page_section'),
       revisionId: z.number().int().positive().optional().describe('For restore_revision'),
+      language: z.string().optional().describe('For translate: a language code from site_languages read, e.g. es'),
     },
     actions: {
       list: { access: 'read', does: 'id, title, slug, status and link of each page (a preview link for drafts)', run: (args) => site(args, { method: 'GET', path: '/pages' }) },
@@ -617,6 +618,12 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
         access: 'write',
         does: 'changes a page’s title, slug or status, or replaces all its content',
         run: ({ pageId: id, title, slug, status, content, ...args }) => site(args, { method: 'PATCH', path: `/pages/${need(id, 'pageId', 'update')}`, body: { title, slug, status, content } }),
+      },
+      translate: {
+        access: 'write',
+        does: 'makes a draft copy of the page in another of the site’s languages (or returns the copy that exists), linked to the original; then rewrite its title and text in that language with update and publish it when the user says so. Needs Languages on (site_languages)',
+        run: ({ pageId: id, language, ...args }) =>
+          site(args, { method: 'POST', path: `/pages/${need(id, 'pageId', 'translate')}/translations`, body: { language: need(language, 'language', 'translate') } }),
       },
       restore_revision: {
         access: 'write',
@@ -851,6 +858,34 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     },
     ({ url, alt, ...args }) => site(args, { method: 'POST', path: '/media', body: { url, alt } }),
   );
+
+  actionTool('site_languages', {
+    title: 'Languages', area: 'site',
+    description:
+      'The site in more than one language (Polylang). When on, each page has a copy per language (site_pages translate makes one), visitors pick a language in the menu, and addresses look like /es/. ' +
+      'Buttons and screens of the site’s plugins follow the visitor’s language; text typed into the shop, forms and emails is not translated. Turn it on or change languages only when the user asks. Needs AnyPress Client 2.22 or later on the store.',
+    input: {
+      ...ref,
+      languages: z
+        .array(z.string().regex(/^[a-z]{2,3}(_[A-Z]{2})?(_[a-z0-9]+)?$/))
+        .max(9)
+        .optional()
+        .describe('For on: WordPress locales besides the site’s own, e.g. ["es_ES", "fr_FR"]; leave out to keep the ones chosen before'),
+    },
+    actions: {
+      read: { access: 'read', does: 'whether Languages is on and ready, and each language with its code, name and number of pages', run: (args) => site(args, { method: 'GET', path: '/languages' }) },
+      on: {
+        access: 'write',
+        does: 'turns Languages on with these languages; setting up takes a few seconds, so read until ready is true before translating pages',
+        run: ({ languages, ...args }) => site(args, { method: 'PATCH', path: '/languages', body: { on: true, ...(languages ? { languages } : {}) } }),
+      },
+      off: {
+        access: 'write',
+        does: 'turns Languages off: the switcher leaves the menus and translated pages stay as ordinary pages; turning it on again links them again',
+        run: (args) => site(args, { method: 'PATCH', path: '/languages', body: { on: false } }),
+      },
+    },
+  });
 
   const fact = (what: string) => z.string().optional().describe(`${what}; an empty string clears it`);
   actionTool('business_profile', {

@@ -29,6 +29,7 @@ import { adminResellerRoutes } from '../resellers.ts';
 import { Status, statusName } from '../status.ts';
 import { createStorefront, getStorefront, type NewStorefront } from '../storefronts.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
+import { askStore, reachableStore, siteLanguageRoutes } from './sitelanguages.ts';
 import { pluginChoiceService } from '../pluginchoices.ts';
 import { storeDomainConnect } from './domainconnect.ts';
 import { websiteSetup } from '../domainconnect.ts';
@@ -38,7 +39,6 @@ import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
 import { sitePluginsOf } from '../siteplugins.ts';
 import { deleteTenant, goLiveTenant, HIGHLEVEL_SITE_TYPE, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
-import { callSite, siteKeys } from '../sitekeys.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
 import { emailWebsiteReady } from '../jobs.ts';
@@ -721,22 +721,12 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   // site tied to, or untied from, a sub-account after it was made. Members who only look are refused by the session check.
   app.post('/tenants/:id/highlevel-check', async (c) => {
     const id = c.req.param('id');
-    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
     const select = `SELECT t.*, (SELECT domain_name FROM tenant_domains d WHERE d.tenant_id = t.id AND d.is_main) AS main_domain
        FROM tenants t WHERE t.id = $1 AND ($2::uuid IS NULL OR t.product_id = $2)`;
-    const { rows } = await pool.query(select, [id, scopedProduct(c)]);
-    const tenant = rows[0];
-    if (!tenant) throw notFound(`Tenant ${id} not found`);
-    if (!siteTypesOf(tenant.php_constants).includes(HIGHLEVEL_SITE_TYPE)) throw conflict('This is not a HighLevel site');
-    if (tenant.status !== Status.Done) throw conflict(`This site is ${statusName(tenant.status)}; check once it is Done`);
-    if (tenant.is_suspended) throw conflict('This site is suspended; resume it to check');
-    if (!tenant.main_domain) throw conflict('This site has no address yet');
-    let answer;
-    try {
-      answer = await callSite(siteKeys(config.secretsKey)(tenant.id), tenant.main_domain, { method: 'POST', path: '/crm-link', body: {} }, deps.siteFetch, 20_000);
-    } catch (error) {
-      throw new HttpError(502, `The site did not answer: ${(error as Error).message}`);
-    }
+    const tenant = await reachableStore(deps, c, (t) => {
+      if (!siteTypesOf(t.php_constants as Parameters<typeof siteTypesOf>[0]).includes(HIGHLEVEL_SITE_TYPE)) throw conflict('This is not a HighLevel site');
+    });
+    const answer = await askStore(deps, tenant, { method: 'POST', path: '/crm-link', body: {} }, 20_000);
     if (answer.status === 404) throw conflict('This site runs an older AnyPress Client; it checks on its own within the hour');
     if (answer.status !== 200) throw new HttpError(502, `The site answered ${answer.status}`);
     const after = await pool.query(select, [id, scopedProduct(c)]);
@@ -1417,6 +1407,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Phone numbers for the phone receptionist (src/voice.ts).
   voiceAdminRoutes(app, deps);
+  siteLanguageRoutes(app, deps);
 
   return app;
 }
