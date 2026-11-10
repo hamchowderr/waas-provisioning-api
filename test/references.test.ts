@@ -2,6 +2,7 @@
 // Shopify, WordPress, Squarespace and anything else (every page, the platform's own data first, a coverage list), a
 // Figma file and a document, each into the same bundle. Firecrawl, Figma and the sites are fakes. Responses are
 // checked against openapi/waas-provisioning-api.yaml.
+import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAjv, spec } from '../src/openapi.ts';
 import { figmaLink, parseReferenceInput, startReferences, type ReferenceReaders } from '../src/references.ts';
@@ -92,6 +93,13 @@ const firecrawl = {
 const json = (body: unknown, headers: Record<string, string> = {}) => Response.json(body, { headers });
 const html = (body: string, headers: Record<string, string> = {}) => new Response(body, { headers: { 'content-type': 'text/html', ...headers } });
 
+/** sq.example's robots.txt names a sitemap index; its one sitemap is gzipped and lists a page no link points to. */
+const sqSitemap: Record<string, () => Response> = {
+  '/robots.txt': () => new Response('User-agent: *\nSitemap: https://sq.example/sitemap.xml\n', { headers: { 'content-type': 'text/plain' } }),
+  '/sitemap.xml': () => new Response('<?xml version="1.0"?><sitemapindex><sitemap><loc>https://sq.example/pages.xml.gz</loc></sitemap></sitemapindex>', { headers: { 'content-type': 'application/xml' } }),
+  '/pages.xml.gz': () => new Response(gzipSync('<urlset><url><loc>https://sq.example/blog/first-post</loc></url><url><loc><![CDATA[https://sq.example/only-in-sitemap]]></loc></url></urlset>'), { headers: { 'content-type': 'application/x-gzip' } }),
+};
+
 /** The sites' own pages and data. */
 const siteFetch = (async (input: string | URL | Request) => {
   const url = new URL(String(input));
@@ -127,6 +135,7 @@ const siteFetch = (async (input: string | URL | Request) => {
     }
     case 'sq.example':
       if (route === '/') return html('<link href="https://static1.squarespace.com/x.css">');
+      if (sqSitemap[route]) return sqSitemap[route]!();
       if (route === '/blog?format=json')
         return json({
           collection: { typeName: 'blog', title: 'Blog', description: '<p>News</p>' },
@@ -306,6 +315,10 @@ describe('reading references', () => {
     expect(b.items[0]).toMatchObject({ date: '2026-01-01T00:00:00.000Z', images: ['https://images.sq/1.jpg'] });
     expect(b.collections).toEqual([{ title: 'Blog', handle: 'blog', description: 'News' }]);
     expect(entry(r, '/blog/second-post')).toMatchObject({ status: 'read', via: 'squarespace' });
+    // The sitemap is read first, free: a page only it lists is found and read.
+    expect(b.coverage).toMatchObject({ sitemaps: ['https://sq.example/sitemap.xml', 'https://sq.example/pages.xml.gz'], fromSitemap: 2 });
+    expect(entry(r, '/only-in-sitemap')).toMatchObject({ status: 'read', via: 'firecrawl' });
+    expect(b.notes.join(' ')).toContain('The sitemap listed 2 addresses');
   });
 
   it('stops at maxPages and says which pages were left, and says why a site could not be read', async () => {
@@ -315,6 +328,8 @@ describe('reading references', () => {
     expect(r.bundle.pages).toHaveLength(2);
     expect(entry(r, '/c')).toMatchObject({ status: 'skipped', reason: 'not read: the 2-page limit of this read was reached' });
     expect(r.bundle.notes.join(' ')).toContain('higher maxPages');
+    expect(r.bundle.coverage).toMatchObject({ sitemaps: [], fromSitemap: 0 });
+    expect(r.bundle.notes.join(' ')).toContain('no sitemap');
     const broken = await read({ url: 'https://broken.example' });
     expect(broken).toMatchObject({ statusCode: 2, bundle: null, creditsUsed: 1 });
     expect(broken.error).toContain('broken.example');
