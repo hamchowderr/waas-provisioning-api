@@ -30,8 +30,8 @@ seo-by-rank-math 1.0.280 9ae865e3440a96526e6db1d721a7a6f41dca1e46f116630d3bdb968
 automatorwp 6.0.5 541d640bdf4b6f602123e0f1f26a5041f950a13d338f08ca0b665a9a1617144b
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 "
-# wordpress.org plugins installed but left off: slug version sha256. The store owner turns the MCP Adapter on
-# (WordPress's MCP Adapter: Dashboard > Your plan > AI apps, AnyPress Client 2.4.0+; not in roles.json).
+# wordpress.org plugins installed but left off: slug version sha256. AnyPress Client turns the MCP Adapter on on every
+# store (always on since AnyPress Client 2.18.0; not in roles.json).
 # LeadConnector (HighLevel's own plugin: its forms, chat widget and calendars) is on only for the highlevel site type.
 OFF_PLUGINS="
 mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe9b
