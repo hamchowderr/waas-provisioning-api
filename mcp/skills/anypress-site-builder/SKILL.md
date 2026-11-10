@@ -39,7 +39,7 @@ Read first, ask second: `get_site`, `business_profile` read, `site_pages` list a
 5. **Plan features they'll use:** bookings (FluentBooking), a shop (FluentCart), a community or courses (FluentCommunity), a newsletter (FluentCRM). Only ask about what their plan includes (`show_store`).
 6. **Pages they know they want**, and any site they like the look of (a link is enough).
 
-When the owner gives a reference (a website link, a Shopify shop, a Figma link, a PDF or other document), read it with `read_reference` (start, then wait) before step 2, and keep its bundle beside `intake.md`. A Shopify shop's products are in the bundle: offer to add them to the store. A brief or menu as a document gives the facts to write from; someone else's site gives only the look and the kind of layout.
+When the owner gives a reference (a website link, a Shopify shop, a Figma link, a PDF or other document), read it with `read_reference` (start, then wait) before step 2, and keep its bundle beside `intake.md`. A website read takes every page; page through a big bundle with get (offset and limit) and check `coverage` first: every page read, and any that failed retried or named to the owner. Products (Shopify, WooCommerce, Squarespace or found on the pages) and posts (`items`) are in the bundle: offer to add them to the store. A brief or menu as a document gives the facts to write from; someone else's site gives only the look and the kind of layout.
 
 Write `intake.md` with the answers and, under **Assumed**, every default you chose for a missing answer. Save lasting facts with `business_profile` save once the owner confirms them.
 

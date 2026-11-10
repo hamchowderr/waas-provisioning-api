@@ -156,7 +156,8 @@ export class WaasClient {
   readonly references = {
     /** Starts reading a `url` or an uploaded `file`; poll `get` until `statusCode` leaves Pending. */
     start: (params: BodyOf<'startReference'>) => this.#call('startReference', 'POST', '/v1/references', undefined, params),
-    get: (id: string) => this.#call('getReference', 'GET', '/v1/references', { id }),
+    /** The read and its bundle; `offset` and `limit` read a big site's lists (pages, items, products, coverage) a part at a time. */
+    get: (id: string, window: { offset?: number; limit?: number } = {}) => this.#call('getReference', 'GET', '/v1/references', { id, ...window }),
     usage: () => this.#call('getReferenceUsage', 'GET', '/v1/references/usage'),
   };
 

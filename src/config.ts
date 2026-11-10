@@ -111,7 +111,7 @@ export interface Config {
   resellerInvoices?: ResellerInvoiceConfig;
   /** The Sales Kit's prospect finder (src/prospects.ts): GOOGLE_PLACES_API_KEY and PROSPECT_SEARCHES_PER_MONTH (100). */
   prospects?: ProspectConfig;
-  /** Reading references to build sites from (src/references.ts): FIRECRAWL_API_KEY, FIGMA_TOKEN and REFERENCE_READS_PER_MONTH (50). */
+  /** Reading references to build sites from (src/references.ts): FIRECRAWL_API_KEY, FIGMA_TOKEN, REFERENCE_READS_PER_MONTH (50), REFERENCE_CREDITS_PER_MONTH (5000) and REFERENCE_MAX_PAGES (500). */
   references?: ReferenceConfig;
 }
 

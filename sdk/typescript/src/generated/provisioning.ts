@@ -903,7 +903,7 @@ export interface paths {
         };
         /**
          * A reference and its bundle
-         * @description Added for AnyPress. The reference's `statusCode` (0 Pending, 1 Done, 2 Failed), its `bundle` once Done, or `error` saying why it could not be read.
+         * @description Added for AnyPress. The reference's `statusCode` (0 Pending, 1 Done, 2 Failed), its `bundle` once Done, or `error` saying why it could not be read. A big site's bundle can be read a part at a time: `offset` and `limit` apply to each of its lists (pages, items, products and coverage addresses), and `totals` gives their full lengths.
          */
         get: operations["getReference"];
         put?: never;
@@ -911,7 +911,7 @@ export interface paths {
          * Read a reference to build a site from
          * @description Added for AnyPress.
          *
-         *     Reads a website link, a Shopify shop, a Figma file, a document link or an uploaded document into one bundle: design tokens (colours, fonts, sizes, radius, logo), each page's text and a screenshot, its images, and a Shopify shop's products and collections. Reading takes up to a few minutes: poll `getReference` until `statusCode` leaves Pending (0). Each storefront has a monthly allowance (`getReferenceUsage`); a read that fails is not counted. With someone else's site, take the layout and style, never their text.
+         *     Reads a website link, a Shopify shop, a Figma file, a document link or an uploaded document into one bundle: design tokens (colours, fonts, sizes, radius, logo), every page's text, a full-page screenshot and its images, the posts, products and other items the site's platform lists (WordPress, Shopify and Squarespace give these as data, free), and a coverage list of every address found with what became of it. A website read takes every page up to `maxPages` (the server's limit by default) and spends about one Firecrawl credit a page. Reading takes from a minute to half an hour for a big site: poll `getReference` until `statusCode` leaves Pending (0). Each storefront has a monthly allowance of reads and credits (`getReferenceUsage`); a read that fails is not counted as a read, but the credits it spent are. With someone else's site, take the layout and style, never their text.
          */
         post: operations["startReference"];
         delete?: never;
@@ -1277,10 +1277,7 @@ export interface components {
                 /** @description The file */
                 data: string;
             };
-            /**
-             * @description Pages of a website, or frames of a Figma page, to read
-             * @default 5
-             */
+            /** @description The most pages of a website, or frames of a Figma page, to read. Every page up to the server's limit (`getReferenceUsage` maxPages, 500 by default) when omitted */
             maxPages?: number;
         };
         Reference: {
@@ -1297,7 +1294,17 @@ export interface components {
             statusCode: 0 | 1 | 2;
             /** @description Why it could not be read */
             error: string | null;
+            /** @description Firecrawl credits the read spent */
+            creditsUsed: number;
             bundle: components["schemas"]["ReferenceBundle"];
+            /** @description The full length of each list in the bundle, null until it is Done */
+            totals: {
+                pages: number;
+                items: number;
+                products: number;
+                /** @description Addresses in coverage.urls */
+                urls: number;
+            } | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1309,6 +1316,11 @@ export interface components {
             kind: "website" | "figma" | "document";
             source: string;
             title: string | null;
+            /**
+             * @description What the website runs on; null for Figma files and documents
+             * @enum {string|null}
+             */
+            platform: "wordpress" | "shopify" | "squarespace" | "wix" | "webflow" | "other" | null;
             design: {
                 /** @description Named colours (primary, secondary, accent, background, text and so on), mapped to the theme's palette when building */
                 colors: {
@@ -1338,12 +1350,27 @@ export interface components {
                     name: string;
                     text: string[];
                 }[];
-                /** @description A picture of the page; the link expires */
+                /** @description A picture of the whole page; the link expires */
                 screenshot: string | null;
+                /** @description The home page at phone width; the link expires */
+                mobileScreenshot: string | null;
+                images: string[];
+                /** @description The home page's links, its menus among them; empty on other pages */
+                links: string[];
+            }[];
+            /** @description Posts, events and other repeated entries, read from the platform's own data (WordPress, Squarespace) */
+            items: {
+                /** @description What the platform calls it: post, event, blog, portfolio and so on */
+                kind: string;
+                url: string;
+                title: string;
+                text: string;
+                date: string | null;
                 images: string[];
             }[];
-            /** @description A Shopify shop's products */
+            /** @description The site's products, from a Shopify, WooCommerce or Squarespace shop's own data, or else found on its pages */
             products: {
+                url: string | null;
                 title: string;
                 handle: string;
                 description: string;
@@ -1366,14 +1393,42 @@ export interface components {
                 handle: string;
                 description: string;
             }[];
+            /** @description For a website, every address found (from its sitemap, its links and its platform's own lists) and what became of it */
+            coverage: {
+                found: number;
+                read: number;
+                failed: number;
+                skipped: number;
+                creditsUsed: number;
+                urls: {
+                    url: string;
+                    /** @description page, product, file, listing, or the item kind (post, event and so on) */
+                    kind: string;
+                    /** @enum {string} */
+                    status: "read" | "failed" | "skipped";
+                    /**
+                     * @description Read by Firecrawl or from the platform's own data
+                     * @enum {string|null}
+                     */
+                    via: "firecrawl" | "wordpress" | "shopify" | "squarespace" | null;
+                    /** @description Why it failed or was skipped */
+                    reason: string | null;
+                }[];
+            } | null;
             /** @description Notes for whoever builds from it, such as links that expire */
             notes: string[];
         } | null;
         ReferenceUsage: {
             /** @description False until this server can read websites and documents */
             available: boolean;
+            /** @description Reads this month that did not fail */
             used: number;
             limit: number;
+            /** @description Firecrawl credits spent this month */
+            creditsUsed: number;
+            creditLimit: number;
+            /** @description The most pages one read takes in */
+            maxPages: number;
             /** Format: date-time */
             resetsAt: string;
         };
@@ -5375,6 +5430,10 @@ export interface operations {
             query: {
                 /** @description The reference's id, from `startReference` */
                 id: string;
+                /** @description Skip this many entries of each list */
+                offset?: number;
+                /** @description At most this many entries of each list; all when omitted */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -5461,7 +5520,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description This month's reads are used up */
+            /** @description This month's reads or reading credits are used up */
             429: {
                 headers: {
                     [name: string]: unknown;
