@@ -1,6 +1,6 @@
-# WaaS Provisioning SDK for PHP
+# AnyPress SDK for PHP
 
-A PHP client for the [WaaS Provisioning API](https://github.com/hamchowderr/waas-provisioning-api), the API that creates and runs WordPress stores. Use it from your own PHP code, or from a WordPress plugin, to create stores, manage their domains and backups, and check webhooks.
+A PHP client for the [AnyPress API](https://github.com/hamchowderr/waas-provisioning-api), the API that creates and runs WordPress stores. Use it from your own PHP code, or from a WordPress plugin, to create stores, manage their domains and backups, and check webhooks.
 
 - PHP 8.1 or newer, with no other packages needed.
 - Sends requests with curl by default, or with `wp_remote_request` inside WordPress.

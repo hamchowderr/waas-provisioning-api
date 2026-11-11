@@ -47,7 +47,7 @@ const TAGS: Record<string, [string, string]> = {
   ApiKeys: ['API keys', 'List, create, rotate and revoke your own API keys. A secret is shown once, in the response that creates the key.'],
   Webhooks: ['Webhooks', 'Endpoints that get a signed POST when a store or version finishes a change, and their deliveries. How to verify them: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/webhooks.md).'],
   PluginChoices: ['Plugin choices', "wordpress.org plugins your stores get on top of your template, or that it switches off, per site type. Applied to each new version as it builds. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/plugin-choices.md)."],
-  PluginUpdates: ['Plugin updates', 'Update checks made by the WaaS plugins. The response points at a signed release package.'],
+  PluginUpdates: ['Plugin updates', 'Update checks made by the AnyPress plugins. The response points at a signed release package.'],
   Branding: ['Demo page', "The name, look and shop link of a seller's or reseller's demo page, and the theme zips its demos install. Public, no key needed. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/branding.md)."],
 };
 
@@ -149,7 +149,7 @@ export function buildPublicSpec(served: Set<string>): any {
   const publicSpec = scrub({
     openapi: '3.0.1',
     info: {
-      title: 'WaaS Provisioning API',
+      title: 'AnyPress API',
       version,
       description: DESCRIPTION,
       license: { name: 'GPL-3.0-or-later', url: 'https://www.gnu.org/licenses/gpl-3.0.html' },
@@ -179,7 +179,7 @@ export const docsPage = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WaaS Provisioning API reference</title>
+<title>AnyPress API reference</title>
 </head>
 <body>
 <div id="app"></div>

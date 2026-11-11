@@ -39,7 +39,7 @@
     render();
   }
 
-  view = await start({ name: 'WaaS stores', show, refresh: (app) => app.callServerTool({ name: 'show_stores', arguments: {} }) });
+  view = await start({ name: 'AnyPress stores', show, refresh: (app) => app.callServerTool({ name: 'show_stores', arguments: {} }) });
 
   function render() {
     if (!view || !loaded) return;

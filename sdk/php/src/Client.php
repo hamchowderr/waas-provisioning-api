@@ -10,7 +10,7 @@ use Waas\Provisioning\Http\CurlTransport;
 use Waas\Provisioning\Http\Transport;
 
 /**
- * A client for the WaaS Provisioning API: stores (tenants), domains, backups, versions, templates,
+ * A client for the AnyPress API: stores (tenants), domains, backups, versions, templates,
  * sending domains, Domain Connect links and webhooks. Field names follow the API's OpenAPI files
  * (openapi/*.yaml); results are the API's JSON as associative arrays.
  *

@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - API keys
+  title: AnyPress API - API keys
   version: 0.1.0
   description: >-
     Self-service API keys. A storefront signs in with one of its

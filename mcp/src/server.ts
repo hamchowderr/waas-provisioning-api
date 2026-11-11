@@ -103,7 +103,7 @@ interface Action<Args> {
 }
 
 /**
- * An MCP server whose tools call the WaaS provisioning API through the TypeScript SDK. The tools
+ * An MCP server whose tools call the AnyPress API through the TypeScript SDK. The tools
  * are grouped by area (stores, backups, domains, email, versions, site) and most take an `action`;
  * each action needs its area's read or write scope, and only the actions a connection may use are
  * offered. It also serves the store screens (MCP Apps) and the skills in mcp/skills (Skills
@@ -123,7 +123,7 @@ export function createWaasMcpServer(client: WaasClient, options: WaasMcpOptions 
     { name: 'waas-provisioning', title: 'AnyPress', version: '0.1.0', websiteUrl: 'https://anypress.io', ...(options.icons ? { icons: options.icons } : {}) },
     {
       instructions:
-        'Manages WordPress stores on the WaaS provisioning API. A store is a "tenant"; pick one by externalId (your own id) or tenantId. ' +
+        'Manages WordPress stores on AnyPress. A store is a "tenant"; pick one by externalId (your own id) or tenantId. ' +
         'Most tools take an action, e.g. manage_domain with action add. ' +
         'Every store write is asynchronous: it returns once scheduled, and the store shows statusCode 0 (Pending) until the work finishes, then 1 (Done) or 2 (Failed). ' +
         'Call get_stores with action wait after creating, restoring, moving or changing domains, and before the next write to the same store. ' +

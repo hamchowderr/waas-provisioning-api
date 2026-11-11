@@ -286,7 +286,7 @@ do_action('shutdown');
 `;
   const visit = async (path = '/', headers: Record<string, string> = {}) => {
     const res = await fetch(base + path, { headers: { host: 'shop.example', ...headers } });
-    return { body: await res.text(), cache: res.headers.get('x-waas-cache') };
+    return { body: await res.text(), cache: res.headers.get('x-anypress-cache') };
   };
   const saved = () => (existsSync(join(content(), 'cache/waas-pages')) ? readdirSync(join(content(), 'cache/waas-pages')) : []);
 

@@ -1,6 +1,6 @@
 <?php
 /*
- * WaaS store agent. The Coolify provisioner runs it in a store's `agent` container (the
+ * AnyPress store agent. The Coolify provisioner runs it in a store's `agent` container (the
  * wordpress:cli image, sharing the WordPress volume) through a Coolify scheduled task:
  *
  *   php /tmp/waas-agent.php <operation> <base64 JSON arguments>
@@ -613,8 +613,8 @@ function install_guard(?array $brand = null): void
     file_put_contents(CONTENT . '/mu-plugins/waas-guard.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store guard
- * Description: Suspension (503) and redirect domains (301). Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store guard
+ * Description: Suspension (503) and redirect domains (301). Managed by AnyPress; edits are overwritten.
  */
 if (defined('WP_CLI') && WP_CLI) return;
 if (file_exists(WP_CONTENT_DIR . '/.waas-suspended')) {
@@ -643,8 +643,8 @@ PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-hold.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store hold
- * Description: Holds a site moved in until its owner makes it live: no email to customers, no background jobs, not indexed. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store hold
+ * Description: Holds a site moved in until its owner makes it live: no email to customers, no background jobs, not indexed. Managed by AnyPress; edits are overwritten.
  */
 /*
  * Only while wp-content/.waas-hold exists: from the move until the owner presses Go live in AnyPress (the agent's
@@ -732,8 +732,8 @@ PHP) !== false || fail('cannot write the hold mu-plugin');
     file_put_contents(CONTENT . '/mu-plugins/waas-mail.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store mail
- * Description: Sends the store's email through the platform's mail relay. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store mail
+ * Description: Sends the store's email through the platform's mail relay. Managed by AnyPress; edits are overwritten.
  */
 $waas_mail = json_decode((string) base64_decode((string) getenv('WAAS_MAIL_B64')), true);
 if (!is_array($waas_mail) || empty($waas_mail['host']) || empty($waas_mail['from'])) return;
@@ -771,7 +771,7 @@ add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
     $mailer->Sender = $waas_mail['from'];
 }, PHP_INT_MAX);
 add_action('wp_mail_failed', function ($error) {
-    error_log('WaaS store mail: ' . $error->get_error_message());
+    error_log('AnyPress store mail: ' . $error->get_error_message());
 });
 
 /*
@@ -879,7 +879,7 @@ add_action('init', function () use ($waas_mail) {
         try {
             $step();
         } catch (\Throwable $e) {
-            error_log("WaaS store mail: $plugin sender: " . $e->getMessage());
+            error_log("AnyPress store mail: $plugin sender: " . $e->getMessage());
         }
     }
     update_option('waas_mail_senders', ['key' => $key, 'set' => $want], false);
@@ -1176,8 +1176,8 @@ PHP) !== false || fail('cannot write the outreach mu-plugin');
     file_put_contents(CONTENT . '/mu-plugins/waas-owner.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store owner
- * Description: Fills in the owner's business details from the purchase. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store owner
+ * Description: Fills in the owner's business details from the purchase. Managed by AnyPress; edits are overwritten.
  */
 /*
  * The platform sets `anypress_store_owner` (JSON) from the buyer's billing details: name, phone, address_1, address_2,
@@ -1338,7 +1338,7 @@ add_action('init', function () {
         try {
             $step();
         } catch (\Throwable $e) {
-            error_log("WaaS store owner: $what: " . $e->getMessage());
+            error_log("AnyPress store owner: $what: " . $e->getMessage());
         }
     }
     update_option('anypress_owner_details', ['key' => $key, 'set' => $want], false);
@@ -1347,8 +1347,8 @@ PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-auth.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store login safety
- * Description: Turns on two of FluentAuth's own recommended settings once: XML-RPC off and usernames kept out of the REST API. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store login safety
+ * Description: Turns on two of FluentAuth's own recommended settings once: XML-RPC off and usernames kept out of the REST API. Managed by AnyPress; edits are overwritten.
  */
 // Once per store, and only while the owner hasn't chosen otherwise: FluentAuth's settings page changes them later.
 add_action('init', function () {
@@ -1365,8 +1365,8 @@ PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store plan
- * Description: Keeps the store within its plan's storage and monthly email. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store plan
+ * Description: Keeps the store within its plan's storage and monthly email. Managed by AnyPress; edits are overwritten.
  */
 // The quotas come with the store's size (compose.ts). Version sites have none, and nothing here applies to them.
 if ((string) getenv('WAAS_STORAGE_GB') === '' && (string) getenv('WAAS_EMAILS_PER_MONTH') === '') return;
@@ -1584,11 +1584,11 @@ function install_object_cache(): void
 {
     $dropin = CONTENT . '/object-cache.php';
     $current = is_file($dropin) ? (string) file_get_contents($dropin) : null;
-    if ($current !== null && strpos($current, 'WaaS object cache') === false) return;
+    if ($current !== null && strpos($current, 'AnyPress object cache') === false && strpos($current, 'WaaS object cache') === false) return;
     file_put_contents($dropin, <<<'PHP'
 <?php
 /*
- * WaaS object cache: WordPress's cache in the store's own Redis. Managed by the WaaS provisioner; edits are overwritten.
+ * AnyPress object cache: WordPress's cache in the store's own Redis. Managed by AnyPress; edits are overwritten.
  */
 defined('ABSPATH') || exit;
 $waas_redis = (string) getenv('WAAS_REDIS_HOST');
@@ -1616,11 +1616,11 @@ function install_cache(): void
 {
     $dropin = CONTENT . '/advanced-cache.php';
     $current = is_file($dropin) ? (string) file_get_contents($dropin) : null;
-    if ($current === null || strpos($current, 'WaaS page cache') !== false) {
+    if ($current === null || strpos($current, 'AnyPress page cache') !== false || strpos($current, 'WaaS page cache') !== false) {
         file_put_contents($dropin, <<<'PHP'
 <?php
 /*
- * WaaS page cache: serves saved pages. Managed by the WaaS provisioner; edits are overwritten.
+ * AnyPress page cache: serves saved pages. Managed by AnyPress; edits are overwritten.
  * Saved by mu-plugins/waas-cache.php, which also says which requests are cached.
  */
 defined('WAAS_CACHE_TTL') || define('WAAS_CACHE_TTL', 600);
@@ -1645,7 +1645,7 @@ if ($waas_cacheable) {
     $waas_saved = @filemtime($waas_file);
     if ($waas_saved && time() - $waas_saved < WAAS_CACHE_TTL) {
         header('Content-Type: text/html; charset=UTF-8');
-        header('X-WaaS-Cache: hit');
+        header('X-AnyPress-Cache: hit');
         if ($waas_method === 'GET') readfile($waas_file);
         exit;
     }
@@ -1657,8 +1657,8 @@ PHP) !== false || fail('cannot write the page cache drop-in');
     file_put_contents(CONTENT . '/mu-plugins/waas-cache.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS page cache
- * Description: Saves pages for visitors who are not logged in and clears them when content changes. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress page cache
+ * Description: Saves pages for visitors who are not logged in and clears them when content changes. Managed by AnyPress; edits are overwritten.
  */
 defined('WAAS_CACHE_TTL') || define('WAAS_CACHE_TTL', 600);
 

@@ -3,7 +3,7 @@ info:
   license:
     name: GPL-3.0-or-later
     url: https://www.gnu.org/licenses/gpl-3.0.html
-  title: WaaS Provisioning API
+  title: AnyPress API
   description: 'Contract for the AnyPress provisioning API. The storefront and client plugins depend on these paths, parameters and field names, so they do not change.
 
 

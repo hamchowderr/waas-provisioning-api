@@ -13,7 +13,7 @@ import { addReferenceProducts } from '../referenceproducts.ts';
 import { referenceBundle } from '../references.ts';
 
 /**
- * Site editing (docs/site-editing.md, tag TenantSite): passes one request on to the store's WaaS
+ * Site editing (docs/site-editing.md, tag TenantSite): passes one request on to the store's AnyPress
  * Client site routes, signed with the store's site key, and answers with the store's reply.
  * Mounted at /v1/tenants.
  */

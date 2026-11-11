@@ -1,6 +1,6 @@
 {
   "name": "otakusolutions/waas-provisioning-sdk",
-  "description": "PHP client for the WaaS Provisioning API: create and manage WordPress stores from your own code.",
+  "description": "PHP client for the AnyPress API: create and manage WordPress stores from your own code.",
   "type": "library",
   "license": "GPL-3.0-or-later",
   "keywords": ["wordpress", "waas", "website-as-a-service", "provisioning", "hosting", "sdk", "api-client"],

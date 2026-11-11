@@ -34,7 +34,7 @@
     render();
   }
 
-  view = await start({ name: 'WaaS domains', show, refresh: (app) => app.callServerTool({ name: 'show_store_domains', arguments: data?.ref ?? {} }) });
+  view = await start({ name: 'AnyPress domains', show, refresh: (app) => app.callServerTool({ name: 'show_store_domains', arguments: data?.ref ?? {} }) });
 
   const what = () => `store ${data.store?.externalId ?? data.ref.externalId ?? data.ref.tenantId}`;
 

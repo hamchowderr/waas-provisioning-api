@@ -8,7 +8,7 @@ For whoever runs the API. Stores send their email (password resets, FluentCart o
 - The store agent writes the mu-plugin `wp-content/mu-plugins/waas-mail.php` with the guard (on restore, configure, suspend and resume). It reads `WAAS_MAIL_B64` and sets PHPMailer to SMTP. Without the variable (version sites, or the relay unset) it does nothing.
 - The relay only sends from its verified domain, so every message goes out **from the store's own address on `STORE_MAIL_FROM`'s domain under the store's name** (the sender name a plugin set, else the site title); see [Each store's own address](#each-stores-own-address). The address the store meant to send from becomes the Reply-To, unless the message already has one or it is WordPress's placeholder `wordpress@<site>`. When none of that gives a Reply-To, it is the site's administration email, since nobody reads the store's address on the relay's domain.
 - Each plugin's own sender settings are filled in to match; see [The plugins' own senders](#the-plugins-own-senders).
-- Failures are written to the PHP error log (`WaaS store mail: …`), visible in the store's container logs.
+- Failures are written to the PHP error log (`AnyPress store mail: …`), visible in the store's container logs.
 - Existing stores: on startup the API gives every live store the current settings (`ensureStoreMail`, next to the cron check in `src/maintenance.ts`). A store whose variable already matches is left alone. One that needs it gets the variable, a re-rendered compose if it never had one, **one restart**, and the mu-plugin. Changing any setting (a new key) does the same for every store on the next deploy.
 
 ## Settings (on the API)

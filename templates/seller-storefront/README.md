@@ -46,7 +46,7 @@ nightly backups, the page cache for visitors with no cookies (a cart or a login 
 platform's relay, and its own domains.
 
 What the owner still does: connect a payment method in FluentCart, then make a subscription product with the
-**WaaS Provisioning** integration (AnyPress Host's home page lists the steps).
+**AnyPress websites** integration (AnyPress Host's home page lists the steps).
 
 ## Build and publish
 

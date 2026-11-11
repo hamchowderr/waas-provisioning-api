@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Runs the WaaS MCP server over stdio, configured from the environment. For HTTP, the API serves
+// Runs the AnyPress MCP server over stdio, configured from the environment. For HTTP, the API serves
 // the same tools at /mcp (src/mcp.ts).
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { WaasClient } from 'waas-provisioning-sdk';

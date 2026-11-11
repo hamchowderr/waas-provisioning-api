@@ -389,7 +389,7 @@ async function deliver(pool: Pool, secrets: Secrets, config: WebhookConfig, deli
     row.url,
     {
       'Content-Type': 'application/json',
-      'User-Agent': 'WaaS-Webhooks/1.0',
+      'User-Agent': 'AnyPress-Webhooks/1.0',
       'webhook-id': row.event_id,
       'webhook-timestamp': String(timestamp),
       'webhook-signature': sign(secret, row.event_id, timestamp, body),
