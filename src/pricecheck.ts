@@ -61,45 +61,39 @@ const stripTags = (html: string) => html.replace(/<script[\s\S]*?<\/script>|<sty
  * each listed page may only show prices the list has. An empty list means the shop matches.
  */
 export async function checkShopPrices(config: Pick<PriceCheckConfig, 'shopUrl' | 'pages'>, fetchFn: typeof fetch = fetch): Promise<string[]> {
-  const problems: string[] = [];
   const res = await fetchFn(`${config.shopUrl}/wp-json/fluent-cart/v2/public/products?per_page=100`, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`the shop's products didn't load (HTTP ${res.status})`);
   const body = (await res.json()) as { products?: { products?: { data?: ShopProduct[] } } };
   const products = new Map((body.products?.products?.data ?? []).map((p) => [p.post_name, p]));
-  const allowed = listedDollars();
-
-  for (const type of PRICE_LIST.siteTypes) {
-    for (const size of SIZES) {
-      const slug = `${type.key}-${size}`;
-      const product = products.get(slug);
-      if (!product) {
-        problems.push(`${type.name} ${size}: no product "${slug}" in the shop`);
-        continue;
-      }
-      for (const [period, want] of [['monthly', type.monthly[size]], ['yearly', type.yearly[size]]] as const) {
-        const variant = product.variants?.find((v) => v.other_info?.repeat_interval === period);
-        const cents = Number(variant?.item_price);
-        if (!variant) problems.push(`${product.post_title}: no ${period} price in the shop (the list says ${money(want)})`);
-        else if (cents !== want * 100) problems.push(`${product.post_title}: the shop charges ${money(cents / 100)} ${period}, the list says ${money(want)}`);
-      }
-      const ownPrices = new Set([0, type.monthly[size], type.yearly[size]]);
-      for (const amount of dollarAmounts(product.post_excerpt ?? '')) {
-        if (!ownPrices.has(amount)) problems.push(`${product.post_title}: its description says ${money(amount)}, which isn't its price`);
-      }
-    }
-  }
-
-  for (const page of config.pages) {
-    const url = new URL(page, `${config.shopUrl}/`).toString();
-    const pageRes = await fetchFn(url, { signal: AbortSignal.timeout(30_000) });
-    if (!pageRes.ok) {
-      problems.push(`${url} didn't load (HTTP ${pageRes.status})`);
-      continue;
-    }
-    const wrong = [...new Set(dollarAmounts(stripTags(await pageRes.text())).filter((a) => !allowed.has(a)))];
-    if (wrong.length) problems.push(`${url} shows ${wrong.map(money).join(', ')}, which the price list doesn't have`);
-  }
+  const problems = PRICE_LIST.siteTypes.flatMap((type) => SIZES.flatMap((size) => checkPlan(type, size, products.get(`${type.key}-${size}`))));
+  for (const page of config.pages) problems.push(...(await checkPage(new URL(page, `${config.shopUrl}/`).toString(), fetchFn)));
   return problems;
+}
+
+type SiteTypePrices = (typeof PRICE_LIST.siteTypes)[number];
+
+/** One plan product against its prices: both checkout prices, and the prices its description shows. */
+function checkPlan(type: SiteTypePrices, size: Size, product: ShopProduct | undefined): string[] {
+  if (!product) return [`${type.name} ${size}: no product "${type.key}-${size}" in the shop`];
+  const problems: string[] = [];
+  for (const [period, want] of [['monthly', type.monthly[size]], ['yearly', type.yearly[size]]] as const) {
+    const variant = product.variants?.find((v) => v.other_info?.repeat_interval === period);
+    const cents = Number(variant?.item_price);
+    if (!variant) problems.push(`${product.post_title}: no ${period} price in the shop (the list says ${money(want)})`);
+    else if (cents !== want * 100) problems.push(`${product.post_title}: the shop charges ${money(cents / 100)} ${period}, the list says ${money(want)}`);
+  }
+  const ownPrices = new Set([0, type.monthly[size], type.yearly[size]]);
+  const wrong = dollarAmounts(product.post_excerpt ?? '').filter((amount) => !ownPrices.has(amount));
+  return [...problems, ...wrong.map((amount) => `${product.post_title}: its description says ${money(amount)}, which isn't its price`)];
+}
+
+/** One shop page: every price it shows must be on the list. */
+async function checkPage(url: string, fetchFn: typeof fetch): Promise<string[]> {
+  const res = await fetchFn(url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) return [`${url} didn't load (HTTP ${res.status})`];
+  const allowed = listedDollars();
+  const wrong = [...new Set(dollarAmounts(stripTags(await res.text())).filter((a) => !allowed.has(a)))];
+  return wrong.length ? [`${url} shows ${wrong.map(money).join(', ')}, which the price list doesn't have`] : [];
 }
 
 export interface PriceCheckAlerts {
