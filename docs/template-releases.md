@@ -2,10 +2,10 @@
 
 New store templates go live without anyone publishing them by hand.
 
-1. **A pin moves.** The **Update pins** workflow (hourly, [`.github/pins/README.md`](../.github/pins/README.md)) moves
+1. **A pin moves, or a template changes.** The **Update pins** workflow (hourly, [`.github/pins/README.md`](../.github/pins/README.md)) moves
    the store template's pins to their newest releases: the AnyPress theme, AnyPress Blocks, AnyPress Client
    (`templates/anypress-store/CLIENT_VERSION`), WordPress and the wordpress.org plugins. Its pull request merges once
-   CI passes.
+   CI passes. Any other pull request that changes a template (not only its README) counts the same.
 2. **The template is built and checked.** A merge that changes `templates/` starts **Release templates**. It builds
    the store template, then runs it on WordPress Playground as every site type in `roles.json`: every wp-admin screen
    and the home page must load without a PHP error, with only that site type's plugins on. Only then does it publish

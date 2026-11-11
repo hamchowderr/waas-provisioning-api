@@ -2,10 +2,16 @@
 # WordPress Playground as every site type, and only then attaches them, with their checksums and checks.txt, to a
 # GitHub release templates-v<version>. The AnyPress API publishes each such release and makes it production by itself
 # (docs/template-releases.md); install/anypress-install.sh publishes the newest one on a new server.
-# Update pins starts it after a merge that changes a template; it can also be run from the Actions tab.
+# A merge to main that changes a template starts it (Update pins merges with the workflow token, which starts no push
+# workflows, so it starts this itself afterwards); it can also be run from the Actions tab.
 name: Release templates
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'templates/**'
+      - '!templates/**/*.md'
   workflow_dispatch:
     inputs:
       version:
