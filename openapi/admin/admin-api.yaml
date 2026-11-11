@@ -1671,6 +1671,32 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/tenants/{id}/backups:
+    post:
+      operationId: adminCreateTenantBackup
+      summary: Take a backup of a store now
+      description: >-
+        Takes a full backup of the store's files and database now (reason manual), as POST
+        /v1/tenants/backups does. The backup is Pending until the job finishes; the store keeps
+        running meanwhile. For any store the caller may see. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The backup was scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, externalId, backupId]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+                  backupId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/restore:
     post:
       operationId: adminRestoreTenant
