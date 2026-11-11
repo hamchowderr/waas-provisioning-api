@@ -1,7 +1,7 @@
 -- Up Migration
 
 -- Resellers are billed each store's own site type's list price (Website $12, Bookings $19, Store $29,
--- Community $39, Everything $79 for Small; Medium 2x, Large 4x) less their wholesale discount, the
+-- Community $49, Everything $79 for Small; Medium 2x, Large 4x) less their wholesale discount, the
 -- prices anypress.io shows. So each live period keeps the store's site types: the ANYPRESS_TENANT_ROLES
 -- constant its storefront set (comma-separated keys of the template's roles.json), or NULL when it has
 -- none or keeps it private. A store with no known site type is still billed the reseller's own price

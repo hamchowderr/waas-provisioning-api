@@ -3532,7 +3532,7 @@ components:
               stores: { type: number, description: 'Store-months: store-days over the days in the month' }
               listPriceCents:
                 type: integer
-                description: "Monthly list price of one store: its site type's shop price for its size (Small Website 1200, Bookings 1900, Store 2900, Community 3900, Everything 7900; Medium 2x, Large 4x), or the reseller's own price for the size when it has no site type with a public price"
+                description: "Monthly list price of one store: its site type's shop price for its size (Small Website 1200, Bookings 1900, Store 2900, Community 4900, Everything 7900; Medium 2x, Large 4x), or the reseller's own price for the size when it has no site type with a public price"
               wholesalePriceCents: { type: integer, description: 'Monthly price of one store after the discount' }
               amountCents: { type: integer }
         domainLines:

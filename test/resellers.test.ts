@@ -346,13 +346,13 @@ describe('partner keys', () => {
       expect.arrayContaining([
         expect.objectContaining({ size: 'small', siteType: 'everything', listPriceCents: 7900, wholesalePriceCents: 4740, amountCents: 4740 }),
         expect.objectContaining({ size: 'medium', siteType: 'store', listPriceCents: 5800, wholesalePriceCents: 3480 }),
-        expect.objectContaining({ size: 'large', siteType: 'community', listPriceCents: 15600, wholesalePriceCents: 9360 }),
+        expect.objectContaining({ size: 'large', siteType: 'community', listPriceCents: 19600, wholesalePriceCents: 11760 }),
         expect.objectContaining({ size: 'small', siteType: 'highlevel', listPriceCents: 1500, wholesalePriceCents: 900 }),
         expect.objectContaining({ size: 'small', siteType: null, listPriceCents: 1500, wholesalePriceCents: 900 }),
       ]),
     );
     expect(bill.lines).toHaveLength(5);
-    expect(bill.totalCents).toBe(4740 + 3480 + 9360 + 900 + 900);
+    expect(bill.totalCents).toBe(4740 + 3480 + 11760 + 900 + 900);
     const usage = await admin('GET', `/admin/resellers/${typed.id}/usage?from=2026-09-01T00:00:00Z&to=2026-10-01T00:00:00Z`);
     expect(usage.storeDays).toEqual({ small: 90, medium: 30, large: 30 });
     expect(usage.products).toEqual([expect.objectContaining({ storeDays: { small: 90, medium: 30, large: 30 } })]);

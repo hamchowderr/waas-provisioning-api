@@ -284,7 +284,7 @@ const SITE_TYPE_PRICE_CENTS: Record<string, number> = {
   bookings: 1900,
   'online-store': 2900,
   store: 2900,
-  community: 3900,
+  community: 4900,
   everything: 7900,
 };
 /** Medium is twice Small and Large four times, as on the shop. */
