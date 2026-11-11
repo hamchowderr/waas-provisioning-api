@@ -16,5 +16,10 @@
 	# Any AnyPress dashboard address (including a seller's own) may embed it.
 	header -X-Frame-Options
 
+	# Any page may load Playground's client library from here to run a site inside its own page (anypress.io/try).
+	# The client only starts this copy's remote.html when it is loaded from the same address.
+	@client path /client/*
+	header @client Access-Control-Allow-Origin "*"
+
 	file_server
 }
