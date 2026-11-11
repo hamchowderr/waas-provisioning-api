@@ -3134,10 +3134,10 @@ paths:
       - name: file
         in: path
         required: true
-        description: anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip
+        description: anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip for one release; anypress-theme.zip or anypress-blocks.zip for the newest
         schema:
           type: string
-          pattern: ^anypress-(theme|blocks)-v\d{1,3}\.\d{1,3}\.\d{1,3}\.zip$
+          pattern: ^anypress-(theme|blocks)(-v\d{1,3}\.\d{1,3}\.\d{1,3})?\.zip$
       responses:
         '200':
           description: The zip

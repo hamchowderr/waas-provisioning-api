@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { createAuth, type AuthConfig } from '../src/auth.ts';
-import { demoZip } from '../src/branding.ts';
+import { demoZip, latestDemoZip } from '../src/branding.ts';
 import { createAjv } from '../src/openapi.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
@@ -218,6 +218,31 @@ describe('demo page zips (public)', () => {
     expect(res.status).toBe(404);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
     expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+});
+
+describe('newest demo zips (public)', () => {
+  it('serves the newest theme and Blocks release under a name without a version', async () => {
+    const urls: string[] = [];
+    const download = (async (url: string) => {
+      urls.push(url);
+      return new Response('PK zip');
+    }) as typeof fetch;
+    const asked: string[] = [];
+    const latest = async (repo: string) => {
+      asked.push(repo);
+      return repo === 'anypress-theme' ? 'v0.21.0' : 'v0.5.1';
+    };
+    expect((await latestDemoZip('anypress-theme.zip', latest, download))?.toString()).toBe('PK zip');
+    expect((await latestDemoZip('anypress-theme.zip', latest, download))?.toString()).toBe('PK zip');
+    expect(await latestDemoZip('anypress-blocks.zip', latest, download)).not.toBeNull();
+    for (const bad of ['anypress-client.zip', 'anypress-theme', '../anypress-theme.zip']) expect(await latestDemoZip(bad, latest, download)).toBeNull();
+    // GitHub is asked once per repository while the tag is fresh, and each release is downloaded once.
+    expect(asked).toEqual(['anypress-theme', 'anypress-blocks']);
+    expect(urls).toEqual([
+      'https://github.com/hamchowderr/anypress-theme/releases/download/v0.21.0/anypress.zip',
+      'https://github.com/hamchowderr/anypress-blocks/releases/download/v0.5.1/anypress-blocks.zip',
+    ]);
   });
 });
 

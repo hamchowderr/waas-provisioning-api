@@ -1,3 +1,4 @@
+import { Octokit } from '@octokit/rest';
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
 import type { AuthMail } from './authmail.ts';
@@ -66,6 +67,31 @@ export function demoZip(file: string, download: typeof fetch = fetch): Promise<B
     demoZips.set(file, zip);
   }
   return zip;
+}
+
+/** The newest release tag of the theme or Blocks, asked of GitHub (its official SDK) at most every five minutes. */
+const LATEST_TTL = 5 * 60_000;
+const latestTags = new Map<string, { tag: string; at: number }>();
+type LatestRelease = (repo: string) => Promise<string>;
+const githubLatest: LatestRelease = async (repo) => {
+  const { data } = await new Octokit({ userAgent: 'anypress-api' }).rest.repos.getLatestRelease({ owner: 'hamchowderr', repo });
+  return data.tag_name;
+};
+
+/**
+ * The newest release zip of the AnyPress theme (anypress-theme.zip) or AnyPress Blocks (anypress-blocks.zip), for demos
+ * that always run the latest release. Null for any other name, or when GitHub can't be asked and no tag is known yet.
+ */
+export async function latestDemoZip(file: string, latest: LatestRelease = githubLatest, download: typeof fetch = fetch): Promise<Buffer | null> {
+  const match = /^anypress-(theme|blocks)\.zip$/.exec(file);
+  if (!match) return null;
+  const repo = `anypress-${match[1]}`;
+  let known = latestTags.get(repo);
+  if (!known || Date.now() - known.at > LATEST_TTL) {
+    const tag = await latest(repo).catch(() => null);
+    if (tag) latestTags.set(repo, (known = { tag, at: Date.now() }));
+  }
+  return known ? demoZip(`${repo}-${known.tag}.zip`, download) : null;
 }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const URL_RE = /^https?:\/\/[^\s]+$/;
@@ -371,16 +397,19 @@ export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
   });
   // The theme and AnyPress Blocks zips the demo pages install on WordPress Playground (docs/branding.md, "Demo page").
   // GitHub's release downloads don't let other sites read them, so Playground's site gets them here.
+  // anypress-theme.zip and anypress-blocks.zip are the newest releases, for demos that never pin a version.
   app.get('/demo-files/:file', async (c) => {
-    const zip = await demoZip(c.req.param('file'));
+    const file = c.req.param('file');
+    const latest = !DEMO_ZIP.test(file);
+    const zip = latest ? await latestDemoZip(file) : await demoZip(file);
     // Not kept by any cache: a release published later, or a download that failed once, must work on the next try.
     if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
     return c.body(new Uint8Array(zip), 200, {
       'Content-Type': 'application/zip',
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
-      // A release never changes, and the name carries its version.
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      // A release never changes, and a versioned name keeps it; the newest one is cached briefly so a new release shows soon.
+      'Cache-Control': latest ? 'public, max-age=300' : 'public, max-age=31536000, immutable',
     });
   });
   app.get('/:id/:kind{logo|icon}', async (c) => {
