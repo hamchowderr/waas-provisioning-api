@@ -327,6 +327,53 @@ describe('usage record', () => {
 });
 
 describe('partner keys', () => {
+  it("bills each store its site type's shop price, and the reseller's own price without one", async () => {
+    const typed = await admin('POST', '/admin/resellers', 201, { name: 'Typed', wholesalePercent: 40, listPriceCents: { small: 1500, medium: 3000, large: 6000 } });
+    const storefront = await newProduct('Typed storefront');
+    await admin('PUT', `/admin/resellers/${typed.id}/products/${storefront.id}`);
+    // September, all month: a Small Everything, a Medium Store (older key), a Large Community, a HighLevel and an untyped store.
+    await t.pool.query(
+      `INSERT INTO tenant_periods (tenant_id, product_id, reseller_id, size, site_type, started_at, ended_at) VALUES
+         (gen_random_uuid(), $1, $2, 'small', 'everything', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+         (gen_random_uuid(), $1, $2, 'medium', 'store', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+         (gen_random_uuid(), $1, $2, 'large', 'community', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+         (gen_random_uuid(), $1, $2, 'small', 'highlevel', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+         (gen_random_uuid(), $1, $2, 'small', NULL, '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z')`,
+      [storefront.id, typed.id],
+    );
+    const bill = await admin('GET', `/admin/resellers/${typed.id}/bill?month=2026-09`);
+    expect(bill.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ size: 'small', siteType: 'everything', listPriceCents: 7900, wholesalePriceCents: 4740, amountCents: 4740 }),
+        expect.objectContaining({ size: 'medium', siteType: 'store', listPriceCents: 5800, wholesalePriceCents: 3480 }),
+        expect.objectContaining({ size: 'large', siteType: 'community', listPriceCents: 15600, wholesalePriceCents: 9360 }),
+        expect.objectContaining({ size: 'small', siteType: 'highlevel', listPriceCents: 1500, wholesalePriceCents: 900 }),
+        expect.objectContaining({ size: 'small', siteType: null, listPriceCents: 1500, wholesalePriceCents: 900 }),
+      ]),
+    );
+    expect(bill.lines).toHaveLength(5);
+    expect(bill.totalCents).toBe(4740 + 3480 + 9360 + 900 + 900);
+    const usage = await admin('GET', `/admin/resellers/${typed.id}/usage?from=2026-09-01T00:00:00Z&to=2026-10-01T00:00:00Z`);
+    expect(usage.storeDays).toEqual({ small: 90, medium: 30, large: 30 });
+    expect(usage.products).toEqual([expect.objectContaining({ storeDays: { small: 90, medium: 30, large: 30 } })]);
+  });
+
+  it('keeps a store\'s site type on its live periods and starts a new period when it changes', async () => {
+    const tracked = await admin('POST', '/admin/resellers', 201, { name: 'Tracked' });
+    const storefront = await newProduct('Tracked storefront');
+    await admin('PUT', `/admin/resellers/${tracked.id}/products/${storefront.id}`);
+    const roles = (value: string) => JSON.stringify({ ANYPRESS_TENANT_ROLES: { value, isPrivate: false } });
+    const store = await newTenant(storefront.auth);
+    const periods = async () =>
+      (await t.pool.query('SELECT site_type, ended_at FROM tenant_periods WHERE tenant_id = $1 ORDER BY started_at, ended_at NULLS LAST', [store.id])).rows;
+    expect(await periods()).toEqual([{ site_type: null, ended_at: null }]);
+    await t.pool.query('UPDATE tenants SET php_constants = $2::jsonb WHERE id = $1', [store.id, roles('bookings')]);
+    await t.pool.query('UPDATE tenants SET php_constants = $2::jsonb WHERE id = $1', [store.id, roles('everything')]);
+    const after = await periods();
+    expect(after.map((p) => p.site_type)).toEqual([null, 'bookings', 'everything']);
+    expect(after.map((p) => p.ended_at === null)).toEqual([false, false, true]);
+  });
+
   it('work on every storefront in the account, named by the productId query', async () => {
     const account = await admin('POST', '/admin/resellers', 201, { name: 'Keyed Partner' });
     const first = await newProduct('Keyed first');
