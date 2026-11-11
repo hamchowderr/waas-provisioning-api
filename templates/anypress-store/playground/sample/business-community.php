@@ -98,8 +98,22 @@ return [
     'form' => ['template' => 'client_satisfaction_survey_form', 'title' => 'Member survey'],
     'video' => 'A welcome from the Makers Circle team',
     'snippet' => ['Member count in the footer', "add_action('wp_footer', function () {\n    echo '<p class=\"members\">Join over 1,000 makers</p>';\n});"],
+    // What the community sells on its own site (FluentCart): memberships and the course, nothing to ship.
+    'sells' => [
+        // [title, about, price in cents, how often it bills (once, month or year), photo, category]
+        'items' => [
+            ['Course: Start your shop in 30 days', 'Nine short lessons from idea to first sale, with a task for each evening. Yours to keep.', 14900, 'once', 'community/06.webp', 'Courses'],
+            ['Live Q&A replays', 'Every live Q&A so far, with notes, to watch at your own pace.', 4900, 'once', 'community/04.webp', 'Courses'],
+            ['Membership (monthly)', 'The feed, the spaces, the monthly live Q&A and the course. First month free.', 2900, 'month', 'community/14.webp', 'Memberships'],
+            ['Membership (yearly)', 'Everything in the monthly membership, two months free.', 29000, 'year', 'community/00.webp', 'Memberships'],
+        ],
+        'buyers' => [0, 3, 5, 9, 12, 14, 1, 16, 7, 10, 18, 2, 11, 22, 4, 13, 6, 19, 23, 8],
+        'subscribers' => [0, 1, 2, 3, 6, 9, 10, 14, 16, 18],
+        'coupons' => [['Black Friday', 'MAKERS20', 'percentage', 20, 'Course sale'], ['Friend of a member', 'FRIEND10', 'percentage', 10, 'Member referrals']],
+    ],
     // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
     'pages' => [
+        'products' => 'Join, or start with the course',
         'hero' => 'A community for people building a creative business. Learn to price, photograph and sell what you make, with makers who have done it.',
         'buttons' => [['Join the community', 'portal'], ['About us', 'about']],
         'features' => ['What members get', [
