@@ -2902,7 +2902,8 @@ paths:
       operationId: adminResellerBill
       summary: A month's wholesale bill
       description: >-
-        Each store is charged its size's monthly list price less the wholesale discount, for the share
+        Each store is charged its site type's monthly list price for its size (the shop's prices, or the
+        reseller's own price per size when it has no site type with a public price) less the wholesale discount, for the share
         of the calendar month (UTC) it was live: a store live all month pays the whole monthly price,
         one live 10 days of a 30-day month a third. Amounts are US cents, rounded per line.
       parameters:
@@ -3446,7 +3447,7 @@ components:
         listPriceCents:
           type: object
           additionalProperties: false
-          description: 'Monthly list price of one store of each size, in US cents (default 1200, 2400, 4800)'
+          description: "Monthly list price of one store of each size, in US cents (default 1200, 2400, 4800), for stores with no site type with a public price (such as HighLevel sites); other stores are billed their site type's shop price"
           properties:
             small: { type: integer, minimum: 0, maximum: 1000000 }
             medium: { type: integer, minimum: 0, maximum: 1000000 }
@@ -3540,18 +3541,24 @@ components:
         wholesalePercent: { type: integer }
         lines:
           type: array
-          description: One per storefront and store size
+          description: One per storefront, store size and site type
           items:
             type: object
             additionalProperties: false
-            required: [productId, name, size, storeDays, stores, listPriceCents, wholesalePriceCents, amountCents]
+            required: [productId, name, size, siteType, storeDays, stores, listPriceCents, wholesalePriceCents, amountCents]
             properties:
               productId: { type: string, format: uuid }
               name: { type: string, nullable: true, description: 'null once the storefront is deleted' }
               size: { type: string, enum: [small, medium, large] }
+              siteType:
+                type: string
+                nullable: true
+                description: "The stores' site types (comma-separated keys of the template's roles.json), or null when they have none"
               storeDays: { type: number }
               stores: { type: number, description: 'Store-months: store-days over the days in the month' }
-              listPriceCents: { type: integer }
+              listPriceCents:
+                type: integer
+                description: "Monthly list price of one store: its site type's shop price for its size (Small Website 1200, Bookings 1900, Store 2900, Community 4900, Everything 7900; Medium 2x, Large 4x), or the reseller's own price for the size when it has no site type with a public price"
               wholesalePriceCents: { type: integer, description: 'Monthly price of one store after the discount' }
               amountCents: { type: integer }
         domainLines:
