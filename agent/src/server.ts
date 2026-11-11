@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { MCPClient } from '@mastra/mcp';
 import { MASTRA_RESOURCE_ID_KEY, RequestContext } from '@mastra/core/request-context';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import type { Assistant } from './assistant.js';
+import type { Assistant, RecordTokens, StepTokens } from './assistant.js';
 import { createControllerRoutes } from './chat-server/routes/controller.js';
 import { createThreadRoutes } from './chat-server/routes/threads.js';
 import type { ChatServerDeps } from './chat-server/routes/types.js';
@@ -17,7 +17,7 @@ import { BUSINESS_FIELDS, describeCall } from './site-tools.js';
 
 export interface ServerDeps {
   /** The assistant, given how its tools reach a website (see `callSite` below). */
-  createAssistant: (callSite: (resourceId: string, tool: string, args: Record<string, unknown>) => Promise<unknown>) => Assistant;
+  createAssistant: (callSite: (resourceId: string, tool: string, args: Record<string, unknown>) => Promise<unknown>, recordTokens: RecordTokens) => Assistant;
   /** The AnyPress API, e.g. https://api.anypress.io */
   apiUrl: string;
   /** How the site tools are reached (tests answer in-process). */
@@ -63,6 +63,8 @@ export function createServer(deps: ServerDeps) {
   const connections = new Map<string, Connection>();
   /** The newest signed-in connection for each website, used by its tool calls. */
   const byResource = new Map<string, string>();
+  /** The newest sign-in token for each website, which its model steps' token counts are sent with. */
+  const tokenOf = new Map<string, string>();
 
   async function connect(token: string): Promise<Connection> {
     const key = hash(token);
@@ -123,14 +125,32 @@ export function createServer(deps: ServerDeps) {
       if (res.status !== 429) return null;
       const usage = (await res.json().catch(() => null)) as { limit?: number; resetsAt?: string } | null;
       const resets = usage?.resetsAt ? new Date(usage.resetsAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'the first of next month';
-      return `You've used all ${usage?.limit ?? 'the'} assistant messages in your plan this month. They start again on ${resets}. A bigger plan gets more.`;
+      return `You've used all ${usage?.limit ?? 'the'} assistant messages in your plan this month. They start again on ${resets}.`;
     } catch (error) {
       console.error('assistant usage:', error instanceof Error ? error.message : error);
       return null;
     }
   }
 
-  const assistant = deps.createAssistant(callSite);
+  /**
+   * Sends one model step's tokens to the API with the website's latest sign-in, without holding up the reply; a
+   * failure is only logged. A message, an approval or an answer can each run model steps.
+   */
+  function recordTokens(resourceId: string, tokens: StepTokens): void {
+    const token = tokenOf.get(resourceId);
+    if (!token) return;
+    fetchImpl(new URL('/oauth/site/assistant-usage/tokens', deps.apiUrl), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(tokens),
+    })
+      .then((res) => {
+        if (!res.ok) console.error('assistant tokens:', res.status);
+      })
+      .catch((error) => console.error('assistant tokens:', error instanceof Error ? error.message : error));
+  }
+
+  const assistant = deps.createAssistant(callSite, recordTokens);
 
   const chatDeps: ChatServerDeps = {
     getSession: async (resourceId) => {
@@ -172,6 +192,7 @@ export function createServer(deps: ServerDeps) {
       return c.json({ error: signedOut ? 'Sign in with your website again.' : 'The website can’t be reached right now. Try again in a minute.' }, signedOut ? 401 : 502);
     }
     byResource.set(connection.resource, hash(token));
+    tokenOf.set(connection.resource, token);
     // Each message the owner sends counts against the store's monthly allowance, which the API keeps per plan size.
     if (c.req.method === 'POST' && c.req.path === '/agent-controller/stream') {
       const refused = await countMessage(token);

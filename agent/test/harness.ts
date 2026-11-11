@@ -2,6 +2,8 @@
 // requests go to `storeFetch`, a "Sign in with your website" token per store, AIMock as the model, and
 // the assistant's HTTP app on top.
 import { createHash, randomBytes } from 'node:crypto';
+import { createServer as createHttpServer } from 'node:http';
+import { Readable } from 'node:stream';
 import { LLMock } from '@copilotkit/aimock';
 import { LibSQLStore } from '@mastra/libsql';
 import { StatusCode, WaasClient } from '../../sdk/typescript/src/index.ts';
@@ -35,6 +37,8 @@ export interface Harness {
   get(path: string, store: Store | null): Promise<Response>;
   /** Starts a message on /agent-controller/stream and reads its events as they come. */
   send(store: Store, body: Record<string, unknown>): Turn;
+  /** Every request body sent to Anthropic's Messages API as it left the assistant, before AIMock read it. */
+  anthropicBodies: Record<string, unknown>[];
   /** The model calls `tool` once for `message`, then answers `reply` after seeing the result. */
   script(message: string, tool: string, args: Record<string, unknown>, reply: string): void;
   close(): Promise<void>;
@@ -84,10 +88,26 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
   const llm = new LLMock({ port: 0 });
   await llm.start();
   // Mastra's model router reads <PROVIDER>_BASE_URL, so the assistant speaks Anthropic's API, just to AIMock.
-  process.env.ANTHROPIC_BASE_URL = `${llm.url}/v1`;
+  // In front of AIMock, a pass-through that keeps each request body exactly as sent (AIMock's own log drops
+  // Anthropic-only fields such as cache_control).
+  const anthropicBodies: Record<string, unknown>[] = [];
+  const recorder = createHttpServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const body = Buffer.concat(chunks);
+    if (req.method === 'POST' && body.length) anthropicBodies.push(JSON.parse(body.toString('utf8')));
+    const headers = Object.fromEntries(Object.entries(req.headers).filter(([k, v]) => typeof v === 'string' && !['host', 'content-length'].includes(k))) as Record<string, string>;
+    const answer = await fetch(`${llm.url}${req.url}`, { method: req.method, headers, body: body.length ? body : undefined });
+    res.writeHead(answer.status, Object.fromEntries(answer.headers));
+    if (answer.body) Readable.fromWeb(answer.body as never).pipe(res);
+    else res.end();
+  });
+  await new Promise<void>((resolve) => recorder.listen(0, '127.0.0.1', resolve));
+  const recorderPort = (recorder.address() as { port: number }).port;
+  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${recorderPort}/v1`;
   const storage = new LibSQLStore({ id: 'assistant-test', url: ':memory:' });
   const app = createServer({
-    createAssistant: (callSite) => createAssistant({ model: 'test-model', anthropicApiKey: 'mock', storage, callSite }),
+    createAssistant: (callSite, recordTokens) => createAssistant({ model: 'test-model', anthropicApiKey: 'mock', storage, callSite, recordTokens }),
     apiUrl: BASE,
     fetch: appFetch,
   });
@@ -101,6 +121,7 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
     t,
     apiAuth: `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`,
     llm,
+    anthropicBodies,
     app,
     stores,
     post,
@@ -112,6 +133,7 @@ export async function startHarness(storeNames: string[], storeFetch: typeof fetc
     },
     async close() {
       await app.close();
+      await new Promise((resolve) => recorder.close(resolve));
       await llm.stop();
       await t.close();
     },
