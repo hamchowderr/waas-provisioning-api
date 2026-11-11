@@ -33,6 +33,24 @@ const WHOLESALE_PERCENT = 40;
 /** What an affiliate earns of a customer's first payment. */
 const AFFILIATE_PERCENT = 30;
 
+/**
+ * Care: monthly packages of changes for one website, and one-time services, sold on the shop by Otaku Solutions.
+ * A year of a package costs YEARLY_MONTHS months. `answer` is how soon a request is answered.
+ */
+const CARE_PACKAGES = [
+  { key: 'care', name: 'Care', monthly: 79, minutes: 30, answer: '2 business days', call: false },
+  { key: 'care-plus', name: 'Care Plus', monthly: 199, minutes: 120, answer: '1 business day', call: false },
+  { key: 'care-pro', name: 'Care Pro', monthly: 449, minutes: 300, answer: 'the same business day', call: true },
+] as const;
+
+/** One-time care services. `careOnly`: sold only for a website with a care package (extra time at the care price). */
+const CARE_SERVICES = [
+  { key: 'set-up-my-site', name: 'Set up my site for me', price: 299, minutes: 0, careOnly: false },
+  { key: 'move-my-site-in', name: 'Move my site in for me', price: 199, minutes: 0, careOnly: false },
+  { key: 'one-hour', name: 'One hour of changes', price: 125, minutes: 60, careOnly: false },
+  { key: 'extra-hour', name: 'Extra hour for care customers', price: 100, minutes: 60, careOnly: true },
+] as const;
+
 export interface PriceList {
   currency: 'USD';
   siteTypes: { key: string; name: string; monthly: Record<Size, number>; yearly: Record<Size, number> }[];
@@ -41,6 +59,10 @@ export interface PriceList {
   volumeTiers: { sites: number; percent: number }[];
   wholesalePercent: number;
   affiliatePercent: number;
+  care: {
+    packages: { key: string; name: string; monthly: number; yearly: number; minutes: number; answer: string; call: boolean }[];
+    services: { key: string; name: string; price: number; minutes: number; careOnly: boolean }[];
+  };
 }
 
 const bySize = (f: (size: Size) => number) =>
@@ -60,6 +82,10 @@ export const PRICE_LIST: PriceList = {
   volumeTiers: VOLUME_TIERS,
   wholesalePercent: WHOLESALE_PERCENT,
   affiliatePercent: AFFILIATE_PERCENT,
+  care: {
+    packages: CARE_PACKAGES.map((p) => ({ ...p, yearly: p.monthly * YEARLY_MONTHS })),
+    services: CARE_SERVICES.map((s) => ({ ...s })),
+  },
 };
 
 /**

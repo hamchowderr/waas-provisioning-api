@@ -2151,6 +2151,33 @@ export interface components {
             wholesalePercent: number;
             /** @description An affiliate's share of a customer's first payment */
             affiliatePercent: number;
+            /** @description Care for one website, sold on the shop. Packages are monthly changes; services are one-time. */
+            care: {
+                packages: {
+                    key: string;
+                    name: string;
+                    /** @description Price a month in US dollars */
+                    monthly: number;
+                    /** @description Price a year in US dollars */
+                    yearly: number;
+                    /** @description Minutes of changes each month */
+                    minutes: number;
+                    /** @description How soon a request is answered, e.g. "1 business day" */
+                    answer: string;
+                    /** @description Whether the package includes a monthly call */
+                    call: boolean;
+                }[];
+                services: {
+                    key: string;
+                    name: string;
+                    /** @description One-time price in US dollars */
+                    price: number;
+                    /** @description Minutes of changes it adds to the website (0 for a job) */
+                    minutes: number;
+                    /** @description Sold only for a website with a care package */
+                    careOnly: boolean;
+                }[];
+            };
         };
         PriceBySize: {
             small: number;

@@ -21,4 +21,15 @@ describe('price list', () => {
     expect(siteTypePriceCents('store', 'medium')).toBe(5800);
     expect(siteTypePriceCents('highlevel', 'small')).toBeUndefined();
   });
+
+  it('lists care: three packages with yearly at ten months, and the extra hour for care customers below the plain hour', () => {
+    expect(PRICE_LIST.care.packages.map((p) => [p.name, p.monthly, p.yearly])).toEqual([
+      ['Care', 79, 790],
+      ['Care Plus', 199, 1990],
+      ['Care Pro', 449, 4490],
+    ]);
+    const hour = PRICE_LIST.care.services.find((s) => s.key === 'one-hour')!;
+    const extra = PRICE_LIST.care.services.find((s) => s.key === 'extra-hour')!;
+    expect([hour.price, hour.careOnly, extra.price, extra.careOnly]).toEqual([125, false, 100, true]);
+  });
 });
