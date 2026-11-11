@@ -195,7 +195,9 @@ then.
 
 ## Try a site type in your browser
 
-`playground/<site type>.json` is a WordPress Playground blueprint for each site type sold (website, bookings, online-store, community, everything, highlevel). Each one sets up a site the way a new store of that type starts: this template's theme, plugins, must-use plugins, presets and CRM set-up, with the latest AnyPress Client and `ANYPRESS_TENANT_ROLES` set to the type, so only that type's plugins are on. It runs in the visitor's browser; nothing is made on a server. Open one with `https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/playground/website.json`.
+`playground/<site type>.json` is a WordPress Playground blueprint for each site type sold (website, bookings, online-store, community, everything, highlevel). Each one sets up a site the way a new store of that type starts: this template's theme, plugins, must-use plugins, presets and CRM set-up, with the latest AnyPress Client and `ANYPRESS_TENANT_ROLES` set to the type, so only that type's plugins are on. It runs in the visitor's browser; nothing is made on a server. Open one at `https://anypress.io/try?type=website` (or `bookings`, `store`, `community`, `everything`, `highlevel`).
+
+After the set-up, each demo gets sample content from `playground/sample.php`, made with each plugin's own functions for the plugins the type has on: three blog posts, CRM contacts, six FluentCart products on online-store and everything sites, a community with members, two spaces, posts, comments and likes, and a booking calendar with two meeting types and three upcoming bookings. A real store never gets it, and "Make this my site" carries only pages, styles and menus to the store.
 
 The files are made from `build.sh`, `theme.sh` and `roles.json` by `node templates/anypress-store/playground/blueprints.mjs`; CI fails when one is out of date, and the Update pins workflow remakes them when it moves a pin.
 

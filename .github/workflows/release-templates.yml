@@ -12,6 +12,8 @@ on:
     paths:
       - 'templates/**'
       - '!templates/**/*.md'
+      # The Playground demos (anypress.io/try) aren't part of a store: changing them releases nothing.
+      - '!templates/anypress-store/playground/**'
   workflow_dispatch:
     inputs:
       version:
