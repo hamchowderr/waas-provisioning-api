@@ -15,7 +15,7 @@ if (defined('RANK_MATH_VERSION')) {
     foreach (get_posts(['post_type' => 'post', 'numberposts' => -1]) as $post) {
         update_post_meta($post->ID, 'rank_math_description', wp_trim_words(wp_strip_all_tags($post->post_content), 22));
         // The focus keyword: the title's first words, without punctuation or a dangling "a", "your" or "and".
-        $words = array_slice(preg_split('/\s+/', trim(preg_replace('/[^a-z0-9 ]+/', ' ', strtolower($post->post_title)))), 0, 4);
+        $words = array_slice(preg_split('/\s+/', trim(preg_replace('/[^a-z0-9 ]+/', ' ', strtolower(preg_replace('/^Sponsored:\s*/i', '', $post->post_title))))), 0, 4);
         while (count($words) > 1 && in_array(end($words), ['a', 'an', 'the', 'your', 'and', 'or', 'to', 'of', 'for', 'in', 'on', 'we', 'is', 'how', 'with'], true)) {
             array_pop($words);
         }

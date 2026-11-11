@@ -1,7 +1,7 @@
 <?php
 /**
- * The made-up business behind each site type's demo, and everything it says: people, posts, tickets, bookings, the
- * community. All names are invented and every address is @example.com.
+ * The made-up business behind each site type's demo (business-<type>.php) and the people around it: customers,
+ * readers, tickets, bookings, the community. All names are invented and every address is @example.com.
  */
 return static function (string $type): array {
     // [first, last, city, company, bio]
@@ -32,114 +32,21 @@ return static function (string $type): array {
         ['Owen', 'Price', 'Kansas City', '', 'BBQ judge and backyard pitmaster.'],
     ];
 
-    $businesses = [
-        'website' => [
-            'name' => 'Brightline Accounting',
-            'tagline' => 'Bookkeeping and tax help for small businesses',
-            'kinds' => ['enquiry'],
-            'categories' => ['Tax', 'Small business', 'News'],
-            'posts' => [
-                ['Five receipts you should always keep', 'Tax', "Most of the questions we get in spring come down to one missing receipt. Here are the five we ask for every year, and the easiest way to keep them in one place.\n\nA folder on your phone is fine. What matters is that every receipt has a date, an amount and a reason."],
-                ['What changes at year end, in plain words', 'Tax', "December is busy for a reason. A few things only count if they happen before the year closes, and a few are better left until January.\n\nWe walk through both lists and the one question to ask before you buy anything big."],
-                ['How we set up a new client in a week', 'Small business', "Day one is a call. Day two we connect your bank feeds. By the end of the week you have clean books and a monthly date in the calendar.\n\nThis is the checklist we follow, so you know what to have ready."],
-                ['Separate your business and personal money', 'Small business', "One account for the business, one for you. It sounds small, but it saves hours every quarter and makes your numbers easy to read."],
-                ['We have moved to a bigger office', 'News', "Same team, more room. From next month we are on the second floor of the Market Building, with parking at the back."],
-                ['Meet Priya, our newest bookkeeper', 'News', "Priya joins us after six years helping restaurants keep their books. Say hello when you come in; she makes very good coffee."],
-            ],
-            'form' => ['template' => 'client_satisfaction_survey_form', 'title' => 'How did we do?'],
-            'video' => 'A two-minute tour of how we work',
-            'snippet' => ['Office hours in the footer', "add_action('wp_footer', function () {\n    echo '<p class=\"office-hours\">Open Monday to Friday, 9am to 5pm</p>';\n});"],
-        ],
-        'bookings' => [
-            'name' => 'Calm Roots Wellness',
-            'tagline' => 'Massage and coaching, booked online',
-            'kinds' => ['booking', 'enquiry'],
-            'categories' => ['Wellness', 'Coaching', 'News'],
-            'posts' => [
-                ['What to expect at your first massage', 'Wellness', "Arrive ten minutes early, tell us what hurts, and breathe. We will check in about pressure as we go, and you can stop at any time."],
-                ['Three stretches for desk days', 'Wellness', "Neck rolls, a doorway chest stretch and a seated twist. Two minutes, every hour, and your shoulders will thank you."],
-                ['Why coaching works best in small steps', 'Coaching', "Big goals stall. Small, weekly steps add up. In our coaching sessions we pick one thing to change before we meet again."],
-                ['How to get the most from a coaching call', 'Coaching', "Write down one win and one worry before the call. That is enough to start a useful conversation."],
-                ['Saturday mornings are now open', 'News', "By popular request, Maya now takes bookings on Saturday mornings from 10 to 2."],
-                ['Gift vouchers are here', 'News', "Give someone an hour of calm. Vouchers work for any service and never expire."],
-            ],
-            'form' => ['template' => 'client_satisfaction_survey_form', 'title' => 'After your session'],
-            'video' => 'A short welcome from the studio',
-            'snippet' => ['Booking reminder banner', "add_action('wp_body_open', function () {\n    echo '<p class=\"booking-banner\">New: Saturday mornings now open</p>';\n});"],
-        ],
-        'online-store' => [
-            'name' => 'Thread & Co.',
-            'tagline' => 'Everyday clothes, made to last',
-            'kinds' => ['order', 'enquiry'],
-            'categories' => ['Style', 'Behind the seams', 'News'],
-            'posts' => [
-                ['How to choose the right hoodie size', 'Style', "Measure a hoodie you already love, flat, armpit to armpit. Then compare it to the size chart on each product page."],
-                ['Five ways to wear a classic cap', 'Style', "Forward, back, with a hoodie, with a jacket, or not at all on a bad hair day. We have opinions."],
-                ['Where our fleece comes from', 'Behind the seams', "We buy from two mills we have visited ourselves. Here is what we look for and why it costs a little more."],
-                ['Packing an order, start to finish', 'Behind the seams', "Every parcel is packed by hand in recycled paper. A peek at a normal Tuesday in the studio."],
-                ['Winter collection is live', 'News', "Heavier fleece, two new colours and the return of the zipper hoodie."],
-                ['Free shipping weekend', 'News', "Use FREESHIP at checkout until Sunday night."],
-            ],
-            'form' => ['template' => 'customer_complaint_form', 'title' => 'Return or problem with an order'],
-            'video' => 'How we make a hoodie',
-            'snippet' => ['Free shipping notice', "add_action('wp_body_open', function () {\n    echo '<p class=\"shipping-notice\">Free shipping over \$75</p>';\n});"],
-        ],
-        'community' => [
-            'name' => 'Makers Circle',
-            'tagline' => 'A community for people building a creative business',
-            'kinds' => ['space', 'course'],
-            'categories' => ['Community', 'Guides', 'News'],
-            'posts' => [
-                ['Welcome to Makers Circle', 'Community', "We are a group of makers helping each other turn what we make into a living. Introduce yourself in the Welcome space."],
-                ['Member story: from market stall to online shop', 'Community', "Omar sold his first wallet at a Sunday market. Two years later he ships every week. Here is how."],
-                ['How to price handmade work', 'Guides', "Materials, time, a fair wage and a margin. The formula is simple; sticking to it is the hard part."],
-                ['Photographing products on a phone', 'Guides', "Window light, a white card and a steady hand. No studio needed."],
-                ['New course: Start your shop in 30 days', 'News', "Nine short lessons that take you from idea to first sale. Members get it free."],
-                ['Live Q&A every first Thursday', 'News', "Bring your questions. We will record it for anyone who can't make it."],
-            ],
-            'form' => ['template' => 'client_satisfaction_survey_form', 'title' => 'Member survey'],
-            'video' => 'A welcome from the Makers Circle team',
-            'snippet' => ['Member count in the footer', "add_action('wp_footer', function () {\n    echo '<p class=\"members\">Join over 1,000 makers</p>';\n});"],
-        ],
-        'everything' => [
-            'name' => 'Brightline Studio',
-            'tagline' => 'Clothes, classes and a community for makers',
-            'kinds' => ['order', 'booking', 'space', 'course'],
-            'categories' => ['Shop', 'Classes', 'Community'],
-            'posts' => [
-                ['Our winter collection is here', 'Shop', "Heavier fleece, two new colours and the return of the zipper hoodie."],
-                ['Free shipping weekend', 'Shop', "Use FREESHIP at checkout until Sunday night."],
-                ['New: book a one-to-one design session', 'Classes', "Bring your idea, leave with a plan. Sessions are 45 minutes, online or in the studio."],
-                ['What to bring to your first class', 'Classes', "A notebook, a question and nothing else. We have everything else."],
-                ['Member story: from market stall to online shop', 'Community', "Omar sold his first wallet at a Sunday market. Two years later he ships every week."],
-                ['Live Q&A every first Thursday', 'Community', "Bring your questions. We will record it for anyone who can't make it."],
-            ],
-            'form' => ['template' => 'customer_complaint_form', 'title' => 'Return or problem with an order'],
-            'video' => 'Inside the studio',
-            'snippet' => ['Free shipping notice', "add_action('wp_body_open', function () {\n    echo '<p class=\"shipping-notice\">Free shipping over \$75</p>';\n});"],
-        ],
-        'highlevel' => [
-            'name' => 'Summit Roofing',
-            'tagline' => 'Roof repairs and replacements, done right',
-            'kinds' => [],
-            'categories' => ['Roof care', 'Projects', 'News'],
-            'posts' => [
-                ['Five signs your roof needs a check', 'Roof care', "Missing shingles, dark patches on the ceiling, granules in the gutter, daylight in the attic and a roof over twenty years old."],
-                ['Repair or replace? How we decide', 'Roof care', "If the damage is under a third of the roof and the decking is sound, we repair. Otherwise we talk about replacing."],
-                ['Before and after: a 1950s bungalow', 'Projects', "A full tear-off, new decking and architectural shingles in three days."],
-                ['Storm season checklist', 'Roof care', "Clear the gutters, trim the trees, and photograph your roof now so you have a before picture."],
-                ['We are hiring roofers', 'News', "Full-time roles with training and a company truck. Ask for Owen."],
-                ['Free inspections this month', 'News', "Book online and we will send someone within the week."],
-            ],
-            'video' => 'What happens on install day',
-            'snippet' => ['Emergency line in the header', "add_action('wp_body_open', function () {\n    echo '<p class=\"emergency\">Storm damage? Call us any time</p>';\n});"],
-        ],
-    ];
-
-    $sample = $businesses[$type] ?? $businesses['website'];
+    // The business behind this site type (business-<type>.php): its name, writers, posts, newsletter and forms.
+    $type = is_file(__DIR__ . '/business-' . $type . '.php') ? $type : 'website';
+    $sample = require __DIR__ . '/business-' . $type . '.php';
     $sample['type'] = $type;
+    $sample['blog'] = array_intersect_key($sample, array_flip(['writers', 'categories', 'posts', 'drafts', 'scheduled', 'comments', 'replies']));
     $sample['business'] = ['name' => $sample['name'], 'tagline' => $sample['tagline']];
     $sample['people'] = $people;
+    // The rest of the mailing list: readers and customers who signed up over the months, without a story of their own.
+    $firsts = ['Ava', 'Leo', 'Mia', 'Eli', 'Ruby', 'Max', 'Lena', 'Theo', 'Iris', 'Finn', 'Nina', 'Jude', 'Cleo', 'Rafael', 'Tess', 'Arjun', 'Lucy', 'Diego', 'Hazel', 'Sami', 'June', 'Felix', 'Rosa', 'Ivan', 'Esme', 'Malik', 'Wren', 'Tomas', 'Lila', 'Hugo', 'Anya', 'Kofi', 'Maeve', 'Dev', 'Clara'];
+    $lasts = ['Brooks', 'Ito', 'Garcia', 'Novak', 'Reid', 'Mensah', 'Lund', 'Costa', 'Byrne', 'Sato', 'Patel', 'Keller', 'Duarte', 'Hayes', 'Okoro'];
+    $cities = ['Portland', 'Austin', 'Denver', 'Chicago', 'Seattle', 'Boston', 'Atlanta', 'Phoenix', 'San Diego', 'Brooklyn', 'Oakland', 'Madison', 'Tucson', 'Richmond', 'Boise'];
+    $sample['readers'] = [];
+    for ($r = 0; $r < 76; $r++) {
+        $sample['readers'][] = [$firsts[$r % count($firsts)], $lasts[($r + 7 * intdiv($r, 35)) % count($lasts)], $cities[($r * 2) % count($cities)], '', ''];
+    }
 
     $sellsProducts = in_array($type, ['online-store', 'everything'], true);
     $takesBookings = in_array($type, ['bookings', 'everything'], true);
