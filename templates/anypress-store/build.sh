@@ -51,8 +51,8 @@ fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a290
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.2}
-BLOCKS_SHA256=${BLOCKS_SHA256:-869ee824b460d0867f217628fe06ef4149c6786241c67508887d718c4f2e7f0b}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.3}
+BLOCKS_SHA256=${BLOCKS_SHA256:-b5c77f49f37908bc545b79db247860330bdc40b5e2211a94ad66d7d2c22915e1}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh

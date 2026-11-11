@@ -223,7 +223,7 @@
 			"step": "installPlugin",
 			"pluginData": {
 				"resource": "url",
-				"url": "https://api.anypress.io/branding/demo-files/anypress-blocks-v0.4.2.zip",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-blocks-v0.4.3.zip",
 				"caption": "Installing AnyPress Blocks"
 			},
 			"options": {
