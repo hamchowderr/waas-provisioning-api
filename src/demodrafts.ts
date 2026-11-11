@@ -73,52 +73,70 @@ function text(value: unknown, name: string, max: number, required = false): stri
   return value;
 }
 
+const only = (raw: Record<string, unknown>, fields: readonly string[], name: string) => {
+  const extra = Object.keys(raw).filter((k) => !fields.includes(k));
+  if (extra.length) throw badRequest(`${name} takes only ${fields.join(', ')}, not ${extra.join(', ')}`);
+};
+
+function parsePage(p: unknown, i: number): DemoPage {
+  const at = `content.pages[${i}]`;
+  if (!isObject(p)) throw badRequest(`${at} must be an object`);
+  const slug = text(p.slug, `${at}.slug`, 200, true)!;
+  if (!SLUG.test(slug)) throw badRequest(`${at}.slug can only hold lowercase letters, digits and -`);
+  if (p.status !== undefined && p.status !== 'publish' && p.status !== 'draft') throw badRequest(`${at}.status must be publish or draft`);
+  return {
+    title: text(p.title, `${at}.title`, 200, true)!,
+    slug,
+    content: text(p.content, `${at}.content`, 500_000) ?? '',
+    status: p.status === 'draft' ? 'draft' : 'publish',
+  };
+}
+
+function parsePages(raw: unknown): DemoPage[] {
+  if (!Array.isArray(raw) || raw.length === 0) throw badRequest('content.pages must list the demo’s pages');
+  if (raw.length > MAX_PAGES) throw badRequest(`A demo has at most ${MAX_PAGES} pages`);
+  const pages = raw.map(parsePage);
+  if (new Set(pages.map((p) => p.slug)).size !== pages.length) throw badRequest('Each page needs its own slug');
+  return pages;
+}
+
+function parseStyles(raw: unknown): DemoContent['styles'] {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) throw badRequest('content.styles must be an object');
+  const { settings, styles } = raw;
+  const bad = (v: unknown) => v !== undefined && !isObject(v);
+  if (bad(settings) || bad(styles)) throw badRequest('content.styles holds settings and styles, both objects');
+  return { ...(settings !== undefined && { settings }), ...(styles !== undefined && { styles }) } as DemoContent['styles'];
+}
+
+function parseMenus(raw: unknown): DemoContent['menus'] {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length > MAX_MENUS) throw badRequest(`content.menus must be a list of at most ${MAX_MENUS}`);
+  return raw.map((m, i) => {
+    if (!isObject(m)) throw badRequest(`content.menus[${i}] must be an object`);
+    return { title: text(m.title, `content.menus[${i}].title`, 200, true)!, content: text(m.content, `content.menus[${i}].content`, 100_000, true)! };
+  });
+}
+
+function parseBusiness(raw: unknown): DemoContent['business'] {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) throw badRequest('content.business must be an object');
+  only(raw, BUSINESS_FIELDS, 'content.business');
+  return Object.fromEntries(BUSINESS_FIELDS.flatMap((k) => (raw[k] === undefined ? [] : [[k, text(raw[k], `content.business.${k}`, 2000)!]])));
+}
+
 /** The draft's content, checked: only what the site routes take, each within bounds. */
 function parseDemoContent(raw: unknown): DemoContent {
   if (!isObject(raw)) throw badRequest('content must be an object');
-  const unknown = Object.keys(raw).filter((k) => !CONTENT_FIELDS.includes(k));
-  if (unknown.length) throw badRequest(`content takes only ${CONTENT_FIELDS.join(', ')}, not ${unknown.join(', ')}`);
-  if (!Array.isArray(raw.pages) || raw.pages.length === 0) throw badRequest('content.pages must list the demo’s pages');
-  if (raw.pages.length > MAX_PAGES) throw badRequest(`A demo has at most ${MAX_PAGES} pages`);
-  const pages = raw.pages.map((p, i): DemoPage => {
-    if (!isObject(p)) throw badRequest(`content.pages[${i}] must be an object`);
-    const slug = text(p.slug, `content.pages[${i}].slug`, 200, true)!;
-    if (!SLUG.test(slug)) throw badRequest(`content.pages[${i}].slug can only hold lowercase letters, digits and -`);
-    if (p.status !== undefined && p.status !== 'publish' && p.status !== 'draft') throw badRequest(`content.pages[${i}].status must be publish or draft`);
-    return {
-      title: text(p.title, `content.pages[${i}].title`, 200, true)!,
-      slug,
-      content: text(p.content, `content.pages[${i}].content`, 500_000) ?? '',
-      status: p.status === 'draft' ? 'draft' : 'publish',
-    };
-  });
-  if (new Set(pages.map((p) => p.slug)).size !== pages.length) throw badRequest('Each page needs its own slug');
-
-  const content: DemoContent = { pages };
-  if (raw.styles !== undefined) {
-    if (!isObject(raw.styles)) throw badRequest('content.styles must be an object');
-    const { settings, styles } = raw.styles;
-    if ((settings !== undefined && !isObject(settings)) || (styles !== undefined && !isObject(styles))) {
-      throw badRequest('content.styles holds settings and styles, both objects');
-    }
-    content.styles = { ...(settings !== undefined && { settings }), ...(styles !== undefined && { styles }) };
-  }
-  content.header = text(raw.header, 'content.header', 200_000);
-  content.footer = text(raw.footer, 'content.footer', 200_000);
-  if (raw.menus !== undefined) {
-    if (!Array.isArray(raw.menus) || raw.menus.length > MAX_MENUS) throw badRequest(`content.menus must be a list of at most ${MAX_MENUS}`);
-    content.menus = raw.menus.map((m, i) => {
-      if (!isObject(m)) throw badRequest(`content.menus[${i}] must be an object`);
-      return { title: text(m.title, `content.menus[${i}].title`, 200, true)!, content: text(m.content, `content.menus[${i}].content`, 100_000, true)! };
-    });
-  }
-  if (raw.business !== undefined) {
-    if (!isObject(raw.business)) throw badRequest('content.business must be an object');
-    const extra = Object.keys(raw.business).filter((k) => !(BUSINESS_FIELDS as readonly string[]).includes(k));
-    if (extra.length) throw badRequest(`content.business takes only ${BUSINESS_FIELDS.join(', ')}`);
-    content.business = Object.fromEntries(BUSINESS_FIELDS.flatMap((k) => (raw.business as Record<string, unknown>)[k] === undefined ? [] : [[k, text((raw.business as Record<string, unknown>)[k], `content.business.${k}`, 2000)!]]));
-  }
-  return content;
+  only(raw, CONTENT_FIELDS, 'content');
+  return {
+    pages: parsePages(raw.pages),
+    styles: parseStyles(raw.styles),
+    header: text(raw.header, 'content.header', 200_000),
+    footer: text(raw.footer, 'content.footer', 200_000),
+    menus: parseMenus(raw.menus),
+    business: parseBusiness(raw.business),
+  };
 }
 
 function parseImages(raw: unknown): string[] {
@@ -131,6 +149,26 @@ function parseImages(raw: unknown): string[] {
   return raw as string[];
 }
 
+/** A POST /demos/drafts body, checked. */
+async function parseDraftBody(pool: Deps['pool'], body: unknown) {
+  if (!isObject(body)) throw badRequest('Send the draft as a JSON object');
+  only(body, DRAFT_FIELDS, 'A draft');
+  if (JSON.stringify(body).length > MAX_DRAFT_CHARS) throw new HttpError(413, 'This demo is too large to save. Remove some pages and try again.');
+  const siteType = body.siteType;
+  if (typeof siteType !== 'string' || !(SITE_TYPES as readonly string[]).includes(siteType)) throw badRequest(`siteType must be one of ${SITE_TYPES.join(', ')}`);
+  const kit = text(body.kit, 'kit', 100);
+  if (kit !== undefined && !KIT.test(kit)) throw badRequest('kit can only hold lowercase letters, digits, - and /');
+  return { siteType, kit, productId: await parseProductId(pool, body.productId), content: parseDemoContent(body.content), images: parseImages(body.images) };
+}
+
+async function parseProductId(pool: Deps['pool'], raw: unknown): Promise<string | null> {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string' || !isUuid(raw)) throw badRequest('productId must be a storefront id');
+  const { rowCount } = await pool.query('SELECT 1 FROM products WHERE id = $1', [raw]);
+  if (!rowCount) throw badRequest('productId is not a known storefront');
+  return raw;
+}
+
 const newDraftId = () => `demo_${randomBytes(16).toString('base64url')}`;
 
 /** POST /demos/drafts and GET /demos/drafts/:id. No sign-in, no API key: a draft can't create, read or change a store. */
@@ -139,24 +177,7 @@ export function demoDraftRoutes({ pool, provisioner }: Deps) {
 
   app.post('/drafts', async (c) => {
     if (!provisioner) throw new HttpError(503, 'Demo drafts are not available here');
-    const body = await readJson(c);
-    if (!isObject(body)) throw badRequest('Send the draft as a JSON object');
-    const unknown = Object.keys(body).filter((k) => !DRAFT_FIELDS.includes(k));
-    if (unknown.length) throw badRequest(`A draft takes only ${DRAFT_FIELDS.join(', ')}, not ${unknown.join(', ')}`);
-    if (JSON.stringify(body).length > MAX_DRAFT_CHARS) throw new HttpError(413, 'This demo is too large to save. Remove some pages and try again.');
-    const siteType = body.siteType;
-    if (typeof siteType !== 'string' || !(SITE_TYPES as readonly string[]).includes(siteType)) throw badRequest(`siteType must be one of ${SITE_TYPES.join(', ')}`);
-    const kit = text(body.kit, 'kit', 100);
-    if (kit !== undefined && !KIT.test(kit)) throw badRequest('kit can only hold lowercase letters, digits, - and /');
-    let productId: string | null = null;
-    if (body.productId !== undefined && body.productId !== null) {
-      if (typeof body.productId !== 'string' || !isUuid(body.productId)) throw badRequest('productId must be a storefront id');
-      const { rowCount } = await pool.query('SELECT 1 FROM products WHERE id = $1', [body.productId]);
-      if (!rowCount) throw badRequest('productId is not a known storefront');
-      productId = body.productId;
-    }
-    const content = parseDemoContent(body.content);
-    const images = parseImages(body.images);
+    const { siteType, kit, productId, content, images } = await parseDraftBody(pool, await readJson(c));
 
     const recent = await pool.query(`SELECT count(*)::int AS n FROM demo_drafts WHERE created_at > now() - interval '1 hour'`);
     if (recent.rows[0].n >= DRAFTS_PER_HOUR) throw new HttpError(429, 'Too many demos are being saved right now. Please try again in a few minutes.');
@@ -243,6 +264,46 @@ async function must(call: CallSite, request: SiteRequest): Promise<unknown> {
   return body;
 }
 
+/** Each uploaded photo copied into the store's media library: its name and the store's own link. */
+async function copyImages(provisioner: Provisioner, draft: DraftRow, call: CallSite): Promise<Map<string, string>> {
+  const urls = new Map<string, string>();
+  for (const name of draft.images) {
+    const size = await provisioner.demoImageSize({ draftId: draft.id, name });
+    if (size === null || size > MAX_IMAGE_BYTES) continue; // never uploaded, or too large: its placeholder stays
+    const url = await provisioner.demoImageUrl({ draftId: draft.id, name, expiresInSeconds: UPLOAD_SECONDS });
+    const added = await must(call, { method: 'POST', path: '/media', body: { url, alt: '' } });
+    if (isObject(added) && typeof added.url === 'string') urls.set(name, added.url);
+  }
+  return urls;
+}
+
+async function putPages(call: CallSite, pages: DemoPage[]) {
+  const existing = (await must(call, { method: 'GET', path: '/pages' })) as { id: number; slug: string }[];
+  for (const page of pages) {
+    const match = existing.find((p) => p.slug === page.slug);
+    await must(call, match ? { method: 'PUT', path: `/pages/${match.id}`, body: page } : { method: 'POST', path: '/pages', body: page });
+  }
+}
+
+async function putMenus(call: CallSite, menus: NonNullable<DemoContent['menus']>) {
+  if (!menus.length) return;
+  const existing = (await must(call, { method: 'GET', path: '/menus' })) as { id: number; title: string }[];
+  for (const menu of menus) {
+    const match = existing.find((m) => m.title === menu.title);
+    if (match) await must(call, { method: 'PUT', path: `/menus/${match.id}`, body: { content: menu.content } });
+  }
+}
+
+/** The draft's styles, header and footer, pages, menus and business details, in that order. */
+async function putContent(call: CallSite, content: DemoContent) {
+  if (content.styles) await must(call, { method: 'PATCH', path: '/styles', body: content.styles });
+  if (content.header) await must(call, { method: 'PUT', path: '/parts/header', body: { content: content.header } });
+  if (content.footer) await must(call, { method: 'PUT', path: '/parts/footer', body: { content: content.footer } });
+  await putPages(call, content.pages);
+  await putMenus(call, content.menus ?? []);
+  if (content.business && Object.keys(content.business).length) await must(call, { method: 'PATCH', path: '/business', body: { about: content.business } });
+}
+
 /**
  * Puts a draft's content on the store made with it, through the store's site routes: photos into its media library,
  * then styles, header and footer, pages (the store's page with the same slug, else a new one), menus with the same
@@ -254,33 +315,7 @@ export async function applyDemoDraft(pool: Pool, provisioner: Provisioner, tenan
   const draft = rows[0];
   if (!draft) return false;
   try {
-    const urls = new Map<string, string>();
-    for (const name of draft.images) {
-      const size = await provisioner.demoImageSize({ draftId: draft.id, name });
-      if (size === null || size > MAX_IMAGE_BYTES) continue; // never uploaded, or too large: its placeholder stays
-      const url = await provisioner.demoImageUrl({ draftId: draft.id, name, expiresInSeconds: UPLOAD_SECONDS });
-      const added = await must(call, { method: 'POST', path: '/media', body: { url, alt: '' } });
-      if (isObject(added) && typeof added.url === 'string') urls.set(name, added.url);
-    }
-    const content = withImages(draft.content, urls);
-    if (content.styles) await must(call, { method: 'PATCH', path: '/styles', body: content.styles });
-    if (content.header) await must(call, { method: 'PUT', path: '/parts/header', body: { content: content.header } });
-    if (content.footer) await must(call, { method: 'PUT', path: '/parts/footer', body: { content: content.footer } });
-
-    const existing = (await must(call, { method: 'GET', path: '/pages' })) as { id: number; slug: string }[];
-    for (const page of content.pages) {
-      const match = existing.find((p) => p.slug === page.slug);
-      if (match) await must(call, { method: 'PUT', path: `/pages/${match.id}`, body: page });
-      else await must(call, { method: 'POST', path: '/pages', body: page });
-    }
-    if (content.menus?.length) {
-      const menus = (await must(call, { method: 'GET', path: '/menus' })) as { id: number; title: string }[];
-      for (const menu of content.menus) {
-        const match = menus.find((m) => m.title === menu.title);
-        if (match) await must(call, { method: 'PUT', path: `/menus/${match.id}`, body: { content: menu.content } });
-      }
-    }
-    if (content.business && Object.keys(content.business).length) await must(call, { method: 'PATCH', path: '/business', body: { about: content.business } });
+    await putContent(call, withImages(draft.content, await copyImages(provisioner, draft, call)));
     await pool.query('UPDATE demo_drafts SET applied_at = now(), apply_error = NULL WHERE id = $1', [draft.id]);
     await provisioner.deleteDemoDraft({ draftId: draft.id, names: draft.images });
   } catch (err) {
