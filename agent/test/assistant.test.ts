@@ -225,6 +225,26 @@ describe('what it knows before the owner says a word', () => {
     expect(system).not.toContain('## Colours');
   });
 
+  it('keeps its instructions and the business profile in the prompt cache', async () => {
+    const [a] = h.stores;
+    h.script('Hi', 'get_site', {}, 'Hello.');
+    await h.send(a!, { text: 'Hi' }).done;
+    const body = h.anthropicBodies.at(-1) as { system?: { text: string; cache_control?: { type: string } }[] };
+    const cached = (body.system ?? []).filter((block) => block.cache_control?.type === 'ephemeral').map((block) => block.text);
+    expect(cached).toHaveLength(2);
+    expect(cached[0]).toContain('You are the website assistant for one website.');
+    expect(cached[1]).toContain('## About this business');
+  });
+
+  it('stops after its step limit', async () => {
+    const [a] = h.stores;
+    const before = h.llm.getRequests().length;
+    // A model that never stops calling tools.
+    h.llm.on({ userMessage: 'Keep looking' }, { toolCalls: [{ name: 'get_site', arguments: {} }] });
+    await h.send(a!, { text: 'Keep looking' }).done;
+    expect(h.llm.getRequests().length - before).toBe(12);
+  });
+
   it('loads a skill when it needs one, without asking the owner', async () => {
     const [a] = h.stores;
     h.script('Make the hero section blue', 'skill', { name: 'site-design' }, 'I checked the design rules.');
@@ -282,6 +302,19 @@ describe('the monthly allowance', () => {
     // Other stores aren't affected.
     h.script('Good morning', 'get_site', {}, 'Morning.');
     expect(await h.send(h.stores[0]!, { text: 'Good morning' }).text()).toBe('Morning.');
+  });
+
+  it('records each model step’s tokens for the store, so its real cost can be read', async () => {
+    const [, b] = h.stores;
+    const month = new Date().toISOString().slice(0, 7) + '-01';
+    const steps = async () =>
+      (await h.t.pool.query<{ model_steps: number }>('SELECT model_steps FROM assistant_usage WHERE tenant_id = $1 AND month = $2', [b!.id, month])).rows[0]?.model_steps ?? 0;
+    await h.t.pool.query('UPDATE assistant_usage SET messages = 0 WHERE tenant_id = $1 AND month = $2', [b!.id, month]);
+    const before = await steps();
+    h.script('What pages do I have?', 'get_site', {}, 'You have a home page.');
+    expect(await h.send(b!, { text: 'What pages do I have?' }).text()).toBe('You have a home page.');
+    // A tool call and the answer after it: two model steps, sent without holding up the reply.
+    await expect.poll(steps).toBe(before + 2);
   });
 
   it('tells the panel how many messages are used this month, without counting one', async () => {

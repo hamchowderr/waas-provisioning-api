@@ -14,7 +14,7 @@ const model = need('ASSISTANT_MODEL');
 const anthropicApiKey = need('ANTHROPIC_API_KEY');
 
 const app = createServer({
-  createAssistant: (callSite) => createAssistant({ model, anthropicApiKey, storage, callSite }),
+  createAssistant: (callSite, recordTokens) => createAssistant({ model, anthropicApiKey, storage, callSite, recordTokens }),
   apiUrl: need('ANYPRESS_API_URL'),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean),
 });

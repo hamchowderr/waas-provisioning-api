@@ -3,7 +3,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StatusCode, WaasClient } from '../sdk/typescript/src/index.ts';
-import { assistantUsage, countAssistantMessage } from '../src/assistant-usage.ts';
+import { assistantUsage, countAssistantMessage, recordAssistantTokens } from '../src/assistant-usage.ts';
 import { createApiKey } from '../src/keys.ts';
 import { SIZES } from '../src/plans.ts';
 import { OWNER, setup, type TestContext } from './helpers.ts';
@@ -83,5 +83,57 @@ describe('the website assistant allowance', () => {
     expect((await usage('POST', 'not-a-token')).status).toBe(403);
     expect((await usage('POST', await tokenFor(tenantId, `${BASE}/mcp`))).status).toBe(403);
     expect((await usage('POST', await tokenFor(tenantId, `${BASE}/mcp/site`, "now() - interval '1 minute'"))).status).toBe(403);
+  });
+});
+
+describe('the website assistant’s tokens', () => {
+  const send = (body: unknown, bearer: string | undefined = token) =>
+    t.app.request('/oauth/site/assistant-usage/tokens', {
+      method: 'POST',
+      headers: { ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const month = (now = new Date()) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const totals = async (when = month()) =>
+    (
+      await t.pool.query(
+        'SELECT messages, input_tokens::int AS input, output_tokens::int AS output, cache_read_tokens::int AS read, cache_write_tokens::int AS write, model_steps AS steps FROM assistant_usage WHERE tenant_id = $1 AND month = $2',
+        [tenantId, when],
+      )
+    ).rows[0];
+
+  it('adds each model step’s tokens to the store’s month, without counting a message', async () => {
+    const before = await totals();
+    expect((await send({ inputTokens: 1200, outputTokens: 300, cacheReadTokens: 9000, cacheWriteTokens: 0 })).status).toBe(204);
+    expect((await send({ inputTokens: 800, outputTokens: 150 })).status).toBe(204);
+    expect(await totals()).toEqual({
+      messages: before.messages,
+      input: before.input + 2000,
+      output: before.output + 450,
+      read: before.read + 9000,
+      write: before.write,
+      steps: before.steps + 2,
+    });
+  });
+
+  it('keeps counting after the message allowance is spent, since the message was already allowed', async () => {
+    await t.pool.query('UPDATE assistant_usage SET messages = $2 WHERE tenant_id = $1 AND month = $3', [tenantId, SIZES.small.assistantMessagesPerMonth, month()]);
+    const before = await totals();
+    expect((await send({ inputTokens: 10, outputTokens: 5 })).status).toBe(204);
+    expect((await totals()).input).toBe(before.input + 10);
+  });
+
+  it('starts a new month with its own row', async () => {
+    const next = new Date(Date.UTC(2098, 5, 3));
+    await recordAssistantTokens(t.pool, tenantId, { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 50 }, next);
+    expect(await totals(month(next))).toEqual({ messages: 0, input: 7, output: 3, read: 0, write: 50, steps: 1 });
+  });
+
+  it('refuses counts that aren’t whole numbers in range, and anything but a website sign-in token', async () => {
+    const before = await totals();
+    for (const bad of [null, { inputTokens: -1 }, { outputTokens: 1.5 }, { inputTokens: '9' }, { cacheReadTokens: 3_000_000 }]) expect((await send(bad)).status).toBe(400);
+    expect((await send({ inputTokens: 1 }, '')).status).toBe(403);
+    expect((await send({ inputTokens: 1 }, await tokenFor(tenantId, `${BASE}/mcp`))).status).toBe(403);
+    expect(await totals()).toEqual(before);
   });
 });
