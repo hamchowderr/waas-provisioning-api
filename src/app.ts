@@ -7,6 +7,7 @@ import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
 import { publicApplicationRoutes } from './applications.ts';
 import type { Auth } from './auth.ts';
 import { publicBrandingRoutes } from './branding.ts';
+import { PRICE_LIST } from './pricing.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
@@ -164,6 +165,8 @@ export function createApp(deps: Deps) {
   app.route('/demos', demoDraftRoutes(deps));
   // Dashboard logos and icons (src/branding.ts). Public: the sign-in page shows them.
   app.route('/branding', publicBrandingRoutes(deps));
+  // The one price list (src/pricing.ts). Public: anypress.io and the dashboard show it.
+  app.get('/pricing', (c) => c.json(PRICE_LIST, 200, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300' }));
 
   app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
   app.route('/account', accountRoutes(deps));

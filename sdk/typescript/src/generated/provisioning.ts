@@ -1228,6 +1228,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The price list
+         * @description Added for AnyPress.
+         *
+         *     Every site type's monthly and yearly price per size in US dollars, the volume savings, the reseller discount and the affiliate share. anypress.io and the dashboard read their prices from here. Public, readable from any site.
+         */
+        get: operations["getPricing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/support/tickets": {
         parameters: {
             query?: never;
@@ -2104,6 +2126,36 @@ export interface components {
             error: string | null;
             /** Format: date-time */
             dateCreated: string;
+        };
+        PriceList: {
+            /** @enum {string} */
+            currency: "USD";
+            /** @description Each site type, in the order anypress.io lists them */
+            siteTypes: {
+                /** @description The store template's site type (website, bookings, online-store, community, everything) */
+                key: string;
+                name: string;
+                monthly: components["schemas"]["PriceBySize"];
+                yearly: components["schemas"]["PriceBySize"];
+            }[];
+            /** @description How many times the Small price each size costs */
+            sizeTimes: components["schemas"]["PriceBySize"];
+            /** @description How many months a year costs */
+            yearlyMonths: number;
+            /** @description The saving off every site's price once a customer has this many live sites */
+            volumeTiers: {
+                sites: number;
+                percent: number;
+            }[];
+            /** @description A new reseller's discount off each site's price */
+            wholesalePercent: number;
+            /** @description An affiliate's share of a customer's first payment */
+            affiliatePercent: number;
+        };
+        PriceBySize: {
+            small: number;
+            medium: number;
+            large: number;
         };
         ExceptionResult: {
             /**
@@ -6581,6 +6633,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The price list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceList"];
                 };
             };
         };
