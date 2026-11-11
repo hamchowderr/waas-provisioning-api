@@ -4,7 +4,7 @@
 // visitor's own browser ("Try it" on anypress.io and the dashboard's demo pages); nothing is made on the server.
 //   node templates/anypress-store/playground/blueprints.mjs          write them
 //   node templates/anypress-store/playground/blueprints.mjs --check  fail when one is out of date (CI)
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,8 +25,12 @@ export const SOLD_TYPES = ['website', 'bookings', 'online-store', 'community', '
 const build = readFileSync(resolve(TEMPLATE, 'build.sh'), 'utf8');
 const theme = readFileSync(resolve(TEMPLATE, 'theme.sh'), 'utf8');
 const roles = JSON.parse(readFileSync(resolve(TEMPLATE, 'roles.json'), 'utf8'));
-/** Sample content for the demo (sample.php), so the visitor sees the site type working. */
-const sample = readFileSync(resolve(HERE, 'sample.php'), 'utf8');
+/** Sample content for the demo (sample/, started by sample/run.php), so the visitor sees the site type working. */
+const SAMPLE = resolve(HERE, 'sample');
+const sample = readdirSync(SAMPLE)
+  .filter((name) => name.endsWith('.php'))
+  .sort()
+  .map((name) => ({ step: 'writeFile', path: `/wordpress/anypress-sample/${name}`, data: readFileSync(resolve(SAMPLE, name), 'utf8') }));
 
 const list = (name) =>
   build
@@ -126,8 +130,11 @@ export function blueprint(type) {
       // build.sh runs under WP-CLI, so a new store makes its starter pages on its first page load (anypress-patterns.php).
       // These steps are page loads of their own: start that over, so the visitor's first page makes them as a store does.
       { step: 'runPHP', code: "<?php require '/wordpress/wp-load.php'; foreach (get_posts(['post_type' => 'page', 'post_status' => 'any', 'numberposts' => -1, 'meta_query' => [['key' => '_anypress_needs', 'compare' => 'NOT EXISTS']]]) as $p) wp_delete_post($p->ID, true); delete_option('anypress_starter_pages_made'); delete_option('anypress_starter_pages_lock');" },
-      // Not on a new store: sample content for the demo only (products, a community, bookings, posts, contacts).
-      { step: 'runPHP', code: sample, progress: { caption: 'Adding sample content' } },
+      // Not on a new store: a sample business for the demo only (posts, contacts, forms, orders, bookings, tickets,
+      // affiliates, a community and a course), set up in the plugins this site type has on.
+      { step: 'mkdir', path: '/wordpress/anypress-sample' },
+      ...sample,
+      { step: 'runPHP', code: "<?php require '/wordpress/anypress-sample/run.php';", progress: { caption: 'Adding sample content' } },
     ],
   };
 }
