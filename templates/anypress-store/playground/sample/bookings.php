@@ -1,7 +1,8 @@
 <?php
 /**
  * FluentBooking: two hosts with their own calendars and weekly hours (lunch off, Saturday mornings, a day off next
- * week), the business's services, and a fortnight of bookings: some done, most coming up, one cancelled.
+ * week), the business's services, three months of sessions (done, a few no-shows and cancellations) and the next
+ * two weeks filling up.
  */
 use FluentBooking\App\Models\Availability;
 use FluentBooking\App\Models\Booking;
@@ -111,12 +112,34 @@ foreach ($plan['bookings'] as $n => [$event, $who, $daysAhead, $hour, $status]) 
     } catch (\Throwable $e) {
         continue;
     }
-    if ($booking instanceof Booking && $status !== 'scheduled') {
-        $booking->status = $status;
-        if ($status === 'cancelled') {
-            $booking->internal_note = 'Cancelled by the client: travelling that week.';
+    if (!$booking instanceof Booking) {
+        continue;
+    }
+    // Booked a few days ahead, as clients do; the confirmation emails are dated then too.
+    $booked = gmdate('Y-m-d H:i:s', min(time() - 900, $start - (2 + $n % 6) * DAY_IN_SECONDS - 5 * HOUR_IN_SECONDS));
+    $booking->created_at = $booked;
+    $booking->updated_at = $status === 'scheduled' ? $booked : gmdate('Y-m-d H:i:s', min(time() - 600, $start + 2 * HOUR_IN_SECONDS));
+    $booking->status = $status;
+    if ($status === 'cancelled') {
+        $booking->internal_note = 'Cancelled by the client: travelling that week.';
+    }
+    if ($status === 'no_show') {
+        $booking->internal_note = 'Did not arrive. Sent a friendly note to rebook.';
+    }
+    $booking->save();
+    // The confirmations FluentBooking's queue sends straight after a booking, sent now and dated when it was made.
+    do_action('fluent_booking/after_booking_scheduled_async', $booking->id, $slot->id);
+    as_unschedule_action('fluent_booking/after_booking_scheduled_async', [$booking->id, $slot->id], 'fluent-booking');
+    anypress_sample_mail_at($booked);
+}
+
+// Reminders for sessions already past would all go out at once on the first visit; the coming ones stay queued.
+if (class_exists('ActionScheduler')) {
+    foreach (as_get_scheduled_actions(['group' => 'fluent-booking', 'status' => \ActionScheduler_Store::STATUS_PENDING, 'per_page' => 500], 'ids') as $actionId) {
+        $next = \ActionScheduler::store()->get_date($actionId);
+        if ($next && $next->getTimestamp() < time() + 300) {
+            \ActionScheduler::store()->cancel_action($actionId);
         }
-        $booking->save();
     }
 }
 

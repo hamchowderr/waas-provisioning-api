@@ -1,8 +1,9 @@
 <?php
 /**
  * Fluent Support: the site's admin as the support agent (as Fluent Support does the first time an admin opens it),
- * and a few customer tickets: new, answered and waiting on the customer, and closed with a thank-you.
+ * and months of customer tickets: older ones answered and closed, recent ones waiting on the customer or new.
  */
+use FluentSupport\App\Models\Conversation;
 use FluentSupport\App\Models\Ticket;
 
 $admin = wp_get_current_user();
@@ -15,7 +16,8 @@ if (!\FluentSupport\App\Services\Helper::getAgentByUserId($admin->ID)) {
     ]);
 }
 
-foreach ($sample['tickets'] as $n => [$who, $title, $question, $answers, $state]) {
+foreach ($sample['tickets'] as $n => [$who, $title, $question, $answers, $state, $daysAgo]) {
+    $when = anypress_sample_when($daysAgo, 9 + $n % 8);
     $p = $sample['people'][$who];
     [, $made] = anypress_sample_api('POST', '/fluent-support/v2/tickets', [
         'ticket' => ['title' => $title, 'content' => "<p>$question</p>", 'priority' => $n === 0 ? 'high' : 'normal'],
@@ -31,10 +33,23 @@ foreach ($sample['tickets'] as $n => [$who, $title, $question, $answers, $state]
     if ($state === 'closed') {
         anypress_sample_api('POST', "/fluent-support/v2/tickets/$ticketId/close", ['close_ticket_silently' => 'yes']);
     }
+    // Dated when the customer wrote, with the answer a few hours later, and the emails they sent then too.
+    $answered = gmdate('Y-m-d H:i:s', min(time() - 600, strtotime($when) + 3 * HOUR_IN_SECONDS));
+    foreach (Conversation::where('ticket_id', $ticketId)->get() as $c => $conversation) {
+        $conversation->created_at = $c ? $answered : $when;
+        $conversation->updated_at = $conversation->created_at;
+        $conversation->save();
+    }
     $ticket = Ticket::find($ticketId);
     if ($ticket) {
-        $when = anypress_sample_when(1 + $n * 2.5, 10 + $n);
         $ticket->created_at = $when;
+        $ticket->updated_at = $answers ? $answered : $when;
+        $ticket->last_customer_response = $when;
+        $ticket->waiting_since = $answers ? $answered : $when;
+        if ($answers) {
+            $ticket->last_agent_response = $answered;
+        }
         $ticket->save();
     }
+    anypress_sample_mail_at($when);
 }

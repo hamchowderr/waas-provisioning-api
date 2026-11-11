@@ -4,30 +4,8 @@
  * Fluent Forms' own templates, with its own entries.
  */
 use FluentForm\App\Models\Form;
-use FluentForm\App\Models\Submission;
-use FluentForm\App\Services\Submission\SubmissionService;
 
-/** One entry, as a submission saves it: the entry, its details and its id hash. */
-$entry = static function (Form $form, array $data, float $daysAgo, string $status, bool $starred = false): void {
-    $previous = (int) Submission::where('form_id', $form->id)->max('serial_number');
-    $when = anypress_sample_when($daysAgo, 9 + (int) ($daysAgo * 7) % 9);
-    $submission = Submission::create([
-        'form_id' => $form->id,
-        'serial_number' => $previous + 1,
-        'response' => wp_json_encode($data, JSON_UNESCAPED_UNICODE),
-        'source_url' => home_url('/contact/'),
-        'user_id' => 0,
-        'status' => $status,
-        'is_favourite' => $starred ? 1 : 0,
-        'browser' => ['Chrome', 'Safari', 'Firefox'][(int) $daysAgo % 3],
-        'device' => ['Windows', 'iPhone', 'Mac', 'Android'][(int) $daysAgo % 4],
-        'country' => 'US',
-        'created_at' => $when,
-        'updated_at' => $when,
-    ]);
-    (new SubmissionService())->recordEntryDetails($submission->id, $form->id, $data);
-    \FluentForm\App\Helpers\Helper::setSubmissionMeta($submission->id, '_entry_uid_hash', md5(wp_generate_uuid4() . $submission->id), $form->id);
-};
+$entry = 'anypress_sample_entry';
 
 $people = $sample['people'];
 $name = static fn (array $p) => ['first_name' => $p[0], 'last_name' => $p[1]];
@@ -35,7 +13,7 @@ $name = static fn (array $p) => ['first_name' => $p[0], 'last_name' => $p[1]];
 // The contact form (crm/setup.php renamed Fluent Forms' "Contact Form Demo" and added its questions).
 $contact = Form::where('id', (int) get_option('anypress_crm_contact_form'))->first();
 if ($contact) {
-    $messages = [
+    $messages = $sample['messages'] ?? [
         ['Quick question about prices', 'A question', 'Hi! Could you send me your prices? I am just starting out and want to plan.'],
         ['Booking for next week', 'A booking', 'Do you have any time on Tuesday or Wednesday afternoon?'],
         ['Partnership idea', 'Something else', 'I run a local business and think our customers overlap. Could we talk?'],
@@ -61,7 +39,40 @@ if ($contact) {
 
 // The business's own form, from Fluent Forms' templates.
 $spec = $sample['form'] ?? null;
-if ($spec) {
+/** Fluent Forms' template, trimmed to the questions this business asks and worded its way, with its entries. */
+$trimmed = static function (array $spec) use ($people, $name, $entry): void {
+    $form = (new \FluentForm\App\Services\Form\FormService())->store(['predefined' => $spec['template'], 'type' => 'form']);
+    $form->title = $spec['title'];
+    $fields = json_decode($form->form_fields, true);
+    $fields['fields'] = array_values(array_filter($fields['fields'], static fn ($f) => in_array($f['attributes']['name'] ?? '', $spec['keep'], true)));
+    unset($fields['stepsWrapper']);
+    foreach ($fields['fields'] as &$field) {
+        [$label, $options] = $spec['relabel'][$field['attributes']['name']] ?? [null, null];
+        if ($label) {
+            $field['settings']['label'] = $label;
+        }
+        if ($options) {
+            $field['settings']['advanced_options'] = array_map(static fn ($o) => ['label' => $o, 'value' => $o, 'calc_value' => '', 'image' => ''], $options);
+            // The template's own prompt fits its old choices ("Choose Position"), not these.
+            if (isset($field['settings']['placeholder'])) {
+                $field['settings']['placeholder'] = __('Choose one');
+            }
+        }
+    }
+    unset($field);
+    $form->form_fields = wp_json_encode($fields);
+    $form->save();
+    foreach ($spec['entries'] as $i => [$who, $daysAgo, $answers]) {
+        $p = $people[$who];
+        $entry($form, ['names' => $name($p), 'email' => anypress_sample_email($p)] + $answers, $daysAgo, $i < 2 ? 'unread' : 'read', $i === 0, $spec['page'] ?? '/');
+    }
+};
+foreach ($sample['forms'] ?? [] as $extra) {
+    $trimmed($extra);
+}
+if ($spec && isset($spec['keep'])) {
+    $trimmed($spec);
+} elseif ($spec) {
     $form = (new \FluentForm\App\Services\Form\FormService())->store(['predefined' => $spec['template'], 'type' => 'form']);
     $form->title = $spec['title'];
     $services = [

@@ -51,6 +51,37 @@ foreach ($sample['people'] as $i => $p) {
     }
 }
 
+// The rest of the mailing list: readers who signed up through the newsletter form over six months, more of them lately.
+foreach ($sample['readers'] as $r => $p) {
+    $saved = FluentCrmApi('contacts')->createOrUpdate([
+        'first_name' => $p[0],
+        'last_name' => $p[1],
+        'email' => anypress_sample_email($p),
+        'city' => $p[2],
+        'country' => 'US',
+        'status' => 'subscribed',
+        'custom_values' => ['source' => $r % 9 === 4 ? 'referral' : 'newsletter form'],
+        'lists' => $newsletter ? [(int) $newsletter->id] : [],
+    ], true);
+    if ($saved) {
+        // The first twenty were there before the newsletter started; the rest joined faster as the blog grew.
+        $daysAgo = $r < 20 ? 260 - $r * 3.5 : max(0.4, 188 * (1 - sqrt(($r - 19) / (count($sample['readers']) - 19))));
+        $when = anypress_sample_when($daysAgo, 7 + $r % 14);
+        $saved->created_at = $when;
+        $saved->updated_at = $when;
+        $saved->save();
+    }
+}
+// The sample people joined over the same months (buyers, bookers and members keep the date their plugin gave them).
+foreach ($sample['people'] as $i => $p) {
+    $contact = Subscriber::where('email', anypress_sample_email($p))->first();
+    if ($contact && strtotime((string) $contact->created_at) > time() - DAY_IN_SECONDS) {
+        $when = anypress_sample_when(20 + ($i * 37) % 160, 9 + $i % 9);
+        $contact->created_at = $when;
+        $contact->save();
+    }
+}
+
 // The site type's welcome automations, published, with the contacts they would have started for.
 $welcome = [
     'enquiry' => ['Nurture: Just starting out', 'Nurture: Already in business'],
@@ -85,20 +116,4 @@ foreach (array_unique($titles) as $f => $title) {
             'next_execution_time' => $n < 2 ? null : anypress_sample_when(-1 - $n),
         ]);
     }
-}
-
-// Two campaigns waiting to be sent.
-foreach ([
-    ['November newsletter', 'What we have been up to this month', "<p>Hi {{contact.first_name}},</p><p>Here is what is new at {$sample['business']['name']} this month, and one tip we think you will like.</p>"],
-    ['Holiday hours', 'Our holiday hours', '<p>Hi {{contact.first_name}},</p><p>We are closed from December 24 to January 1. Bookings and orders open again on January 2.</p>'],
-] as [$title, $subject, $body]) {
-    \FluentCrm\App\Models\Campaign::create([
-        'title' => $title,
-        'email_subject' => $subject,
-        'email_pre_header' => '',
-        'email_body' => $body,
-        'design_template' => 'simple',
-        'status' => 'draft',
-        'settings' => ['mailer_settings' => ['from_name' => '', 'from_email' => '', 'reply_to_name' => '', 'reply_to_email' => '', 'is_custom' => 'no'], 'subscribers' => [['list' => $newsletter ? (string) $newsletter->id : 'all', 'tag' => 'all']], 'excludedSubscribers' => [], 'sending_filter' => 'list_tag', 'dynamic_segment' => ['id' => '', 'slug' => '']],
-    ]);
 }
