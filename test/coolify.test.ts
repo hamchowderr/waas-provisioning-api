@@ -582,6 +582,15 @@ describe('CoolifyProvisioner', () => {
     expect(store.started).toBe(starts);
   });
 
+  it('tells a store its storage packs through the agent, without a restart', async () => {
+    await p.createStore(storeInput);
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    const starts = store.started;
+    await p.setStoragePacks({ storeId: STORE_ID, gb: 50 });
+    expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'storage-packs', args: { gb: 50 } });
+    expect(store.started).toBe(starts);
+  });
+
   it('brings a store from before email packs to the current setup first, so its agent has the operation', async () => {
     await p.createStore({ ...storeInput, size: 'medium' });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
@@ -601,7 +610,7 @@ describe('CoolifyProvisioner', () => {
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size medium`);
     const php = parse(store.compose).services.php;
     expect(php).toMatchObject({ cpus: 2, mem_limit: '1280m' });
-    expect(php.environment).toMatchObject({ WAAS_STORAGE_GB: '10', WAAS_EMAILS_PER_MONTH: '20000' });
+    expect(php.environment).toMatchObject({ WAAS_STORAGE_GB: '20', WAAS_EMAILS_PER_MONTH: '20000' });
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'medium' })).toBe('unchanged');
   });
 
@@ -615,7 +624,7 @@ describe('CoolifyProvisioner', () => {
     expect(php).toMatchObject({ cpus: 4, mem_limit: '2048m' });
     expect(parse(store.compose).services.db.cpus).toBe(4);
     expect(php.entrypoint[2]).toContain('pm.max_children = 32');
-    expect(php.environment).toMatchObject({ WAAS_STORAGE_GB: '25', WAAS_EMAILS_PER_MONTH: '50000' });
+    expect(php.environment).toMatchObject({ WAAS_STORAGE_GB: '30', WAAS_EMAILS_PER_MONTH: '50000' });
     expect(store.started).toBe(starts + 1);
     expect(cloud.agentOps.at(-1)).toMatchObject({ op: 'configure', args: {} });
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size large`);
@@ -1292,9 +1301,9 @@ describe('Store compose file', () => {
 
   it('gives each size its CPUs, memory, PHP workers and quotas, and the database and agent the same', () => {
     const want = {
-      small: { cpus: 1, mem: '768m', workers: 8, storage: '5', emails: '5000' },
-      medium: { cpus: 2, mem: '1280m', workers: 16, storage: '10', emails: '20000' },
-      large: { cpus: 4, mem: '2048m', workers: 32, storage: '25', emails: '50000' },
+      small: { cpus: 1, mem: '768m', workers: 8, storage: '10', emails: '5000' },
+      medium: { cpus: 2, mem: '1280m', workers: 16, storage: '20', emails: '20000' },
+      large: { cpus: 4, mem: '2048m', workers: 32, storage: '30', emails: '50000' },
     };
     for (const [size, w] of Object.entries(want)) {
       const compose = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3', size: size as keyof typeof want }));

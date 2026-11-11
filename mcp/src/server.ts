@@ -46,7 +46,7 @@ const phpConstants = z.record(
 );
 const size = z
   .enum(['small', 'medium', 'large'])
-  .describe('Store size: small (1 CPU, 5 GB, 5,000 emails a month), medium (2 CPUs, 10 GB, 20,000) or large (4 CPUs, 25 GB, 50,000)');
+  .describe('Store size: small (1 CPU, 10 GB, 5,000 emails a month), medium (2 CPUs, 20 GB, 20,000) or large (4 CPUs, 30 GB, 50,000)');
 
 const READ: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
 const WRITE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };

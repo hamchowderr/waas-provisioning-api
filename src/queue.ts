@@ -44,6 +44,8 @@ export type JobData =
   | { type: 'tenant.download'; tenantId: string; downloadId: string }
   /** Tells the store how many pack emails it has bought in all (tenant_email_packs, read when the job runs). */
   | { type: 'tenant.email-packs'; tenantId: string }
+  /** Tells the store the storage its storage packs add (tenants.storage_packs, read when the job runs). */
+  | { type: 'tenant.storage-packs'; tenantId: string }
   /** Re-creates a deleted tenant (already re-inserted by the request) from a kept backup. */
   | { type: 'tenant.restore'; tenantId: string; backupId: string }
   /**

@@ -5,12 +5,12 @@ import { withTransaction } from '../db.ts';
 import { badRequest } from '../errors.ts';
 import { isUuid, readJson } from '../http.ts';
 import { validateBody } from '../openapi.ts';
-import { DEFAULT_SIZE } from '../plans.ts';
+import { DEFAULT_SIZE, STORAGE_PACK_GB } from '../plans.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
 import { checkTenantCap, domainInUse, emailPacksBought, findTenant, goLiveTenant, resumeTenant, suspendTenant } from '../tenants.ts';
 
-/** Suspend, resume, backups (contract draft.3, tag TenantLifecycle) and email packs. Mounted at /v1/tenants. */
+/** Suspend, resume, backups (contract draft.3, tag TenantLifecycle), email packs and storage packs. Mounted at /v1/tenants. */
 export function lifecycleRoutes({ pool, boss }: Deps) {
   const app = new Hono<AppEnv>();
 
@@ -60,6 +60,19 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
       return emailPacksBought(client, tenant.id);
     });
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id, emailPacks });
+  });
+
+  // Storage on top of the plan's, bought monthly: `packs` is how many the store has now (its subscription's quantity),
+  // so a repeat changes nothing and 0 ends them. Storage already used beyond the new limit stays; only new uploads stop.
+  app.put('/storage-packs', async (c) => {
+    const tenant = await liveTenant(c);
+    const body = validateBody<{ packs: number }>('StoragePackParams', await readJson(c));
+    await withTransaction(pool, async (client) => {
+      await client.query('UPDATE tenants SET storage_packs = $2, date_changed = now() WHERE id = $1', [tenant.id, body.packs]);
+      // A repeat sends the count again, so the shop retrying also repairs a send that failed.
+      await enqueue(boss, client, { type: 'tenant.storage-packs', tenantId: tenant.id });
+    });
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, storagePacks: body.packs, storagePacksGb: body.packs * STORAGE_PACK_GB });
   });
 
   // Also lists the backups of a deleted tenant, so it doesn't go through findTenant.

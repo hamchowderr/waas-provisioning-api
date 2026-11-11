@@ -42,7 +42,7 @@ A copy that fails (Reprint's error code is in the job's error) gives `reason` in
 ## Limits
 
 - Multisite networks are refused by the plugin and by the store.
-- The archive must fit the store's storage (5, 10 or 25 GB by size) and 5 GB in all. A larger site needs a larger size, or its media moved separately.
+- The archive must fit the store's storage (10, 20 or 30 GB by size) and 5 GB in all. A larger site needs a larger size, or its media moved separately.
 - The old host needs PHP 7.4+, zlib and cURL, and room in its uploads folder for the archive.
 - `wp-config.php` is not moved: licence keys and other constants kept there (and its salts, so everyone signs in again) must be added to the store's constants.
 - Links to the old site inside theme and plugin files (CSS and JavaScript) are not rewritten; page builders' CSS caches are cleared and written again.

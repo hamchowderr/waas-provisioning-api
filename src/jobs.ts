@@ -15,7 +15,7 @@ import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFail
 import { failMailbox, pushMailbox } from './outreach.ts';
 import { failAutomations, pushAutomations } from './outreachautomation.ts';
 import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
-import type { Size } from './plans.ts';
+import { STORAGE_PACK_GB, type Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
@@ -32,6 +32,19 @@ import type { DashboardHost } from './vercel.ts';
  */
 /** A request to a store's site routes (src/sitekeys.ts callSite), signed with that store's key. */
 export type SiteCall = (storeId: string, domain: string, request: SiteRequest) => Promise<SiteResponse>;
+
+/** Sends a store the storage packs on record when the job runs (a change made meanwhile is included). */
+async function sendStoragePacks(pool: Pool, provisioner: Provisioner, tenantId: string): Promise<void> {
+  const { rows } = await pool.query<{ storage_packs: number }>('SELECT storage_packs FROM tenants WHERE id = $1', [tenantId]);
+  if (rows[0]) await provisioner.setStoragePacks({ storeId: tenantId, gb: rows[0].storage_packs * STORAGE_PACK_GB });
+}
+
+/** After a rollback: the backup's database holds the email and storage packs of its day, so tell the store the ones on record again. */
+async function resendPacks(pool: Pool, provisioner: Provisioner, tenantId: string, storagePacks: number): Promise<void> {
+  const purchased = await emailPacksBought(pool, tenantId);
+  if (purchased) await provisioner.setEmailPacks({ storeId: tenantId, purchased });
+  if (storagePacks) await provisioner.setStoragePacks({ storeId: tenantId, gb: storagePacks * STORAGE_PACK_GB });
+}
 
 export function createJobHandlers(
   pool: Pool,
@@ -211,9 +224,7 @@ export function createJobHandlers(
           mainDomain: rows[0].main_domain,
           ownCode: rows[0].own_code,
         });
-        // The backup's database holds the pack total of its day; tell the store the one on record again.
-        const purchased = await emailPacksBought(pool, data.tenantId);
-        if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
+        await resendPacks(pool, provisioner, data.tenantId, rows[0].storage_packs);
         // Its platform email count is an older one too: the next count tells the store again.
         await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
         await forgetHostUpdate(pool, data.tenantId);
@@ -273,6 +284,9 @@ export function createJobHandlers(
         await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
         return;
       }
+      case 'tenant.storage-packs':
+        await sendStoragePacks(pool, provisioner, data.tenantId);
+        return;
     }
   }
 
@@ -353,7 +367,8 @@ export function createJobHandlers(
           await failHostUpdate(pool, data.tenantId, data.version, error);
           return;
         case 'tenant.email-packs':
-          // The store still works; it just doesn't have its new pack emails yet. The shop's retry sends them again.
+        case 'tenant.storage-packs':
+          // The store still works with the packs it had; the shop's retry sends the count again.
           return;
         case 'tenant.delete':
           await setTenantStatus(data.tenantId, Status.Failed);

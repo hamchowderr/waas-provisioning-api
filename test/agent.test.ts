@@ -453,7 +453,7 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     const upload = (size: number) => `echo json_encode(apply_filters('wp_handle_upload_prefilter', ['name' => 'a.jpg', 'size' => ${size}, 'error' => 0]));`;
     expect(JSON.parse(plan(quotas, usage, upload(50)).out)).toEqual({ name: 'a.jpg', size: 50, error: 0 });
     expect(JSON.parse(plan(quotas, usage, upload(200)).out).error).toBe(
-      'This website has used its 1 GB of storage. Delete files you no longer need, or move to a bigger plan, to upload more.',
+      'This website has used its 1 GB of storage. Delete files you no longer need, or add more storage, to upload more.',
     );
     // Sideloads (media from a URL) too.
     expect(JSON.parse(plan(quotas, usage, upload(200).replace('wp_handle_upload_prefilter', 'wp_handle_sideload_prefilter')).out).error).toContain('1 GB');
@@ -463,10 +463,17 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     expect(options.waas_plan_usage.bytes).toBe(GB - 30);
 
     expect(plan(quotas, { waas_plan_usage: { bytes: Math.ceil(0.85 * GB) } }, `do_action('admin_notices');`).out).toBe(
-      '<div class="notice notice-warning"><p>This website has used 85% of its 1 GB of storage. Delete files you no longer need, or move to a bigger plan, before uploads stop.</p></div>',
+      '<div class="notice notice-warning"><p>This website has used 85% of its 1 GB of storage. Delete files you no longer need, or add more storage, before uploads stop.</p></div>',
     );
     expect(plan(quotas, { waas_plan_usage: { bytes: GB } }, `do_action('admin_notices');`).out).toContain('notice-error');
     expect(plan(quotas, { waas_plan_usage: { bytes: 0.5 * GB } }, `do_action('admin_notices');`).out).toBe('');
+  });
+
+  it('adds the storage packs to the plan’s storage', () => {
+    const usage = { waas_plan_usage: { bytes: GB - 100, at: 1 } };
+    const upload = `echo json_encode(apply_filters('wp_handle_upload_prefilter', ['name' => 'a.jpg', 'size' => 200, 'error' => 0]));`;
+    expect(JSON.parse(plan(quotas, { ...usage, waas_plan_storage_packs: 2 }, upload).out).error).toBe(0);
+    expect(plan(quotas, { waas_plan_usage: { bytes: Math.ceil(0.85 * GB) }, waas_plan_storage_packs: 2 }, `do_action('admin_notices');`).out).toBe('');
   });
 
   it('counts email per month and pauses only bulk email past the quota', () => {

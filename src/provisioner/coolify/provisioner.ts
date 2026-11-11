@@ -235,8 +235,10 @@ function wantsCache(phpConstants: Record<string, { value: string }> | null | und
  * 22: Nginx in front of PHP-FPM instead of Apache (renderCompose): the `wordpress` service, which keeps the store's
  *    domains, is Nginx, and WordPress runs in a new `php` service with the size's workers.
  * 23: community and everything stores take uploads up to 512 MB (renderCompose's uploadMb), for members' videos.
+ * 24: storage 10 / 20 / 30 GB by size (plans.ts), and storage packs: the plan mu-plugin adds the packs' storage
+ *    (the agent's storage-packs operation) to the plan's.
  */
-export const STORE_SETUP = 23;
+export const STORE_SETUP = 24;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -1093,6 +1095,14 @@ export class CoolifyProvisioner implements Provisioner {
     const meta = this.storeMeta(store);
     if ((meta.setup ?? 1) < STORE_SETUP) await this.ensureStoreSetup({ storeId, size: meta.size });
     await this.exec(store.uuid, 'mail-packs', { purchased });
+  }
+
+  /** As setEmailPacks: a store set up before storage packs is brought to the current setup first. */
+  async setStoragePacks({ storeId, gb }: { storeId: string; gb: number }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const meta = this.storeMeta(store);
+    if ((meta.setup ?? 1) < STORE_SETUP) await this.ensureStoreSetup({ storeId, size: meta.size });
+    await this.exec(store.uuid, 'storage-packs', { gb });
   }
 
   /** As setEmailPacks: a store set up before the platform counted its email is brought to the current setup first. */
