@@ -25,6 +25,29 @@ export const SOLD_TYPES = ['website', 'bookings', 'online-store', 'community', '
 const build = readFileSync(resolve(TEMPLATE, 'build.sh'), 'utf8');
 const theme = readFileSync(resolve(TEMPLATE, 'theme.sh'), 'utf8');
 const roles = JSON.parse(readFileSync(resolve(TEMPLATE, 'roles.json'), 'utf8'));
+/**
+ * The sample business is made in three runs of sample/run.php, each with only its parts, so the loader says what it is
+ * adding while the visitor waits. More runs would say more but each boots WordPress again, which costs seconds.
+ */
+const SAMPLE_STEPS = [
+  { parts: ['mail', 'blog', 'forms'], caption: 'Writing six months of blog posts' },
+  {
+    parts: ['shop', 'bookings', 'support', 'affiliates', 'community'],
+    types: ['bookings', 'online-store', 'community', 'everything'],
+    caption: (type) =>
+      ({
+        bookings: 'Booking three months of sessions',
+        'online-store': 'Taking six months of orders',
+        community: 'Filling the community',
+        everything: 'Taking orders, bookings and members',
+      })[type],
+  },
+  {
+    parts: ['extras', 'crm', 'newsletter', 'pages'],
+    caption: (type) => (type === 'highlevel' ? "Building the business's pages" : "Sending the newsletter and building the pages"),
+  },
+];
+
 /** Sample content for the demo (sample/, started by sample/run.php), so the visitor sees the site type working. */
 const SAMPLE = resolve(HERE, 'sample');
 const sample = readdirSync(SAMPLE)
@@ -134,7 +157,11 @@ export function blueprint(type) {
       // affiliates, a community and a course), set up in the plugins this site type has on.
       { step: 'mkdir', path: '/wordpress/anypress-sample' },
       ...sample,
-      { step: 'runPHP', code: "<?php require '/wordpress/anypress-sample/run.php';", progress: { caption: 'Adding sample content' } },
+      ...SAMPLE_STEPS.filter((s) => !s.types || s.types.includes(type)).map((s) => ({
+        step: 'runPHP',
+        code: `<?php define('ANYPRESS_SAMPLE_PARTS', ${JSON.stringify(s.parts)}); require '/wordpress/anypress-sample/run.php';`,
+        progress: { caption: typeof s.caption === 'function' ? s.caption(type) : s.caption },
+      })),
     ],
   };
 }

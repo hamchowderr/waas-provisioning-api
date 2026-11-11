@@ -120,4 +120,37 @@ return [
     ]],
     'video' => 'A short welcome from the studio',
     'snippet' => ['Booking reminder banner', "add_action('wp_body_open', function () {\n    echo '<p class=\"booking-banner\">New: Saturday mornings now open</p>';\n});"],
+    // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
+    'pages' => [
+        'hero' => 'Massage and coaching in a quiet studio in Sacramento. Book a session online in a minute, and come as you are.',
+        'buttons' => [['Book a session', '#book'], ['Our services', 'services']],
+        'features' => ['What you can book', [
+            ['60-minute massage', 'Full-body massage with Elena, pressure to suit you. $80.'],
+            ['Coaching session', 'Forty-five focused minutes with Kai on the thing that matters most this month. $95.'],
+            ['Free 15-minute call', 'Not sure where to start? A short call to talk it through, no charge.'],
+        ]],
+        'blog' => ['Journal', 'From the journal'],
+        'signup' => ['Calm Notes', 'A short monthly letter with new times, offers and one small thing to do for yourself.'],
+        'faq' => ['Before you book', [
+            ['Can I change or cancel a booking?', 'Yes, up to 24 hours before, from the link in your confirmation email.'],
+            ['Where is the studio?', '14 Willow Lane, Suite 2, with free parking behind the building.'],
+            ['Do I need to fill anything in?', 'New clients fill in a short intake form before the first visit. It takes two minutes.'],
+        ]],
+        'cta' => ['Your first visit', 'Fill in the intake form before you come, so we can spend your session on you.', [['New client form', 'intake']]],
+        'about' => ['The story of Calm Roots', [
+            'Elena opened Calm Roots in 2019 after ten years of massage in clinics and spas, wanting a studio where nobody rushes and every session starts with a conversation.',
+            'Kai joined in 2022 to coach small business owners, many of whom were already on Elena\'s table. Rosa runs the front desk and the calendar, and makes the tea.',
+        ], [
+            ['Unhurried', 'Ten minutes between every booking, so you never feel the next person waiting.'],
+            ['Listening first', 'Every session starts with what you need today, not a routine.'],
+            ['Small and personal', 'Two practitioners, one front desk, and clients we know by name.'],
+        ]],
+        'contact' => [['Email', 'hello@calmroots.example'], ['Phone', '(916) 555-0142, Monday to Saturday, 9am to 5pm.'], ['Visit', '14 Willow Lane, Suite 2, Sacramento.']],
+        'services' => ['Services', 'services', 'Massage and coaching, priced simply. Every session can be booked online.', [
+            ['60-minute massage', 'Full body, pressure to suit you, with Elena. $80.'],
+            ['Coaching session', 'Forty-five minutes on goals, habits or your business, online with Kai. $95.'],
+            ['Free 15-minute call', 'A short phone call to work out what would help. Free.'],
+        ]],
+        'intake' => ['New client intake', 'intake', 'A few questions before your first session. Your answers stay between you and your practitioner.'],
+    ],
 ];

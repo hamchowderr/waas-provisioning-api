@@ -98,4 +98,34 @@ return [
     'form' => ['template' => 'customer_complaint_form', 'title' => 'Return or problem with an order'],
     'video' => 'How we make a hoodie',
     'snippet' => ['Free shipping notice', "add_action('wp_body_open', function () {\n    echo '<p class=\"shipping-notice\">Free shipping over \$75</p>';\n});"],
+    // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
+    'pages' => [
+        // The hero's photo: the blog post whose photo it uses.
+        'photo' => 15,
+        'hero' => 'Everyday clothes, made to last. Hoodies, tees and caps from two family mills, printed and packed by hand.',
+        'buttons' => [['Shop the collection', 'shop'], ['Our story', 'about']],
+        'products' => 'New this season',
+        'features' => ['Good to know', [
+            ['Free shipping over $75', 'Orders before 2pm leave the same day, in recycled paper mailers.'],
+            ['Sixty-day returns', 'Changed your mind? Send it back for a refund, or we swap the size before yours arrives.'],
+            ['Free repairs for a year', 'If something you love breaks in the first year, we fix it.'],
+        ]],
+        'blog' => ['Journal', 'From the journal'],
+        'signup' => ['The Thread', 'New colours first, care tips and a look behind the seams, once a month. Ten percent off your first order.'],
+        'faq' => ['Before you order', [
+            ['How do I find my size?', 'Measure a hoodie you love, flat, armpit to armpit, and compare it with the size chart on each product.'],
+            ['How long does delivery take?', 'Two to five working days in the US. Orders before 2pm ship the same day.'],
+            ['Do you sell wholesale?', 'Yes, to independent shops. Write to us through the contact page.'],
+        ]],
+        'cta' => ['Join the Sock club', 'A fresh pair every month, in a colour we pick for you. $12 a month, cancel any time.', [['Shop now', 'shop']]],
+        'about' => ['The story of Thread & Co.', [
+            'Iris and Malik started Thread & Co. at a kitchen table in 2020 with one hoodie design and a promise: clothes that still look good after fifty washes.',
+            'We buy our fabric from two family mills we have visited ourselves, print in our own studio, and pack every order by hand. Tess shoots every photo against the same grey wall, so the colours you see are the colours you get.',
+        ], [
+            ['Made to last', 'Heavier fabric, better seams, and free repairs in the first year.'],
+            ['Fair all the way', 'Mills that pay a fair wage and recycle their water.'],
+            ['No fake sales', 'No Black Friday. Fair prices all year.'],
+        ]],
+        'contact' => [['Email', 'hello@threadandco.example'], ['Orders and returns', 'Your orders are in your account, or reply to any order email.'], ['Studio', 'Portland, Oregon. Open for pick-ups on Tuesdays.']],
+    ],
 ];

@@ -53,6 +53,10 @@ $trimmed = static function (array $spec) use ($people, $name, $entry): void {
         }
         if ($options) {
             $field['settings']['advanced_options'] = array_map(static fn ($o) => ['label' => $o, 'value' => $o, 'calc_value' => '', 'image' => ''], $options);
+            // The template's own prompt fits its old choices ("Choose Position"), not these.
+            if (isset($field['settings']['placeholder'])) {
+                $field['settings']['placeholder'] = __('Choose one');
+            }
         }
     }
     unset($field);

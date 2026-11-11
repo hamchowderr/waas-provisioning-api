@@ -68,4 +68,37 @@ return [
     ],
     'video' => 'What happens on install day',
     'snippet' => ['Emergency line in the header', "add_action('wp_body_open', function () {\n    echo '<p class=\"emergency\">Storm damage? Call us any time</p>';\n});"],
+    // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
+    'pages' => [
+        // The hero's photo: the blog post whose photo it uses.
+        'photo' => 2,
+        'hero' => 'Roof repairs and replacements, done right. Free inspections with photos of everything we find, across the county.',
+        'buttons' => [['Book a free inspection', 'contact'], ['Our services', 'services']],
+        'features' => ['Why homeowners call Summit', [
+            ['Free inspections', 'Photos of every part of your roof and an honest note on what, if anything, needs doing.'],
+            ['Storm response', 'We tarp most roofs within 24 hours of a storm, and send your insurer our report.'],
+            ['Ten-year workmanship warranty', 'On every replacement, on top of the manufacturer\'s warranty.'],
+        ]],
+        'blog' => ['Roof care tips', 'Roof care tips and projects'],
+        'faq' => ['Questions we get', [
+            ['How much does an inspection cost?', 'Nothing. Inspections are always free.'],
+            ['How long does a replacement take?', 'Two to three days for most homes, including clean-up.'],
+            ['Do you work with insurers?', 'Yes. We send photos and a written report the morning after we visit.'],
+        ]],
+        'cta' => ['Storm damage?', 'Call us any time. We prioritise leaks and can tarp most roofs the same day.', [['Contact us', 'contact']]],
+        'about' => ['Ten years of Summit Roofing', [
+            'Owen spent ten years on other people\'s crews before starting Summit with one truck and a borrowed ladder. Today we are a crew of twelve with four trucks.',
+            'Lila runs the office and schedules every inspection. Tomas leads the crew and takes the before and after photos you see on this site.',
+        ], [
+            ['Photos, always', 'You see what we see, before we quote.'],
+            ['No upselling', 'If a repair will do, we say so.'],
+            ['Clean sites', 'We sweep the yard with a magnet for nails before we leave.'],
+        ]],
+        'contact' => [['Phone', '(816) 555-0193, any time for storm damage.'], ['Email', 'office@summitroofing.example'], ['Area', 'Kansas City and the surrounding counties.']],
+        'services' => ['Services', 'services', 'From a single missing shingle to a whole new roof.', [
+            ['Repairs', 'Leaks, missing shingles, flashing and storm damage, usually fixed in a day.'],
+            ['Replacements', 'Asphalt, architectural shingle and standing seam metal, with a ten-year warranty.'],
+            ['Gutters and skylights', 'Gutter guards, new gutters and skylights fitted without the leaks.'],
+        ]],
+    ],
 ];

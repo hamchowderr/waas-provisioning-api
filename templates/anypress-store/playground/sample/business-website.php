@@ -129,4 +129,37 @@ return [
     ],
     'video' => 'A weeknight dinner in 30 minutes',
     'snippet' => ['Recipe card print button', "add_filter('the_content', function (\$content) {\n    return is_single() ? \$content . '<p><a href=\"javascript:window.print()\">Print this recipe</a></p>' : \$content;\n});"],
+    // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
+    'pages' => [
+        'hero' => 'Real dinners for busy weeknights. Tested recipes that take thirty minutes or less, from a family kitchen in Portland.',
+        'buttons' => [['Get the recipes', 'blog'], ['Join the newsletter', '#newsletter']],
+        'features' => ['Why people cook with us', [
+            ['Thirty minutes, honestly', 'Every recipe is timed in a real kitchen, washing up included, by someone with kids asking what is for dinner.'],
+            ['Tested three times', 'Nora cooks each recipe at least three times before it goes up, and changes it when readers tell us something did not work.'],
+            ['Shopping lists that make sense', 'Ingredients you can find in any supermarket, with swaps for what you already have.'],
+        ]],
+        'blog' => ['Recipes', 'New on the blog'],
+        'signup' => ['The Weeknight Letter', 'Five dinners, one shopping list, every other Sunday. Free, and you can leave any time.'],
+        'faq' => ['Questions readers ask', [
+            ['Can I freeze these meals?', 'Most of them, yes. Each recipe says how long it keeps in the fridge and whether it freezes.'],
+            ['Do you take sponsored posts?', 'A few a year, only for things we already use. Sponsored posts are always marked at the top.'],
+            ['Can I share a recipe?', 'Please do. Link to the recipe rather than copying it, and add a photo of yours.'],
+        ]],
+        'cta' => ['Work with Weeknight Table', 'Sponsored recipes, newsletter sponsorships and honest product reviews for brands home cooks trust.', [['Work with us', 'work-with-us']]],
+        'about' => ['How Weeknight Table started', [
+            'Nora started Weeknight Table in 2021, with a notebook of dinners that got her family through a year of long workdays. Friends kept asking for the recipes, so she put them online.',
+            'Today Sam and Jules write and photograph with her, the newsletter goes to thousands of home cooks every other Sunday, and every recipe is still cooked in Nora\'s own kitchen first.',
+            'The blog is free to read. It is paid for by the newsletter\'s sponsors and a few clearly marked sponsored posts a year.',
+        ], [
+            ['Tested, not styled', 'Photos show the food as it comes out of the pan, not propped up for the camera.'],
+            ['Honest about sponsors', 'We only work with brands we already buy, and we say so every time.'],
+            ['Reader first', 'Every comment and email gets read, and the best fixes go back into the recipes.'],
+        ]],
+        'contact' => [['Email', 'hello@weeknighttable.example'], ['Brand partnerships', 'Use the Work with us form and we answer within two working days.'], ['Where we cook', 'A family kitchen in Portland, Oregon.']],
+        'services' => ['Work with us', 'work-with-us', 'Ways to reach home cooks who make dinner every night of the week.', [
+            ['Sponsored recipe', 'A recipe developed around your product, photographed by Jules and shared with the newsletter. From $1,200.'],
+            ['Newsletter sponsorship', 'A short, clearly marked note at the top of The Weeknight Letter. From $400 an issue.'],
+            ['Product review', 'An honest review after a month of real use. We say what we did not like too.'],
+        ]],
+    ],
 ];

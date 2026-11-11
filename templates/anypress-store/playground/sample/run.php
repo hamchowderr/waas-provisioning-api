@@ -128,7 +128,9 @@ function anypress_sample_image(string $name, int $postId = 0, string $title = ''
  */
 function anypress_sample_mail_at(?string $when = null): void
 {
-    static $seen = 0;
+    // Kept between the demo's set-up steps, which are requests of their own.
+    static $seen = null;
+    $seen ??= (int) get_option('anypress_sample_mail_seen', 0);
     if (!class_exists('\\FluentMail\\App\\Models\\Logger')) {
         return;
     }
@@ -152,6 +154,9 @@ function anypress_sample_mail_at(?string $when = null): void
         if ($done) {
             break;
         }
+    }
+    if ($newest !== $seen) {
+        update_option('anypress_sample_mail_seen', $newest, false);
     }
     $seen = $newest;
 }
@@ -181,9 +186,13 @@ $parts = [
     'crm' => defined('FLUENTCRM'),
     // Then the newsletter: months of issues to the list the parts before made.
     'newsletter' => defined('FLUENTCRM') && !empty($sample['newsletter']),
+    // The public pages last: they show the posts, the forms, the booking calendar and the shop the parts above made.
+    'pages' => !empty($sample['pages']),
 ];
+// The demo runs the parts a few at a time, so its loader can say what it is adding (blueprints.mjs).
+$only = defined('ANYPRESS_SAMPLE_PARTS') ? (array) ANYPRESS_SAMPLE_PARTS : array_keys($parts);
 foreach ($parts as $part => $on) {
-    if (!$on) {
+    if (!$on || !in_array($part, $only, true)) {
         continue;
     }
     $started = microtime(true);

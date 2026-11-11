@@ -207,7 +207,9 @@ After the set-up, each demo becomes a sample business running for about six mont
 - **Bookings:** two FluentBooking hosts with weekly hours and services, three months of past sessions (with no-shows and cancellations) and the next two weeks filling up.
 - **Support, affiliates and community:** months of Fluent Support tickets, FluentAffiliate affiliates with visits and referrals, and a FluentCommunity of about 40 members with spaces, a pinned welcome post, comments, likes and a course whose students ask questions on the lessons.
 
-Rank Math is set up for the business and there is an example snippet. A real store never gets any of this, and "Make this my site" carries only pages, styles and menus to the store.
+- **Pages:** the public site is the business's own, built from the theme's sections: a home page with its photo, the shop, the booking calendar, the latest posts, the newsletter sign-up and questions, plus about, contact and blog pages, a services page with its own form where the business has one, and the menu to match.
+
+Rank Math is set up for the business and there is an example snippet. The loader says what it is adding while it works ("Taking six months of orders"). A real store never gets any of this. "Make this my site" carries only pages, styles and menus to the store, and leaves behind the sample pages and menu the visitor did not change, so the store starts from its own.
 
 The files are made from `build.sh`, `theme.sh` and `roles.json` by `node templates/anypress-store/playground/blueprints.mjs`; CI fails when one is out of date, and the Update pins workflow remakes them when it moves a pin.
 

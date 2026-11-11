@@ -80,6 +80,25 @@ foreach (['subscription' => ['physical', ['payment_type' => 'subscription', 'rep
     }
 }
 
+// A photo for what the sample catalogue leaves without one (its plain t-shirt), the Sock club and the gift card, so the
+// shop has no empty boxes.
+$missing = ['t-shirt' => 'online-store/14.webp', 'sock' => 'online-store/13.webp', 'gift' => 'everything/17.webp'];
+foreach (array_merge($products, array_values(array_filter($extra))) as $postId) {
+    if (get_post_thumbnail_id($postId)) {
+        continue;
+    }
+    foreach ($missing as $word => $file) {
+        if (str_contains(strtolower(get_the_title($postId)), $word)) {
+            $photo = anypress_sample_image($file, $postId, get_the_title($postId));
+            if ($photo) {
+                set_post_thumbnail($postId, $photo);
+                update_post_meta($postId, 'fluent-products-gallery-image', [['id' => $photo, 'url' => wp_get_attachment_url($photo), 'title' => get_the_title($postId)]]);
+            }
+            break;
+        }
+    }
+}
+
 foreach ($shop['coupons'] as [$title, $code, $kind, $amount, $note]) {
     anypress_sample_api('POST', '/fluent-cart/v2/coupons', [
         'title' => $title, 'code' => $code, 'type' => $kind, 'amount' => $amount, 'status' => 'active',

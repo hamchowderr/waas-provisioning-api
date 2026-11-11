@@ -98,4 +98,31 @@ return [
     'form' => ['template' => 'client_satisfaction_survey_form', 'title' => 'Member survey'],
     'video' => 'A welcome from the Makers Circle team',
     'snippet' => ['Member count in the footer', "add_action('wp_footer', function () {\n    echo '<p class=\"members\">Join over 1,000 makers</p>';\n});"],
+    // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
+    'pages' => [
+        'hero' => 'A community for people building a creative business. Learn to price, photograph and sell what you make, with makers who have done it.',
+        'buttons' => [['Join the community', 'portal'], ['About us', 'about']],
+        'features' => ['What members get', [
+            ['Start your shop in 30 days', 'Nine short lessons from idea to first sale, each with a task you can finish in an evening.'],
+            ['A friendly feed', 'Share your work, ask questions and get kind, useful feedback from over a thousand makers.'],
+            ['Live Q&A every month', 'Bring your questions to Hazel and Felix. Notes and recordings for members who miss it.'],
+        ]],
+        'blog' => ['Blog', 'Guides and member stories'],
+        'signup' => ['Circle Letter', 'One letter a month: the best of the live Q&A, a member story and what is coming up.'],
+        'faq' => ['Before you join', [
+            ['How much is membership?', 'One monthly price includes the course, the community and the live calls. The first month is free.'],
+            ['Is it for beginners?', 'Yes. About half our members have not made a sale yet.'],
+            ['Can I cancel?', 'Any time, from your account, in two clicks.'],
+        ]],
+        'cta' => ['Come and make with us', 'Your first month is free. Introduce yourself and start lesson one today.', [['Join the community', 'portal']]],
+        'about' => ['The story of Makers Circle', [
+            'Hazel ran a ceramics shop for eight years and kept answering the same questions from makers starting out: how do I price this, how do I photograph it, where do I sell it?',
+            'In 2022 she started Makers Circle to answer them in one place, with Felix running the course and the monthly live Q&A. Today it is over a thousand potters, woodworkers, bakers, printers and weavers helping each other.',
+        ], [
+            ['Generous', 'Share what you know. Someone shared it with you.'],
+            ['Practical', 'Numbers, photos and steps you can do this week.'],
+            ['Kind', 'Feedback you would be glad to receive.'],
+        ]],
+        'contact' => [['Email', 'hello@makerscircle.example'], ['Members', 'Ask in the community and Hazel or Felix will answer.'], ['Live Q&A', 'The first Thursday of every month, online.']],
+    ],
 ];

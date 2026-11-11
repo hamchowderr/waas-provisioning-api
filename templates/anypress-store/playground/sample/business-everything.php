@@ -98,4 +98,34 @@ return [
     'form' => ['template' => 'customer_complaint_form', 'title' => 'Return or problem with an order'],
     'video' => 'Inside the studio',
     'snippet' => ['Free shipping notice', "add_action('wp_body_open', function () {\n    echo '<p class=\"shipping-notice\">Free shipping over \$75</p>';\n});"],
+    // The public pages: [section title, items] and buttons as [label, page slug, '#anchor' or 'portal'].
+    'pages' => [
+        // The hero's photo: the blog post whose photo it uses.
+        'photo' => 12,
+        'hero' => 'Clothes, classes and a community for makers. Shop our printed clothes, book a class or a design session, and join the members.',
+        'buttons' => [['Shop', 'shop'], ['Book a session', '#book']],
+        'products' => 'From the shop',
+        'features' => ['Three ways in', [
+            ['Shop', 'Hoodies, tees and totes, printed in the studio one colour at a time.'],
+            ['Book', 'Printing classes, one-to-one design sessions with Kai and massage with Elena.'],
+            ['Join', 'A members\' community with a course that takes you from idea to first sale.'],
+        ]],
+        'blog' => ['Journal', 'From the journal'],
+        'signup' => ['Studio Notes', 'Once a month: new prints, open classes and member news. Ten percent off your first order.'],
+        'faq' => ['Good to know', [
+            ['Where is the studio?', 'Portland, Oregon. Classes and sessions happen here, or online.'],
+            ['Do members get discounts?', 'Members get one free design session a quarter and early access to new prints.'],
+            ['Do you ship outside the US?', 'Not yet. Free shipping in the US on orders over $75.'],
+        ]],
+        'cta' => ['Join the members', 'Share your work, take the course and come to the live Q&A. The first month is free.', [['Join the community', 'portal']]],
+        'about' => ['The story of Brightline Studio', [
+            'Anya started Brightline with one screen print and a borrowed table. The prints sold, people asked to learn how they were made, and the classes followed.',
+            'Today the studio prints and ships clothes, teaches small classes, runs design sessions with Kai and massage with Elena, and hosts a community of makers who learn together.',
+        ], [
+            ['Made here', 'Every print is pressed in the studio, one colour at a time.'],
+            ['Small classes', 'Six people at most, so everyone gets time at the press.'],
+            ['Makers helping makers', 'Members share what works, from couriers to colours.'],
+        ]],
+        'contact' => [['Email', 'hello@brightline.example'], ['Phone', '(503) 555-0187, Tuesday to Saturday, 10am to 5pm.'], ['Studio', '22 Alder Street, Portland, Oregon.']],
+    ],
 ];
