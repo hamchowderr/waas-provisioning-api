@@ -15,6 +15,7 @@ It comes with:
   - [`anypress-ui-check`](skills/anypress-ui-check/SKILL.md): a browser check at desktop and phone width: names and labels, focus, tap sizes, contrast, sideways scroll and the page's head.
   - [`anypress-design-critique`](skills/anypress-design-critique/SKILL.md): a design director's review of a page, with fixes named as pattern and style changes.
   - [`anypress-demo-build`](skills/anypress-demo-build/SKILL.md): one demo site from the demo plan, on WordPress Playground.
+- **Prompts** for the same skills, which AI apps show as ready-made workflows (often in a slash menu): `build-website`, `run-my-sites`, `design-brief`, `copy-a-look`, `write-the-words`, `critique-a-page`, `check-a-page` and `check-for-visitors`. Each takes an optional `request`, the job in your own words, and hands the app the skill to follow.
 
   The design skills are our own WordPress versions of open design skills (Higgsfield's website skill, Taste Skill, Vercel's Web Interface Guidelines, Impeccable, Google's DESIGN.md); each skill's `NOTICE.md` keeps the original licence.
 

@@ -265,6 +265,21 @@ describe('MCP server', () => {
     }
   });
 
+  it('offers the skills as prompts', async () => {
+    const { prompts } = await mcp.listPrompts();
+    expect(prompts.map((p) => p.name).sort()).toEqual(
+      ['build-website', 'check-a-page', 'check-for-visitors', 'copy-a-look', 'critique-a-page', 'design-brief', 'run-my-sites', 'write-the-words'],
+    );
+    expect(prompts.find((p) => p.name === 'build-website')).toMatchObject({ title: 'Build a website', arguments: [expect.objectContaining({ name: 'request', required: false })] });
+
+    const built = await mcp.getPrompt({ name: 'build-website', arguments: { request: 'A bakery in Austin' } });
+    const skillMd = loadSkills().find((s) => s.frontmatter.name === 'anypress-site-builder')!;
+    expect(built.messages[0]!.content).toMatchObject({ type: 'resource', resource: { uri: 'skill://anypress-site-builder/SKILL.md', text: skillMd.files.find((f) => f.uri === skillMd.uri)!.text } });
+    expect(built.messages[1]!.content).toMatchObject({ type: 'text', text: expect.stringContaining('The job: A bakery in Austin') });
+    const blank = await mcp.getPrompt({ name: 'run-my-sites', arguments: {} });
+    expect(blank.messages[1]!.content).toMatchObject({ type: 'text', text: expect.stringContaining('asking me what the job is') });
+  });
+
   it('deletes a store', async () => {
     await call(mcp, 'get_stores', { action: 'wait', externalId: 'mcp-1', timeoutSeconds: 15 });
     expect(await call(mcp, 'store_status', { action: 'delete', externalId: 'mcp-1' })).toMatchObject({ isError: false, text: 'Done.' });
