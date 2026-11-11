@@ -18,7 +18,25 @@ export const ENV_VALUE_LIMIT = 128 * 1024 - 64;
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
 /** Per-store limits (docs/coolify.md). WordPress's CPU, memory and Apache workers come from the store's size (plans.ts). */
-const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 } };
+const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 }, redis: { mem: '64m', cpus: 0.25 } };
+
+/**
+ * A store's object cache: its own Redis, holding what WordPress and its plugins look up again and again (options,
+ * users, FluentCommunity's settings and feeds) in memory instead of asking the database each time. It helps most
+ * where visitors are logged in, which the page cache never serves (community members), and WPManageNinja
+ * recommends it for FluentCommunity. Nothing is written to disk (the database stays the only copy), and the least
+ * used keys go first once it holds REDIS_MAX. WordPress reaches it through the object-cache.php drop-in the agent
+ * installs (install_object_cache in agent.php), which does nothing in a store without WAAS_REDIS_HOST.
+ */
+const REDIS_MAX = '48mb';
+const redisService = () => ({
+  image: 'redis:8-alpine',
+  restart: 'unless-stopped',
+  command: ['redis-server', '--maxmemory', REDIS_MAX, '--maxmemory-policy', 'allkeys-lru', '--save', '', '--appendonly', 'no'],
+  mem_limit: LIMITS.redis.mem,
+  cpus: LIMITS.redis.cpus,
+  healthcheck: { test: ['CMD', 'redis-cli', 'ping'], ...HEALTH },
+});
 
 /**
  * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
@@ -142,7 +160,14 @@ function assistantLabels(router: string, domains: string[]): string[] {
  * size (plans.ts); a version site has none and runs as small, without quotas. A store also has `assistant`: its
  * router name and domains for the website assistant on its own domain (assistantLabels).
  */
-export function renderCompose(input: { wordPressVersion: string; phpVersion: string; size?: Size; assistant?: { router: string; domains: string[] } }): string {
+export function renderCompose(input: {
+  wordPressVersion: string;
+  phpVersion: string;
+  size?: Size;
+  assistant?: { router: string; domains: string[] };
+  /** The store's own Redis object cache (redisService): community and everything stores. */
+  cache?: boolean;
+}): string {
   const image = wordpressImage(input.wordPressVersion, input.phpVersion);
   const size = SIZES[input.size ?? DEFAULT_SIZE];
   // The plan's quotas, read by the waas-plan mu-plugin (agent.php). Literal values, not Coolify variables: a new
@@ -163,6 +188,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
     // Tells AnyPress Client it runs on a customer's store.
     ANYPRESS_IS_TENANT: 'true',
     ...quotas,
+    ...(input.cache ? { WAAS_REDIS_HOST: 'redis' } : {}),
   };
   const compose = {
     services: {
@@ -172,7 +198,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         entrypoint: wordpressEntrypoint(size.workers),
         environment: wpEnv,
         volumes: ['wp:/var/www/html'],
-        depends_on: { db: { condition: 'service_healthy' } },
+        depends_on: { db: { condition: 'service_healthy' }, ...(input.cache ? { redis: { condition: 'service_started' } } : {}) },
         mem_limit: size.mem,
         cpus: size.cpus,
         healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], ...HEALTH },
@@ -211,6 +237,7 @@ export function renderCompose(input: { wordPressVersion: string; phpVersion: str
         cpus: LIMITS.agent.cpus,
         healthcheck: { test: ['CMD', 'php', '-r', "exit(is_file('/tmp/waas-agent.php') ? 0 : 1);"], ...HEALTH },
       },
+      ...(input.cache ? { redis: redisService() } : {}),
     },
     volumes: { wp: {}, db: {} },
   };

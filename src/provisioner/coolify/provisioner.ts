@@ -89,6 +89,16 @@ const envValue = (envs: CoolifyEnv[], key: string) => {
 };
 /** A value without the quotes that envValue's old reading of real_value left around it. */
 const unquote = (value: string | undefined) => value?.replace(/^'+|'+$/g, '');
+
+/** WAAS_CONSTANTS_B64 (encodeConstants) read back as phpConstants; nothing when it is missing or unreadable. */
+function decodeConstants(value: string | undefined): Record<string, { value: string }> {
+  try {
+    const plain = JSON.parse(Buffer.from(unquote(value) ?? '', 'base64').toString('utf8')) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(plain).map(([name, v]) => [name, { value: String(v) }]));
+  } catch {
+    return {};
+  }
+}
 const domainOf = (address: string | undefined) => address?.split('@')[1]?.toLowerCase();
 const decodeMail = (value: string | undefined): Partial<StoreMail> | null => {
   try {
@@ -172,6 +182,17 @@ export interface StoreMeta {
   setup?: number;
   /** The size (plans.ts) the store's compose file was last rendered with. */
   size: Size;
+  /** Whether the store has its own Redis object cache (renderCompose's `cache`): its site type wants one (CACHED_SITE_TYPES). */
+  cache?: boolean;
+}
+
+/** Site types whose stores get their own Redis object cache: their visitors are mostly logged-in members. */
+const CACHED_SITE_TYPES = ['community', 'everything'];
+
+/** Whether a store with these phpConstants gets an object cache (its ANYPRESS_TENANT_ROLES). */
+function wantsCache(phpConstants: Record<string, { value: string }> | null | undefined): boolean {
+  const roles = phpConstants?.ANYPRESS_TENANT_ROLES?.value ?? '';
+  return roles.split(',').some((type) => CACHED_SITE_TYPES.includes(type.trim()));
 }
 
 /**
@@ -205,8 +226,10 @@ export interface StoreMeta {
  *    tagged Replied or Customer, and the agent's crm-automation operation makes those automations (src/outreachautomation.ts).
  * 19: the guard mu-plugin answers a signed preview link (?anypress_preview=) on any of the store's addresses instead
  *    of redirecting it to the main domain, so AI apps can frame previews from the platform address.
+ * 20: community and everything stores get their own Redis object cache (renderCompose's `cache`), and every store the
+ *    agent's object-cache.php drop-in, which uses it where there is one (install_object_cache in agent.php).
  */
-export const STORE_SETUP = 19;
+export const STORE_SETUP = 20;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -382,7 +405,7 @@ export class CoolifyProvisioner implements Provisioner {
 
   private async storeComposeText(storeId: string, meta: StoreMeta, uuid: string, domains?: string[]): Promise<string> {
     const hosts = domains ?? (await this.serviceDomains(uuid));
-    return renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, assistant: assistantFor(storeId, hosts) });
+    return renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, cache: meta.cache, assistant: assistantFor(storeId, hosts) });
   }
 
   /** The domains a store's Service answers on (its wordpress URLs). */
@@ -411,6 +434,8 @@ export class CoolifyProvisioner implements Provisioner {
     phpVersion: string;
     /** A store's; version sites have none. */
     size?: Size;
+    /** A store's object cache (StoreMeta's `cache`). */
+    cache?: boolean;
     domains: string[];
     envs: Record<string, string>;
   }): Promise<string> {
@@ -750,6 +775,7 @@ export class CoolifyProvisioner implements Provisioner {
     const reprint = imported ? input.reprint : undefined;
     if (!reprint && (await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
+    const cache = wantsCache(input.phpConstants);
     if (input.user?.password) envs.WAAS_INIT_PASSWORD = input.user.password;
     Object.assign(envs, this.siteKeyEnvs(input.storeId));
     // A retried create finds the Service, and the key it minted, from last time.
@@ -758,10 +784,11 @@ export class CoolifyProvisioner implements Provisioner {
     const uuid = await this.ensureService({
       envName: STORES_ENV,
       name: storeName(input.storeId),
-      meta: { kind: 'store', versionId: input.versionId, size: input.size },
+      meta: { kind: 'store', versionId: input.versionId, size: input.size, cache },
       wordPressVersion: version.wordPressVersion,
       phpVersion: version.phpVersion,
       size: input.size,
+      cache,
       domains: [input.mainDomain, ...input.redirectDomains],
       envs,
     });
@@ -829,7 +856,9 @@ export class CoolifyProvisioner implements Provisioner {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const meta = this.storeMeta(store);
     if ((meta.setup ?? 1) >= STORE_SETUP && meta.size === size) return 'unchanged';
-    const want: StoreMeta = { ...meta, setup: STORE_SETUP, size };
+    // A store set up before the object cache (setup 20) has no record of it yet: its site types say.
+    const cache = (meta.setup ?? 1) >= 20 ? meta.cache : wantsCache(decodeConstants(envValue(await this.coolify.listEnvs(store.uuid), 'WAAS_CONSTANTS_B64')));
+    const want: StoreMeta = { ...meta, setup: STORE_SETUP, size, cache };
     const compose = await this.storeComposeText(storeId, want, store.uuid);
     const siteKey = this.siteKeyEnvs(storeId);
     if (await this.onlyAgentChanged(store.uuid, compose, siteKey)) {
@@ -1030,7 +1059,11 @@ export class CoolifyProvisioner implements Provisioner {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     // A new size is a new compose file (resources and quotas). With the restart and configure below the store also
     // has the current setup; the description says both once the store runs them.
-    const resized: StoreMeta | undefined = size && { ...this.storeMeta(store), setup: STORE_SETUP, size };
+    const meta = this.storeMeta(store);
+    // New site types can bring or take away the object cache, which is a new compose file too.
+    const cache = phpConstants ? wantsCache(phpConstants) : meta.cache;
+    const resized: StoreMeta | undefined =
+      size || !!cache !== !!meta.cache ? { ...meta, setup: STORE_SETUP, size: size ?? meta.size, cache } : undefined;
     if (resized) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(storeId, resized, store.uuid) });
     if (phpConstants) {
       // The complete set (see Provisioner.updateStore); Coolify's API does not hand values back to merge with.
@@ -1312,17 +1345,17 @@ function allHealthy(statuses: string[]): boolean {
 export function formatMeta(meta: VersionMeta | StoreMeta): string {
   return meta.kind === 'version'
     ? `WaaS version, WordPress ${meta.wordPressVersion}, PHP ${meta.phpVersion}`
-    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}, size ${meta.size}`;
+    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}, size ${meta.size}${meta.cache ? ', cache' : ''}`;
 }
 
 export function parseMeta(description: string | null | undefined): VersionMeta | StoreMeta | null {
   const version = /^WaaS version, WordPress ([\d.]+), PHP ([\d.]+)$/.exec(description ?? '');
   if (version) return { kind: 'version', wordPressVersion: version[1]!, phpVersion: version[2]! };
-  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?(?:, size (\w+))?$/.exec(description ?? '');
+  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?(?:, size (\w+))?(, cache)?$/.exec(description ?? '');
   if (!store) return null;
   const size = store[3] ?? DEFAULT_SIZE;
   // A size this API does not know (a newer one's) is no metadata it can act on.
-  return isSize(size) ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1), size } : null;
+  return isSize(size) ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1), size, ...(store[4] && { cache: true }) } : null;
 }
 
 /** The agent's restore answer, as a MoveReport: only well-formed rows and lines. */
