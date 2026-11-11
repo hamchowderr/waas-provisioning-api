@@ -233,8 +233,9 @@ function wantsCache(phpConstants: Record<string, { value: string }> | null | und
  *    DISALLOW_FILE_EDIT, and the login safety mu-plugin (FluentAuth's XML-RPC and REST usernames off, once).
  * 22: Nginx in front of PHP-FPM instead of Apache (renderCompose): the `wordpress` service, which keeps the store's
  *    domains, is Nginx, and WordPress runs in a new `php` service with the size's workers.
+ * 23: community and everything stores take uploads up to 512 MB (renderCompose's uploadMb), for members' videos.
  */
-export const STORE_SETUP = 22;
+export const STORE_SETUP = 23;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;

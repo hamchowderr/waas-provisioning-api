@@ -53,7 +53,7 @@ const fpmConf = (workers: number) =>
     'pm.min_spare_servers = 1',
     'pm.max_spare_servers = 3',
     'pm.max_requests = 500',
-    // A little past max_execution_time (PHP_INI), for a request stuck outside PHP's own clock (a slow database call).
+    // A little past max_execution_time (phpIni), for a request stuck outside PHP's own clock (a slow database call).
     'request_terminate_timeout = 150s',
   ].join('\\n');
 /** Keeps the exact PHP version out of response headers (X-Powered-By); Nginx's is hidden by server_tokens. */
@@ -64,17 +64,24 @@ const HIDE_VERSIONS_INI = 'expose_php = Off';
  * with 8 MB of strings for 4,000 files). WordPress's hosting handbook recommends 256 MB of memory
  * (make.wordpress.org/hosting/handbook/server-environment/) and an OPcache sized for the site (…/performance/): with
  * the template's plugins (about 12,000 PHP files) the default OPcache and its strings buffer were both full after
- * about 20 kinds of page. Uploads stay within the plan's storage (the waas-plan mu-plugin).
+ * about 20 kinds of page. Uploads stay within the plan's storage (the waas-plan mu-plugin); their size is uploadMb's.
  */
-const PHP_INI = [
+const phpIni = (upload: number) => [
   'memory_limit = 256M',
-  'upload_max_filesize = 64M',
-  'post_max_size = 64M',
+  `upload_max_filesize = ${upload}M`,
+  `post_max_size = ${upload}M`,
   'max_execution_time = 120',
   'opcache.memory_consumption = 192',
   'opcache.interned_strings_buffer = 32',
   'opcache.max_accelerated_files = 20000',
 ].join('\\n');
+
+/**
+ * The largest upload a store takes, in MB. Community and everything stores (the ones with an object cache) take
+ * 512 MB, for the videos members post from their phones; the rest keep 64 MB. A domain proxied by Cloudflare is
+ * still held to Cloudflare's own limit (100 MB on its Free and Pro plans).
+ */
+const uploadMb = (community: boolean | undefined) => (community ? 512 : 64);
 
 /**
  * Cloudflare's addresses (cloudflare.com/ips, 2026-11-11). Some stores' domains are proxied by Cloudflare, and a
@@ -107,9 +114,9 @@ const NGINX_HEALTH = '/.waas-nginx';
  *
  * Written as base64: the file is full of `$`, which Coolify would interpolate.
  */
-const NGINX_CONF = [
+const nginxConf = (upload: number) => [
   'server_tokens off;',
-  'client_max_body_size 64m;',
+  `client_max_body_size ${upload}m;`,
   'gzip on;',
   'gzip_vary on;',
   'gzip_proxied any;',
@@ -166,20 +173,20 @@ const NGINX_CONF = [
   '',
 ].join('\n');
 
-const phpEntrypoint = (workers: number) => [
+const phpEntrypoint = (workers: number, upload: number) => [
   'sh',
   '-c',
   `printf '${fpmConf(workers)}\\n' > /usr/local/etc/php-fpm.d/zz-waas.conf && ` +
     `printf '${HIDE_VERSIONS_INI}\\n' > /usr/local/etc/php/conf.d/waas-hide-versions.ini && ` +
-    `printf '${PHP_INI}\\n' > /usr/local/etc/php/conf.d/waas-php.ini && ` +
+    `printf '${phpIni(upload)}\\n' > /usr/local/etc/php/conf.d/waas-php.ini && ` +
     // The official image sets WordPress up (wp-config, the files on a new volume) only for a php-fpm command.
     'exec docker-entrypoint.sh php-fpm',
 ];
 
-const nginxEntrypoint = () => [
+const nginxEntrypoint = (upload: number) => [
   'sh',
   '-c',
-  `echo ${Buffer.from(NGINX_CONF).toString('base64')} | base64 -d > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'`,
+  `echo ${Buffer.from(nginxConf(upload)).toString('base64')} | base64 -d > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'`,
 ];
 
 /** The Nginx release stores run: the stable line (nginx.org/en/download.html), following its patch releases. */
@@ -315,7 +322,7 @@ export function renderCompose(input: {
       wordpress: {
         image: NGINX_IMAGE,
         restart: 'unless-stopped',
-        entrypoint: nginxEntrypoint(),
+        entrypoint: nginxEntrypoint(uploadMb(input.cache)),
         volumes: ['wp:/var/www/html:ro'],
         depends_on: ['php'],
         mem_limit: LIMITS.web.mem,
@@ -326,7 +333,7 @@ export function renderCompose(input: {
       php: {
         image,
         restart: 'unless-stopped',
-        entrypoint: phpEntrypoint(size.workers),
+        entrypoint: phpEntrypoint(size.workers, uploadMb(input.cache)),
         environment: wpEnv,
         volumes: ['wp:/var/www/html'],
         depends_on: { db: { condition: 'service_healthy' }, ...(input.cache ? { redis: { condition: 'service_started' } } : {}) },
