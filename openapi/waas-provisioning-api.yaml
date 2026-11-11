@@ -4359,7 +4359,7 @@ components:
         dateCreated: { type: string, format: date-time }
     PriceList:
       type: object
-      required: [currency, siteTypes, sizeTimes, yearlyMonths, volumeTiers, wholesalePercent, affiliatePercent]
+      required: [currency, siteTypes, sizeTimes, yearlyMonths, volumeTiers, wholesalePercent, affiliatePercent, care]
       properties:
         currency:
           type: string
@@ -4404,6 +4404,35 @@ components:
         affiliatePercent:
           type: integer
           description: An affiliate's share of a customer's first payment
+        care:
+          type: object
+          description: Care for one website, sold on the shop. Packages are monthly changes; services are one-time.
+          required: [packages, services]
+          properties:
+            packages:
+              type: array
+              items:
+                type: object
+                required: [key, name, monthly, yearly, minutes, answer, call]
+                properties:
+                  key: { type: string }
+                  name: { type: string }
+                  monthly: { type: number, description: Price a month in US dollars }
+                  yearly: { type: number, description: Price a year in US dollars }
+                  minutes: { type: integer, description: Minutes of changes each month }
+                  answer: { type: string, description: 'How soon a request is answered, e.g. "1 business day"' }
+                  call: { type: boolean, description: Whether the package includes a monthly call }
+            services:
+              type: array
+              items:
+                type: object
+                required: [key, name, price, minutes, careOnly]
+                properties:
+                  key: { type: string }
+                  name: { type: string }
+                  price: { type: number, description: One-time price in US dollars }
+                  minutes: { type: integer, description: Minutes of changes it adds to the website (0 for a job) }
+                  careOnly: { type: boolean, description: Sold only for a website with a care package }
     PriceBySize:
       type: object
       required: [small, medium, large]
