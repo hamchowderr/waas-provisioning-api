@@ -6450,7 +6450,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip */
+                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip for one release; anypress-theme.zip or anypress-blocks.zip for the newest */
                 file: string;
             };
             cookie?: never;
