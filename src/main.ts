@@ -23,7 +23,7 @@ import { S3ReleaseStore } from './releases.ts';
 import { startHostUpdates } from './hostupdates.ts';
 import { resolvePlatformProducts } from './platformproducts.ts';
 import { Secrets } from './secrets.ts';
-import { siteKey, siteKeyMaster } from './sitekeys.ts';
+import { callSite, siteKey, siteKeyMaster, type SiteRequest } from './sitekeys.ts';
 import { startStoreBackups } from './storebackups.ts';
 import Firecrawl from '@mendable/firecrawl-js';
 import { startReferences } from './references.ts';
@@ -43,11 +43,13 @@ const provisioner: Provisioner = config.coolify
   : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
+// A store made from a demo gets the demo's content through its own site routes (src/demodrafts.ts). Only real stores have them.
+const siteCall = config.coolify ? (storeId: string, domain: string, request: SiteRequest) => callSite(siteKey(siteKeys, storeId), domain, request) : undefined;
 const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
 // A job that fails its last retry is emailed to the admins (src/jobalerts.ts).
 const handlers = withFailureAlerts(
-  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss), pool, boss, webhooks),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss, siteCall), pool, boss, webhooks),
   pool,
   { mail: config.auth?.mail, to: config.jobAlerts, dashboardUrl: config.auth?.url },
 );

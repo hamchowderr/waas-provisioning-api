@@ -29,6 +29,7 @@ import { requestLogger } from './requestlog.ts';
 import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
 import { pluginChoiceRoutes } from './pluginchoices.ts';
 import type { WpOrg } from './wporg.ts';
+import { demoDraftRoutes } from './demodrafts.ts';
 import { importRoutes } from './imports.ts';
 import { referenceRoutes } from './references.ts';
 import { adminRoutes } from './routes/admin.ts';
@@ -158,6 +159,8 @@ export function createApp(deps: Deps) {
   // Sites moved in from another host: the AnyPress Export plugin, holding an import code (src/imports.ts). No API key,
   // and not in the request log, which would keep the code.
   app.route('/imports', importRoutes(deps));
+  // Demos people build on Playground, saved for their checkout (src/demodrafts.ts). No API key.
+  app.route('/demos', demoDraftRoutes(deps));
   // Dashboard logos and icons (src/branding.ts). Public: the sign-in page shows them.
   app.route('/branding', publicBrandingRoutes(deps));
 
