@@ -268,6 +268,24 @@ export class FakeProvisioner implements Provisioner {
     return { sizeBytes };
   }
 
+  /** Site downloads: download id -> store id. */
+  readonly downloads = new Map<string, string>();
+
+  async downloadStore({ storeId, downloadId }: { storeId: string; downloadId: string }) {
+    this.check('downloadStore');
+    this.store(storeId);
+    this.downloads.set(downloadId, storeId);
+    return { sizeBytes: 3 * 1024 * 1024 };
+  }
+
+  async downloadUrl({ downloadId, fileName }: { downloadId: string; fileName: string; expiresInSeconds: number }) {
+    return `https://uploads.waas.example/downloads/${downloadId}.zip?get&name=${encodeURIComponent(fileName)}`;
+  }
+
+  async deleteDownload({ downloadId }: { downloadId: string }) {
+    this.downloads.delete(downloadId);
+  }
+
   async restoreDeletedStore(input: Parameters<Provisioner['restoreDeletedStore']>[0]) {
     this.check('restoreDeletedStore');
     const backup = this.backups.get(input.backupId);

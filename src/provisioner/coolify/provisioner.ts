@@ -123,6 +123,7 @@ const OP_STEPS: Partial<Record<string, StepKey>> = {
   configure: 'configure',
   'check-site': 'check',
   snapshot: 'backup',
+  'site-download': 'backup',
 };
 const STAGE_CHUNK = 200;
 /** What a task's output says when Coolify ran it in the database or WordPress container: the agent never started. */
@@ -259,6 +260,8 @@ const keys = {
   /** A version's plugin choices with signed links to their zips, for the agent's plugins step. */
   pluginChoices: (versionId: string) => `versions/${versionId}/plugin-choices.json`,
   backup: (id: string) => `backups/${id}.zip`,
+  /** A copy of a store for its owner to download (downloadStore), deleted after a week. */
+  download: (id: string) => `downloads/${id}.zip`,
   /** A site being moved in: a zip or a gzipped tar, so no extension. */
   import: (storeId: string) => `imports/${storeId}`,
   /** Businesses for a store's FluentCRM (addCrmProspects), read once by its agent. */
@@ -1163,6 +1166,24 @@ export class CoolifyProvisioner implements Provisioner {
     const result = await this.exec(store.uuid, 'snapshot', { url: await this.s3.presign('PUT', keys.backup(backupId)) });
     const sizeBytes = (await this.s3.head(keys.backup(backupId))) ?? Number(result.sizeBytes ?? 0);
     return { sizeBytes };
+  }
+
+  async downloadStore({ storeId, downloadId }: { storeId: string; downloadId: string }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const result = await this.exec(store.uuid, 'site-download', { url: await this.s3.presign('PUT', keys.download(downloadId), 3600) });
+    const sizeBytes = (await this.s3.head(keys.download(downloadId))) ?? Number(result.sizeBytes ?? 0);
+    return { sizeBytes };
+  }
+
+  async downloadUrl({ downloadId, fileName, expiresInSeconds }: { downloadId: string; fileName: string; expiresInSeconds: number }) {
+    // The browser saves it under the site's own name, not the object's id.
+    return this.s3.presign('GET', keys.download(downloadId), expiresInSeconds, {
+      'response-content-disposition': `attachment; filename="${fileName.replace(/[^A-Za-z0-9._-]/g, '-')}"`,
+    });
+  }
+
+  async deleteDownload({ downloadId }: { downloadId: string }) {
+    await this.s3.delete(keys.download(downloadId));
   }
 
   async deleteBackup({ backupId }: { backupId: string }) {

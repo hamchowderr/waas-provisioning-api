@@ -36,6 +36,7 @@ import { storeDomainConnect } from './domainconnect.ts';
 import { websiteSetup } from '../domainconnect.ts';
 import { buyDomain, listBoughtDomains, searchDomains, setAutoRenew, transferCode } from '../domainsales.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
+import { adminSiteDownloadRoutes } from '../sitedownloads.ts';
 import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
 import { sitePluginsOf } from '../siteplugins.ts';
@@ -665,6 +666,9 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     });
     return c.json({ tenantId: id, externalId: tenant.external_id, backupId: body.backupId, safetyBackupId });
   });
+
+  // "Download my site" (src/sitedownloads.ts): the store's newest copy, or a new one.
+  adminSiteDownloadRoutes(app, deps);
 
   // Takes a backup of the store now (reason manual), as POST /v1/tenants/backups does: for any store the caller may
   // see. The backup is Pending until the tenant.backup job finishes; the store stays as it is meanwhile.

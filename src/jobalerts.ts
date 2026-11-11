@@ -54,6 +54,7 @@ const VERBS: Record<JobData['type'], string> = {
   'tenant.resume': 'Resume',
   'tenant.go-live': 'Make live',
   'tenant.backup': 'Back up',
+  'tenant.download': 'Make a download of',
   'tenant.email-packs': 'Update the email packs of',
   'tenant.restore': 'Restore',
   'tenant.rollback': 'Roll back',

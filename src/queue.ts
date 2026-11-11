@@ -40,6 +40,8 @@ export type JobData =
   /** Ends the hold of a site moved in (src/imports.ts): its cron, email and indexing start. */
   | { type: 'tenant.go-live'; tenantId: string }
   | { type: 'tenant.backup'; tenantId: string; backupId: string }
+  /** "Download my site" (src/sitedownloads.ts): a copy of the whole store for its owner. */
+  | { type: 'tenant.download'; tenantId: string; downloadId: string }
   /** Tells the store how many pack emails it has bought in all (tenant_email_packs, read when the job runs). */
   | { type: 'tenant.email-packs'; tenantId: string }
   /** Re-creates a deleted tenant (already re-inserted by the request) from a kept backup. */

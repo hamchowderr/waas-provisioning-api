@@ -125,6 +125,7 @@ export function planFor(job: string, opts: { imported?: boolean; safetyBackup?: 
     case 'tenant.update':
       return ['settings', 'start', 'configure'];
     case 'tenant.backup':
+    case 'tenant.download':
       return ['backup'];
     case 'tenant.delete':
       return ['mail', 'remove', 'keep'];

@@ -1697,6 +1697,43 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/download:
+    get:
+      operationId: adminGetTenantDownload
+      summary: The store's newest copy to download
+      description: >-
+        "Download my site": the newest copy of the whole store (WordPress, its files, its database and how to
+        restore it) made in the last 7 days, in any status, or null. A Done copy carries a link that works for an
+        hour. For any store the caller may see.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The newest copy, or null
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteDownloadResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminCreateTenantDownload
+      summary: Make a copy of the store to download
+      description: >-
+        Starts a new copy of the whole store as a plain WordPress archive that restores on any host. It is Pending
+        until it is made (minutes, depending on the site's size); the store keeps running meanwhile. When a copy is
+        already being made, or one was made in the last 10 minutes, that one is returned instead. Copies are kept
+        7 days. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The copy being made, or the one just made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteDownloadResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/restore:
     post:
       operationId: adminRestoreTenant
@@ -3139,6 +3176,26 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    SiteDownloadResult:
+      type: object
+      additionalProperties: false
+      required: [download]
+      properties:
+        download:
+          nullable: true
+          type: object
+          additionalProperties: false
+          required: [id, statusCode, statusName, sizeBytes, dateCreated, dateDone, expiresAt, fileName, url]
+          properties:
+            id: { type: string, format: uuid }
+            statusCode: { type: integer, enum: [0, 1, 2] }
+            statusName: { type: string, enum: [Pending, Done, Failed] }
+            sizeBytes: { type: integer, nullable: true }
+            dateCreated: { type: string, format: date-time }
+            dateDone: { type: string, format: date-time, nullable: true }
+            expiresAt: { type: string, format: date-time, description: When the copy is deleted }
+            fileName: { type: string, example: bakery.example-2026-11-11.zip }
+            url: { type: string, nullable: true, description: A link to the copy that works for an hour, once it is Done }
     NotificationList:
       type: object
       required: [unread, readUntil, items]

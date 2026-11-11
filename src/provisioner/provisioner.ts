@@ -178,6 +178,18 @@ export interface Provisioner {
   backupStore(input: { storeId: string; backupId: string }): Promise<{ sizeBytes: number }>;
 
   /**
+   * "Download my site" (src/sitedownloads.ts): the whole store as a plain WordPress archive (WordPress, wp-content
+   * without the platform's own files, database.sql and how to restore it) that restores on any host. Returns its size.
+   */
+  downloadStore(input: { storeId: string; downloadId: string }): Promise<{ sizeBytes: number }>;
+
+  /** A link anyone can download the copy from for `expiresInSeconds`, saved as `fileName`. */
+  downloadUrl(input: { downloadId: string; fileName: string; expiresInSeconds: number }): Promise<string>;
+
+  /** Removes a copy from storage. */
+  deleteDownload(input: { downloadId: string }): Promise<void>;
+
+  /**
    * Re-creates a deleted store from one of its backups (files and database), on the given version
    * and domains, with the constants and options it had when the backup was taken. Not suspended.
    */

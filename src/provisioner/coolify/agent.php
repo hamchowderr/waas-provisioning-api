@@ -116,16 +116,48 @@ function extract_archive(string $file, string $dir): void
 }
 
 /** Adds a directory to a zip under $prefix, skipping caches and the suspension, cron and hold flags. */
-function zip_dir(ZipArchive $zip, string $dir, string $prefix): void
+function zip_dir(ZipArchive $zip, string $dir, string $prefix, ?string $skip = null): void
 {
     if (!is_dir($dir)) return;
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     foreach ($it as $path => $info) {
         $rel = substr($path, strlen($dir) + 1);
         if ($rel === '.waas-suspended' || $rel === '.waas-cron' || $rel === '.waas-hold' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
+        if ($skip !== null && preg_match($skip, $rel)) continue;
         if ($info->isDir()) $zip->addEmptyDir("$prefix/$rel");
         elseif ($info->isFile()) $zip->addFile($path, "$prefix/$rel");
     }
+}
+
+/** How to put a site download (the site-download operation) back up on another host. */
+function site_download_readme(string $home, string $prefix): string
+{
+    $taken = gmdate('Y-m-d H:i') . ' UTC';
+    return <<<TXT
+Your whole website: every file and the database, as of $taken.
+Website address: $home
+
+What is in this archive
+- WordPress itself (wp-admin, wp-includes and the files next to them)
+- wp-content: your themes, plugins and uploads
+- database.sql: your database (posts, pages, settings, users, orders and everything else)
+- wp-config-sample.php: WordPress's settings file, with your table prefix ($prefix) already filled in
+
+Putting it on another host
+1. Make an empty MySQL or MariaDB database and a user for it at your new host.
+2. Upload everything in this archive into the folder your domain points to (often public_html).
+3. Import database.sql into the new database (phpMyAdmin's Import tab, or: wp db import database.sql).
+4. Rename wp-config-sample.php to wp-config.php and fill in the new database's name, user, password and host.
+   Get new secret keys from https://api.wordpress.org/secret-key/1.1/salt/ and paste them in too.
+5. Point your domain at the new host. If the site gets a different address, change the old one everywhere with
+   WP-CLI: wp search-replace '$home' 'https://your-new-address' --all-tables
+   (or a search and replace plugin), then save Settings > Permalinks once.
+
+Your passwords and logins stay the same. AnyPress Client, the plugin that connects the site to its dashboard, can be
+deactivated and deleted on the new host; the site works without it.
+
+Most hosts' migration teams accept this archive as it is if you would rather they move it for you.
+TXT;
 }
 
 /** The wp-content directory inside an extracted archive. */
@@ -2312,6 +2344,33 @@ switch ($op) {
         $zip->close() || fail('cannot write zip');
         $size = filesize("$tmp/snapshot.zip");
         curlTransfer($args['url'], "$tmp/snapshot.zip", true);
+        done(['sizeBytes' => $size]);
+    }
+
+    case 'site-download': {
+        // "Download my site" (src/sitedownloads.ts): the whole site as a plain WordPress archive that restores on any
+        // host: WordPress itself, wp-content, database.sql and README.txt. Not the store's wp-config.php (its database
+        // login and the platform's settings) nor the platform's own must-use plugins and drop-ins, which only work here.
+        $tmp = tempDir();
+        wp('db', 'export', "$tmp/database.sql");
+        $prefix = wpMayFail('config', 'get', 'table_prefix') ?: 'wp_';
+        $home = wpMayFail('option', 'get', 'home') ?: '';
+        $zip = new ZipArchive();
+        $zip->open("$tmp/site.zip", ZipArchive::CREATE) === true || fail('cannot create zip');
+        $zip->addFile("$tmp/database.sql", 'database.sql');
+        foreach (scandir(ROOT) ?: [] as $name) {
+            $path = ROOT . "/$name";
+            if ($name === 'wp-admin' || $name === 'wp-includes') zip_dir($zip, $path, $name);
+            elseif (is_file($path) && $name !== 'wp-config.php' && $name !== 'wp-config-sample.php' && preg_match('/^(wp-[a-z-]+\.php|index\.php|xmlrpc\.php|license\.txt|readme\.html)$/', $name)) $zip->addFile($path, $name);
+        }
+        zip_dir($zip, CONTENT, 'wp-content', '#^(mu-plugins/waas-[^/]*\.php|object-cache\.php|advanced-cache\.php)$#');
+        $sample = (string) @file_get_contents(ROOT . '/wp-config-sample.php');
+        if ($sample !== '') $zip->addFromString('wp-config-sample.php', preg_replace('/^\$table_prefix\s*=.*$/m', '$table_prefix = ' . var_export($prefix, true) . ';', $sample));
+        $zip->addFromString('.htaccess', "# BEGIN WordPress\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\nRewriteBase /\nRewriteRule ^index\\.php$ - [L]\nRewriteCond %{REQUEST_FILENAME} !-f\nRewriteCond %{REQUEST_FILENAME} !-d\nRewriteRule . /index.php [L]\n</IfModule>\n# END WordPress\n");
+        $zip->addFromString('README.txt', site_download_readme($home, $prefix));
+        $zip->close() || fail('cannot write zip');
+        $size = filesize("$tmp/site.zip");
+        curlTransfer($args['url'], "$tmp/site.zip", true);
         done(['sizeBytes' => $size]);
     }
 

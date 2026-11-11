@@ -32,6 +32,7 @@ import type { WpOrg } from './wporg.ts';
 import { demoDraftRoutes } from './demodrafts.ts';
 import { importRoutes } from './imports.ts';
 import { referenceRoutes } from './references.ts';
+import { siteDownloadRoutes } from './sitedownloads.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { ReleaseStore } from './releases.ts';
@@ -261,6 +262,8 @@ export function createApp(deps: Deps) {
   referenceRoutes(app, deps);
   // The AnyPress app for HighLevel: its actions, trigger and install (src/highlevel.ts).
   highLevelRoutes(app, deps);
+  // "Download my site" from a store's own wp-admin, signed with its site key (src/sitedownloads.ts).
+  siteDownloadRoutes(app, deps);
 
   // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
   oauthRoutes(app, deps);
