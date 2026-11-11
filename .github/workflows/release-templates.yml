@@ -33,7 +33,7 @@ jobs:
       plugins_ref: ${{ steps.v.outputs.plugins_ref }}
       site_types: ${{ steps.v.outputs.site_types }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,10 +61,10 @@ jobs:
       matrix:
         site_type: ${{ fromJson(needs.prepare.outputs.site_types) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: api
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: hamchowderr/waas-plugins
           ref: ${{ needs.prepare.outputs.plugins_ref }}
@@ -106,8 +106,8 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       HOST_VERSION: ${{ inputs.host_version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: hamchowderr/waas-plugins
           ref: ${{ needs.prepare.outputs.plugins_ref }}
