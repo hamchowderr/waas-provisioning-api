@@ -207,7 +207,8 @@ export async function sendPriceCheckFailed(mail: AuthMail, to: string, check: { 
 /** To the applicant: not approved. */
 export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
-  const body = "We can't offer you a seller account right now. If you have questions, contact us through our website.";
+  const ask = mail.supportEmail ? `write to ${mail.supportEmail}` : 'contact us through our website';
+  const body = `We can't offer you a seller account right now. If you have questions, ${ask}.`;
   await send(mail, to, `Your ${mail.brand} application`, layout(mail, { title: 'About your application', lines: [lead, body] }), `${lead}\n\n${body}`, 'decline email');
 }
 
