@@ -156,6 +156,9 @@ export interface Provisioner {
    */
   setEmailPacks(input: { storeId: string; purchased: number }): Promise<void>;
 
+  /** Tells a store the storage its storage packs add to its plan's (`gb`; 0 when it has none). */
+  setStoragePacks(input: { storeId: string; gb: number }): Promise<void>;
+
   /**
    * Tells a store how many emails it sent in `month` (UTC, YYYY-MM) as the platform counted them on the relay
    * (src/mailcount.ts). The store keeps its own count too and goes by the higher of the two.

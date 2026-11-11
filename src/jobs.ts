@@ -15,7 +15,7 @@ import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFail
 import { failMailbox, pushMailbox } from './outreach.ts';
 import { failAutomations, pushAutomations } from './outreachautomation.ts';
 import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
-import type { Size } from './plans.ts';
+import { STORAGE_PACK_GB, type Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
@@ -214,6 +214,8 @@ export function createJobHandlers(
         // The backup's database holds the pack total of its day; tell the store the one on record again.
         const purchased = await emailPacksBought(pool, data.tenantId);
         if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
+        // And the storage packs on record (the backup holds those of its day).
+        if (rows[0].storage_packs) await provisioner.setStoragePacks({ storeId: data.tenantId, gb: rows[0].storage_packs * STORAGE_PACK_GB });
         // Its platform email count is an older one too: the next count tells the store again.
         await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
         await forgetHostUpdate(pool, data.tenantId);
@@ -271,6 +273,13 @@ export function createJobHandlers(
         if (!rowCount) return;
         // The total on record when the job runs, not when it was queued: packs bought meanwhile are included.
         await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
+        return;
+      }
+      case 'tenant.storage-packs': {
+        const { rows } = await pool.query<{ storage_packs: number }>('SELECT storage_packs FROM tenants WHERE id = $1', [data.tenantId]);
+        if (!rows[0]) return;
+        // The count on record when the job runs, not when it was queued: a change meanwhile is included.
+        await provisioner.setStoragePacks({ storeId: data.tenantId, gb: rows[0].storage_packs * STORAGE_PACK_GB });
         return;
       }
     }
@@ -354,6 +363,9 @@ export function createJobHandlers(
           return;
         case 'tenant.email-packs':
           // The store still works; it just doesn't have its new pack emails yet. The shop's retry sends them again.
+          return;
+        case 'tenant.storage-packs':
+          // The store still works with the storage it had; the shop's retry sends the count again.
           return;
         case 'tenant.delete':
           await setTenantStatus(data.tenantId, Status.Failed);

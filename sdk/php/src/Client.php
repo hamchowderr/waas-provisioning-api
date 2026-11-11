@@ -159,6 +159,18 @@ final class Client
     }
 
     /**
+     * Sets how many storage packs the store has now (its monthly subscription's quantity), each adding 25 GB to its
+     * plan's storage; 0 ends them. Sending the same number again changes nothing.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @return array<string, mixed>
+     */
+    public function setTenantStoragePacks(array $tenant, int $packs): array
+    {
+        return $this->call('setTenantStoragePacks', 'PUT', '/v1/tenants/storage-packs', $this->ref($tenant), ['packs' => $packs]);
+    }
+
+    /**
      * Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when $backupId is null).
      *
      * @param array{externalId?: string, tenantId?: string} $tenant

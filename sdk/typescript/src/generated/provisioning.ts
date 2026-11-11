@@ -363,6 +363,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/storage-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set storage packs
+         * @description Added for AnyPress.
+         *
+         *     Sets how many storage packs the store has, each adding 25 GB to the storage of its plan (10, 20 or 30 GB by size). Storage packs are bought monthly: send the subscription's quantity whenever it changes, and 0 when it ends. Sending the same number again changes nothing and is safe to retry. When packs end, nothing is deleted; the store only stops taking new uploads while it is over its storage.
+         *
+         *     The store gets the new storage within a minute. Rejected for a tenant that is being removed or has failed.
+         */
+        put: operations["setTenantStoragePacks"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -2405,6 +2429,11 @@ export interface components {
              */
             readonly dateSuspended?: string | null;
             size?: components["schemas"]["TenantSize"];
+            /**
+             * @description Added for AnyPress. The storage packs the store has (see Set storage packs), each adding 25 GB to its plan's storage. Absent when it has none.
+             * @example 1
+             */
+            readonly storagePacks?: number;
             /** @description Added for AnyPress. True for a site moved in from another host (`uploadCustomSnapshot`), which keeps its own plugins and themes when it is restored or moved to another version. Absent otherwise. */
             readonly keepsOwnCode?: boolean;
             /** @description Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise. */
@@ -2910,6 +2939,28 @@ export interface components {
              * @example fluentcart-order-123
              */
             reference: string;
+        };
+        StoragePackParams: {
+            /**
+             * @description How many storage packs the store has now, each adding 25 GB. 0 ends them.
+             * @example 1
+             */
+            packs: number;
+        };
+        StoragePackResult: {
+            /** Format: uuid */
+            readonly tenantId?: string;
+            readonly externalId?: string;
+            /**
+             * @description The storage packs the store has now.
+             * @example 1
+             */
+            readonly storagePacks?: number;
+            /**
+             * @description The storage they add to the plan's, in GB.
+             * @example 25
+             */
+            readonly storagePacksGb?: number;
         };
         EmailPackResult: {
             /** Format: uuid */
@@ -4119,6 +4170,63 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
                 };
+            };
+        };
+    };
+    setTenantStoragePacks: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StoragePackParams"];
+            };
+        };
+        responses: {
+            /** @description The count was recorded and is being applied to the store */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoragePackResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -260,7 +260,7 @@ function eventFor(data: JobData, ok: boolean): EventType | null {
     if (data.type === 'version.create') return 'version.failed';
     if (data.type === 'version.delete') return 'version.failed';
     // The store still works; only its pack emails weren't sent yet.
-    if (data.type === 'tenant.email-packs') return null;
+    if (data.type === 'tenant.email-packs' || data.type === 'tenant.storage-packs') return null;
     // Nor when a copy for download failed.
     if (data.type === 'tenant.download') return null;
     return data.type.startsWith('tenant.') ? 'tenant.failed' : null;
@@ -269,6 +269,7 @@ function eventFor(data: JobData, ok: boolean): EventType | null {
     'tenant.create': 'tenant.ready',
     'tenant.update': 'tenant.updated',
     'tenant.email-packs': 'tenant.updated',
+    'tenant.storage-packs': 'tenant.updated',
     'tenant.move': 'tenant.version_changed',
     'tenant.domains': 'tenant.domains_changed',
     'tenant.suspend': 'tenant.suspended',

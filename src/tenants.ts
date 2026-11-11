@@ -164,6 +164,7 @@ export function toTenant(row: any) {
     statusCode: row.status,
     statusName: statusName(row.status),
     size: row.size,
+    storagePacks: row.storage_packs || undefined,
     // A site moved in from another host (src/imports.ts), and whether it still waits for its upload.
     keepsOwnCode: row.own_code || undefined,
     waitingForSite: row.waiting_for_site || undefined,

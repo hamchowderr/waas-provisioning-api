@@ -12,6 +12,8 @@ interface FakeStore extends CreateStoreInput {
   suspendedBrand?: Brand;
   /** The pack emails the store was told it has bought (setEmailPacks). */
   emailPacks?: number;
+  /** The storage its packs add, in GB, as the store was told (setStoragePacks). */
+  storagePacksGb?: number;
   /** The address it sends from (ensureStoreMail, setDomains with `mail`), when stores send email. */
   mailFrom?: string;
   /** This month's count the platform told it (setMailCount). */
@@ -236,6 +238,11 @@ export class FakeProvisioner implements Provisioner {
   async setEmailPacks({ storeId, purchased }: { storeId: string; purchased: number }) {
     this.check('setEmailPacks');
     this.store(storeId).emailPacks = purchased;
+  }
+
+  async setStoragePacks({ storeId, gb }: { storeId: string; gb: number }) {
+    this.check('setStoragePacks');
+    this.store(storeId).storagePacksGb = gb;
   }
 
   async setMailCount({ storeId, month, sent }: { storeId: string; month: string; sent: number }) {

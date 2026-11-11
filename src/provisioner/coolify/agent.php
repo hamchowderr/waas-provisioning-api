@@ -1403,10 +1403,12 @@ PHP);
 // The quotas come with the store's size (compose.ts). Version sites have none, and nothing here applies to them.
 if ((string) getenv('WAAS_STORAGE_GB') === '' && (string) getenv('WAAS_EMAILS_PER_MONTH') === '') return;
 
-/** The plan's storage (GB, and bytes) and emails a calendar month; 0 is no limit. */
+/** The plan's storage with its storage packs (GB, and bytes) and emails a calendar month; 0 is no limit. */
 function waas_plan_limits(): array
 {
     $gb = (int) getenv('WAAS_STORAGE_GB');
+    // Storage packs (the agent's storage-packs operation) add to the plan's storage, never to "no limit".
+    if ($gb > 0) $gb += max(0, (int) get_option('waas_plan_storage_packs', 0));
     return ['storageGb' => $gb, 'storage' => $gb * 1024 ** 3, 'emails' => (int) getenv('WAAS_EMAILS_PER_MONTH')];
 }
 
@@ -1453,7 +1455,7 @@ function waas_plan_check_upload($file)
     if (!$limits['storage'] || !is_array($file) || !empty($file['error'])) return $file;
     $size = (int) ($file['size'] ?? @filesize((string) ($file['tmp_name'] ?? '')));
     if (waas_plan_used() + $size > $limits['storage']) {
-        $file['error'] = sprintf('This website has used its %d GB of storage. Delete files you no longer need, or move to a bigger plan, to upload more.', $limits['storageGb']);
+        $file['error'] = sprintf('This website has used its %d GB of storage. Delete files you no longer need, or add more storage, to upload more.', $limits['storageGb']);
     }
     return $file;
 }
@@ -1565,9 +1567,9 @@ add_action('admin_notices', function () {
     if ($limits['storage']) {
         $used = waas_plan_used();
         if ($used >= $limits['storage']) {
-            $notices[] = ['error', sprintf('This website has used all of its %d GB of storage, so uploads are refused. Delete files you no longer need, or move to a bigger plan.', $limits['storageGb'])];
+            $notices[] = ['error', sprintf('This website has used all of its %d GB of storage, so uploads are refused. Delete files you no longer need, or add more storage.', $limits['storageGb'])];
         } elseif ($used >= 0.8 * $limits['storage']) {
-            $notices[] = ['warning', sprintf('This website has used %d%% of its %d GB of storage. Delete files you no longer need, or move to a bigger plan, before uploads stop.', floor(100 * $used / $limits['storage']), $limits['storageGb'])];
+            $notices[] = ['warning', sprintf('This website has used %d%% of its %d GB of storage. Delete files you no longer need, or add more storage, before uploads stop.', floor(100 * $used / $limits['storage']), $limits['storageGb'])];
         }
     }
     if ($limits['emails']) {
@@ -2657,6 +2659,15 @@ switch ($op) {
         $used = mail_packs()['used'];
         wp('option', 'update', 'waas_plan_mail_packs', json_encode(['purchased' => $purchased, 'used' => $used]), '--format=json', '--autoload=no');
         done(['purchased' => $purchased, 'used' => $used]);
+    }
+
+    case 'storage-packs': {
+        // The storage the store's storage packs add to its plan's, in GB (the API's record; 0 is none). The
+        // waas-plan mu-plugin adds it to WAAS_STORAGE_GB.
+        $gb = $args['gb'] ?? null;
+        if (!is_int($gb) || $gb < 0) fail('gb must be a whole number');
+        wp('option', 'update', 'waas_plan_storage_packs', (string) $gb, '--autoload=no');
+        done(['gb' => $gb]);
     }
 
     case 'mail-count': {
