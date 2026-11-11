@@ -173,6 +173,8 @@ export interface ResellerBillLine {
   productId: string;
   name: string | null;
   size: Size;
+  /** The store's site types (comma-separated), or null when it has none: what its list price is from. */
+  siteType: string | null;
   storeDays: number;
   stores: number;
   listPriceCents: number;
@@ -257,15 +259,15 @@ export async function loadResellers(pool: Pool, id: string | null): Promise<Rese
   }));
 }
 
-/** Seconds each storefront's stores were live, by size, between `from` and `to`. */
+/** Seconds each storefront's stores were live, by size and site type, between `from` and `to`. */
 async function liveSeconds(pool: Pool, resellerId: string, from: Date, to: Date) {
-  const { rows } = await pool.query<{ product_id: string; name: string | null; size: Size; seconds: number }>(
-    `SELECT tp.product_id, p.name, tp.size,
+  const { rows } = await pool.query<{ product_id: string; name: string | null; size: Size; site_type: string | null; seconds: number }>(
+    `SELECT tp.product_id, p.name, tp.size, tp.site_type,
        sum(extract(epoch FROM least(coalesce(tp.ended_at, now()), $3) - greatest(tp.started_at, $2)))::float AS seconds
      FROM tenant_periods tp LEFT JOIN products p ON p.id = tp.product_id
      WHERE tp.reseller_id = $1 AND tp.started_at < $3 AND coalesce(tp.ended_at, now()) > $2
-     GROUP BY tp.product_id, p.name, tp.size
-     ORDER BY p.name, tp.product_id, array_position(ARRAY['small', 'medium', 'large'], tp.size)`,
+     GROUP BY tp.product_id, p.name, tp.size, tp.site_type
+     ORDER BY p.name, tp.product_id, array_position(ARRAY['small', 'medium', 'large'], tp.size), tp.site_type NULLS LAST`,
     [resellerId, from, to],
   );
   return rows.filter((r) => r.seconds > 0);
@@ -273,21 +275,51 @@ async function liveSeconds(pool: Pool, resellerId: string, from: Date, to: Date)
 
 
 /**
- * A reseller's wholesale bill for [from, to): each store is charged its size's monthly list price less
- * the wholesale discount, for the share of the month it was live. Amounts are US cents, rounded per line.
+ * The Small monthly list price of each site type, in US cents: the shop's plan prices, shown on anypress.io.
+ * Keys are the template's site types (templates/anypress-store/roles.json); `store` is the older name of
+ * `online-store`. HighLevel sites have no public price, so they take the reseller's own price per size.
+ */
+const SITE_TYPE_PRICE_CENTS: Record<string, number> = {
+  website: 1200,
+  bookings: 1900,
+  'online-store': 2900,
+  store: 2900,
+  community: 4900,
+  everything: 7900,
+};
+/** Medium is twice Small and Large four times, as on the shop. */
+const SIZE_TIMES: Record<Size, number> = { small: 1, medium: 2, large: 4 };
+
+/**
+ * One store's monthly list price: its site type's price for its size (the dearest, when it was sold as
+ * several), or the reseller's own price for the size when it has no site type with a public price.
+ */
+function listPriceCents(reseller: Pick<Reseller, 'listPriceCents'>, size: Size, siteType: string | null): number {
+  const prices = (siteType ?? '')
+    .split(',')
+    .map((type) => SITE_TYPE_PRICE_CENTS[type.trim()])
+    .filter((price): price is number => price !== undefined);
+  return prices.length ? Math.max(...prices) * SIZE_TIMES[size] : reseller.listPriceCents[size];
+}
+
+/**
+ * A reseller's wholesale bill for [from, to): each store is charged its site type's monthly list price for
+ * its size, less the wholesale discount, for the share of the month it was live. Amounts are US cents,
+ * rounded per line.
  */
 export async function resellerBill(pool: Pool, reseller: Reseller, month: string, from: Date, to: Date, now = new Date()): Promise<ResellerBill> {
   const monthSeconds = (to.getTime() - from.getTime()) / 1000;
   const lines = (await liveSeconds(pool, reseller.id, from, to)).map((r) => {
-    const listPriceCents = reseller.listPriceCents[r.size];
-    const wholesalePriceCents = Math.round((listPriceCents * (100 - reseller.wholesalePercent)) / 100);
+    const listPrice = listPriceCents(reseller, r.size, r.site_type);
+    const wholesalePriceCents = Math.round((listPrice * (100 - reseller.wholesalePercent)) / 100);
     return {
       productId: r.product_id,
       name: r.name,
       size: r.size,
+      siteType: r.site_type,
       storeDays: days(r.seconds),
       stores: Math.round((r.seconds / monthSeconds) * 100) / 100,
-      listPriceCents,
+      listPriceCents: listPrice,
       wholesalePriceCents,
       amountCents: Math.round((r.seconds / monthSeconds) * wholesalePriceCents),
     };
@@ -569,10 +601,11 @@ export function adminResellerRoutes(deps: Deps) {
     if (to <= from) throw badRequest('to must be after from');
     const rows = await liveSeconds(pool, reseller.id, from, to);
     const totalSeconds = emptySizes();
-    const products = new Map<string, { productId: string; name: string | null; storeDays: Record<Size, number> }>();
+    // Rows come per site type too; a storefront's store-days add them up by size.
+    const products = new Map<string, { productId: string; name: string | null; seconds: Record<Size, number> }>();
     for (const r of rows) {
-      const entry = products.get(r.product_id) ?? { productId: r.product_id, name: r.name, storeDays: emptySizes() };
-      entry.storeDays[r.size] = days(r.seconds);
+      const entry = products.get(r.product_id) ?? { productId: r.product_id, name: r.name, seconds: emptySizes() };
+      entry.seconds[r.size] += r.seconds;
       totalSeconds[r.size] += r.seconds;
       products.set(r.product_id, entry);
     }
@@ -582,7 +615,10 @@ export function adminResellerRoutes(deps: Deps) {
       to: to.toISOString(),
       wholesalePercent: reseller.wholesalePercent,
       storeDays: Object.fromEntries(Object.entries(totalSeconds).map(([size, seconds]) => [size, days(seconds)])),
-      products: [...products.values()],
+      products: [...products.values()].map(({ seconds, ...p }) => ({
+        ...p,
+        storeDays: Object.fromEntries(Object.entries(seconds).map(([size, sec]) => [size, days(sec)])),
+      })),
     });
   });
 

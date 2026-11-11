@@ -69,10 +69,23 @@ export function lastMonth(now = new Date()): string {
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
-/** One invoice line, in words: "Acme shop: 2.5 Small stores (75 store-days) at $7.20 a month". */
+/** Site types as the shop names them, for invoice lines. */
+const SITE_TYPE_NAMES: Record<string, string> = {
+  website: 'Website',
+  bookings: 'Bookings',
+  'online-store': 'Store',
+  store: 'Store',
+  community: 'Community',
+  everything: 'Everything',
+  highlevel: 'HighLevel',
+};
+
+/** One invoice line, in words: "Acme shop: 2.5 Small Website stores (75 store-days) at $7.20 a month". */
 function lineDescription(line: ResellerBillLine): string {
   const size = line.size[0]!.toUpperCase() + line.size.slice(1);
-  const stores = line.stores === 1 ? `1 ${size} store` : `${line.stores} ${size} stores`;
+  const types = (line.siteType ?? '').split(',').map((type) => SITE_TYPE_NAMES[type.trim()] ?? type.trim()).filter(Boolean);
+  const kind = types.length ? `${size} ${types.join(' + ')}` : size;
+  const stores = line.stores === 1 ? `1 ${kind} store` : `${line.stores} ${kind} stores`;
   return `${line.name ?? 'Removed storefront'}: ${stores} (${line.storeDays} store-days) at ${dollars(line.wholesalePriceCents)} a month`;
 }
 
