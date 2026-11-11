@@ -31,7 +31,7 @@
     render();
   }
 
-  view = await start({ name: 'WaaS store', show, refresh: (app) => app.callServerTool({ name: 'show_store', arguments: data?.ref ?? {} }) });
+  view = await start({ name: 'AnyPress store', show, refresh: (app) => app.callServerTool({ name: 'show_store', arguments: data?.ref ?? {} }) });
 
   const SIZES = { small: 'Small: 1 CPU, 5 GB, 5,000 emails a month', medium: 'Medium: 2 CPUs, 10 GB, 20,000 emails a month', large: 'Large: 4 CPUs, 25 GB, 50,000 emails a month' };
   const date = (value) => (value ? new Date(value).toLocaleString() : '');

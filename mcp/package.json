@@ -1,7 +1,7 @@
 {
   "name": "waas-provisioning-mcp",
   "version": "0.1.0",
-  "description": "MCP server that lets an AI agent create and manage stores through the WaaS provisioning API",
+  "description": "MCP server that lets an AI agent create and manage stores through the AnyPress API",
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",

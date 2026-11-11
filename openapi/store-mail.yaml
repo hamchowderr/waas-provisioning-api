@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - store sending domains
+  title: AnyPress API - store sending domains
   version: 0.1.0
   description: >-
     A store's own sending domain (docs/store-email.md), for the storefront plugin's customer account

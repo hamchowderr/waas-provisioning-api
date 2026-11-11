@@ -1,6 +1,6 @@
 # waas-provisioning-mcp
 
-An [MCP](https://modelcontextprotocol.io) server that lets an AI agent create and manage stores through the WaaS provisioning API: stores and their lifecycle, backups, domains, sending domains, Domain Connect links, versions, snapshots and templates, and each store's pages and design. It is built on the [TypeScript SDK](../sdk/typescript), so its tools follow the API's OpenAPI contract, and on the v2 MCP TypeScript SDK: it speaks MCP 2026-07-28 and still serves 2025-era clients.
+An [MCP](https://modelcontextprotocol.io) server that lets an AI agent create and manage stores through the AnyPress API: stores and their lifecycle, backups, domains, sending domains, Domain Connect links, versions, snapshots and templates, and each store's pages and design. It is built on the [TypeScript SDK](../sdk/typescript), so its tools follow the API's OpenAPI contract, and on the v2 MCP TypeScript SDK: it speaks MCP 2026-07-28 and still serves 2025-era clients.
 
 It comes with:
 

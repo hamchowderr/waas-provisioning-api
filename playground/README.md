@@ -6,3 +6,4 @@ The dashboard's demo pages (`/demo`) run the AnyPress theme's demo websites on [
 - `Dockerfile` serves that release with Caddy. To move to a newer Playground, run the workflow with the new tag, then change `PLAYGROUND` in the Dockerfile.
 
 Playground is free software from the WordPress project, under the GPL.
+- `brand/` holds the AnyPress name and icons the Dockerfile puts in place of Playground's (browser tab title, favicon, home-screen icons, link previews), so a demo opened on its own shows AnyPress.

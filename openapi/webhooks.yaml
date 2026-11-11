@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - webhooks
+  title: AnyPress API - webhooks
   version: 0.1.0
   license:
     name: GPL-3.0-or-later

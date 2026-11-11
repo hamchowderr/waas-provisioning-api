@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - admin
+  title: AnyPress API - admin
   version: 0.1.0
   description: >-
     Admin endpoints for the dashboard (waas-api-plu). The version

@@ -80,6 +80,6 @@ there is a newer templates release, it publishes that one and makes it productio
 
 1. Add the DNS records it printed, if it had no Cloudflare token.
 2. Open the storefront's wp-admin (linked on the dashboard's **API keys** page), connect Stripe in FluentCart and make the plans
-   customers buy, each with WaaS Provisioning added ([section 6](../docs/self-hosting.md#6-the-storefront)).
+   customers buy, each with AnyPress websites added ([section 6](../docs/self-hosting.md#6-the-storefront)).
 3. Run `sudo bash anypress-install.sh check`: it checks Coolify, the API, the dashboard, DNS, HTTPS and email,
    and says which still fail.

@@ -31,7 +31,7 @@
     render();
   }
 
-  view = await start({ name: 'WaaS backups', show, refresh: (app) => app.callServerTool({ name: 'show_store_backups', arguments: data?.ref ?? {} }) });
+  view = await start({ name: 'AnyPress backups', show, refresh: (app) => app.callServerTool({ name: 'show_store_backups', arguments: data?.ref ?? {} }) });
 
   const REASONS = { manual: 'Taken by hand', suspend: 'Before suspending', scheduled: 'Nightly', 'before-restore': 'Before a restore' };
   const bytes = (n) => (n == null ? '' : n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);

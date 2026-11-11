@@ -1,6 +1,6 @@
 # waas-provisioning-sdk
 
-A typed TypeScript client for the [WaaS Provisioning API](https://github.com/hamchowderr/waas-provisioning-api), the API that creates and runs WordPress stores. Use it from your own server code to create stores, manage their domains and backups, and receive webhooks.
+A typed TypeScript client for the [AnyPress API](https://github.com/hamchowderr/waas-provisioning-api), the API that creates and runs WordPress stores. Use it from your own server code to create stores, manage their domains and backups, and receive webhooks.
 
 - Works anywhere with `fetch` and Web Crypto: Node 20+, Deno, Bun and edge runtimes.
 - No runtime dependencies. ES module only.

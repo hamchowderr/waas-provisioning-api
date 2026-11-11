@@ -83,7 +83,7 @@ await startResellerInvoices(boss, pool, config.resellerInvoices);
 // Sites whose constants moved to their ANYPRESS_ names get them pushed once (src/constantnames.ts).
 const renamed = await pushRenamedConstants(boss, pool);
 if (renamed) console.log(`Pushing renamed constants to ${renamed} site(s)`);
-// Each new WaaS Host release pushed to every ready-made storefront (docs/host-updates.md), checked every 15 minutes.
+// Each new AnyPress Host release pushed to every ready-made storefront (docs/host-updates.md), checked every 15 minutes.
 await startHostUpdates({ pool, boss, releases, storefrontProductId: config.storefrontProductId });
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner, config);
@@ -103,7 +103,7 @@ await startTemplateReleases(deps);
 await startDomainSales(boss, { pool, config: domainSales, storesDomain: config.storesDomain, ipv6: config.domainConnect?.ipv6, attach: storeAttacher(deps) });
 
 const server = serve({ fetch: createApp(deps).fetch, port: config.port }, (info) =>
-  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'}${domainSales ? '' : '; domain sales off: NAMECOM_* not set'})`),
+  console.log(`AnyPress API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'}${domainSales ? '' : '; domain sales off: NAMECOM_* not set'})`),
 );
 // The proxy in front (Coolify's Traefik) keeps idle connections to the API open for up to 90 seconds.
 // Node's own default is 5, so the API could close a connection just as Traefik reused it, and that

@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - Plugin choices
+  title: AnyPress API - Plugin choices
   version: 0.1.0
   description: >-
     Plugin choices (docs/plugin-choices.md): wordpress.org plugins, or premium plugins uploaded as zips,

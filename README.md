@@ -1,4 +1,4 @@
-# WaaS Provisioning API
+# AnyPress API
 
 An open-source API that creates and runs WordPress stores for a "website as a service" business. Your storefront, or your own code, asks for a store; the API builds it, gives it a domain and a login, backs it up, and suspends, restores or deletes it when you ask.
 
