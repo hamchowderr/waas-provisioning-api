@@ -487,6 +487,23 @@ describe('stores that keep their own code', () => {
     await t.call('PUT', `/admin/products/${t.productId}`, { auth: ADMIN, body: { highlevelAgency: false } });
   });
 
+  it("the clean Dashboard home is on for a storefront's stores until its seller turns it off", async () => {
+    const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
+    const res = await t.call('POST', `/admin/products/${t.productId}/tenants`, { auth: ADMIN, body: { name: 'Clean', ownerEmail: 'owner@example.com', siteType: 'website' } });
+    const { tenantId } = (await res.json()) as { tenantId: string };
+    await waitFor(async () => (await tenant(tenantId))?.statusCode === Status.Done);
+    expect(t.provisioner.stores.get(tenantId)!.wpOptions.anypress_clean_dashboard).toBe('on');
+    expect((await t.call('PUT', `/admin/products/${t.productId}/clean-dashboard`, { auth: ADMIN, body: { on: 'no' } })).status).toBe(400);
+    const off = await t.call('PUT', `/admin/products/${t.productId}/clean-dashboard`, { auth: ADMIN, body: { on: false } });
+    expect(await off.json()).toMatchObject({ cleanDashboard: false });
+    // Written to the store that is running.
+    await waitFor(async () => t.provisioner.stores.get(tenantId)!.wpOptions.anypress_clean_dashboard === 'off');
+    await waitFor(async () => (await tenant(tenantId))?.statusCode === Status.Done);
+    await t.call('PUT', `/admin/products/${t.productId}/clean-dashboard`, { auth: ADMIN, body: { on: true } });
+    await waitFor(async () => t.provisioner.stores.get(tenantId)!.wpOptions.anypress_clean_dashboard === 'on');
+    await waitFor(async () => (await tenant(tenantId))?.statusCode === Status.Done);
+  });
+
   it('a new storefront starts ready from another one, and can make a store at once', async () => {
     const ADMIN = `Bearer ${TEST_ADMIN_TOKEN}`;
     const bare = (await (await t.call('POST', '/admin/products', { auth: ADMIN, body: { name: 'Bare' } })).json()) as any;

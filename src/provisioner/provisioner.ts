@@ -21,6 +21,8 @@ export interface Brand {
 
 /** The WordPress option that holds a reseller's brand on its stores; AnyPress Client 2.13.0+ goes by that name. */
 export const BRAND_OPTION = 'anypress_brand_name';
+/** The WordPress option that turns AnyPress Client's clean Dashboard home (2.28.0+) "on" or "off" on a store. */
+export const CLEAN_DASHBOARD_OPTION = 'anypress_clean_dashboard';
 
 /**
  * A plugin choice applied while a version builds (docs/plugin-choices.md): a wordpress.org plugin added

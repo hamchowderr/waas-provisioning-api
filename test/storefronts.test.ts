@@ -65,6 +65,7 @@ describe('ready-made storefronts', () => {
       anypress_root_domain: 'waas.example',
       anypress_dns_a_records: '203.0.113.10',
       anypress_dns_cname_target: storesHost,
+      anypress_clean_dashboard: 'on',
     });
     const constants = store.phpConstants;
     expect(constants.ANYPRESS_API_BASE_URL).toEqual({ value: 'http://localhost', isPrivate: false });
