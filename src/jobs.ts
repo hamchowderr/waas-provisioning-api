@@ -21,6 +21,7 @@ import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
 import type { ReleaseStore } from './releases.ts';
 import type { Secrets } from './secrets.ts';
+import { failDownload, makeDownload, purgeExpiredDownloads } from './sitedownloads.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, emailPacksBought, TENANT_SELECT } from './tenants.ts';
 import type { DashboardHost } from './vercel.ts';
@@ -235,6 +236,9 @@ export function createJobHandlers(
       case 'tenant.backup':
         await backUp(pool, provisioner, data.tenantId, data.backupId);
         return;
+      case 'tenant.download':
+        await makeDownload(pool, provisioner, data.tenantId, data.downloadId);
+        return;
       case 'storefront.update-host':
         await pushHostUpdate(pool, provisioner, releases, data.tenantId, data.version);
         return;
@@ -280,6 +284,7 @@ export function createJobHandlers(
 
     async maintenance() {
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
+      await purgeExpiredDownloads(pool, provisioner);
       await purgeExpiredImports(pool, provisioner);
       await purgeExpiredDemoDrafts(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
@@ -361,6 +366,10 @@ export function createJobHandlers(
           return;
         case 'tenant.backup':
           await failBackup(pool, data.backupId);
+          return;
+        case 'tenant.download':
+          // The store still works; the person sees the copy failed and can ask again.
+          await failDownload(pool, data.downloadId);
           return;
         case 'tenant.restore':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);

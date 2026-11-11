@@ -261,6 +261,8 @@ function eventFor(data: JobData, ok: boolean): EventType | null {
     if (data.type === 'version.delete') return 'version.failed';
     // The store still works; only its pack emails weren't sent yet.
     if (data.type === 'tenant.email-packs') return null;
+    // Nor when a copy for download failed.
+    if (data.type === 'tenant.download') return null;
     return data.type.startsWith('tenant.') ? 'tenant.failed' : null;
   }
   const map: Partial<Record<JobData['type'], EventType>> = {

@@ -1050,3 +1050,60 @@ esac
     expect(agent({ ...release('anypress-host', '2.11.1'), slug: '../x' }).error).toContain('bad plugin slug');
   });
 });
+
+describe.skipIf(!hasPhp)('store agent: site download', () => {
+  it('zips WordPress, wp-content and the database, without the platform files or wp-config.php', () => {
+    const root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    const bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
+    const out = mkdtempSync(join(tmpdir(), 'waas-out-'));
+    for (const dir of ['wp-admin', 'wp-includes', 'wp-content/plugins/fluent-crm', 'wp-content/mu-plugins', 'wp-content/uploads/2026', 'wp-content/cache/waas-pages']) {
+      mkdirSync(join(root, dir), { recursive: true });
+    }
+    writeFileSync(join(root, 'index.php'), '<?php');
+    writeFileSync(join(root, 'wp-load.php'), '<?php');
+    writeFileSync(join(root, 'wp-config.php'), "<?php define('DB_PASSWORD', 'secret');");
+    writeFileSync(join(root, 'wp-config-sample.php'), "<?php\n$table_prefix = 'wp_';\n");
+    writeFileSync(join(root, 'wp-admin', 'index.php'), '<?php');
+    writeFileSync(join(root, 'wp-includes', 'version.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/plugins/fluent-crm/fluent-crm.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/mu-plugins/waas-guard.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/mu-plugins/anypress-store.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/object-cache.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/uploads/2026/photo.jpg'), 'jpg');
+    writeFileSync(join(root, 'wp-content/cache/waas-pages/x.html'), 'cached');
+    writeFileSync(join(root, 'wp-content/.waas-cron'), '');
+    writeFileSync(
+      join(bin, 'wp'),
+      `#!/bin/sh
+case "$*" in
+  *"db export"*) echo '-- dump' > "$6" ;;
+  *"config get table_prefix"*) echo 'shop_' ;;
+  *"option get home"*) echo 'https://bakery.example' ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    execFileSync('chmod', ['-R', '777', root, out]);
+    chmodSync(bin, 0o755);
+    const target = join(out, 'site.zip');
+    const result = execFileSync('php', [AGENT, 'site-download', Buffer.from(JSON.stringify({ url: `file://${target}` })).toString('base64')], {
+      env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}` },
+      encoding: 'utf8',
+    });
+    expect(result).toMatch(/^WAAS_RESULT \{"sizeBytes":\d+\}/m);
+    const files = execFileSync('unzip', ['-Z1', target], { encoding: 'utf8' }).split('\n').filter(Boolean);
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'database.sql', 'index.php', 'wp-load.php', 'wp-admin/index.php', 'wp-includes/version.php', 'wp-config-sample.php', '.htaccess', 'README.txt',
+        'wp-content/plugins/fluent-crm/fluent-crm.php', 'wp-content/mu-plugins/anypress-store.php', 'wp-content/uploads/2026/photo.jpg',
+      ]),
+    );
+    for (const left of ['wp-config.php', 'wp-content/mu-plugins/waas-guard.php', 'wp-content/object-cache.php', 'wp-content/cache/waas-pages/x.html', 'wp-content/.waas-cron']) {
+      expect(files).not.toContain(left);
+    }
+    expect(execFileSync('unzip', ['-p', target, 'wp-config-sample.php'], { encoding: 'utf8' })).toContain("$table_prefix = 'shop_';");
+    const readme = execFileSync('unzip', ['-p', target, 'README.txt'], { encoding: 'utf8' });
+    expect(readme).toContain("wp search-replace 'https://bakery.example'");
+    expect(readme).not.toMatch(/waas|wpcs/i);
+  });
+});
