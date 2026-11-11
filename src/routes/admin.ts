@@ -1,3 +1,4 @@
+import { careOf } from '../care.ts';
 import { voiceAdminRoutes } from '../voice.ts';
 import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebhook } from '../prospectcrm.ts';
 import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
@@ -507,6 +508,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       size: t.size,
       siteTypes: siteTypesOf(t.php_constants),
       keepsOwnCode: t.own_code,
+      // The care package bought for it on the shop, and this month's care time (src/care.ts); null without care.
+      care: careOf(t.care) ?? null,
       // A site moved in from another host (docs/site-imports.md): waiting while it has no startedAt.
       // The Migration Token only while the site can still be copied (not once it is live or being removed).
       ...(moveIn && {

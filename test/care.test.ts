@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { careOf } from '../src/care.ts';
 import { Status } from '../src/status.ts';
-import { OWNER, setup, waitFor, type TestContext } from './helpers.ts';
+import { OWNER, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
 let t: TestContext;
 
@@ -31,6 +31,8 @@ describe('care', () => {
     const care = { package: 'Care Plus', minutes: 120, used: 40, left: 80, extra: 60, answer: '1 business day', month: thisMonth() };
     expect(await res.json()).toEqual({ tenantId: tenant.id, externalId: tenant.externalId, care });
     expect((await getTenant(tenant.externalId)).care).toEqual(care);
+    const detail = await t.call('GET', `/admin/tenants/${tenant.id}`, { auth: `Bearer ${TEST_ADMIN_TOKEN}` });
+    expect(((await detail.json()) as any).care).toEqual(care);
 
     // A retry changes nothing, and null ends it.
     expect((await setCare(`tenantId=${tenant.id}`, body)).status).toBe(200);
