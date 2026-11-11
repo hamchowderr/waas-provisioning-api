@@ -22,8 +22,7 @@ Run what CI runs before pushing: `npm ci`, `npm run lint`, `npm run typecheck`, 
 ## Store templates
 
 - `templates/anypress-store/README.md` lists the WordPress and PHP versions, the theme and every plugin with its pinned version and checksum. The **Update pins** workflow moves every pin in `.github/pins.json` (build, `theme.sh` and README together) to its newest release every hour and merges it once CI passes; CI fails when a pin is behind an AnyPress release (`.github/pins/README.md`). A new pinned file goes into `.github/pins.json` in the same PR.
-- A template change only reaches new stores when a new template version is built, published and made production for the shop. That is a publish to customers: do it when the owner has asked for it, then check what changed on WordPress Playground with the new template zip (no test store on the server).
-- `templates/release.sh` builds the zips; the **Release templates** workflow (`templates-v<version>`) attaches them to a GitHub release for self-hosters.
+- Template versions publish themselves (`docs/template-releases.md`, owner's standing approval): a merge that changes `templates/` starts **Release templates**, which builds the zips (`templates/release.sh`), checks every site type on WordPress Playground and releases `templates-v<version>` with `checks.txt`; the API then publishes it to `STORE_TEMPLATE_PRODUCT_ID` and makes it production. Don't build or publish a template by hand; if a check fails, fix the cause and merge. AnyPress Client comes from the release in `templates/anypress-store/CLIENT_VERSION`.
 
 ## Building for WordPress
 

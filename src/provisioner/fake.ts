@@ -153,6 +153,11 @@ export class FakeProvisioner implements Provisioner {
     return { uploadUrl: `https://uploads.waas.example/base/${baseSnapshotId}.tgz`, uri: `https://templates.waas.example/${baseSnapshotId}.tgz` };
   }
 
+  async putBaseSnapshot({ baseSnapshotId }: { baseSnapshotId: string; body: Uint8Array }) {
+    this.check('putBaseSnapshot');
+    this.baseSnapshots.add(baseSnapshotId);
+  }
+
   async deleteBaseSnapshot({ baseSnapshotId }: { baseSnapshotId: string }) {
     this.check('deleteBaseSnapshot');
     this.baseSnapshots.delete(baseSnapshotId);

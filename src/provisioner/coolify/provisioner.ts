@@ -693,6 +693,10 @@ export class CoolifyProvisioner implements Provisioner {
     return { uploadUrl: await this.s3.presign('PUT', keys.base(baseSnapshotId), 3600), uri: this.s3.objectUrl(keys.base(baseSnapshotId)) };
   }
 
+  async putBaseSnapshot({ baseSnapshotId, body }: { baseSnapshotId: string; body: Uint8Array }) {
+    await this.s3.put(keys.base(baseSnapshotId), body, 'application/zip');
+  }
+
   async deleteBaseSnapshot({ baseSnapshotId }: { baseSnapshotId: string }) {
     await this.s3.delete(keys.base(baseSnapshotId));
   }

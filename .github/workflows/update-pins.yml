@@ -1,0 +1,21 @@
+name: Update pins
+# Every hour: moves every pin in .github/pins.json (the store and storefront templates' theme, AnyPress Blocks,
+# AnyPress Client, WordPress and wordpress.org plugins; the demo site's Playground) to its newest release, opens a pull
+# request, runs CI on it and merges it once CI passes. A merge that changes a template starts Release templates, which
+# checks every site type on Playground before the API makes it production (docs/template-releases.md).
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  pins:
+    uses: ./.github/workflows/pins.yml
+    with:
+      after-merge: release-templates.yml
+      after-merge-paths: templates

@@ -1,17 +1,19 @@
-# Builds the store template and the ready-made storefront template (templates/release.sh) and attaches
-# them, with their checksums, to a GitHub release templates-v<version>. install/anypress-install.sh publishes
-# the newest one on a new server, and the next release on its next run.
+# Builds the store template and the ready-made storefront template (templates/release.sh), checks the store on
+# WordPress Playground as every site type, and only then attaches them, with their checksums and checks.txt, to a
+# GitHub release templates-v<version>. The AnyPress API publishes each such release and makes it production by itself
+# (docs/template-releases.md); install/anypress-install.sh publishes the newest one on a new server.
+# Update pins starts it after a merge that changes a template; it can also be run from the Actions tab.
 name: Release templates
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Release version, e.g. 1.0.13 (the tag is templates-v<version>)
-        required: true
+        description: Release version, e.g. 1.1.30 (the tag is templates-v<version>). Empty, the next after the newest release
+        required: false
       plugins_ref:
-        description: waas-plugins branch or tag AnyPress Client comes from
-        default: main
+        description: waas-plugins branch or tag AnyPress Client comes from. Empty, the release in templates/anypress-store/CLIENT_VERSION
+        required: false
       host_version:
         description: AnyPress Host version for the storefront. Empty, the newest anypress-host release
         required: false
@@ -19,46 +21,129 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-templates
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      plugins_ref: ${{ steps.v.outputs.plugins_ref }}
+      site_types: ${{ steps.v.outputs.site_types }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PLUGINS_REF: ${{ inputs.plugins_ref }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            last=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[].tag_name | select(startswith("templates-v")) | ltrimstr("templates-v")] | .[]' | sort -V | tail -1)
+            VERSION=$(awk -F. -v OFS=. '{ $3 += 1; print }' <<<"${last:-1.0.0}")
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must look like 1.0.13"; exit 1; }
+          if gh release view "templates-v$VERSION" >/dev/null 2>&1; then echo "templates-v$VERSION already exists"; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "plugins_ref=${PLUGINS_REF:-anypress-client-v$(tr -d '[:space:]' < templates/anypress-store/CLIENT_VERSION)}" >> "$GITHUB_OUTPUT"
+          echo "site_types=$(jq -c 'keys' templates/anypress-store/roles.json)" >> "$GITHUB_OUTPUT"
+
+  # The store as each site type sells it, on WordPress Playground: every wp-admin screen and the home page load
+  # without a PHP error, and only that site type's plugins are on (waas-plugins scripts/playground/admin-audit.mjs).
+  check:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        site_type: ${{ fromJson(needs.prepare.outputs.site_types) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: api
+      - uses: actions/checkout@v4
+        with:
+          repository: hamchowderr/waas-plugins
+          ref: ${{ needs.prepare.outputs.plugins_ref }}
+          path: plugins
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playground check (${{ matrix.site_type }})
+        env:
+          API_REPO: ${{ github.workspace }}/api
+          SITE_TYPE: ${{ matrix.site_type }}
+          SHOTS: ${{ runner.temp }}/audit
+        run: |
+          (cd plugins/packages/anypress-client && composer install --no-dev --no-interaction --quiet)
+          # admin-audit drives the browser with Playwright, which scripts/playground does not install itself.
+          (cd plugins/scripts/playground && npm ci && npm install --no-save playwright@latest && npx playwright install --with-deps chromium)
+          node plugins/scripts/playground/admin-audit.mjs --client | tee "$RUNNER_TEMP/audit.log"
+          pages=$(grep -cE '^[0-9]+ /' "$RUNNER_TEMP/audit.log" || true)
+          echo "$SITE_TYPE: ok, $pages wp-admin pages and the home page, only its plugins on" > "$RUNNER_TEMP/check-$SITE_TYPE.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check-${{ matrix.site_type }}
+          path: ${{ runner.temp }}/check-${{ matrix.site_type }}.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: audit-${{ matrix.site_type }}
+          path: ${{ runner.temp }}/audit
+
   release:
+    needs: [prepare, check]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      VERSION: ${{ inputs.version }}
+      VERSION: ${{ needs.prepare.outputs.version }}
       HOST_VERSION: ${{ inputs.host_version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: hamchowderr/waas-plugins
-          ref: ${{ inputs.plugins_ref }}
+          ref: ${{ needs.prepare.outputs.plugins_ref }}
           path: waas-plugins
           fetch-depth: 0
-      - name: Check the version
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: check-*
+          merge-multiple: true
+          path: checks
+      - name: AnyPress Host version
         run: |
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must look like 1.0.13"; exit 1; }
-          if gh release view "templates-v$VERSION" >/dev/null 2>&1; then echo "templates-v$VERSION already exists"; exit 1; fi
           if [ -z "$HOST_VERSION" ]; then
             # Pre-releases sort before their release (2.3.0-beta.16 < 2.3.0).
             HOST_VERSION=$(git -C waas-plugins -c versionsort.suffix=- tag -l 'anypress-host-v*' --sort=-v:refname | head -1 | sed 's/^anypress-host-v//')
             echo "HOST_VERSION=$HOST_VERSION" >> "$GITHUB_ENV"
           fi
           echo "AnyPress Host $HOST_VERSION"
-        env:
-          GH_TOKEN: ${{ github.token }}
       - name: Build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: templates/release.sh "$PWD/waas-plugins" "$HOST_VERSION" "$VERSION" out
+        run: |
+          templates/release.sh "$PWD/waas-plugins" "$HOST_VERSION" "$VERSION" out
+          cat checks/*.txt > out/checks.txt
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "The store template and the ready-made storefront template. A new install publishes the newest release; run the installer again to publish this one."
+            echo "The store template and the ready-made storefront template. The AnyPress API makes it production by itself; a new install publishes the newest release, and running the installer again publishes this one."
             echo
-            echo "- anypress-store.zip: AnyPress Client from waas-plugins $(git -C waas-plugins rev-parse --short HEAD), $(unzip -p out/anypress-store.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
+            echo "- anypress-store.zip: AnyPress Client from waas-plugins $(git -C waas-plugins describe --tags --always), $(unzip -p out/anypress-store.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
             echo "- seller-storefront.zip: $(unzip -p out/seller-storefront.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
+            echo
+            echo "Checked on WordPress Playground:"
+            sed 's/^/- /' out/checks.txt
           } > notes.md
-          gh release create "templates-v$VERSION" out/anypress-store.zip out/seller-storefront.zip out/version.txt out/SHA256SUMS \
+          gh release create "templates-v$VERSION" out/anypress-store.zip out/seller-storefront.zip out/version.txt out/SHA256SUMS out/checks.txt \
             --target "$GITHUB_SHA" --title "Templates $VERSION" --notes-file notes.md --latest=false

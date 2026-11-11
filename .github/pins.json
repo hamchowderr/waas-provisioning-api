@@ -2,6 +2,17 @@
   "$comment": "Every pinned version in this repository. The Update pins workflow moves them to the newest release; .github/pins/README.md explains the format.",
   "pins": [
     {
+      "name": "AnyPress Client (store template)",
+      "source": "github-tag:hamchowderr/waas-plugins",
+      "tagPrefix": "anypress-client-v",
+      "places": [
+        {
+          "file": "templates/anypress-store/CLIENT_VERSION",
+          "match": "^(?<version>[0-9][^\\s]*)$"
+        }
+      ]
+    },
+    {
       "name": "AnyPress theme",
       "source": "github:hamchowderr/anypress-theme",
       "asset": "anypress.zip",
@@ -310,6 +321,23 @@
           "file": "templates/anypress-store/README.md",
           "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`polylang`\\)"
         }
+      ]
+    },
+    {
+      "name": "WordPress Playground (demo.anypress.site)",
+      "source": "github-tag:WordPress/wordpress-playground",
+      "places": [
+        {
+          "file": ".github/workflows/playground.yml",
+          "match": "VERSION: \\$\\{\\{ inputs\\.version \\|\\| 'v(?<version>[0-9.]+)' \\}\\}"
+        },
+        {
+          "file": "playground/Dockerfile",
+          "match": "ARG PLAYGROUND=playground-v(?<version>[0-9.]+)"
+        }
+      ],
+      "run": [
+        "have() { gh api \"repos/$GITHUB_REPOSITORY/releases/tags/playground-$PIN_TAG\" >/dev/null 2>&1; }; have || gh workflow run playground.yml --ref main -f version=\"$PIN_TAG\"; for i in $(seq 1 80); do have && exit 0; sleep 60; done; echo \"playground-$PIN_TAG was not built\" >&2; exit 1"
       ]
     }
   ]

@@ -38,7 +38,7 @@ node .github/pins/pins.mjs update   # move them
 | Field | What it is |
 |---|---|
 | `name` | Shown in the check and in the pull request |
-| `source` | `github:<owner>/<repo>` (its releases), `wordpress-plugin:<slug>` or `wordpress-core:wordpress` |
+| `source` | `github:<owner>/<repo>` (its releases), `github-tag:<owner>/<repo>` (its tags, for projects without GitHub releases), `wordpress-plugin:<slug>` or `wordpress-core:wordpress` |
 | `tagPrefix` | For `github:`, the part of the tag before the version (default `v`; e.g. `anypress-client-v`) |
 | `prerelease` | For `github:`, also take pre-releases |
 | `line` | For `wordpress-core:`, stay on this release line (e.g. `7.1`) |

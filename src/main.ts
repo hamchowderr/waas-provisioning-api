@@ -30,6 +30,7 @@ import { startReferences } from './references.ts';
 import { loadDomainSalesConfig, startDomainSales, storeAttacher } from './domainsales.ts';
 import { serviceIdStore } from './coolifyids.ts';
 import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webhooks.ts';
+import { startTemplateReleases } from './templatereleases.ts';
 
 const config = loadConfig();
 await migrate(config.databaseUrl);
@@ -95,6 +96,8 @@ cpuWatch?.start();
 // Buying domains for stores (docs/domains.md), when Name.com and Stripe are set up: paid orders are registered every 5 minutes.
 const domainSales = loadDomainSalesConfig(process.env);
 const deps = { config, pool, boss, provisioner, secrets, releases, auth, cpuWatch, domainSales };
+// Each tested store template release on GitHub published and made production (docs/template-releases.md), every 15 minutes.
+await startTemplateReleases(deps);
 await startDomainSales(boss, { pool, config: domainSales, storesDomain: config.storesDomain, ipv6: config.domainConnect?.ipv6, attach: storeAttacher(deps) });
 
 const server = serve({ fetch: createApp(deps).fetch, port: config.port }, (info) =>
