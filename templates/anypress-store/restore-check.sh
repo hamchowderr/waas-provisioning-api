@@ -8,7 +8,7 @@
 # with the agent's own `restore` operation, then for each site type (the keys of roles.json when none are given)
 # restarts WordPress with that ANYPRESS_TENANT_ROLES and checks the home page, a page through WordPress, the
 # WordPress REST API and the store's MCP server answer, with no PHP fatal error in the logs. WordPress Playground has
-# no Apache, no MariaDB and no agent, so a store that only breaks on the server passes there. Needs Docker and Node 22.
+# no web server, no MariaDB and no agent, so a store that only breaks on the server passes there. Needs Docker and Node 22.
 set -euo pipefail
 
 ZIP=$(realpath "$1")
@@ -44,7 +44,7 @@ process.stdout.write(stringify(doc));
 JS
 }
 
-fail() { echo "restore check: $*" >&2; docker compose -p "$PROJECT" -f "$WORK/compose.yml" logs --tail 50 wordpress agent >&2 || true; exit 1; }
+fail() { echo "restore check: $*" >&2; docker compose -p "$PROJECT" -f "$WORK/compose.yml" logs --tail 50 wordpress php agent >&2 || true; exit 1; }
 
 export API
 compose "${TYPES[0]}"
@@ -67,7 +67,7 @@ for type in "${TYPES[@]}"; do
             *) fail "$type: $path answered $code" ;;
         esac
     done
-    if docker compose -p "$PROJECT" -f "$WORK/compose.yml" logs wordpress agent 2>&1 | grep -q 'PHP Fatal error'; then
+    if docker compose -p "$PROJECT" -f "$WORK/compose.yml" logs wordpress php agent 2>&1 | grep -q 'PHP Fatal error'; then
         fail "$type: PHP fatal error"
     fi
     echo "$type: ok, restored by the agent and served by the store's own containers"

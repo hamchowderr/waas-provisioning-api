@@ -14,7 +14,7 @@ API=${WAAS_API_URL:?set WAAS_API_URL to the provisioning API address}
 : "${WAAS_KEY:?set WAAS_KEY}" "${WAAS_SECRET:?set WAAS_SECRET}"
 # Base snapshot names allow only letters, digits, spaces and dashes (5 to 50).
 BASE_NAME=${BASE_NAME:-AnyPress store}
-# The image tag the stores run: wordpress:<WP>-php<PHP>-apache. "7.1" follows 7.1.x patch releases.
+# The image tag the stores run: wordpress:<WP>-php<PHP>-fpm. "7.1" follows 7.1.x patch releases.
 WP_VERSION=${WP_VERSION:-7.1}
 PHP_VERSION=${PHP_VERSION:-8.3}
 
