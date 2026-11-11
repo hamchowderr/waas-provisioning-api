@@ -5,6 +5,7 @@ import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey, wantsForever } from './keys.ts';
 import { SIZES, type Size } from './plans.ts';
+import { siteTypePriceCents } from './pricing.ts';
 import { BRAND_OPTION } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
 import { Status } from './status.ts';
@@ -275,31 +276,15 @@ async function liveSeconds(pool: Pool, resellerId: string, from: Date, to: Date)
 
 
 /**
- * The Small monthly list price of each site type, in US cents: the shop's plan prices, shown on anypress.io.
- * Keys are the template's site types (templates/anypress-store/roles.json); `store` is the older name of
- * `online-store`. HighLevel sites have no public price, so they take the reseller's own price per size.
- */
-const SITE_TYPE_PRICE_CENTS: Record<string, number> = {
-  website: 1200,
-  bookings: 1900,
-  'online-store': 2900,
-  store: 2900,
-  community: 4900,
-  everything: 7900,
-};
-/** Medium is twice Small and Large four times, as on the shop. */
-const SIZE_TIMES: Record<Size, number> = { small: 1, medium: 2, large: 4 };
-
-/**
  * One store's monthly list price: its site type's price for its size (the dearest, when it was sold as
  * several), or the reseller's own price for the size when it has no site type with a public price.
  */
 function listPriceCents(reseller: Pick<Reseller, 'listPriceCents'>, size: Size, siteType: string | null): number {
   const prices = (siteType ?? '')
     .split(',')
-    .map((type) => SITE_TYPE_PRICE_CENTS[type.trim()])
+    .map((type) => siteTypePriceCents(type.trim(), size))
     .filter((price): price is number => price !== undefined);
-  return prices.length ? Math.max(...prices) * SIZE_TIMES[size] : reseller.listPriceCents[size];
+  return prices.length ? Math.max(...prices) : reseller.listPriceCents[size];
 }
 
 /**

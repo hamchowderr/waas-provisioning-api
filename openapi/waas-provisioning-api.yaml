@@ -3227,6 +3227,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: getDemoFile
+  /pricing:
+    get:
+      tags:
+      - Pricing
+      summary: The price list
+      description: 'Added for AnyPress.
+
+
+        Every site type''s monthly and yearly price per size in US dollars, the volume savings, the reseller discount and the affiliate share. anypress.io and the dashboard read their prices from here. Public, readable from any site.'
+      security: []
+      responses:
+        '200':
+          description: The price list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceList'
+      operationId: getPricing
   /v1/support/tickets:
     get:
       tags:
@@ -4339,6 +4357,63 @@ components:
         expiresAt: { type: string, format: date-time, nullable: true }
         error: { type: string, nullable: true }
         dateCreated: { type: string, format: date-time }
+    PriceList:
+      type: object
+      required: [currency, siteTypes, sizeTimes, yearlyMonths, volumeTiers, wholesalePercent, affiliatePercent]
+      properties:
+        currency:
+          type: string
+          enum: [USD]
+        siteTypes:
+          type: array
+          description: Each site type, in the order anypress.io lists them
+          items:
+            type: object
+            required: [key, name, monthly, yearly]
+            properties:
+              key:
+                type: string
+                description: The store template's site type (website, bookings, online-store, community, everything)
+              name:
+                type: string
+              monthly:
+                $ref: '#/components/schemas/PriceBySize'
+              yearly:
+                $ref: '#/components/schemas/PriceBySize'
+        sizeTimes:
+          description: How many times the Small price each size costs
+          allOf:
+          - $ref: '#/components/schemas/PriceBySize'
+        yearlyMonths:
+          type: integer
+          description: How many months a year costs
+        volumeTiers:
+          type: array
+          description: The saving off every site's price once a customer has this many live sites
+          items:
+            type: object
+            required: [sites, percent]
+            properties:
+              sites:
+                type: integer
+              percent:
+                type: integer
+        wholesalePercent:
+          type: integer
+          description: A new reseller's discount off each site's price
+        affiliatePercent:
+          type: integer
+          description: An affiliate's share of a customer's first payment
+    PriceBySize:
+      type: object
+      required: [small, medium, large]
+      properties:
+        small:
+          type: number
+        medium:
+          type: number
+        large:
+          type: number
     ExceptionResult:
       type: object
       properties:
@@ -5966,3 +6041,5 @@ tags:
   description: 'Added for AnyPress. Read a website, Shopify shop, Figma file or document into one bundle to build a site from.'
 - name: Branding
   description: The public look of a seller's or reseller's branded pages
+- name: Pricing
+  description: AnyPress's public price list
