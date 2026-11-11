@@ -17,6 +17,14 @@ if (!defined('WPF_STAGING_MODE')) {
     define('WPF_STAGING_MODE', false);
 }
 
+// FluentHub (fluent-toolkit) carries its own copy of the MCP Adapter and loads it when the standalone plugin isn't
+// active yet. A new store's standalone MCP Adapter is switched on by AnyPress Client on `init`, after FluentHub has
+// loaded its copy, so both declare WP\MCP\Autoloader and every request dies. The template always ships the standalone
+// plugin (always on), so FluentHub's copy is never needed.
+if (!defined('FLUENT_TOOLKIT_DISABLE_BUNDLED_MCP_ADAPTER')) {
+    define('FLUENT_TOOLKIT_DISABLE_BUNDLED_MCP_ADAPTER', true);
+}
+
 // Usage stats that would go to the plugin vendors, if an owner ever opted in.
 add_filter('fluent_booking/allow_share_stats', '__return_false');
 add_filter('fluentsupport_allow_share_essential', '__return_false');
