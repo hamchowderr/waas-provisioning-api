@@ -9,6 +9,12 @@ export function businessName(line: Line): string {
   return clean(site.businessName) || clean(site.name) || clean(line.name) || 'the business';
 }
 
+/** The first thing the caller hears. It says the call is answered by an automated receptionist, as the EU AI Act
+ *  (Article 50) and several US state laws ask of an AI that talks with people. */
+export function greeting(line: Line): string {
+  return `Thanks for calling ${businessName(line)}. I'm the automated virtual receptionist. How can I help?`;
+}
+
 export function instructions(line: Line, now: Date, timezone: string): string {
   const name = businessName(line);
   const about = line.business?.about ?? {};
@@ -28,7 +34,7 @@ export function instructions(line: Line, now: Date, timezone: string): string {
   const today = new Intl.DateTimeFormat('en-US', { timeZone: timezone, dateStyle: 'full', timeStyle: 'short' }).format(now);
   const canBook = line.minutesLeft > 0;
 
-  return `You are the phone receptionist for ${name}. You are on a live phone call, so speak in short, warm, plain sentences, one question at a time, with no lists, symbols or markdown. Never say you are an AI unless the caller asks; if they ask, say you are ${name}'s virtual receptionist.
+  return `You are the phone receptionist for ${name}. You are on a live phone call, so speak in short, warm, plain sentences, one question at a time, with no lists, symbols or markdown. You are an automated virtual receptionist and the greeting has already told the caller so; if they ask whether you are a person or an AI, say plainly that you are ${name}'s automated virtual receptionist, and offer to take a message for the team.
 
 It is now ${today} (${timezone}).
 

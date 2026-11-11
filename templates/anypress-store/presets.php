@@ -136,6 +136,16 @@ $merge('_fluentcrm_compliance_settings', array_merge(\FluentCrm\App\Services\Hel
     'gravatar_fallback' => 'no',
 ]));
 
+// FluentCommunity. Portal settings → Privacy: profile pictures come from Gravatar by default, which sends every
+// member's hashed email to Gravatar (and ui-avatars.com) on each page view. Off, as in FluentCRM above; members
+// upload their own picture instead.
+if (class_exists(\FluentCommunity\App\Functions\Utility::class)) {
+    \FluentCommunity\App\Functions\Utility::updatePrivacySettings(array_merge(
+        \FluentCommunity\App\Functions\Utility::getPrivacySettings(),
+        ['enable_gravatar' => 'no']
+    ));
+}
+
 // Fluent Forms. Global settings → Security: the honeypot and token checks, off by default.
 $forms = get_option('_fluentform_global_form_settings', []);
 $forms['misc'] = array_merge($forms['misc'] ?? [], ['honeypotStatus' => 'yes', 'tokenBasedProtectionStatus' => 'yes']);
