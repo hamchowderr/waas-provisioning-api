@@ -14,6 +14,7 @@ import { S3 } from './provisioner/s3.ts';
 import { startResellerInvoices } from './resellerinvoices.ts';
 import { CpuWatch } from './cpuwatch.ts';
 import { startRestoreTests } from './restoretests.ts';
+import { startPriceCheck } from './pricecheck.ts';
 import { configurePush, loadPushConfig } from './push.ts';
 import { CoolifyProvisioner } from './provisioner/coolify/provisioner.ts';
 import { FakeProvisioner } from './provisioner/fake.ts';
@@ -74,6 +75,8 @@ await startReferences(
 // Phone and computer alerts for the bell's important notices (src/push.ts); off without VAPID keys.
 configurePush(loadPushConfig(process.env, config.auth?.url));
 await startRestoreTests(boss, pool, provisioner, config.restoreTest, { mail: config.auth?.mail, to: config.jobAlerts });
+// Nightly, the shop's checkout prices and plan pages against the price list (src/pricecheck.ts), unless PRICE_CHECK=off.
+await startPriceCheck(boss, config.priceCheck, { mail: config.auth?.mail, to: config.jobAlerts });
 // Stores' own sending domains (docs/store-email.md): checked every 10 minutes, when toSend is set up.
 await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner, config);
 // The platform's count of each store's email (docs/store-email.md): every hour, when toSend is set up.

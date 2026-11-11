@@ -194,6 +194,16 @@ export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { 
   await send(mail, to, `Failed: restore test of ${test.store}`, html, text, 'restore test notice');
 }
 
+/** To the platform admins: the nightly price check (src/pricecheck.ts) found the shop differs from the price list. */
+export async function sendPriceCheckFailed(mail: AuthMail, to: string, check: { shop: string; problems: string[] }): Promise<void> {
+  const lead = `Last night's price check found the shop at ${check.shop} doesn't match the price list (src/pricing.ts):`;
+  const next = 'Change the shop (or the price list) so they match. The check runs again tomorrow night.';
+  const list = check.problems.join('\n');
+  const html = layout(mail, { title: 'Shop prices differ', lines: [lead], code: list, note: next });
+  const text = `${lead}\n\n${list}\n\n${next}`;
+  await send(mail, to, `Shop prices differ from the price list (${check.problems.length})`, html, text, 'price check notice');
+}
+
 /** To the applicant: not approved. */
 export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
