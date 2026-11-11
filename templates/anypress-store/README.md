@@ -110,7 +110,8 @@ a random password nobody keeps.
 - Theme: the Main menu above.
 - Starter pages (`mu-plugins/anypress-patterns.php`); the build checks they register.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
-  login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
+  login digest to the admin email), XML-RPC off, and subscribers (members and customers) kept out of wp-admin and
+  its admin bar. Two-factor is left for the owner to switch on.
 
 ### CRM lifecycle
 
