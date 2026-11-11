@@ -2083,7 +2083,8 @@ paths:
       summary: Apply to sell websites on the platform
       description: >-
         Public, no authentication: the marketing site's application form sends it. Nothing is made until
-        the platform admin approves it. The applicant gets an email saying it arrived, and the addresses in
+        the platform admin approves it. The applicant gets an email saying it arrived and asking them to book a
+        short set-up call (SELLER_CALL_URL, else they reply with times), and the addresses in
         APPLICATION_NOTIFY_EMAILS get one linking to it on the dashboard. One application per email address
         may wait at a time, and the API takes a limited number per hour from everyone together.
       security: []

@@ -118,6 +118,18 @@ describe('applying', () => {
     expect(json).toMatchObject({ email: 'ada@agency.example', website: 'https://agency.example/', status: 'pending', productId: null, highLevelAgency: false });
   });
 
+  it('asks the applicant to book their set-up call, with the booking page when there is one', async () => {
+    expect((await apply(form({ email: 'reply@agency.example' }))).status).toBe(201);
+    expect(sent.find((m) => m.to === 'reply@agency.example')?.text).toContain('reply to this email with a few times');
+    t.deps.config.sellerCallUrl = 'https://shop.platform.example/seller-call/';
+    try {
+      expect((await apply(form({ email: 'call@agency.example' }))).status).toBe(201);
+    } finally {
+      t.deps.config.sellerCallUrl = undefined;
+    }
+    expect(sent.find((m) => m.to === 'call@agency.example')?.text).toContain('Book your call: https://shop.platform.example/seller-call/');
+  });
+
   it('keeps whether the applicant runs a HighLevel agency', async () => {
     const res = await apply(form({ email: 'hl@agency.example', highLevelAgency: true }));
     expect(res.status).toBe(201);

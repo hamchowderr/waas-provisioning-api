@@ -154,7 +154,7 @@ export function publicApplicationRoutes(deps: Deps) {
     );
 
     const mail = config.auth?.mail;
-    await tryMail(`Application ${application.id} receipt`, (m) => sendApplicationReceived(m, email, { name, business }), mail);
+    await tryMail(`Application ${application.id} receipt`, (m) => sendApplicationReceived(m, email, { name, business, callUrl: config.sellerCallUrl }), mail);
     const reviewUrl = config.auth ? `${config.auth.url}/applications/${application.id}` : null;
     for (const to of config.applicationNotify ?? []) {
       await tryMail(
