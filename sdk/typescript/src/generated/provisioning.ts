@@ -1192,7 +1192,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A theme or AnyPress Blocks release zip for the demo pages
+         * A theme, AnyPress Blocks or AnyPress Client release zip for the demo pages
          * @description The AnyPress theme or AnyPress Blocks release zip the demo pages install on WordPress Playground (docs/branding.md, "Demo page"), readable from any site. Public.
          */
         get: operations["getDemoFile"];
@@ -6450,7 +6450,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip for one release; anypress-theme.zip or anypress-blocks.zip for the newest */
+                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip for one release; anypress-theme.zip or anypress-blocks.zip for the newest; anypress-client.zip for AnyPress Client's newest stable release */
                 file: string;
             };
             cookie?: never;
