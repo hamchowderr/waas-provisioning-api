@@ -187,6 +187,12 @@ mu-plugin puts them back to draft while that plugin is off, and the home page sh
 hidden. When a plan change turns the plugin on, the pages come back, and the owner details step for that plugin runs
 then.
 
+## Try a site type in your browser
+
+`playground/<site type>.json` is a WordPress Playground blueprint for each site type sold (website, bookings, online-store, community, everything, highlevel). Each one sets up a site the way a new store of that type starts: this template's theme, plugins, must-use plugins, presets and CRM set-up, with the latest AnyPress Client and `ANYPRESS_TENANT_ROLES` set to the type, so only that type's plugins are on. It runs in the visitor's browser; nothing is made on a server. Open one with `https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/playground/website.json`.
+
+The files are made from `build.sh`, `theme.sh` and `roles.json` by `node templates/anypress-store/playground/blueprints.mjs`; CI fails when one is out of date, and the Update pins workflow remakes them when it moves a pin.
+
 ## Build and publish
 
 ```sh

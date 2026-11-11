@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
 import type { AuthMail } from './authmail.ts';
@@ -5,6 +6,7 @@ import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { publicBase } from './oauth.ts';
+import { channelKey, parseManifest, type ReleaseStore } from './releases.ts';
 import { getStorefront } from './storefronts.ts';
 
 /**
@@ -49,23 +51,42 @@ export function demoZip(file: string, download: typeof fetch = fetch): Promise<B
   const match = DEMO_ZIP.exec(file);
   if (!match) return Promise.resolve(null);
   const [, repo, tag] = match as unknown as [string, keyof typeof DEMO_ZIP_ASSET, string];
-  let zip = demoZips.get(file);
+  return cachedZip(file, () => Promise.resolve(`https://github.com/hamchowderr/anypress-${repo}/releases/download/${tag}/${DEMO_ZIP_ASSET[repo]}`), download);
+}
+
+/**
+ * A zip from `url()`, kept in memory under `key` once fetched: no larger than DEMO_ZIP_MAX and, when `sha256` is given,
+ * with that checksum. A failed fetch is forgotten, so the next request tries again.
+ */
+function cachedZip(key: string, url: () => Promise<string>, download: typeof fetch, sha256?: string): Promise<Buffer | null> {
+  let zip = demoZips.get(key);
   if (!zip) {
-    const url = `https://github.com/hamchowderr/anypress-${repo}/releases/download/${tag}/${DEMO_ZIP_ASSET[repo]}`;
-    zip = download(url, { signal: AbortSignal.timeout(20_000) })
+    zip = url()
+      .then((u) => download(u, { signal: AbortSignal.timeout(20_000) }))
       .then(async (r) => {
         if (!r.ok) return null;
         const bytes = Buffer.from(await r.arrayBuffer());
-        return bytes.length <= DEMO_ZIP_MAX ? bytes : null;
+        if (bytes.length > DEMO_ZIP_MAX) return null;
+        return !sha256 || createHash('sha256').update(bytes).digest('hex') === sha256 ? bytes : null;
       })
       .catch(() => null)
       .then((bytes) => {
-        if (!bytes) demoZips.delete(file);
+        if (!bytes) demoZips.delete(key);
         return bytes;
       });
-    demoZips.set(file, zip);
+    demoZips.set(key, zip);
   }
   return zip;
+}
+
+/**
+ * AnyPress Client's latest stable release zip, kept in memory per version once fetched. Null when there is no release
+ * or it can't be read.
+ */
+export async function latestClientZip(releases: ReleaseStore, download: typeof fetch = fetch): Promise<Buffer | null> {
+  const manifest = parseManifest(await releases.getJson(channelKey('anypress-client', 'stable')), 'anypress-client');
+  if (!manifest) return null;
+  return cachedZip(`anypress-client-${manifest.version}`, () => releases.presignGet(manifest.zip, 300), download, manifest.sha256);
 }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const URL_RE = /^https?:\/\/[^\s]+$/;
@@ -353,7 +374,7 @@ async function demoBrand(deps: Pick<Deps, 'pool' | 'config'>, base: string, id: 
  * GET /branding/host/:host: the look of the sign-in page on a seller's own dashboard address
  * (src/dashboarddomains.ts), before anyone has signed in; 404 for any other address.
  */
-export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
+export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config' | 'releases'>) {
   const app = new Hono<AppEnv>();
   app.get('/host/:host', async (c) => {
     const productId = await dashboardHostProduct(deps.pool, c.req.param('host'));
@@ -371,6 +392,18 @@ export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
   });
   // The theme and AnyPress Blocks zips the demo pages install on WordPress Playground (docs/branding.md, "Demo page").
   // GitHub's release downloads don't let other sites read them, so Playground's site gets them here.
+  // AnyPress Client's latest stable release, for the site-type blueprints (templates/anypress-store/playground): its
+  // releases are in the update channel, not GitHub downloads. Cached briefly, so a new release reaches Playground soon.
+  app.get('/demo-files/anypress-client.zip', async (c) => {
+    const zip = deps.releases ? await latestClientZip(deps.releases) : null;
+    if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+    return c.body(new Uint8Array(zip), 200, {
+      'Content-Type': 'application/zip',
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Cache-Control': 'public, max-age=300',
+    });
+  });
   app.get('/demo-files/:file', async (c) => {
     const zip = await demoZip(c.req.param('file'));
     // Not kept by any cache: a release published later, or a download that failed once, must work on the next try.
