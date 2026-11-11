@@ -24,7 +24,7 @@
 			"step": "installTheme",
 			"themeData": {
 				"resource": "url",
-				"url": "https://github.com/hamchowderr/anypress-theme/releases/download/v0.20.0/anypress.zip",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-theme-v0.20.0.zip",
 				"caption": "Installing the AnyPress theme"
 			},
 			"options": {
@@ -212,7 +212,7 @@
 			"step": "installPlugin",
 			"pluginData": {
 				"resource": "url",
-				"url": "https://github.com/hamchowderr/anypress-blocks/releases/download/v0.4.2/anypress-blocks.zip",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-blocks-v0.4.2.zip",
 				"caption": "Installing AnyPress Blocks"
 			},
 			"options": {
@@ -308,7 +308,7 @@
 		},
 		{
 			"step": "runPHP",
-			"code": "<?php\nrequire '/wordpress/wp-load.php';\nrequire_once ABSPATH . 'wp-admin/includes/plugin.php';\nwp_set_current_user(1);\nglobal $wp_rewrite;\n$wp_rewrite->set_permalink_structure('/%postname%/');\n$files = [];\nforeach (get_plugins() as $file => $data) {\n    if (in_array(dirname($file), [\"anypress-client\",\"fluent-security\",\"fluent-smtp\",\"fluent-crm\",\"fluentform\",\"fluent-booking\",\"fluent-cart\",\"fluent-community\",\"fluent-player\",\"fluent-affiliate\",\"fluent-support\",\"easy-code-manager\",\"seo-by-rank-math\",\"automatorwp\",\"wp-fusion-lite\",\"fluent-toolkit\",\"anypress-blocks\"], true)) $files[] = $file;\n}\nactivate_plugins($files);\nforeach (['hello-world' => 'post', 'sample-page' => 'page', 'privacy-policy' => 'page'] as $slug => $type) {\n    $post = get_page_by_path($slug, OBJECT, $type);\n    if ($post) wp_delete_post($post->ID, true);\n}\nforeach (get_comments(['fields' => 'ids']) as $id) wp_delete_comment($id, true);\nupdate_option('wp_page_for_privacy_policy', 0);\n(new \\FluentCart\\App\\CPT\\Pages())->createPages();\nupdate_option('show_on_front', 'page');\nupdate_option('page_on_front', get_page_by_path('shop')->ID);\nforeach (get_posts(['post_type' => 'page', 'numberposts' => -1, 'fields' => 'ids']) as $id) update_post_meta($id, '_anypress_needs', 'fluent-cart/fluent-cart.php');\nforeach (['blogname' => 'My Store', 'timezone_string' => 'UTC', 'gmt_offset' => 0, 'date_format' => 'F j, Y', 'time_format' => 'H:i', 'default_comment_status' => 'closed', 'default_ping_status' => 'closed', 'default_pingback_flag' => 0, 'blog_public' => 0, 'users_can_register' => 0] as $name => $value) update_option($name, $value);\n",
+			"code": "<?php\nrequire '/wordpress/wp-load.php';\nrequire_once ABSPATH . 'wp-admin/includes/plugin.php';\nwp_set_current_user(1);\nglobal $wp_rewrite;\n$wp_rewrite->set_permalink_structure('/%postname%/');\n// The MCP Adapter first, as AnyPress Client turns it on on every store: FluentToolkit loads its own copy of the adapter\n// when the plugin isn't on yet, and the plugin's classes can't load after that.\nif (file_exists(WP_PLUGIN_DIR . '/mcp-adapter/mcp-adapter.php')) activate_plugin('mcp-adapter/mcp-adapter.php');\n$files = [];\nforeach (get_plugins() as $file => $data) {\n    if (in_array(dirname($file), [\"anypress-client\",\"fluent-security\",\"fluent-smtp\",\"fluent-crm\",\"fluentform\",\"fluent-booking\",\"fluent-cart\",\"fluent-community\",\"fluent-player\",\"fluent-affiliate\",\"fluent-support\",\"easy-code-manager\",\"seo-by-rank-math\",\"automatorwp\",\"wp-fusion-lite\",\"fluent-toolkit\",\"anypress-blocks\"], true)) $files[] = $file;\n}\nactivate_plugins($files);\nforeach (['hello-world' => 'post', 'sample-page' => 'page', 'privacy-policy' => 'page'] as $slug => $type) {\n    $post = get_page_by_path($slug, OBJECT, $type);\n    if ($post) wp_delete_post($post->ID, true);\n}\nforeach (get_comments(['fields' => 'ids']) as $id) wp_delete_comment($id, true);\nupdate_option('wp_page_for_privacy_policy', 0);\n(new \\FluentCart\\App\\CPT\\Pages())->createPages();\nupdate_option('show_on_front', 'page');\nupdate_option('page_on_front', get_page_by_path('shop')->ID);\nforeach (get_posts(['post_type' => 'page', 'numberposts' => -1, 'fields' => 'ids']) as $id) update_post_meta($id, '_anypress_needs', 'fluent-cart/fluent-cart.php');\nforeach (['blogname' => 'My Store', 'timezone_string' => 'UTC', 'gmt_offset' => 0, 'date_format' => 'F j, Y', 'time_format' => 'H:i', 'default_comment_status' => 'closed', 'default_ping_status' => 'closed', 'default_pingback_flag' => 0, 'blog_public' => 0, 'users_can_register' => 0] as $name => $value) update_option($name, $value);\n",
 			"progress": {
 				"caption": "Setting up the site"
 			}

@@ -12,8 +12,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = resolve(HERE, '..');
 /** The template's own files, from this repository's main branch (raw.githubusercontent.com lets any site read them). */
 const RAW = 'https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store';
-/** AnyPress Client's latest stable release, through the AnyPress API (its releases are not GitHub downloads). */
-const CLIENT_ZIP = 'https://api.anypress.io/branding/demo-files/anypress-client.zip';
+/**
+ * Release zips through the AnyPress API: GitHub's release downloads don't let a page read them, so Playground in a
+ * browser can't, and AnyPress Client's releases are not GitHub downloads at all (it gets its latest stable release).
+ */
+const ZIPS = 'https://api.anypress.io/branding/demo-files';
+const CLIENT_ZIP = `${ZIPS}/anypress-client.zip`;
 
 /** The site types AnyPress sells (roles.json; `store` is the older name of `everything` and is not sold). */
 export const SOLD_TYPES = ['website', 'bookings', 'online-store', 'community', 'everything', 'highlevel'];
@@ -43,6 +47,9 @@ require_once ABSPATH . 'wp-admin/includes/plugin.php';
 wp_set_current_user(1);
 global $wp_rewrite;
 $wp_rewrite->set_permalink_structure('/%postname%/');
+// The MCP Adapter first, as AnyPress Client turns it on on every store: FluentToolkit loads its own copy of the adapter
+// when the plugin isn't on yet, and the plugin's classes can't load after that.
+if (file_exists(WP_PLUGIN_DIR . '/mcp-adapter/mcp-adapter.php')) activate_plugin('mcp-adapter/mcp-adapter.php');
 $files = [];
 foreach (get_plugins() as $file => $data) {
     if (in_array(dirname($file), ${JSON.stringify(['anypress-client', ...slugs])}, true)) $files[] = $file;
@@ -86,12 +93,12 @@ export function blueprint(type) {
       { step: 'login' },
       {
         step: 'installTheme',
-        themeData: { resource: 'url', url: `https://github.com/hamchowderr/anypress-theme/releases/download/v${THEME_VERSION}/anypress.zip`, caption: 'Installing the AnyPress theme' },
+        themeData: { resource: 'url', url: `${ZIPS}/anypress-theme-v${THEME_VERSION}.zip`, caption: 'Installing the AnyPress theme' },
         options: { activate: true, targetFolderName: 'anypress' },
       },
       ...org.map(([slug, version]) => install(`https://downloads.wordpress.org/plugin/${slug}.${version}.zip`, `Installing ${slug}`)),
       ...VENDORED.map(([slug, version]) => install(`${RAW}/plugins/${slug}-${version}.zip`, `Installing ${slug}`)),
-      install(`https://github.com/hamchowderr/anypress-blocks/releases/download/v${BLOCKS_VERSION}/anypress-blocks.zip`, 'Installing AnyPress Blocks'),
+      install(`${ZIPS}/anypress-blocks-v${BLOCKS_VERSION}.zip`, 'Installing AnyPress Blocks'),
       install(CLIENT_ZIP, 'Installing AnyPress Client'),
       { step: 'mkdir', path: '/wordpress/wp-content/plugins/anypress-client-data' },
       file('/wordpress/wp-content/plugins/anypress-client-data/roles.json', 'roles.json'),
