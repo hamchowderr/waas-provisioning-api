@@ -303,7 +303,6 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `STRIPE_SECRET_KEY`, `RESELLER_INVOICE`, `RESELLER_INVOICE_SCHEDULE`, `RESELLER_INVOICE_DAYS_DUE` | off, on with a key, 07:00 UTC on the 1st, 14 | Resellers' monthly bill as a Stripe invoice ([resellers.md](resellers.md#automatic-invoices)) |
 | `STORE_BACKUP`, `STORE_BACKUP_SCHEDULE`, `STORE_BACKUP_KEEP_DAILY`, `STORE_BACKUP_KEEP_WEEKLY` | on, 09:00 UTC, 7, 4 | [store-backups.md](store-backups.md) |
 | `RESTORE_TEST`, `RESTORE_TEST_SCHEDULE` | on, 11:00 UTC | [store-backups.md](store-backups.md#restore-test-nightly) |
-| `PRICE_CHECK`, `SHOP_URL`, `PRICE_CHECK_PAGES`, `PRICE_CHECK_SCHEDULE` | on when `SHOP_URL` or `BRAND_DOMAIN` is set, `https://shop.<BRAND_DOMAIN>`, `/shop/`, 03:43 UTC | Nightly, the shop's FluentCart plan prices and the listed pages are checked against the price list (`src/pricing.ts`, served at `GET /pricing`); `JOB_ALERT_EMAILS` get every difference. `PRICE_CHECK=off` when your shop sells other prices |
 | `STORE_SMTP_PASSWORD`, `STORE_MAIL_FROM`, `STORE_SMTP_HOST`, `STORE_SMTP_PORT`, `STORE_SMTP_USER` | off, `no-reply@<BRAND_DOMAIN>`, `smtp.tosend.com`, `587`, `tosend` | [store-email.md](store-email.md) |
 | `TOSEND_ADMIN_KEY`, `TOSEND_API_URL` | off, `https://api.tosend.com` | Per-store keys and stores' own sending domains |
 | `RELEASES_S3_BUCKET` and `RELEASES_S3_*` | off | The plugin update channel; the other values default to `S3_*` |
