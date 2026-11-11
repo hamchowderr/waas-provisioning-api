@@ -92,6 +92,27 @@ foreach (['daily', 'weekly', 'monthly'] as $cadence) {
     $digest[$cadence]['enabled'] = 'no';
 }
 \FluentCart\App\Services\Email\StoreDigestService::saveSettings($digest);
+// The Shop page: the theme's product list with search and filters (cards with Sale and Sold out badges), in place of
+// the plain list FluentCart's onboarding puts there. The theme's page-shop template gives it the page's heading band.
+$shopPageId = (int) (new \FluentCart\Api\StoreSettings())->get('shop_page_id');
+$shopPattern = WP_Block_Patterns_Registry::get_instance()->get_registered('anypress/shop-products-filtered');
+$findProducts = function (array $blocks) use (&$findProducts): ?array {
+    foreach ($blocks as $block) {
+        if (($block['blockName'] ?? '') === 'fluent-cart/products') {
+            return $block;
+        }
+        if ($found = $findProducts($block['innerBlocks'] ?? [])) {
+            return $found;
+        }
+    }
+
+    return null;
+};
+$shopProducts = $shopPattern ? $findProducts(parse_blocks($shopPattern['content'])) : null;
+if ($shopPageId && $shopProducts) {
+    wp_update_post(['ID' => $shopPageId, 'post_content' => wp_slash(serialize_block($shopProducts))]);
+}
+
 // Settings → Checkout fields: a terms checkbox buyers must tick.
 $fields = \FluentCart\App\Services\Renderer\CheckoutFieldsSchema::getFieldsSettings();
 $fields['agree_terms'] = ['enabled' => 'yes', 'required' => 'yes', 'text' => 'I agree to the terms and conditions.'];
