@@ -984,6 +984,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/demos/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a demo as a draft
+         * @description Called by a demo page with what it read out of a WordPress Playground demo (built from a site type's blueprint, with AnyPress Client): pages, Site Editor styles, header and footer, menus and business details. No API key. Never code, plugins or users. Photos the visitor added are listed by file name in `images`, uploaded with the `uploads` links (one `PUT` each, at most `maxImageBytes`), and written in the content as `anypress-demo-image:<name>`. The answer's `id` goes to checkout, where the storefront creates the store with `demoDraftId`. Drafts are kept 14 days.
+         */
+        post: operations["createDemoDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/demos/drafts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a demo draft
+         * @description What checkout shows about a saved demo, and whether it can still be used. No API key. The content itself is not returned.
+         */
+        get: operations["getDemoDraft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/imports/upload": {
         parameters: {
             query?: never;
@@ -1873,6 +1913,8 @@ export interface components {
             size?: components["schemas"]["TenantSize"];
             /** @description Email the store's owner (`wordPressUserEmail`) once the store is ready, with a link to set their password. Sent in the storefront's brand. Off unless set to true, so you can tell your client yourself. */
             notifyOwner?: boolean;
+            /** @description A demo the customer built on Playground and saved before checkout (Demo drafts). The store is built as usual, then gets the demo's pages, styles, header and footer, menus and photos. The draft must match the store's site type (`ANYPRESS_TENANT_ROLES`), belong to this storefront's demo page or AnyPress's own, and is used once. Not with `uploadCustomSnapshot`. */
+            demoDraftId?: string;
             /** @description Move in an existing WordPress site instead of starting from a snapshot. The tenant is not built yet: it waits for its site, and the response carries an `importCode` for the AnyPress Export plugin and an `uploadUrl`. Once the archive (a zip or gzipped tar holding `database.sql` and `wp-content/`) is uploaded and the move started (see Site import), the store is built from it and keeps the site's own plugins and themes. Not with `snapshotId` or `groupName`. */
             uploadCustomSnapshot?: boolean;
             /** @description Accepted for compatibility; zip and gzipped tar are both read. Only with uploadCustomSnapshot. */
@@ -2497,6 +2539,87 @@ export interface components {
              */
             bytes?: number;
             store?: components["schemas"]["ImportStore"];
+        };
+        DemoDraftParams: {
+            /**
+             * @description The site type the demo was built as (the store template's roles.json). A store made from the draft must be this type.
+             * @enum {string}
+             */
+            siteType: "website" | "bookings" | "online-store" | "community" | "everything" | "store" | "highlevel";
+            /** @description The design kit the demo started from, e.g. `ridge` or `ridge/ironclad-roofing` */
+            kit?: string;
+            /**
+             * Format: uuid
+             * @description The storefront whose demo page made it (a seller's or reseller's). Only that storefront can use the draft.
+             */
+            productId?: string;
+            content: components["schemas"]["DemoContent"];
+            /** @description The photos' file names (lowercase, ending .jpg, .png, .webp or .gif) */
+            images?: string[];
+        };
+        DemoContent: {
+            pages: components["schemas"]["DemoPage"][];
+            /** @description Site Editor changes, as the site routes' `PATCH /styles` takes them */
+            styles?: {
+                settings?: {
+                    [key: string]: unknown;
+                };
+                styles?: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description The header as blocks */
+            header?: string;
+            /** @description The footer as blocks */
+            footer?: string;
+            /** @description Navigation menus, applied to the store's menu with the same title */
+            menus?: {
+                title: string;
+                content: string;
+            }[];
+            /** @description Business details for the store's assistants */
+            business?: {
+                what?: string;
+                who?: string;
+                area?: string;
+                hours?: string;
+                contact?: string;
+                voice?: string;
+                notes?: string;
+            };
+        };
+        DemoPage: {
+            title: string;
+            /** @description Matched to the store's page with the same slug, which it replaces; otherwise a new page */
+            slug: string;
+            /** @description The page as blocks */
+            content?: string;
+            /** @enum {string} */
+            status?: "publish" | "draft";
+        };
+        DemoDraftCreated: {
+            /** @description The draft's id, for checkout (`demoDraftId`) */
+            id?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            maxImageBytes?: number;
+            uploads?: {
+                name?: string;
+                /** @description Where to PUT the photo, for an hour */
+                uploadUrl?: string;
+            }[];
+        };
+        DemoDraft: {
+            id?: string;
+            siteType?: string;
+            kit?: string | null;
+            productId?: string | null;
+            /** @description The demo's page titles */
+            pages?: string[];
+            /** Format: date-time */
+            expiresAt?: string;
+            /** @description A store was already made from it */
+            used?: boolean;
         };
         ImportUploadResult: {
             /** @description Where to PUT the archive, in one request */
@@ -5836,6 +5959,88 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    createDemoDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DemoDraftParams"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoDraftCreated"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The demo is too large to save */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Too many demos are being saved right now */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getDemoDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoDraft"];
+                };
+            };
+            /** @description No such draft, or it has expired */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
             };
         };
     };

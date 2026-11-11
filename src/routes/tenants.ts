@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
+import { claimDemoDraft } from '../demodrafts.ts';
 import type { AppEnv, Deps } from '../app.ts';
 import { isUniqueViolation, withTransaction } from '../db.ts';
 import { badRequest, conflict, HttpError } from '../errors.ts';
@@ -29,6 +30,8 @@ export interface CreateTenantParams {
   tenantEmail?: string;
   tenantPassword?: string;
   uploadCustomSnapshot?: boolean;
+  /** A demo built on Playground (src/demodrafts.ts): the new store gets its pages, styles and photos once built. */
+  demoDraftId?: string;
   asZip?: boolean;
   wpOptions?: Record<string, string> | null;
   phpConstants?: Record<string, PhpConstant> | null;
@@ -193,6 +196,7 @@ export async function createTenant(
   if (body.asZip && !imported) throw badRequest('asZip can only be used with uploadCustomSnapshot');
   if (imported && (body.snapshotId || body.groupName)) throw badRequest('Send either a snapshotId or groupName, or uploadCustomSnapshot: true');
   if (imported && (!apiUrl || !provisioner)) throw badRequest('uploadCustomSnapshot is not available here');
+  if (imported && body.demoDraftId) throw badRequest('demoDraftId is for a new store, not one moved in');
 
   const id = randomUUID();
   // The storefront plugin never sends externalId; the tenant's id is a valid generated one.
@@ -283,6 +287,10 @@ export async function createTenant(
     await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_base, is_main) VALUES ($1, $2, true, $3)', [id, baseDomain, !customDomain]);
     if (customDomain) {
       await client.query('INSERT INTO tenant_domains (tenant_id, domain_name, is_main) VALUES ($1, $2, true)', [id, customDomain]);
+    }
+    if (body.demoDraftId) {
+      const roles = phpConstants.ANYPRESS_TENANT_ROLES?.value?.trim() || phpConstants.WAAS_TENANT_ROLES?.value?.trim();
+      await claimDemoDraft(client, body.demoDraftId, id, productId, roles || undefined);
     }
     // A site moved in is built once its archive is uploaded and the move started (src/imports.ts).
     if (imported) {

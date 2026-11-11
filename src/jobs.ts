@@ -9,6 +9,8 @@ import type { PgBoss } from 'pg-boss';
 import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import { storeJobWaiting, type JobData, type JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
+import type { SiteRequest, SiteResponse } from './sitekeys.ts';
+import { applyDemoDraft, purgeExpiredDemoDrafts } from './demodrafts.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure, reprintSource } from './imports.ts';
 import { failMailbox, pushMailbox } from './outreach.ts';
 import { failAutomations, pushAutomations } from './outreachautomation.ts';
@@ -27,6 +29,9 @@ import type { DashboardHost } from './vercel.ts';
  * `mailboxDomains` names each store's mailbox at the platform's sending domain (src/mailcount.ts); without
  * them stores send from the platform's address.
  */
+/** A request to a store's site routes (src/sitekeys.ts callSite), signed with that store's key. */
+export type SiteCall = (storeId: string, domain: string, request: SiteRequest) => Promise<SiteResponse>;
+
 export function createJobHandlers(
   pool: Pool,
   provisioner: Provisioner,
@@ -42,6 +47,8 @@ export function createJobHandlers(
   releases?: ReleaseStore,
   /** For a follower's copied version that takes over once built (promote_when_done, src/promote.ts). */
   boss?: PgBoss,
+  /** Calls a store's site routes, signed with its key: a new store made from a demo gets the demo's content. */
+  siteCall?: SiteCall,
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -93,7 +100,7 @@ export function createJobHandlers(
         await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
         return;
       case 'tenant.create':
-        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail(), boss);
+        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail(), boss, siteCall);
       case 'tenant.update': {
         const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
         if (!rows[0]) return;
@@ -269,6 +276,7 @@ export function createJobHandlers(
     async maintenance() {
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
       await purgeExpiredImports(pool, provisioner);
+      await purgeExpiredDemoDrafts(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
       await purgeExpiredSignIns(pool);
       await maintainDashboardDomains(pool, dashboardHost());
@@ -461,6 +469,7 @@ async function createTenant(
   mailbox?: string,
   ownerMail?: AuthMail,
   boss?: PgBoss,
+  siteCall?: SiteCall,
 ) {
   const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
   const tenant = rows[0];
@@ -493,6 +502,8 @@ async function createTenant(
   await recordMailSender(pool, provisioner, tenant.id, { mailbox });
   if (imported) await recordImportBuilt(pool, tenant.id, built?.check, built?.moved);
   if (imported) await pool.query('UPDATE tenants SET on_hold = true, date_held = COALESCE(date_held, now()) WHERE id = $1', [tenant.id]);
+  // Made from a demo someone built on Playground: the demo's pages, styles and photos (src/demodrafts.ts).
+  if (!imported && siteCall) await applyDemoDraft(pool, provisioner, tenant.id, (request) => siteCall(tenant.id, tenant.main_domain, request));
   await finishStore(pool, boss, tenant.id);
   // A site moved in is built: its upload is no longer needed.
   if (imported) await provisioner.deleteImport({ storeId: tenant.id });  if (data.notifyOwner && user && !imported) await notifyOwner(pool, provisioner, ownerMail, tenant, user);

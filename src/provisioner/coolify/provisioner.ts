@@ -225,6 +225,8 @@ const keys = {
   plugin: (slug: string, version: string) => `plugins/wporg/${slug}/${version}.zip`,
   /** A plugin zip a seller uploaded. */
   pluginUpload: (uploadId: string) => `plugins/uploads/${uploadId}.zip`,
+  /** A photo in a demo draft (src/demodrafts.ts). */
+  demoImage: (draftId: string, name: string) => `demos/${draftId}/${name}`,
   /** A version's plugin choices with signed links to their zips, for the agent's plugins step. */
   pluginChoices: (versionId: string) => `versions/${versionId}/plugin-choices.json`,
   backup: (id: string) => `backups/${id}.zip`,
@@ -653,6 +655,22 @@ export class CoolifyProvisioner implements Provisioner {
 
   async deletePluginUpload({ uploadId }: { uploadId: string }) {
     await this.s3.delete(keys.pluginUpload(uploadId));
+  }
+
+  async createDemoImageUpload({ draftId, name, expiresInSeconds }: { draftId: string; name: string; expiresInSeconds: number }) {
+    return this.s3.presign('PUT', keys.demoImage(draftId, name), expiresInSeconds);
+  }
+
+  async demoImageSize({ draftId, name }: { draftId: string; name: string }) {
+    return this.s3.head(keys.demoImage(draftId, name));
+  }
+
+  async demoImageUrl({ draftId, name, expiresInSeconds }: { draftId: string; name: string; expiresInSeconds: number }) {
+    return this.s3.presign('GET', keys.demoImage(draftId, name), expiresInSeconds);
+  }
+
+  async deleteDemoDraft({ draftId, names }: { draftId: string; names: string[] }) {
+    for (const name of names) await this.s3.delete(keys.demoImage(draftId, name));
   }
 
   async deleteVersion({ versionId }: { versionId: string }) {

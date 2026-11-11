@@ -73,6 +73,20 @@ export interface Provisioner {
 
   deletePluginUpload(input: { uploadId: string }): Promise<void>;
 
+  // Photos in a demo someone built on Playground (src/demodrafts.ts), kept until a store is made with the demo.
+
+  /** Where the demo page PUTs one photo of a draft, for `expiresInSeconds`. */
+  createDemoImageUpload(input: { draftId: string; name: string; expiresInSeconds: number }): Promise<string>;
+
+  /** The photo's size in bytes, or null when it was never uploaded. */
+  demoImageSize(input: { draftId: string; name: string }): Promise<number | null>;
+
+  /** A link the store's site routes copy the photo from, for `expiresInSeconds`. */
+  demoImageUrl(input: { draftId: string; name: string; expiresInSeconds: number }): Promise<string>;
+
+  /** Removes a draft's photos. */
+  deleteDemoDraft(input: { draftId: string; names: string[] }): Promise<void>;
+
   deleteVersion(input: { versionId: string }): Promise<void>;
 
   /**
