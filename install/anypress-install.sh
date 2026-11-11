@@ -379,12 +379,12 @@ cleanup_cron() {
 EOF
   chmod 644 /etc/cron.d/anypress-coolify-cleanup
   info "Runs daily at 04:23"
-  # Docker keeps the first copy of a tag such as wordpress:7.1-php8.3-apache, so new stores would start on an old
+  # Docker keeps the first copy of a tag such as wordpress:7.1-php8.3-fpm or nginx:1.30-alpine, so new stores would start on an old
   # WordPress patch. Fetch the store images again each night (running stores keep theirs until they restart) and
   # drop the old copies the new ones replace.
   cat > /etc/cron.d/anypress-image-pull <<'EOF'
-# AnyPress: refresh the WordPress and MariaDB images new stores start from (docs/self-hosting.md).
-41 3 * * * root docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|mariadb):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
+# AnyPress: refresh the WordPress, Nginx, MariaDB and Redis images new stores start from (docs/self-hosting.md).
+41 3 * * * root docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|nginx|mariadb|redis):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
 EOF
   chmod 644 /etc/cron.d/anypress-image-pull
   info "Store images refresh daily at 03:41"

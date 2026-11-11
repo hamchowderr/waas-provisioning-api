@@ -17,8 +17,8 @@ export const ENV_VALUE_LIMIT = 128 * 1024 - 64;
 
 const VERSION = /^\d+(\.\d+){0,2}$/;
 
-/** Per-store limits (docs/coolify.md). WordPress's CPU, memory and Apache workers come from the store's size (plans.ts). */
-const LIMITS = { db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 }, redis: { mem: '64m', cpus: 0.25 } };
+/** Per-store limits (docs/coolify.md). PHP's CPU, memory and workers come from the store's size (plans.ts). */
+const LIMITS = { web: { mem: '128m' }, db: { mem: '384m' }, agent: { mem: '256m', cpus: 0.5 }, redis: { mem: '64m', cpus: 0.25 } };
 
 /**
  * A store's object cache: its own Redis, holding what WordPress and its plugins look up again and again (options,
@@ -39,25 +39,24 @@ const redisService = () => ({
 });
 
 /**
- * Starts the official image as usual, after capping Apache's workers. Apache's default of 150 lets about 20
- * visitors at once push a store with every template plugin past its 512 MB, and the kernel then kills
- * workers mid-request. With 8 (about 30 MB each) a small store stays near 270 MB and later visitors wait in
- * Apache's queue; one CPU is busy from about 5 at once, so more workers than the size's CPUs can keep busy
- * would not serve pages any faster. conf-enabled loads after mods-enabled, so these values win. No `$`:
- * Coolify would interpolate it.
+ * PHP-FPM's workers, capped by the store's size. One worker serves one PHP request at a time; more visitors at once wait
+ * in Nginx's queue instead of running the store out of memory (each worker is about 45 MB with the template's plugins;
+ * docs/coolify.md). Workers start as visitors arrive and go again when the store is quiet, and each is replaced after
+ * 500 requests so a slow leak in a plugin can't grow for ever. zz- loads after the image's own zz-docker.conf.
  */
-const workersConf = (workers: number) =>
+const fpmConf = (workers: number) =>
   [
-    '<IfModule mpm_prefork_module>',
-    'StartServers 2',
-    'MinSpareServers 2',
-    'MaxSpareServers 4',
-    `MaxRequestWorkers ${workers}`,
-    'MaxConnectionsPerChild 500',
-    '</IfModule>',
+    '[www]',
+    'pm = dynamic',
+    `pm.max_children = ${workers}`,
+    'pm.start_servers = 2',
+    'pm.min_spare_servers = 1',
+    'pm.max_spare_servers = 3',
+    'pm.max_requests = 500',
+    // A little past max_execution_time (PHP_INI), for a request stuck outside PHP's own clock (a slow database call).
+    'request_terminate_timeout = 150s',
   ].join('\\n');
-/** Keeps the exact Apache and PHP versions out of response headers and error pages (Server, X-Powered-By). */
-const HIDE_VERSIONS_CONF = ['ServerTokens Prod', 'ServerSignature Off'].join('\\n');
+/** Keeps the exact PHP version out of response headers (X-Powered-By); Nginx's is hidden by server_tokens. */
 const HIDE_VERSIONS_INI = 'expose_php = Off';
 
 /**
@@ -78,45 +77,113 @@ const PHP_INI = [
 ].join('\\n');
 
 /**
- * Response headers WordPress leaves to the server: no MIME sniffing, a referrer policy, and HSTS (every store is
- * served over HTTPS by the proxy; no preload, since a custom domain can be removed again). No frame policy: AI apps
- * and the dashboard frame store pages. Browser caching for files that don't need PHP, which WordPress versions with
- * ?ver= (the handbook's "Static cache"); pages themselves are not touched. mod_headers is off in the image.
+ * Cloudflare's addresses (cloudflare.com/ips, 2026-11-11). Some stores' domains are proxied by Cloudflare, and a
+ * visitor's address then reaches the store behind one of these as well as Coolify's proxy.
  */
-const HEADERS_CONF = [
-  '<IfModule mod_headers.c>',
-  'Header always setifempty X-Content-Type-Options nosniff',
-  'Header always setifempty Referrer-Policy strict-origin-when-cross-origin',
-  'Header always setifempty Strict-Transport-Security max-age=31536000',
-  '</IfModule>',
-  '<IfModule mod_expires.c>',
-  'ExpiresActive On',
-  'ExpiresByType text/css "access plus 1 year"',
-  'ExpiresByType text/javascript "access plus 1 year"',
-  'ExpiresByType application/javascript "access plus 1 year"',
-  'ExpiresByType font/woff2 "access plus 1 year"',
-  'ExpiresByType font/woff "access plus 1 year"',
-  'ExpiresByType image/svg+xml "access plus 1 month"',
-  'ExpiresByType image/webp "access plus 1 month"',
-  'ExpiresByType image/avif "access plus 1 month"',
-  'ExpiresByType image/png "access plus 1 month"',
-  'ExpiresByType image/jpeg "access plus 1 month"',
-  'ExpiresByType image/gif "access plus 1 month"',
-  'ExpiresByType image/x-icon "access plus 1 month"',
-  '</IfModule>',
-].join('\\n');
+const CLOUDFLARE_IPS = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18',
+  '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+  '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22', '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32',
+  '2405:b500::/32', '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+];
 
-const wordpressEntrypoint = (workers: number) => [
+/** The path Nginx's health check asks for: an empty answer from Nginx itself, never from PHP. */
+const NGINX_HEALTH = '/.waas-nginx';
+
+/**
+ * The store's web server: Nginx in front of PHP-FPM, as WPManageNinja recommends for the Fluent plugins and as
+ * WordPress documents it (developer.wordpress.org/advanced-administration/server/web-server/nginx/).
+ *
+ * - Files that exist are served by Nginx; everything else goes to WordPress (its pretty permalinks).
+ * - A suspended store (the .waas-suspended flag, agent.php) answers 503 with its unavailable page before PHP runs.
+ * - No PHP runs from uploads, and nothing hidden (.htaccess, the agent's flags) is served. Nginx doesn't read
+ *   .htaccess, so the folders the template's plugins lock that way are locked here: Fluent Support's attachments and
+ *   LeadConnector's logs entirely, and Fluent Snippets' PHP files (its CSS and JS stay public).
+ * - The same response headers as before (no MIME sniffing, a referrer policy, HSTS), each only where WordPress didn't
+ *   set its own, and no frame policy: AI apps and the dashboard frame store pages. Files WordPress versions with ?ver=
+ *   are cached by browsers for a year (fonts, CSS, JS) or a month (images), the handbook's "Static cache".
+ * - The visitor's own address, from Coolify's proxy and Cloudflare's, so FluentAuth's login limits count each visitor.
+ * - PHP is looked up by name on each request, so Nginx starts before PHP does and follows it when it restarts.
+ *
+ * Written as base64: the file is full of `$`, which Coolify would interpolate.
+ */
+const NGINX_CONF = [
+  'server_tokens off;',
+  'client_max_body_size 64m;',
+  'gzip on;',
+  'gzip_vary on;',
+  'gzip_proxied any;',
+  'gzip_comp_level 5;',
+  'gzip_min_length 1024;',
+  'gzip_types text/plain text/css text/javascript application/javascript application/json application/xml application/rss+xml image/svg+xml font/ttf;',
+  ...['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', ...CLOUDFLARE_IPS].map((range) => `set_real_ip_from ${range};`),
+  'real_ip_header X-Forwarded-For;',
+  'real_ip_recursive on;',
+  'resolver 127.0.0.11 valid=10s ipv6=off;',
+  'map $upstream_http_x_content_type_options $waas_nosniff { "" nosniff; default ""; }',
+  'map $upstream_http_referrer_policy $waas_referrer { "" strict-origin-when-cross-origin; default ""; }',
+  'map $upstream_http_strict_transport_security $waas_hsts { "" "max-age=31536000"; default ""; }',
+  'server {',
+  '  listen 80 default_server;',
+  '  server_name _;',
+  '  root /var/www/html;',
+  '  index index.php index.html;',
+  // Nginx's own redirects (a folder without its slash, /wp-admin) keep the visitor's scheme and port.
+  '  absolute_redirect off;',
+  '  add_header X-Content-Type-Options $waas_nosniff always;',
+  '  add_header Referrer-Policy $waas_referrer always;',
+  '  add_header Strict-Transport-Security $waas_hsts always;',
+  '  set $waas_down "";',
+  '  if (-f $document_root/wp-content/.waas-suspended) { set $waas_down 1; }',
+  '  if ($uri = /wp-content/waas-unavailable.html) { set $waas_down ""; }',
+  `  if ($uri = ${NGINX_HEALTH}) { set $waas_down ""; }`,
+  '  if ($waas_down) { return 503; }',
+  '  error_page 503 /wp-content/waas-unavailable.html;',
+  '  location = /wp-content/waas-unavailable.html { expires -1; }',
+  `  location = ${NGINX_HEALTH} { access_log off; return 204; }`,
+  '  location = /favicon.ico { log_not_found off; access_log off; try_files $uri /index.php?$args; }',
+  '  location = /robots.txt { log_not_found off; access_log off; try_files $uri /index.php?$args; }',
+  '  location ~ /\\.(?!well-known/) { deny all; }',
+  '  location ^~ /wp-content/uploads/fluent-support/ { deny all; }',
+  '  location ^~ /wp-content/leadconnector-logs/ { deny all; }',
+  '  location ~* ^/wp-content/(fluent-snippet-storage|uploads/fluent-snippets)/.*\\.php$ { deny all; }',
+  '  location ~* ^/wp-content/uploads/.*\\.(php|phtml|phar|php[3-8])$ { deny all; }',
+  '  location ~* \\.(css|js|mjs|woff2?|ttf|otf|eot)$ { expires 1y; access_log off; try_files $uri /index.php?$args; }',
+  '  location ~* \\.(png|jpe?g|gif|webp|avif|svg|ico)$ { expires 1M; access_log off; try_files $uri /index.php?$args; }',
+  '  location / { try_files $uri $uri/ /index.php?$args; }',
+  '  location ~ \\.php$ {',
+  '    try_files $uri =404;',
+  '    include fastcgi_params;',
+  '    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;',
+  '    fastcgi_param HTTP_PROXY "";',
+  '    fastcgi_read_timeout 150s;',
+  '    fastcgi_buffers 16 16k;',
+  '    fastcgi_buffer_size 32k;',
+  '    set $waas_php php:9000;',
+  '    fastcgi_pass $waas_php;',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+const phpEntrypoint = (workers: number) => [
   'sh',
   '-c',
-  `printf '${workersConf(workers)}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && ` +
-    `printf '${HIDE_VERSIONS_CONF}\\n' > /etc/apache2/conf-enabled/waas-hide-versions.conf && ` +
+  `printf '${fpmConf(workers)}\\n' > /usr/local/etc/php-fpm.d/zz-waas.conf && ` +
     `printf '${HIDE_VERSIONS_INI}\\n' > /usr/local/etc/php/conf.d/waas-hide-versions.ini && ` +
     `printf '${PHP_INI}\\n' > /usr/local/etc/php/conf.d/waas-php.ini && ` +
-    `printf '${HEADERS_CONF}\\n' > /etc/apache2/conf-enabled/waas-headers.conf && ` +
-    'a2enmod -q headers expires > /dev/null && ' +
-    'exec docker-entrypoint.sh apache2-foreground',
+    // The official image sets WordPress up (wp-config, the files on a new volume) only for a php-fpm command.
+    'exec docker-entrypoint.sh php-fpm',
 ];
+
+const nginxEntrypoint = () => [
+  'sh',
+  '-c',
+  `echo ${Buffer.from(NGINX_CONF).toString('base64')} | base64 -d > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'`,
+];
+
+/** The Nginx release stores run: the stable line (nginx.org/en/download.html), following its patch releases. */
+export const NGINX_IMAGE = 'nginx:1.30-alpine';
 
 /**
  * Defines every phpConstant from WAAS_CONSTANTS_B64 (base64 JSON) in wp-config, through the
@@ -138,10 +205,10 @@ const CONFIG_EXTRA = [
   "defined('DISALLOW_FILE_EDIT') || define('DISALLOW_FILE_EDIT', true);",
 ].join(' ');
 
-/** The image a store or version site runs, e.g. wordpress:6.8-php8.3-apache. */
+/** The image a store or version site's PHP runs, e.g. wordpress:6.8-php8.3-fpm. */
 function wordpressImage(wordPressVersion: string, phpVersion: string): string {
   if (!VERSION.test(wordPressVersion) || !VERSION.test(phpVersion)) throw new Error(`Unsupported WordPress ${wordPressVersion} / PHP ${phpVersion}`);
-  return `wordpress:${wordPressVersion}-php${phpVersion}-apache`;
+  return `wordpress:${wordPressVersion}-php${phpVersion}-fpm`;
 }
 
 const WP = 'php -d memory_limit=192M /usr/local/bin/wp';
@@ -188,7 +255,7 @@ const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+
 /**
  * The labels that send https://<each of the store's domains>/.assistant to the website assistant's panel, so the
  * store's owner opens it on their own website. The proxy does it, not WordPress: a reply streams for a while, and
- * passing it through would hold one of the store's few Apache workers the whole time. The rule is longer than
+ * passing it through would hold one of the store's few PHP workers the whole time. The rule is longer than
  * Coolify's own Host(...) && PathPrefix(`/`), so Traefik tries it first; plain http is sent to https by Coolify's
  * router as for every other path. Each domain's certificate is the one the store already has.
  */
@@ -208,7 +275,7 @@ function assistantLabels(router: string, domains: string[]): string[] {
 }
 
 /**
- * The Docker Compose file of one store (or version site): WordPress, MariaDB and the WP-CLI agent. A store has a
+ * The Docker Compose file of one store (or version site): Nginx, WordPress on PHP-FPM, MariaDB and the WP-CLI agent. A store has a
  * size (plans.ts); a version site has none and runs as small, without quotas. A store also has `assistant`: its
  * router name and domains for the website assistant on its own domain (assistantLabels).
  */
@@ -244,17 +311,28 @@ export function renderCompose(input: {
   };
   const compose = {
     services: {
+      // The service Coolify gives the store's domains (urlsFor in provisioner.ts): its web server.
       wordpress: {
+        image: NGINX_IMAGE,
+        restart: 'unless-stopped',
+        entrypoint: nginxEntrypoint(),
+        volumes: ['wp:/var/www/html:ro'],
+        depends_on: ['php'],
+        mem_limit: LIMITS.web.mem,
+        cpus: size.cpus,
+        healthcheck: { test: ['CMD', 'wget', '-q', '-O', '/dev/null', `http://127.0.0.1${NGINX_HEALTH}`], ...HEALTH },
+        ...(input.assistant ? { labels: assistantLabels(input.assistant.router, input.assistant.domains) } : {}),
+      },
+      php: {
         image,
         restart: 'unless-stopped',
-        entrypoint: wordpressEntrypoint(size.workers),
+        entrypoint: phpEntrypoint(size.workers),
         environment: wpEnv,
         volumes: ['wp:/var/www/html'],
         depends_on: { db: { condition: 'service_healthy' }, ...(input.cache ? { redis: { condition: 'service_started' } } : {}) },
         mem_limit: size.mem,
         cpus: size.cpus,
-        healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"], ...HEALTH },
-        ...(input.assistant ? { labels: assistantLabels(input.assistant.router, input.assistant.domains) } : {}),
+        healthcheck: { test: ['CMD', 'php', '-r', "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"], ...HEALTH },
       },
       db: {
         image: 'mariadb:11',
@@ -282,7 +360,7 @@ export function renderCompose(input: {
         environment: { ...wpEnv, WAAS_AGENT_GZ: AGENT_GZ, WAAS_INIT_PASSWORD: '${WAAS_INIT_PASSWORD:-}' },
         command: ['php', '-r', AGENT_COMMAND],
         volumes: ['wp:/var/www/html'],
-        depends_on: ['wordpress'],
+        depends_on: ['php'],
         mem_limit: LIMITS.agent.mem,
         // Cron and the agent's operations (backups, restores) never get more than half a core, whatever a store's
         // plugins do: on 2026-10-24 one store's agent ran a core flat out on a shared server.

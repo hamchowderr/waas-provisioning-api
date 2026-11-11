@@ -146,10 +146,10 @@ One host cron job keeps Coolify's own database small: every command the API send
 
 Run the `docker exec …` part once by hand first: it prints `DELETE <n>`. It only removes the history of past task runs.
 
-A second job keeps the images new stores start from current. Docker keeps the first copy of a tag such as `wordpress:7.1-php8.3-apache`, so without it new stores start on an older WordPress patch and update themselves on their first run. Add:
+A second job keeps the images new stores start from current. Docker keeps the first copy of a tag such as `wordpress:7.1-php8.3-fpm` or `nginx:1.30-alpine`, so without it new stores start on an older WordPress patch and update themselves on their first run. Add:
 
 ```
-41 3 * * * docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|mariadb):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
+41 3 * * * docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|nginx|mariadb|redis):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
 ```
 
 Running stores keep their image until they restart, and `docker image prune` only removes copies no container uses.

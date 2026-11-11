@@ -231,8 +231,10 @@ function wantsCache(phpConstants: Record<string, { value: string }> | null | und
  * 21: server settings from WordPress's hosting handbook and the plugins' own docs: memory per size for its workers,
  *    PHP's memory, upload and OPcache limits, cron every minute, security and browser-caching headers,
  *    DISALLOW_FILE_EDIT, and the login safety mu-plugin (FluentAuth's XML-RPC and REST usernames off, once).
+ * 22: Nginx in front of PHP-FPM instead of Apache (renderCompose): the `wordpress` service, which keeps the store's
+ *    domains, is Nginx, and WordPress runs in a new `php` service with the size's workers.
  */
-export const STORE_SETUP = 21;
+export const STORE_SETUP = 22;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;

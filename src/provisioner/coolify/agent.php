@@ -1559,7 +1559,8 @@ add_action('admin_notices', function () {
     foreach ($notices as [$type, $text]) printf('<div class="notice notice-%s"><p>%s</p></div>', $type, esc_html($text));
 });
 PHP);
-    // Apache answers 503 before PHP runs, with the page as the error document (which itself is let through).
+    // The web server answers 503 before PHP runs, with the page as the error document (Nginx's own rule in compose.ts;
+    // this one is for a store still on Apache until its new setup).
     $block = "# BEGIN WaaS\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteCond %{DOCUMENT_ROOT}/wp-content/.waas-suspended -f\n"
         . "RewriteCond %{REQUEST_URI} !^/wp-content/waas-unavailable\\.html$\nRewriteRule ^ - [R=503,L]\n</IfModule>\n"
         . "ErrorDocument 503 /wp-content/waas-unavailable.html\n# END WaaS\n";
