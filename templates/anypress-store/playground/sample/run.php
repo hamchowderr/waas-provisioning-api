@@ -124,28 +124,43 @@ function anypress_sample_image(string $name, int $postId = 0, string $title = ''
 
 /**
  * Emails a step sent (logged by FluentSMTP's simulator) dated when that step happened, not when the demo was made.
- * Every email logged since the last call takes $when.
+ * Every email logged since the last call takes $when; with no $when, they keep the time they were sent.
  */
-function anypress_sample_mail_at(string $when): void
+function anypress_sample_mail_at(?string $when = null): void
 {
-    static $seen = null;
-    if (!class_exists('\FluentMail\App\Models\Logger')) {
+    static $seen = 0;
+    if (!class_exists('\\FluentMail\\App\\Models\\Logger')) {
         return;
     }
     $logger = new \FluentMail\App\Models\Logger();
-    $rows = $logger->get(['per_page' => 100, 'page' => 1]);
-    $rows = $rows['data'] ?? (is_array($rows) ? $rows : []);
-    foreach ($rows as $row) {
-        $row = (array) $row;
-        if ($seen !== null && (int) $row['id'] <= $seen) {
-            continue;
+    $newest = $seen;
+    for ($page = 1; $page < 50; $page++) {
+        $rows = $logger->get(['per_page' => 100, 'page' => $page]);
+        $rows = $rows['data'] ?? (is_array($rows) ? $rows : []);
+        $done = !$rows;
+        foreach ($rows as $row) {
+            $id = (int) ((array) $row)['id'];
+            if ($id <= $seen) {
+                $done = true;
+                break;
+            }
+            $newest = max($newest, $id);
+            if ($when !== null) {
+                $logger->updateLog(['created_at' => $when, 'updated_at' => $when], ['id' => $id]);
+            }
         }
-        $logger->updateLog(['created_at' => $when, 'updated_at' => $when], ['id' => (int) $row['id']]);
+        if ($done) {
+            break;
+        }
     }
-    foreach ($rows as $row) {
-        $seen = max((int) $seen, (int) ((array) $row)['id']);
-    }
+    $seen = $newest;
 }
+
+// Playground keeps the demo in SQLite, which has no JSON_UNQUOTE; FluentCart counts a customer's orders and spend with
+// it when an order is paid. SQLite's own json_extract already answers unquoted text, so the function passes it on.
+$sqlite = "<?php\nif (isset(\$GLOBALS['wpdb']->dbh) && \$GLOBALS['wpdb']->dbh instanceof WP_MySQL_On_SQLite) {\n    \$GLOBALS['wpdb']->dbh->get_connection()->get_pdo()->sqliteCreateFunction('json_unquote', static fn (\$v) => \$v, 1);\n}\n";
+file_put_contents(WPMU_PLUGIN_DIR . '/anypress-sample-sqlite.php', $sqlite);
+require WPMU_PLUGIN_DIR . '/anypress-sample-sqlite.php';
 
 update_option('blogname', $sample['business']['name']);
 update_option('blogdescription', $sample['business']['tagline']);
@@ -178,6 +193,7 @@ foreach ($parts as $part => $on) {
         // A part a plugin refuses is left out; the rest of the demo still has its content.
         echo "Sample $part: " . $e->getMessage() . "\n";
     }
+    anypress_sample_mail_at();
     if (getenv('ANYPRESS_SAMPLE_TIMING')) {
         printf("%s %.1fs\n", $part, microtime(true) - $started);
     }

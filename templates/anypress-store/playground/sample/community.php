@@ -1,8 +1,8 @@
 <?php
 /**
- * FluentCommunity: members with bios, two space groups with four spaces (one private), a fortnight of posts with
- * pinned posts, comments and likes, and a course with three sections and nine lessons that members are part-way
- * through. Each member posts, comments and learns as themselves, through the community's own routes.
+ * FluentCommunity: forty members with bios, two space groups with four spaces (one private), a fortnight of posts
+ * with a pinned welcome, comments and likes, and a course with three sections and nine lessons that members are
+ * part-way through, with their questions on the lessons answered. Each member posts, comments and learns as themselves, through the community's own routes.
  */
 $plan = $sample['community'];
 $people = $sample['people'];
@@ -20,13 +20,13 @@ $api = 'anypress_sample_api';
 
 $members = [];
 foreach ($plan['members'] as $who) {
-    $id = anypress_sample_user($people[$who]);
+    $id = anypress_sample_user(is_array($who) ? $sample['readers'][$who[1]] : $people[$who]);
     if ($id) {
         $user = \FluentCommunity\App\Models\User::find($id);
         if ($user) {
             $user->syncXProfile();
         }
-        $members[$who] = $id;
+        $members[] = $id;
     }
 }
 
@@ -134,4 +134,34 @@ foreach ($courseId ? $course['students'] : [] as [$member, $done]) {
     foreach (array_slice($lessons, 0, $done) as $lessonId) {
         $as($userId, static fn () => anypress_sample_api('PUT', "/fluent-community/v2/courses/$courseId/lessons/$lessonId/completion", ['state' => 'completed']));
     }
+}
+
+// Questions on the lessons from students who reached them, each answered by the course lead a few hours later.
+foreach ($courseId ? ($course['questions'] ?? []) : [] as $q => [$lesson, $member, $question, $answer]) {
+    $lessonId = $lessons[$lesson] ?? 0;
+    $userId = $memberIds[$member] ?? 0;
+    if (!$lessonId || !$userId) {
+        continue;
+    }
+    [, $asked] = $as($userId, static fn () => anypress_sample_api('POST', "/fluent-community/v2/feeds/$lessonId/comments", ['comment' => $question, 'parent_id' => 0]));
+    $askedId = (int) ($asked['comment']['id'] ?? 0);
+    if ($askedId) {
+        $api('POST', "/fluent-community/v2/feeds/$lessonId/comments", ['comment' => $answer, 'parent_id' => $askedId]);
+    }
+    $when = strtotime(anypress_sample_when(40 - $q * 5.5, 19));
+    foreach (\FluentCommunity\App\Models\Comment::where('post_id', $lessonId)->where(static fn ($w) => $w->where('id', $askedId)->orWhere('parent_id', $askedId))->orderBy('id')->get() as $c => $comment) {
+        $comment->created_at = $comment->updated_at = gmdate('Y-m-d H:i:s', $when + $c * 4 * HOUR_IN_SECONDS);
+        $comment->save();
+    }
+}
+
+// Members joined over the last seven months and were last seen over the past few weeks, not all just now.
+foreach ($memberIds as $k => $userId) {
+    $profile = \FluentCommunity\App\Models\XProfile::where('user_id', $userId)->first();
+    if ($profile) {
+        $profile->created_at = anypress_sample_when(210 - $k * 5, 9 + $k % 9);
+        $profile->last_activity = anypress_sample_when(($k * 7) % 26 + 0.3, 8 + $k % 12);
+        $profile->save();
+    }
+    \FluentCommunity\App\Models\SpaceUserPivot::where('user_id', $userId)->update(['created_at' => anypress_sample_when(205 - $k * 5, 10)]);
 }

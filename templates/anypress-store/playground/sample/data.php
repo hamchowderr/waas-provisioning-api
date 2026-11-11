@@ -52,6 +52,24 @@ return static function (string $type): array {
     $takesBookings = in_array($type, ['bookings', 'everything'], true);
     $hasCommunity = in_array($type, ['community', 'everything'], true);
 
+    // [person index, days ago, [[product index, quantity]], what happened]: six months of orders, busier lately, with
+    // regulars who come back, two refunds, and the newest still being shipped or waiting for payment.
+    $orders = [];
+    $buyers = [0, 1, 2, 3, 4, 5, 6, 0, 7, 8, 2, 9, 10, 4, 11, 12, 0, 13, 6, 14, 3, 18, 9, 19, 2, 22, 12, 0];
+    $last = count($buyers) - 1;
+    foreach ($buyers as $n => $who) {
+        $lines = [[($n * 5) % 13, $n % 6 === 0 ? 2 : 1]];
+        if ($n % 3 === 1) {
+            $lines[] = [($n * 7 + 3) % 13, 1];
+        }
+        $outcome = $n === $last ? 'pending' : ($n >= $last - 3 ? 'processing' : ($n >= $last - 7 ? 'shipped' : (in_array($n, [5, 17], true) ? 'refunded' : 'paid')));
+        $orders[] = [$who, round(178 * (1 - $n / $last) ** 1.35 + 0.4, 1), $lines, $outcome];
+    }
+    // The Everything demo has bookings and a community too; two orders in three keep its load time down.
+    if ($type === 'everything') {
+        $orders = array_values(array_filter($orders, static fn ($o, $n) => $n % 3 !== 1 || $n >= $last - 3, ARRAY_FILTER_USE_BOTH));
+    }
+
     $sample['shop'] = $sellsProducts ? [
         // FluentCart's sample catalogue: three hoodies in several colours, and ten pieces with one photo each.
         'products' => [['menswear', 3], ['clothing', 10]],
@@ -59,49 +77,62 @@ return static function (string $type): array {
         'subscription' => ['Sock club', 'A fresh pair of socks every month, in a colour we pick for you.', 1200],
         'gift' => ['Gift card', 'A gift card for anything in the shop, sent by email.', 5000],
         'coupons' => [['Welcome 10', 'WELCOME10', 'percentage', 10, 'First order'], ['Free shipping', 'FREESHIP', 'fixed', 8, 'Free shipping weekend']],
-        // [person index, days ago, [[product index, quantity]], what happened]
-        'orders' => [
-            [0, 29, [[0, 1]], 'paid'], [1, 27, [[3, 2]], 'paid'], [2, 25, [[5, 1], [3, 1]], 'paid'],
-            [3, 22, [[1, 1]], 'refunded'], [4, 20, [[7, 1]], 'paid'], [5, 17, [[2, 1]], 'shipped'],
-            [6, 15, [[4, 2]], 'paid'], [7, 12, [[10, 1]], 'paid'], [8, 10, [[6, 1]], 'shipped'],
-            [9, 8, [[8, 1], [5, 1]], 'paid'], [10, 6, [[11, 1]], 'paid'], [11, 4, [[9, 1]], 'shipped'],
-            [0, 3, [[5, 2]], 'processing'], [12, 2, [[0, 1]], 'processing'], [13, 1, [[3, 1]], 'pending'],
-        ],
+        'orders' => $orders,
         'subscribers' => [2, 6, 10],
     ] : [];
+
+    // [event index, person index, days ahead (negative: past), hour UTC, status]: three months of sessions, done,
+    // a few no-shows and cancellations, and the next two weeks filling up.
+    $bookings = [];
+    $clients = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1, 14, 18, 19, 22, 23, 2, 4, 6, 8, 3, 10, 12, 5, 9, 0, 7];
+    foreach ($clients as $b => $who) {
+        $status = $b % 11 === 7 ? 'no_show' : ($b % 9 === 4 ? 'cancelled' : 'completed');
+        if ($type !== 'everything' || $b % 2) {
+            $bookings[] = [[1, 2, 1, 0, 2, 1][$b % 6], $who, -(90 - $b * 3), 10 + ($b * 3) % 7, $status];
+        }
+    }
+    foreach ([5, 6, 7, 8, 9, 10, 11, 12, 13, 2, 4, 6] as $u => $who) {
+        $bookings[] = [[1, 2, 0, 1][$u % 4], $who, 1 + $u, 10 + ($u * 2) % 7, $u === 9 ? 'cancelled' : 'scheduled'];
+    }
 
     $sample['bookings'] = $takesBookings ? [
         'hosts' => [
             [20, 'Massage therapist with ten years of practice.'],
-            [21, 'Coach for small business owners.'],
+            [21, $type === 'everything' ? 'Designer. Runs the one-to-one design sessions.' : 'Coach for small business owners.'],
         ],
         'events' => [
             // [host, title, minutes, price in cents (0 free), location, description]
             [0, 'Free 15-minute consultation', 15, 0, 'phone', 'A short call to talk through what you need.'],
             [0, '60-minute massage', 60, 8000, 'in_person', 'Full-body massage, pressure to suit you.'],
-            [1, 'Coaching session', 45, 9500, 'online', 'One focused session on the thing that matters most this month.'],
+            $type === 'everything'
+                ? [1, 'One-to-one design session', 45, 6500, 'online', 'Bring your idea, leave with a plan: a logo, a product or a shop.']
+                : [1, 'Coaching session', 45, 9500, 'online', 'One focused session on the thing that matters most this month.'],
         ],
-        // [event index, person index, days ahead (negative: past), hour UTC, status]
-        'bookings' => [
-            [1, 2, -9, 14, 'completed'], [2, 3, -6, 16, 'completed'], [0, 4, -3, 10, 'completed'],
-            [1, 5, 1, 15, 'scheduled'], [0, 6, 1, 11, 'scheduled'], [2, 7, 2, 17, 'scheduled'],
-            [1, 8, 3, 14, 'scheduled'], [2, 9, 4, 16, 'scheduled'], [0, 10, 5, 10, 'scheduled'],
-            [1, 11, 6, 15, 'scheduled'], [2, 12, 2, 13, 'cancelled'], [1, 13, 8, 14, 'scheduled'],
-        ],
+        'bookings' => $bookings,
     ] : [];
 
+    // [person index, title, question, answers, state, days ago]
     $support = [
         'website' => [],
         'bookings' => [
-            [3, 'Can I move my Thursday booking?', 'Something came up at work. Is there a slot on Friday instead?', ['Of course. I have moved you to Friday at 3pm and sent a new confirmation.'], 'waiting'],
-            [5, 'Do you sell gift vouchers?', "I'd like to buy one for my mum's birthday.", ['Yes! You can buy them on the Services page, and they never expire.'], 'closed'],
-            [7, 'Parking question', 'Is there parking near the studio?', [], 'new'],
+            [13, 'Pregnancy massage?', 'Do you offer massage in the second trimester?', ['Yes, Elena is trained in pregnancy massage. Book the 60-minute massage and mention it in the notes.'], 'closed', 81],
+            [9, 'Missed my session', 'I completely forgot my appointment yesterday. So sorry! Can I rebook?', ['No problem, it happens. I have put you in for next Tuesday at 2pm.'], 'closed', 58],
+            [12, 'Receipt for my health plan', 'Could you send a receipt with your registration number for my claim?', ['Here it is, attached as a PDF. Hope the claim goes smoothly.'], 'closed', 34],
+            [5, 'Do you sell gift vouchers?', "I'd like to buy one for my mum's birthday.", ['Yes! You can buy them on the Services page, and they never expire.'], 'closed', 9],
+            [3, 'Can I move my Thursday booking?', 'Something came up at work. Is there a slot on Friday instead?', ['Of course. I have moved you to Friday at 3pm and sent a new confirmation.'], 'waiting', 2],
+            [18, 'Link for my coaching call', 'I cannot find the link for my coaching call tomorrow.', ['It is in your confirmation email, and I have just sent it again.'], 'waiting', 1],
+            [7, 'Parking question', 'Is there parking near the studio?', [], 'new', 0.4],
         ],
         'online-store' => [
-            [3, 'Wrong size, can I swap?', 'The hoodie is lovely but a bit small. Can I swap it for a large?', [], 'new'],
-            [4, 'Where is my order?', 'I ordered last week and have not had a shipping email yet.', ['Sorry for the wait! It left yesterday; your tracking number is in your account.'], 'waiting'],
-            [14, 'Wholesale enquiry', 'I run a small boutique in Phoenix. Do you sell wholesale?', [], 'new'],
-            [6, 'Thank you!', 'Just wanted to say the fleece is the best thing I own.', ['That made our day. Thank you for telling us!'], 'closed'],
+            [2, 'Kids sizes?', 'Do you make the hoodie in kids sizes?', ['Not yet, but it is on our list for spring!'], 'closed', 130],
+            [12, 'Has my return arrived?', 'I sent a return back ten days ago. Has it arrived?', ['It arrived this morning and the refund is on its way. It takes 3 to 5 days to show.'], 'closed', 96],
+            [10, 'New address for the Sock club', 'I moved last week. Can you update the address on my Sock club subscription?', ['Done. Your next pair goes to the new address.'], 'closed', 67],
+            [8, 'Damaged in the post', 'The box arrived crushed and the cap is bent.', ['So sorry! A new cap is on its way, no need to send the old one back.'], 'closed', 41],
+            [6, 'Thank you!', 'Just wanted to say the fleece is the best thing I own.', ['That made our day. Thank you for telling us!'], 'closed', 12],
+            [4, 'Where is my order?', 'I ordered last week and have not had a shipping email yet.', ['Sorry for the wait! It left yesterday; your tracking number is in your account.'], 'waiting', 3],
+            [14, 'Wholesale enquiry', 'I run a small boutique in Phoenix. Do you sell wholesale?', [], 'new', 1],
+            [3, 'Wrong size, can I swap?', 'The hoodie is lovely but a bit small. Can I swap it for a large?', [], 'new', 0.5],
+            [19, 'Discount code not working', 'WELCOME10 says it is not valid at checkout.', [], 'new', 0.2],
         ],
     ];
     $support['everything'] = $support['online-store'];
@@ -115,7 +146,8 @@ return static function (string $type): array {
     ] : [];
 
     $sample['community'] = $hasCommunity ? [
-        'members' => range(0, 11),
+        // Everyone around the business, then readers who joined from the newsletter: [person index] or ['r', reader index].
+        'members' => array_merge(range(0, 19), [22, 23], array_map(static fn ($r) => ['r', $r], range(0, 17))),
         'groups' => [
             ['Start here', [['Welcome', 'Say hello and tell us what brought you here.', 'public'], ['Introductions', 'Who you are and what you make.', 'public']]],
             ['Learn', [['Show your work', 'Share what you are making and get friendly feedback.', 'public'], ['Members only', 'Live Q&A notes, deals and the course chat.', 'private']]],
@@ -129,10 +161,10 @@ return static function (string $type): array {
             [4, 0, "Is anyone else joining the live Q&A on Thursday? I have a few questions saved up about pricing.", false],
             [5, 2, "Here is a before and after of my product photos, shot with a phone and a white card. Feedback very welcome!", false],
             [6, 3, "Notes from last month's Q&A are up. The big one: raise your prices before you think you're ready.", true],
-            [7, 1, "Hello from New Orleans! Musician and teacher. I want to sell my lesson plans.", false],
-            [8, 2, "Second studio opens next month. Terrified and excited.", false],
-            [9, 2, "Question: how do you all handle shipping costs for heavy items?", false],
-            [10, 1, "Chloe, baker in San Diego. Sourdough subscriptions are my next project.", false],
+            [8, 1, "Hello from New Orleans! Musician and teacher. I want to sell my lesson plans.", false],
+            [9, 2, "Second studio opens next month. Terrified and excited.", false],
+            [10, 2, "Question: how do you all handle shipping costs for heavy items?", false],
+            [11, 1, "Chloe, baker in San Diego. Sourdough subscriptions are my next project.", false],
             [4, 3, "Just finished lesson 4 of the course. The pricing worksheet alone was worth it.", false],
         ],
         'replies' => ['Great to see this here. Thanks for sharing!', 'This is really helpful, thank you.', 'Welcome! You will love it here.', 'Saving this one for later.', 'Love this. Keep going!'],
@@ -145,7 +177,17 @@ return static function (string $type): array {
                 ['Week 3: Your first sale', [['Tell ten people', 'Your first customers are already in your phone.'], ['Ask for a review', 'A short, friendly email a week after delivery.'], ['What to do next', 'Keep what worked, drop what did not, and plan month two.']]],
             ],
             // [member index, lessons done]
-            'students' => [[1, 9], [2, 5], [3, 3], [11, 4], [7, 0]],
+            'students' => [[1, 9], [2, 5], [3, 3], [11, 4], [7, 0], [12, 9], [14, 6], [18, 2], [20, 1], [23, 7]],
+            // Students' questions on a lesson they reached, each answered by the course lead: [lesson, member, question, answer]
+            'questions' => [
+                [0, 11, 'I make three different things. Do I really have to pick one?', 'For the first month, yes. Lead with the one people ask for most; the others can follow.'],
+                [2, 1, 'Should I count my time if I only make things in the evenings?', 'Yes, always. Price as if this were your job, even if it is not yet.'],
+                [2, 3, 'What margin do you add on top?', 'Most members start at 20 to 30 percent. It pays for the slow months and the next tool you need.'],
+                [3, 2, 'My window faces north. Is that enough light?', 'North light is perfect: soft and even. Shoot in the middle of the day.'],
+                [4, 14, 'How long should a product description be?', 'Long enough to answer what people ask at a market: size, materials, care. Usually 80 to 150 words.'],
+                [5, 12, 'Which payment method should a first shop take?', 'Cards first; they cover almost every buyer. Add others when customers ask.'],
+                [6, 23, 'Is it awkward to message friends about the shop?', 'A little, the first time. Keep it short, and ask who they know rather than whether they will buy.'],
+            ],
         ],
     ] : [];
 
