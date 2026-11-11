@@ -82,6 +82,24 @@ async function latest(pin) {
     };
     return { version, tag, asset, sha };
   }
+  if (kind === 'github-tag') {
+    // Tags only (for projects that tag without making GitHub releases), read with git itself.
+    const prefix = pin.tagPrefix ?? 'v';
+    const refs = execFileSync('git', ['ls-remote', '--tags', '--refs', `https://github.com/${name}`], { encoding: 'utf8' });
+    const version = refs
+      .split('\n')
+      .map((l) => l.split('refs/tags/')[1])
+      .filter((t) => t?.startsWith(prefix))
+      .map((t) => t.slice(prefix.length))
+      .filter((v) => (pin.prerelease ? /^\d+\.\d+\.\d+/ : /^\d+\.\d+\.\d+$/).test(v))
+      .sort(newer)
+      .at(-1);
+    if (!version) throw new Error(`${name} has no tag ${prefix}<version>`);
+    const none = async () => {
+      throw new Error(`${pin.name}: tags have no files; leave asset, sha and download out`);
+    };
+    return { version, tag: prefix + version, asset: none, sha: none };
+  }
   if (kind === 'wordpress-plugin') {
     const info = await http(`https://api.wordpress.org/plugins/info/1.2/?action=plugin_information&request%5Bslug%5D=${name}&request%5Bfields%5D%5Bsections%5D=0`);
     if (!info.version) throw new Error(`wordpress.org has no plugin ${name}`);

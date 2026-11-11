@@ -100,6 +100,9 @@ export interface Provisioner {
   /** Where the template archive is PUT, and where it can be read afterwards. */
   createBaseSnapshotUpload(input: { baseSnapshotId: string }): Promise<{ uploadUrl: string; uri: string }>;
 
+  /** Stores a template archive the API itself has (a template release, src/templatereleases.ts) as the base snapshot's file. */
+  putBaseSnapshot(input: { baseSnapshotId: string; body: Uint8Array }): Promise<void>;
+
   deleteBaseSnapshot(input: { baseSnapshotId: string }): Promise<void>;
 
   /** Records the archive a version was built from as a snapshot. */
