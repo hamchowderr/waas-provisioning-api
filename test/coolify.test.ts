@@ -1,5 +1,5 @@
 import { gunzipSync } from 'node:zlib';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { AGENT_COMMAND, AGENT_GZ, AGENT_SCRIPT, CRON_LIMIT, ENV_VALUE_LIMIT, renderCompose } from '../src/provisioner/coolify/compose.ts';
@@ -484,6 +484,33 @@ describe('CoolifyProvisioner', () => {
     expect(parse(store.compose).services.agent.environment.WAAS_AGENT_GZ).toBe(AGENT_GZ);
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('unchanged');
+  });
+
+  it('gives community and everything stores their own Redis, from their site types', async () => {
+    await p.createStore({ ...storeInput, phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'community' } } });
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small, cache`);
+    expect(parse(store.compose).services.redis).toBeDefined();
+
+    // Another site type takes it away again, with the new compose file and one restart.
+    const starts = store.started;
+    await p.updateStore({ storeId: STORE_ID, phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'online-store' } } });
+    expect(parse(store.compose).services.redis).toBeUndefined();
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small`);
+    expect(store.started).toBe(starts + 1);
+  });
+
+  it("reads an older store's site types from its variables to give it the object cache with the new setup", async () => {
+    await p.createStore({ ...storeInput, phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'everything' } } });
+    const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
+    store.description = `WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP - 1}, size small`;
+    const old = parse(store.compose);
+    delete old.services.redis;
+    store.compose = stringify(old);
+
+    expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'small' })).toBe('updated');
+    expect(parse(store.compose).services.redis).toBeDefined();
+    expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size small, cache`);
   });
 
   it('restarts the store as before when the agent swap fails', async () => {
@@ -1234,6 +1261,7 @@ describe('Service metadata', () => {
       { kind: 'version' as const, wordPressVersion: '6.8', phpVersion: '8.3' },
       { kind: 'store' as const, versionId: VERSION_ID, setup: STORE_SETUP, size: 'small' as const },
       { kind: 'store' as const, versionId: VERSION_ID, setup: 2, size: 'large' as const },
+      { kind: 'store' as const, versionId: VERSION_ID, setup: STORE_SETUP, size: 'medium' as const, cache: true },
     ]) {
       expect(parseMeta(formatMeta(meta))).toEqual(meta);
     }
@@ -1247,6 +1275,19 @@ describe('Service metadata', () => {
 });
 
 describe('Store compose file', () => {
+  it('gives a store with the object cache its own Redis, and tells WordPress and the agent where it is', () => {
+    const compose = parse(renderCompose({ wordPressVersion: '7.1', phpVersion: '8.3', size: 'small', cache: true }));
+    expect(compose.services.redis).toMatchObject({ image: 'redis:8-alpine', mem_limit: '64m', cpus: 0.25 });
+    expect(compose.services.redis.command).toEqual(expect.arrayContaining(['--maxmemory', '48mb', '--maxmemory-policy', 'allkeys-lru']));
+    for (const service of [compose.services.wordpress, compose.services.agent]) expect(service.environment.WAAS_REDIS_HOST).toBe('redis');
+    expect(compose.services.wordpress.depends_on.redis).toEqual({ condition: 'service_started' });
+
+    const plain = parse(renderCompose({ wordPressVersion: '7.1', phpVersion: '8.3', size: 'small' }));
+    expect(plain.services.redis).toBeUndefined();
+    expect(plain.services.wordpress.environment.WAAS_REDIS_HOST).toBeUndefined();
+    expect(plain.services.wordpress.depends_on.redis).toBeUndefined();
+  });
+
   it('gives each size its CPUs, memory, Apache workers and quotas, and the database and agent the same', () => {
     const want = {
       small: { cpus: 1, mem: '512m', workers: 8, storage: '5', emails: '5000' },

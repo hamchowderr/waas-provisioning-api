@@ -1550,6 +1550,40 @@ PHP);
     $current = preg_replace('/# BEGIN WaaS\n.*?# END WaaS\n/s', '', $current);
     file_put_contents($htaccess, $block . $current);
     install_cache();
+    install_object_cache();
+}
+
+/**
+ * The object cache: object-cache.php hands WordPress's cache to the store's own Redis (compose.ts, only community
+ * and everything stores have one, WAAS_REDIS_HOST) through the Redis Object Cache plugin's drop-in and its Predis
+ * client (the plugin's files come with the store template; the plugin itself stays off). Without WAAS_REDIS_HOST,
+ * or without the plugin's files, it returns at once and WordPress keeps its own cache. A drop-in another cache
+ * plugin put there is left alone. The cache is emptied on every install, so a restored, moved or reconfigured store
+ * never reads a value from before.
+ */
+function install_object_cache(): void
+{
+    $dropin = CONTENT . '/object-cache.php';
+    $current = is_file($dropin) ? (string) file_get_contents($dropin) : null;
+    if ($current !== null && strpos($current, 'WaaS object cache') === false) return;
+    file_put_contents($dropin, <<<'PHP'
+<?php
+/*
+ * WaaS object cache: WordPress's cache in the store's own Redis. Managed by the WaaS provisioner; edits are overwritten.
+ */
+defined('ABSPATH') || exit;
+$waas_redis = (string) getenv('WAAS_REDIS_HOST');
+$waas_redis_dropin = WP_CONTENT_DIR . '/plugins/redis-cache/includes/object-cache.php';
+if ($waas_redis === '' || !is_readable($waas_redis_dropin)) return;
+defined('WP_REDIS_HOST') || define('WP_REDIS_HOST', $waas_redis);
+defined('WP_REDIS_CLIENT') || define('WP_REDIS_CLIENT', 'predis');
+defined('WP_REDIS_PLUGIN_PATH') || define('WP_REDIS_PLUGIN_PATH', WP_CONTENT_DIR . '/plugins/redis-cache');
+// A Redis that is down never takes the store down (a second's timeout, the drop-in's own): WordPress then runs without the cache.
+defined('WP_REDIS_GRACEFUL') || define('WP_REDIS_GRACEFUL', true);
+defined('WP_REDIS_DISABLE_METRICS') || define('WP_REDIS_DISABLE_METRICS', true);
+require_once $waas_redis_dropin;
+PHP) !== false || fail('cannot write the object cache drop-in');
+    if ((string) getenv('WAAS_REDIS_HOST') !== '') wpMayFail('cache', 'flush');
 }
 
 /**

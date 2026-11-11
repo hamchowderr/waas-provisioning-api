@@ -384,6 +384,20 @@
       ]
     },
     {
+      "name": "redis-cache",
+      "source": "wordpress-plugin:redis-cache",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^redis-cache (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`redis-cache`\\)"
+        }
+      ]
+    },
+    {
       "name": "WordPress Playground (demo.anypress.site)",
       "source": "github-tag:WordPress/wordpress-playground",
       "places": [

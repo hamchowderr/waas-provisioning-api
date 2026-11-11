@@ -56,6 +56,11 @@ AnyPress Client then sets it up once with the site's own language as the default
 WordPress's translation files and a language switcher in the menus. It is pinned in [`build.sh`](build.sh)
 (`OFF_PLUGINS`) and isn't in `roles.json`.
 
+And [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) 3.0.0 (`redis-cache`), installed off. Community and
+everything sites get their own Redis, and WordPress keeps its object cache there through the plugin's drop-in and its
+Predis client, set up by the platform (the plugin itself stays off). Other site types keep WordPress's own cache. It
+is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in `roles.json`.
+
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
 change it in Appearance → Editor.

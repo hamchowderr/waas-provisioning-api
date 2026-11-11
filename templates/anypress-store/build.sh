@@ -34,10 +34,13 @@ wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf
 # store (always on since AnyPress Client 2.18.0; not in roles.json).
 # LeadConnector (HighLevel's own plugin: its forms, chat widget and calendars) is on only for the highlevel site type.
 # Polylang is on only while the owner has Languages on (AnyPress Client 2.22.0 or later; not in roles.json).
+# Redis Object Cache stays off: only its object-cache.php and Predis client are used, by the drop-in the provisioner's
+# agent installs, on stores that have their own Redis (community and everything; not in roles.json).
 OFF_PLUGINS="
 mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe9b
 leadconnector 4.0.7 03854dce113adde9f792a0b2bd397eb139902c16d08328bcd9c57d6c96a41dbc
 polylang 3.9.2 90d695711f642efd942d9b7ce25698827b7332a7b26222dfd21719c300e5f9cb
+redis-cache 3.0.0 7a03342d3defbe94cac8d0470b42dc1a1c34331b19c47205df20ceccd3c8f54a
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
