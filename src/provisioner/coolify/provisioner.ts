@@ -228,8 +228,11 @@ function wantsCache(phpConstants: Record<string, { value: string }> | null | und
  *    of redirecting it to the main domain, so AI apps can frame previews from the platform address.
  * 20: community and everything stores get their own Redis object cache (renderCompose's `cache`), and every store the
  *    agent's object-cache.php drop-in, which uses it where there is one (install_object_cache in agent.php).
+ * 21: server settings from WordPress's hosting handbook and the plugins' own docs: memory per size for its workers,
+ *    PHP's memory, upload and OPcache limits, cron every minute, security and browser-caching headers,
+ *    DISALLOW_FILE_EDIT, and the login safety mu-plugin (FluentAuth's XML-RPC and REST usernames off, once).
  */
-export const STORE_SETUP = 20;
+export const STORE_SETUP = 21;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;

@@ -59,12 +59,62 @@ const workersConf = (workers: number) =>
 /** Keeps the exact Apache and PHP versions out of response headers and error pages (Server, X-Powered-By). */
 const HIDE_VERSIONS_CONF = ['ServerTokens Prod', 'ServerSignature Off'].join('\\n');
 const HIDE_VERSIONS_INI = 'expose_php = Off';
+
+/**
+ * PHP's limits, raised from the official image's defaults (128 MB memory, 2 MB uploads, 8 MB posts, a 128 MB OPcache
+ * with 8 MB of strings for 4,000 files). WordPress's hosting handbook recommends 256 MB of memory
+ * (make.wordpress.org/hosting/handbook/server-environment/) and an OPcache sized for the site (…/performance/): with
+ * the template's plugins (about 12,000 PHP files) the default OPcache and its strings buffer were both full after
+ * about 20 kinds of page. Uploads stay within the plan's storage (the waas-plan mu-plugin).
+ */
+const PHP_INI = [
+  'memory_limit = 256M',
+  'upload_max_filesize = 64M',
+  'post_max_size = 64M',
+  'max_execution_time = 120',
+  'opcache.memory_consumption = 192',
+  'opcache.interned_strings_buffer = 32',
+  'opcache.max_accelerated_files = 20000',
+].join('\\n');
+
+/**
+ * Response headers WordPress leaves to the server: no MIME sniffing, a referrer policy, and HSTS (every store is
+ * served over HTTPS by the proxy; no preload, since a custom domain can be removed again). No frame policy: AI apps
+ * and the dashboard frame store pages. Browser caching for files that don't need PHP, which WordPress versions with
+ * ?ver= (the handbook's "Static cache"); pages themselves are not touched. mod_headers is off in the image.
+ */
+const HEADERS_CONF = [
+  '<IfModule mod_headers.c>',
+  'Header always setifempty X-Content-Type-Options nosniff',
+  'Header always setifempty Referrer-Policy strict-origin-when-cross-origin',
+  'Header always setifempty Strict-Transport-Security max-age=31536000',
+  '</IfModule>',
+  '<IfModule mod_expires.c>',
+  'ExpiresActive On',
+  'ExpiresByType text/css "access plus 1 year"',
+  'ExpiresByType text/javascript "access plus 1 year"',
+  'ExpiresByType application/javascript "access plus 1 year"',
+  'ExpiresByType font/woff2 "access plus 1 year"',
+  'ExpiresByType font/woff "access plus 1 year"',
+  'ExpiresByType image/svg+xml "access plus 1 month"',
+  'ExpiresByType image/webp "access plus 1 month"',
+  'ExpiresByType image/avif "access plus 1 month"',
+  'ExpiresByType image/png "access plus 1 month"',
+  'ExpiresByType image/jpeg "access plus 1 month"',
+  'ExpiresByType image/gif "access plus 1 month"',
+  'ExpiresByType image/x-icon "access plus 1 month"',
+  '</IfModule>',
+].join('\\n');
+
 const wordpressEntrypoint = (workers: number) => [
   'sh',
   '-c',
   `printf '${workersConf(workers)}\\n' > /etc/apache2/conf-enabled/waas-workers.conf && ` +
     `printf '${HIDE_VERSIONS_CONF}\\n' > /etc/apache2/conf-enabled/waas-hide-versions.conf && ` +
     `printf '${HIDE_VERSIONS_INI}\\n' > /usr/local/etc/php/conf.d/waas-hide-versions.ini && ` +
+    `printf '${PHP_INI}\\n' > /usr/local/etc/php/conf.d/waas-php.ini && ` +
+    `printf '${HEADERS_CONF}\\n' > /etc/apache2/conf-enabled/waas-headers.conf && ` +
+    'a2enmod -q headers expires > /dev/null && ' +
     'exec docker-entrypoint.sh apache2-foreground',
 ];
 
@@ -75,7 +125,7 @@ const wordpressEntrypoint = (workers: number) => [
  * from printing a warning.
  *
  * WP-cron does not run on page loads (DISABLE_WP_CRON): a quiet store would run its scheduled
- * jobs late or never. The agent container runs them every 5 minutes instead (AGENT_COMMAND).
+ * jobs late or never. The agent container runs them every minute instead (AGENT_COMMAND).
  * WP_CACHE loads the page cache drop-in the agent installs (install_cache in agent.php). A phpConstant of the same name comes first and wins.
  */
 const CONFIG_EXTRA = [
@@ -84,6 +134,8 @@ const CONFIG_EXTRA = [
   "array_values(json_decode(base64_decode((string) getenv('WAAS_CONSTANTS_B64')), true) ?: []));",
   "defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);",
   "defined('WP_CACHE') || define('WP_CACHE', true);",
+  // WordPress's hardening guide: no theme and plugin file editor in wp-admin (developer.wordpress.org/advanced-administration/security/hardening/).
+  "defined('DISALLOW_FILE_EDIT') || define('DISALLOW_FILE_EDIT', true);",
 ].join(' ');
 
 /** The image a store or version site runs, e.g. wordpress:6.8-php8.3-apache. */
@@ -99,7 +151,7 @@ export const CRON_LIMIT = 120;
 
 /**
  * The agent container's command: it writes the agent script, then runs the store's cron (WP-cron and Action
- * Scheduler) every 5 minutes, one run after another, while the store is configured and not suspended (CRON_FLAG
+ * Scheduler) every minute, as FluentCRM asks (fluentcrm.com/docs/fluentcrm-cron-job-basics-and-checklist/), one run after another, while the store is configured and not suspended (CRON_FLAG
  * and FLAG in agent.php). It used to be a Coolify scheduled task per store, but each run was a Coolify job and a
  * "task done" event, and on 2026-10-23 those jammed the queue that deploys and service starts wait in. The first
  * run waits a random 1 to 5 minutes, so stores that start together don't all run at once. Each command is stopped
@@ -114,7 +166,7 @@ export const AGENT_COMMAND = [
   "if (is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')) {",
   `passthru('timeout ${CRON_LIMIT} ${WP} action-scheduler run --quiet'); passthru('timeout ${CRON_LIMIT} ${WP} cron event run --due-now --quiet');`,
   '}',
-  'sleep(300);',
+  'sleep(60);',
   '}',
 ].join(' ');
 

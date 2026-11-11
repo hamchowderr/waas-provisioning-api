@@ -7,9 +7,9 @@
  * caps the phone receptionist's answered call minutes the same way (src/voice.ts).
  */
 export const SIZES = {
-  small: { cpus: 1, mem: '512m', workers: 8, storageGb: 5, emailsPerMonth: 5000, assistantMessagesPerMonth: 150, voiceMinutesPerMonth: 100 },
-  medium: { cpus: 2, mem: '512m', workers: 16, storageGb: 10, emailsPerMonth: 20000, assistantMessagesPerMonth: 300, voiceMinutesPerMonth: 250 },
-  large: { cpus: 4, mem: '768m', workers: 32, storageGb: 25, emailsPerMonth: 50000, assistantMessagesPerMonth: 600, voiceMinutesPerMonth: 500 },
+  small: { cpus: 1, mem: '768m', workers: 8, storageGb: 5, emailsPerMonth: 5000, assistantMessagesPerMonth: 150, voiceMinutesPerMonth: 100 },
+  medium: { cpus: 2, mem: '1280m', workers: 16, storageGb: 10, emailsPerMonth: 20000, assistantMessagesPerMonth: 300, voiceMinutesPerMonth: 250 },
+  large: { cpus: 4, mem: '2048m', workers: 32, storageGb: 25, emailsPerMonth: 50000, assistantMessagesPerMonth: 600, voiceMinutesPerMonth: 500 },
 } as const;
 
 export type Size = keyof typeof SIZES;

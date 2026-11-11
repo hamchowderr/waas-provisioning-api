@@ -329,7 +329,7 @@ describe('CoolifyProvisioner', () => {
     expect(store.urls).toEqual([{ name: 'wordpress', url: 'https://shop.example.com,https://t-0b8f6a0e.stores.example.com' }]);
     const compose = parse(store.compose);
     expect(compose.services.wordpress.image).toBe('wordpress:6.8-php8.3-apache');
-    expect(compose.services.wordpress.mem_limit).toBe('512m');
+    expect(compose.services.wordpress.mem_limit).toBe('768m');
     expect(compose.services.agent.image).toBe('wordpress:cli-php8.3');
     // Each of the store's domains sends /.assistant to the website assistant's panel.
     expect(compose.services.wordpress.labels).toContain(
@@ -378,7 +378,7 @@ describe('CoolifyProvisioner', () => {
     expect(parse(store.compose).services.agent.cpus).toBe(0.5);
     // Only once configured, never while suspended, and nothing Compose or Coolify would interpolate.
     expect(AGENT_COMMAND).toContain("is_file('/var/www/html/wp-content/.waas-cron') && !is_file('/var/www/html/wp-content/.waas-suspended')");
-    expect(AGENT_COMMAND).toContain('sleep(300);');
+    expect(AGENT_COMMAND).toContain('sleep(60);');
     expect(AGENT_COMMAND).not.toContain('$');
     expect(cloud.agentOps.map((o) => o.op)).toContain('configure');
   });
@@ -503,7 +503,8 @@ describe('CoolifyProvisioner', () => {
   it("reads an older store's site types from its variables to give it the object cache with the new setup", async () => {
     await p.createStore({ ...storeInput, phpConstants: { ANYPRESS_TENANT_ROLES: { value: 'everything' } } });
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
-    store.description = `WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP - 1}, size small`;
+    // Setup 19, the last before stores had an object cache.
+    store.description = `WaaS store, version ${VERSION_ID}, setup 19, size small`;
     const old = parse(store.compose);
     delete old.services.redis;
     store.compose = stringify(old);
@@ -598,7 +599,7 @@ describe('CoolifyProvisioner', () => {
     const store = [...cloud.services.values()].find((s) => s.name === `store-${STORE_ID}`)!;
     expect(store.description).toBe(`WaaS store, version ${VERSION_ID}, setup ${STORE_SETUP}, size medium`);
     const wordpress = parse(store.compose).services.wordpress;
-    expect(wordpress).toMatchObject({ cpus: 2, mem_limit: '512m' });
+    expect(wordpress).toMatchObject({ cpus: 2, mem_limit: '1280m' });
     expect(wordpress.environment).toMatchObject({ WAAS_STORAGE_GB: '10', WAAS_EMAILS_PER_MONTH: '20000' });
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'medium' })).toBe('unchanged');
   });
@@ -610,7 +611,7 @@ describe('CoolifyProvisioner', () => {
 
     expect(await p.ensureStoreSetup({ storeId: STORE_ID, size: 'large' })).toBe('updated');
     const wordpress = parse(store.compose).services.wordpress;
-    expect(wordpress).toMatchObject({ cpus: 4, mem_limit: '768m' });
+    expect(wordpress).toMatchObject({ cpus: 4, mem_limit: '2048m' });
     expect(parse(store.compose).services.db.cpus).toBe(4);
     expect(wordpress.entrypoint[2]).toContain('MaxRequestWorkers 32');
     expect(wordpress.environment).toMatchObject({ WAAS_STORAGE_GB: '25', WAAS_EMAILS_PER_MONTH: '50000' });
@@ -1290,9 +1291,9 @@ describe('Store compose file', () => {
 
   it('gives each size its CPUs, memory, Apache workers and quotas, and the database and agent the same', () => {
     const want = {
-      small: { cpus: 1, mem: '512m', workers: 8, storage: '5', emails: '5000' },
-      medium: { cpus: 2, mem: '512m', workers: 16, storage: '10', emails: '20000' },
-      large: { cpus: 4, mem: '768m', workers: 32, storage: '25', emails: '50000' },
+      small: { cpus: 1, mem: '768m', workers: 8, storage: '5', emails: '5000' },
+      medium: { cpus: 2, mem: '1280m', workers: 16, storage: '10', emails: '20000' },
+      large: { cpus: 4, mem: '2048m', workers: 32, storage: '25', emails: '50000' },
     };
     for (const [size, w] of Object.entries(want)) {
       const compose = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3', size: size as keyof typeof want }));
@@ -1310,7 +1311,7 @@ describe('Store compose file', () => {
 
   it('runs a version site as small, without quotas', () => {
     const compose = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' }));
-    expect(compose.services.wordpress).toMatchObject({ cpus: 1, mem_limit: '512m' });
+    expect(compose.services.wordpress).toMatchObject({ cpus: 1, mem_limit: '768m' });
     expect(compose.services.wordpress.environment).not.toHaveProperty('WAAS_STORAGE_GB');
     expect(compose.services.agent.environment).not.toHaveProperty('WAAS_EMAILS_PER_MONTH');
   });
@@ -1339,8 +1340,25 @@ describe('Store compose file', () => {
 
   it('turns on the page cache drop-in, after the phpConstants so a constant of that name wins', () => {
     const extra: string = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA;
-    expect(extra.endsWith("defined('WP_CACHE') || define('WP_CACHE', true);")).toBe(true);
+    expect(extra.indexOf("defined('WP_CACHE') || define('WP_CACHE', true);")).toBeGreaterThan(extra.indexOf('WAAS_CONSTANTS_B64'));
     expect(extra).not.toContain('$');
+  });
+
+  it('turns off the theme and plugin file editor, after the phpConstants', () => {
+    const extra: string = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.environment.WORDPRESS_CONFIG_EXTRA;
+    expect(extra.endsWith("defined('DISALLOW_FILE_EDIT') || define('DISALLOW_FILE_EDIT', true);")).toBe(true);
+  });
+
+  it("raises PHP's limits and OPcache, and adds security and browser-caching headers", () => {
+    const [, , script] = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.wordpress.entrypoint;
+    for (const line of ['memory_limit = 256M', 'upload_max_filesize = 64M', 'post_max_size = 64M', 'opcache.memory_consumption = 192', 'opcache.interned_strings_buffer = 32', 'opcache.max_accelerated_files = 20000']) {
+      expect(script).toContain(line);
+    }
+    expect(script).toContain('X-Content-Type-Options nosniff');
+    expect(script).toContain('Strict-Transport-Security max-age=31536000');
+    expect(script).toContain('ExpiresByType text/css');
+    expect(script).toContain('a2enmod -q headers expires');
+    expect(script).not.toContain('$');
   });
 
   it('caps Apache at 8 workers so a burst of visitors queues instead of running the store out of memory', () => {

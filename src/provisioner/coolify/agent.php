@@ -1344,6 +1344,24 @@ add_action('init', function () {
     update_option('anypress_owner_details', ['key' => $key, 'set' => $want], false);
 }, PHP_INT_MAX);
 PHP);
+    file_put_contents(CONTENT . '/mu-plugins/waas-auth.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: WaaS store login safety
+ * Description: Turns on two of FluentAuth's own recommended settings once: XML-RPC off and usernames kept out of the REST API. Managed by the WaaS provisioner; edits are overwritten.
+ */
+// Once per store, and only while the owner hasn't chosen otherwise: FluentAuth's settings page changes them later.
+add_action('init', function () {
+    if (get_option('waas_auth_defaults') || !class_exists('\FluentAuth\App\Helpers\Helper')) return;
+    $settings = get_option('__fls_auth_settings');
+    $settings = is_array($settings) ? $settings : \FluentAuth\App\Helpers\Helper::getAuthSettings();
+    foreach (['disable_xmlrpc', 'disable_users_rest'] as $key) {
+        if (($settings[$key] ?? 'no') !== 'yes') $settings[$key] = 'yes';
+    }
+    update_option('__fls_auth_settings', $settings, false);
+    update_option('waas_auth_defaults', 1, false);
+});
+PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
 <?php
 /*

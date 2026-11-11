@@ -56,7 +56,7 @@ This is how [AnyPress](https://anypress.io) runs: one server with [Coolify](http
 | A second bucket (optional) | Signed plugin releases for the update channel | R2, bucket `waas-releases` |
 | An SMTP relay (optional) | Store email (receipts, password resets) | [toSend](https://tosend.com) |
 
-Stores come in three sizes, set per store (`size` on `POST`/`PUT /v1/tenants`, or per plan on the storefront): **small** (1 CPU, 512 MB, 5 GB storage, 5,000 emails a month), **medium** (2 CPU, 512 MB, 10 GB, 20,000) and **large** (4 CPU, 768 MB, 25 GB, 50,000). Every size also has a 384 MB MariaDB and a 256 MB agent container. Details in [coolify.md](coolify.md).
+Stores come in three sizes, set per store (`size` on `POST`/`PUT /v1/tenants`, or per plan on the storefront): **small** (1 CPU, 768 MB, 5 GB storage, 5,000 emails a month), **medium** (2 CPU, 1280 MB, 10 GB, 20,000) and **large** (4 CPU, 2048 MB, 25 GB, 50,000). Every size also has a 384 MB MariaDB and a 256 MB agent container. Details in [coolify.md](coolify.md).
 
 Measured sizes (Docker stats, real images and plugins): a small store uses about **273 MB** warm and peaks near 414 MB under load. Limits cap a busy store; they are not reservations. Keeping room for Coolify and the platform itself, a 32 GB server holds roughly **55 to 68** normal stores. Disk is not the bound: about 150 MB per store plus its uploads and database.
 

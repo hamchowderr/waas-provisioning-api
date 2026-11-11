@@ -3121,9 +3121,9 @@ export interface components {
         };
         /**
          * @description The tenant's size: what its WordPress may use and its plan's quotas. Storage counts wp-content and the database; uploads past it are refused. Email counts what the store sends in a calendar month (UTC); past it the store sends none until the next month.
-         *     small: 1 CPU, 512 MB, 5 GB storage, 5,000 emails a month
-         *     medium: 2 CPUs, 512 MB, 10 GB storage, 20,000 emails a month
-         *     large: 4 CPUs, 768 MB, 25 GB storage, 50,000 emails a month
+         *     small: 1 CPU, 768 MB, 5 GB storage, 5,000 emails a month
+         *     medium: 2 CPUs, 1280 MB, 10 GB storage, 20,000 emails a month
+         *     large: 4 CPUs, 2048 MB, 25 GB storage, 50,000 emails a month
          *     Optional when creating a tenant: small when omitted.
          * @example small
          * @enum {string}
