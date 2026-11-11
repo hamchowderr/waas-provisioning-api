@@ -48,7 +48,8 @@ And WordPress's [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) 0.7.1 
 AnyPress Client on every site type (it is always on, with no switch). AI apps that speak MCP can work on the site's
 pages and design at `/wp-json/mcp/anypress`, signed in as a WordPress user with an application password; Dashboard →
 Your plan → AI apps (MCP) shows the address. It is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in
-`roles.json`.
+`roles.json`. FluentHub carries its own copy of the MCP Adapter; `mu-plugins/anypress-store.php` keeps that copy off
+(`FLUENT_TOOLKIT_DISABLE_BUNDLED_MCP_ADAPTER`), so the standalone plugin is the only one and a new store doesn't load both.
 
 And [Polylang](https://wordpress.org/plugins/polylang/) 3.9.2 (`polylang`), installed off. It is on only while the site's
 owner has **Languages** on (Dashboard → Your plan → Languages, the AnyPress dashboard, or the connector's `site_languages`):

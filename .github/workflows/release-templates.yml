@@ -138,6 +138,15 @@ jobs:
         run: |
           templates/release.sh "$PWD/waas-plugins" "$HOST_VERSION" "$VERSION" out
           cat checks/*.txt > out/checks.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The built zip as a new store gets it: the store's own compose file in Docker, restored by the agent, every
+      # site type loading over HTTP (templates/anypress-store/restore-check.sh). Playground can't show this.
+      - name: Restore check
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          templates/anypress-store/restore-check.sh out/anypress-store.zip | sed 's/^/restore /' >> out/checks.txt
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,7 +157,7 @@ jobs:
             echo "- anypress-store.zip: AnyPress Client from waas-plugins $(git -C waas-plugins describe --tags --always), $(unzip -p out/anypress-store.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
             echo "- seller-storefront.zip: $(unzip -p out/seller-storefront.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
             echo
-            echo "Checked on WordPress Playground:"
+            echo "Checked on WordPress Playground, and restored by the agent in the store's own containers:"
             sed 's/^/- /' out/checks.txt
           } > notes.md
           gh release create "templates-v$VERSION" out/anypress-store.zip out/seller-storefront.zip out/version.txt out/SHA256SUMS out/checks.txt \
