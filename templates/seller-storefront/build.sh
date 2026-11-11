@@ -30,8 +30,8 @@ VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
 "
 # AnyPress Blocks and the AnyPress theme: the same releases the store template pins (its build.sh and theme.sh).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.2}
-BLOCKS_SHA256=${BLOCKS_SHA256:-869ee824b460d0867f217628fe06ef4149c6786241c67508887d718c4f2e7f0b}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.3}
+BLOCKS_SHA256=${BLOCKS_SHA256:-b5c77f49f37908bc545b79db247860330bdc40b5e2211a94ad66d7d2c22915e1}
 THEME=anypress
 # shellcheck source=../anypress-store/theme.sh
 . "$(dirname "$0")/../anypress-store/theme.sh"
