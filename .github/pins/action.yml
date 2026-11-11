@@ -1,0 +1,19 @@
+name: AnyPress pins
+description: Checks (or moves) the pinned versions listed in .github/pins.json against their newest releases.
+inputs:
+  mode:
+    description: check (fails when a pin is behind an AnyPress release) or update (moves every pin)
+    default: check
+outputs:
+  summary:
+    description: The pins that were behind, one per line
+    value: ${{ steps.pins.outputs.summary }}
+runs:
+  using: composite
+  steps:
+    - id: pins
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MODE: ${{ inputs.mode }}
+      run: node "$GITHUB_ACTION_PATH/pins.mjs" "$MODE"

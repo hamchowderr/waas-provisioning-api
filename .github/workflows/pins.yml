@@ -1,0 +1,97 @@
+# Keeps every pinned version on the newest release (.github/pins/README.md). Every AnyPress repository calls this
+# workflow hourly with its own .github/pins.json: it moves the pins, opens a pull request, runs CI on it and merges it
+# once CI passes. CI checks the pins with the action in .github/pins (mode check).
+name: Update pins
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ci-workflow:
+        description: The workflow files that run this repository's CI (space-separated), started on the pull request's branch
+        type: string
+        default: ci.yml
+      merge:
+        description: Merge the pull request once CI passes
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  pins:
+    name: Update pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: pins-update
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CI_WORKFLOW: ${{ inputs.ci-workflow || 'ci.yml' }}
+      MERGE: ${{ inputs.merge == false && 'false' || 'true' }}
+      BRANCH: chore/update-pins
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Move the pins
+        id: update
+        uses: hamchowderr/waas-provisioning-api/.github/pins@main
+        with:
+          mode: update
+      - name: Open the pull request, run CI on it and merge it
+        env:
+          SUMMARY: ${{ steps.update.outputs.summary }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Every pin is on the newest release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add -A
+          git commit -q -m "Move pins to the newest releases" -m "$SUMMARY"
+          git push --force origin "$BRANCH"
+          {
+            echo "Moves these pins to their newest release:"
+            echo
+            echo "$SUMMARY"
+            echo
+            echo "Opened by the **Update pins** workflow (\`.github/pins.json\`). It starts CI on this branch and merges once CI passes."
+          } > body.md
+          if gh pr view "$BRANCH" --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$BRANCH" --title "Move pins to the newest releases" --body-file body.md
+          else
+            gh pr create --head "$BRANCH" --title "Move pins to the newest releases" --body-file body.md
+          fi
+          # A pull request opened with the workflow's token starts no CI by itself; a workflow_dispatch run does, and its
+          # checks count for the branch's newest commit.
+          sha=$(git rev-parse HEAD)
+          for workflow in $CI_WORKFLOW; do
+            gh workflow run "$workflow" --ref "$BRANCH"
+          done
+          for workflow in $CI_WORKFLOW; do
+            run=""
+            for _ in $(seq 1 30); do
+              run=$(gh run list --workflow "$workflow" --branch "$BRANCH" --event workflow_dispatch --commit "$sha" -L 1 --json databaseId -q '.[0].databaseId')
+              [ -n "$run" ] && break
+              sleep 10
+            done
+            [ -n "$run" ] || { echo "::error::$workflow did not start on $BRANCH"; exit 1; }
+            if ! gh run watch "$run" --exit-status --interval 30 >/dev/null; then
+              echo "::error::$workflow failed on the pin update: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+              exit 1
+            fi
+          done
+          if [ "$MERGE" = true ]; then
+            gh pr merge "$BRANCH" --squash --delete-branch
+            echo "Merged: $SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,316 @@
+{
+  "$comment": "Every pinned version in this repository. The Update pins workflow moves them to the newest release; .github/pins/README.md explains the format.",
+  "pins": [
+    {
+      "name": "AnyPress theme",
+      "source": "github:hamchowderr/anypress-theme",
+      "asset": "anypress.zip",
+      "places": [
+        {
+          "file": "templates/anypress-store/theme.sh",
+          "match": "THEME_VERSION=\\$\\{THEME_VERSION:-(?<version>[^}]+)\\}\\nTHEME_SHA256=\\$\\{THEME_SHA256:-(?<sha>[0-9a-f]{64})\\}"
+        }
+      ]
+    },
+    {
+      "name": "AnyPress Blocks",
+      "source": "github:hamchowderr/anypress-blocks",
+      "asset": "anypress-blocks.zip",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "BLOCKS_VERSION=\\$\\{BLOCKS_VERSION:-(?<version>[^}]+)\\}\\nBLOCKS_SHA256=\\$\\{BLOCKS_SHA256:-(?<sha>[0-9a-f]{64})\\}"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "BLOCKS_VERSION=\\$\\{BLOCKS_VERSION:-(?<version>[^}]+)\\}\\nBLOCKS_SHA256=\\$\\{BLOCKS_SHA256:-(?<sha>[0-9a-f]{64})\\}"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "Phone Bar, Location Finder and Age Check blocks \\((?<version>[0-9][^)]*)\\)"
+        }
+      ]
+    },
+    {
+      "name": "WordPress",
+      "source": "wordpress-core:wordpress",
+      "line": "7.1",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "WP_VERSION=\\$\\{WP_VERSION:-(?<version>[^}]+)\\}\\nWP_SHA256=\\$\\{WP_SHA256:-(?<sha>[0-9a-f]{64})\\}"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "WP_VERSION=\\$\\{WP_VERSION:-(?<version>[^}]+)\\}\\nWP_SHA256=\\$\\{WP_SHA256:-(?<sha>[0-9a-f]{64})\\}"
+        },
+        {
+          "file": "templates/starter-fluentcart/build.sh",
+          "match": "WP_VERSION=\\$\\{WP_VERSION:-(?<version>[^}]+)\\}\\nWP_SHA256=\\$\\{WP_SHA256:-(?<sha>[0-9a-f]{64})\\}"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "\\| WordPress \\| (?<version>[0-9.]+) for the build"
+        }
+      ]
+    },
+    {
+      "name": "fluent-security",
+      "source": "wordpress-plugin:fluent-security",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-security (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "^fluent\\-security (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-security` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-smtp",
+      "source": "wordpress-plugin:fluent-smtp",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-smtp (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-smtp` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-crm",
+      "source": "wordpress-plugin:fluent-crm",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-crm (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "^fluent\\-crm (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-crm` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluentform",
+      "source": "wordpress-plugin:fluentform",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluentform (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "^fluentform (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluentform` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-booking",
+      "source": "wordpress-plugin:fluent-booking",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-booking (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-booking` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-cart",
+      "source": "wordpress-plugin:fluent-cart",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-cart (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "^fluent\\-cart (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-cart` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-community",
+      "source": "wordpress-plugin:fluent-community",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-community (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-community` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-player",
+      "source": "wordpress-plugin:fluent-player",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-player (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-player` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-affiliate",
+      "source": "wordpress-plugin:fluent-affiliate",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-affiliate (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-affiliate` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "fluent-support",
+      "source": "wordpress-plugin:fluent-support",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^fluent\\-support (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `fluent-support` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "easy-code-manager",
+      "source": "wordpress-plugin:easy-code-manager",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^easy\\-code\\-manager (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `easy-code-manager` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "seo-by-rank-math",
+      "source": "wordpress-plugin:seo-by-rank-math",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^seo\\-by\\-rank\\-math (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `seo-by-rank-math` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "automatorwp",
+      "source": "wordpress-plugin:automatorwp",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^automatorwp (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `automatorwp` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "wp-fusion-lite",
+      "source": "wordpress-plugin:wp-fusion-lite",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^wp\\-fusion\\-lite (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/seller-storefront/build.sh",
+          "match": "^wp\\-fusion\\-lite (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "^\\| [^|]+ \\| `wp-fusion-lite` \\| (?<version>[^ |]+) \\|$"
+        }
+      ]
+    },
+    {
+      "name": "mcp-adapter",
+      "source": "wordpress-plugin:mcp-adapter",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^mcp\\-adapter (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`mcp-adapter`\\)"
+        }
+      ]
+    },
+    {
+      "name": "leadconnector",
+      "source": "wordpress-plugin:leadconnector",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^leadconnector (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`leadconnector`\\)"
+        }
+      ]
+    },
+    {
+      "name": "polylang",
+      "source": "wordpress-plugin:polylang",
+      "places": [
+        {
+          "file": "templates/anypress-store/build.sh",
+          "match": "^polylang (?<version>\\S+) (?<sha>[0-9a-f]{64})$"
+        },
+        {
+          "file": "templates/anypress-store/README.md",
+          "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`polylang`\\)"
+        }
+      ]
+    }
+  ]
+}
