@@ -1,0 +1,335 @@
+{
+	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
+	"meta": {
+		"title": "AnyPress: Community & courses",
+		"author": "hamchowderr",
+		"description": "A new AnyPress community & courses site, as a store of this type starts: the AnyPress theme, its plugins and settings. Runs in your browser; nothing is saved.",
+		"categories": [
+			"AnyPress"
+		]
+	},
+	"landingPage": "/",
+	"preferredVersions": {
+		"php": "8.3",
+		"wp": "latest"
+	},
+	"features": {
+		"networking": true
+	},
+	"steps": [
+		{
+			"step": "login"
+		},
+		{
+			"step": "installTheme",
+			"themeData": {
+				"resource": "url",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-theme-v0.20.0.zip",
+				"caption": "Installing the AnyPress theme"
+			},
+			"options": {
+				"activate": true,
+				"targetFolderName": "anypress"
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-security.3.1.1.zip",
+				"caption": "Installing fluent-security"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-smtp.2.4.5.zip",
+				"caption": "Installing fluent-smtp"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-crm.3.3.1.zip",
+				"caption": "Installing fluent-crm"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluentform.6.2.17.zip",
+				"caption": "Installing fluentform"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-booking.2.6.0.zip",
+				"caption": "Installing fluent-booking"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-cart.2.3.1.zip",
+				"caption": "Installing fluent-cart"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-community.2.13.0.zip",
+				"caption": "Installing fluent-community"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-player.1.4.0.zip",
+				"caption": "Installing fluent-player"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-affiliate.1.7.0.zip",
+				"caption": "Installing fluent-affiliate"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/fluent-support.2.5.0.zip",
+				"caption": "Installing fluent-support"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/easy-code-manager.10.58.zip",
+				"caption": "Installing easy-code-manager"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/seo-by-rank-math.1.0.282.zip",
+				"caption": "Installing seo-by-rank-math"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/automatorwp.6.0.9.zip",
+				"caption": "Installing automatorwp"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/wp-fusion-lite.3.48.0.zip",
+				"caption": "Installing wp-fusion-lite"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://downloads.wordpress.org/plugin/mcp-adapter.0.7.1.zip",
+				"caption": "Installing mcp-adapter"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/plugins/fluent-toolkit-2.1.4.zip",
+				"caption": "Installing fluent-toolkit"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-blocks-v0.4.2.zip",
+				"caption": "Installing AnyPress Blocks"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-client.zip",
+				"caption": "Installing AnyPress Client"
+			},
+			"options": {
+				"activate": false
+			}
+		},
+		{
+			"step": "mkdir",
+			"path": "/wordpress/wp-content/plugins/anypress-client-data"
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/plugins/anypress-client-data/roles.json",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/roles.json",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/mu-plugins/anypress-store.php",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/mu-plugins/anypress-store.php",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/mu-plugins/anypress-patterns.php",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/mu-plugins/anypress-patterns.php",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/mu-plugins/anypress-crm-lifecycle.php",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/mu-plugins/anypress-crm-lifecycle.php",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/mu-plugins/0-anypress-store-env.php",
+			"data": "<?php putenv('ANYPRESS_IS_TENANT=true'); define('ANYPRESS_TENANT_ROLES', 'community');"
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/presets.php",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/presets.php",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "mkdir",
+			"path": "/wordpress/crm"
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/crm/setup.php",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/crm/setup.php",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/crm/emails.json",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/hamchowderr/waas-provisioning-api/main/templates/anypress-store/crm/emails.json",
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php\nrequire '/wordpress/wp-load.php';\nrequire_once ABSPATH . 'wp-admin/includes/plugin.php';\nwp_set_current_user(1);\nglobal $wp_rewrite;\n$wp_rewrite->set_permalink_structure('/%postname%/');\n// The MCP Adapter first, as AnyPress Client turns it on on every store: FluentToolkit loads its own copy of the adapter\n// when the plugin isn't on yet, and the plugin's classes can't load after that.\nif (file_exists(WP_PLUGIN_DIR . '/mcp-adapter/mcp-adapter.php')) activate_plugin('mcp-adapter/mcp-adapter.php');\n$files = [];\nforeach (get_plugins() as $file => $data) {\n    if (in_array(dirname($file), [\"anypress-client\",\"fluent-security\",\"fluent-smtp\",\"fluent-crm\",\"fluentform\",\"fluent-booking\",\"fluent-cart\",\"fluent-community\",\"fluent-player\",\"fluent-affiliate\",\"fluent-support\",\"easy-code-manager\",\"seo-by-rank-math\",\"automatorwp\",\"wp-fusion-lite\",\"fluent-toolkit\",\"anypress-blocks\"], true)) $files[] = $file;\n}\nactivate_plugins($files);\nforeach (['hello-world' => 'post', 'sample-page' => 'page', 'privacy-policy' => 'page'] as $slug => $type) {\n    $post = get_page_by_path($slug, OBJECT, $type);\n    if ($post) wp_delete_post($post->ID, true);\n}\nforeach (get_comments(['fields' => 'ids']) as $id) wp_delete_comment($id, true);\nupdate_option('wp_page_for_privacy_policy', 0);\n(new \\FluentCart\\App\\CPT\\Pages())->createPages();\nupdate_option('show_on_front', 'page');\nupdate_option('page_on_front', get_page_by_path('shop')->ID);\nforeach (get_posts(['post_type' => 'page', 'numberposts' => -1, 'fields' => 'ids']) as $id) update_post_meta($id, '_anypress_needs', 'fluent-cart/fluent-cart.php');\nforeach (['blogname' => 'My Store', 'timezone_string' => 'UTC', 'gmt_offset' => 0, 'date_format' => 'F j, Y', 'time_format' => 'H:i', 'default_comment_status' => 'closed', 'default_ping_status' => 'closed', 'default_pingback_flag' => 0, 'blog_public' => 0, 'users_can_register' => 0] as $name => $value) update_option($name, $value);\n",
+			"progress": {
+				"caption": "Setting up the site"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require '/wordpress/wp-load.php'; wp_set_current_user(1); require '/wordpress/presets.php';",
+			"progress": {
+				"caption": "Applying settings"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require '/wordpress/wp-load.php'; wp_set_current_user(1); require '/wordpress/crm/setup.php'; flush_rewrite_rules();",
+			"progress": {
+				"caption": "Setting up the CRM"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require '/wordpress/wp-load.php'; foreach (get_posts(['post_type' => 'page', 'post_status' => 'any', 'numberposts' => -1, 'meta_query' => [['key' => '_anypress_needs', 'compare' => 'NOT EXISTS']]]) as $p) wp_delete_post($p->ID, true); delete_option('anypress_starter_pages_made'); delete_option('anypress_starter_pages_lock');"
+		}
+	]
+}

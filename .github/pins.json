@@ -21,6 +21,9 @@
           "file": "templates/anypress-store/theme.sh",
           "match": "THEME_VERSION=\\$\\{THEME_VERSION:-(?<version>[^}]+)\\}\\nTHEME_SHA256=\\$\\{THEME_SHA256:-(?<sha>[0-9a-f]{64})\\}"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -40,6 +43,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "Phone Bar, Location Finder and Age Check blocks \\((?<version>[0-9][^)]*)\\)"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -63,6 +69,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "\\| WordPress \\| (?<version>[0-9.]+) for the build"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -81,6 +90,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-security` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -95,6 +107,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-smtp` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -113,6 +128,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-crm` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -131,6 +149,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluentform` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -145,6 +166,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-booking` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -163,6 +187,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-cart` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -177,6 +204,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-community` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -191,6 +221,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-player` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -205,6 +238,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-affiliate` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -219,6 +255,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `fluent-support` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -233,6 +272,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `easy-code-manager` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -247,6 +289,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `seo-by-rank-math` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -261,6 +306,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `automatorwp` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -279,6 +327,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "^\\| [^|]+ \\| `wp-fusion-lite` \\| (?<version>[^ |]+) \\|$"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -293,6 +344,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`mcp-adapter`\\)"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -307,6 +361,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`leadconnector`\\)"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
@@ -321,6 +378,9 @@
           "file": "templates/anypress-store/README.md",
           "match": "\\]\\([^)]+\\) (?<version>\\S+) \\(`polylang`\\)"
         }
+      ],
+      "run": [
+        "node templates/anypress-store/playground/blueprints.mjs"
       ]
     },
     {
