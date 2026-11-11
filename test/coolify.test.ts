@@ -1361,6 +1361,20 @@ describe('Store compose file', () => {
     expect(script).not.toContain('$');
   });
 
+  it('lets community and everything stores take 512 MB uploads in both PHP and Nginx, and the rest 64 MB', () => {
+    const limits = (cache: boolean) => {
+      const services = parse(renderCompose({ wordPressVersion: '7.1', phpVersion: '8.3', size: 'small', cache })).services;
+      const nginx = Buffer.from(/echo (\S+) \| base64 -d/.exec(services.wordpress.entrypoint[2])![1]!, 'base64').toString();
+      return { php: services.php.entrypoint[2] as string, nginx };
+    };
+    const community = limits(true);
+    for (const line of ['upload_max_filesize = 512M', 'post_max_size = 512M']) expect(community.php).toContain(line);
+    expect(community.nginx).toContain('client_max_body_size 512m;');
+    const other = limits(false);
+    for (const line of ['upload_max_filesize = 64M', 'post_max_size = 64M']) expect(other.php).toContain(line);
+    expect(other.nginx).toContain('client_max_body_size 64m;');
+  });
+
   it('caps PHP-FPM at the size\'s workers, and still lets the official image set WordPress up', () => {
     const php = parse(renderCompose({ wordPressVersion: '6.8', phpVersion: '8.3' })).services.php;
     const [shell, flag, script] = php.entrypoint;
