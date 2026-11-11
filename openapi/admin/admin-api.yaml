@@ -500,6 +500,36 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/clean-dashboard:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    put:
+      operationId: setCleanDashboard
+      summary: Turn the clean wp-admin Dashboard home on or off for the product's stores
+      description: >-
+        On (the default), the product's stores show their own wp-admin Dashboard home (links to edit the site,
+        what comes with the site type, the plan) instead of WordPress's Welcome, Site Health Status, Quick Draft,
+        At a Glance, Activity and Events and News boxes (AnyPress Client 2.28.0+). Off, WordPress's boxes come
+        back. Written to the product's running stores at once, without a restart. A seller or reseller can set it
+        for their own product.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        '200':
+          description: The product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -3349,7 +3379,7 @@ components:
     Product:
       type: object
       additionalProperties: false
-      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, followsProductId, highlevelAgency, dateCreated]
+      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, followsProductId, highlevelAgency, cleanDashboard, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -3365,6 +3395,7 @@ components:
           nullable: true
           description: 'The storefront whose new production versions this one gets (it started from it); null for none'
         highlevelAgency: { type: boolean, description: "A HighLevel agency's storefront: its tenants made without a site type get the highlevel one" }
+        cleanDashboard: { type: boolean, description: "Its stores show their own wp-admin Dashboard home instead of WordPress's default boxes (setCleanDashboard)" }
         dateCreated: { type: string, format: date-time }
     StoreDays:
       type: object

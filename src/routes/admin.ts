@@ -26,6 +26,7 @@ import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revo
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { publicBase } from '../oauth.ts';
 import { adminResellerRoutes } from '../resellers.ts';
+import { CLEAN_DASHBOARD_OPTION } from '../provisioner/provisioner.ts';
 import { Status, statusName } from '../status.ts';
 import { createStorefront, getStorefront, type NewStorefront } from '../storefronts.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
@@ -982,7 +983,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   async function products(id: string | null) {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, p.highlevel_agency, r.name AS reseller_name,
+      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, p.highlevel_agency, p.clean_dashboard, r.name AS reseller_name,
          (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
          (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
          (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
@@ -1001,6 +1002,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       resellerName: p.reseller_name,
       followsProductId: p.follows_product_id,
       highlevelAgency: p.highlevel_agency,
+      cleanDashboard: p.clean_dashboard,
       dateCreated: iso(p.created_at),
     }));
   }
@@ -1038,6 +1040,30 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       }
       await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
     }
+    return c.json((await products(productId))[0]);
+  });
+
+  // The wp-admin Dashboard home on the storefront's stores (AnyPress Client 2.28.0+): on, the store's own home in
+  // place of WordPress's Welcome, Site Health, Quick Draft, At a Glance, Activity and Events boxes; off, WordPress's
+  // boxes. The seller (or reseller) decides for their own stores. Written to the stores running now as an option,
+  // without a restart; a store built, restored or rolled back later gets it from its job (src/jobs.ts).
+  app.put('/products/:productId/clean-dashboard', async (c) => {
+    const productId = await product(c);
+    const body = (await readJson(c)) as { on?: unknown } | null;
+    if (typeof body?.on !== 'boolean') throw badRequest('Send on: true or false');
+    const on = body.on;
+    await withTransaction(pool, async (client) => {
+      const { rows } = await client.query<{ clean_dashboard: boolean }>('SELECT clean_dashboard FROM products WHERE id = $1 FOR UPDATE', [productId]);
+      if (!rows[0] || rows[0].clean_dashboard === on) return;
+      await client.query('UPDATE products SET clean_dashboard = $2 WHERE id = $1', [productId, on]);
+      const stores = await client.query<{ id: string }>(
+        'SELECT id FROM tenants WHERE product_id = $1 AND NOT own_code AND status NOT IN ($2, $3)',
+        [productId, Status.Removing, Status.Failed],
+      );
+      for (const t of stores.rows) {
+        await enqueue(deps.boss, client, { type: 'tenant.update', tenantId: t.id, wpOptions: { [CLEAN_DASHBOARD_OPTION]: on ? 'on' : 'off' } });
+      }
+    });
     return c.json((await products(productId))[0]);
   });
 

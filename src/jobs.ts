@@ -6,7 +6,7 @@ import { withTransaction, type Pool } from './db.ts';
 import { planFor, step, withProgress } from './progress.ts';
 import { promoteVersion } from './promote.ts';
 import type { PgBoss } from 'pg-boss';
-import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
+import { BRAND_OPTION, CLEAN_DASHBOARD_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import { storeJobWaiting, type JobData, type JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
 import type { SiteRequest, SiteResponse } from './sitekeys.ts';
@@ -383,12 +383,20 @@ async function resellerBrand(pool: Pool, tenantId: string): Promise<Brand | unde
 }
 
 /**
- * The option AnyPress Client (2.13.0+) reads to go by the reseller's brand instead of AnyPress (see BRAND_OPTION):
- * set on a reseller's stores whenever the store's database is written from elsewhere (built, restored, rolled back).
+ * The options AnyPress Client reads that its storefront decides, set whenever the store's database is written from
+ * elsewhere (built, restored, rolled back): on a reseller's stores the reseller's brand instead of AnyPress
+ * (BRAND_OPTION, 2.13.0+), and the clean Dashboard home on or off (CLEAN_DASHBOARD_OPTION, 2.28.0+).
  */
 async function brandOptions(pool: Pool, tenantId: string): Promise<Record<string, string>> {
   const brand = await resellerBrand(pool, tenantId);
-  return brand ? { [BRAND_OPTION]: brand.name } : {};
+  const { rows } = await pool.query<{ clean_dashboard: boolean }>(
+    'SELECT p.clean_dashboard FROM tenants t JOIN products p ON p.id = t.product_id WHERE t.id = $1',
+    [tenantId],
+  );
+  return {
+    ...(brand ? { [BRAND_OPTION]: brand.name } : {}),
+    ...(rows[0] ? { [CLEAN_DASHBOARD_OPTION]: rows[0].clean_dashboard ? 'on' : 'off' } : {}),
+  };
 }
 
 async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'version.create' }>, boss?: PgBoss) {
