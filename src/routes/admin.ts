@@ -666,6 +666,29 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     return c.json({ tenantId: id, externalId: tenant.external_id, backupId: body.backupId, safetyBackupId });
   });
 
+  // Takes a backup of the store now (reason manual), as POST /v1/tenants/backups does: for any store the caller may
+  // see. The backup is Pending until the tenant.backup job finishes; the store stays as it is meanwhile.
+  app.post('/tenants/:id/backups', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query(
+      'SELECT id, product_id, external_id, status FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)',
+      [id, scopedProduct(c)],
+    );
+    const tenant = rows[0];
+    if (!tenant) throw notFound(`Tenant ${id} not found`);
+    assertChangeable(tenant);
+    const backupId = randomUUID();
+    await withTransaction(pool, async (client) => {
+      await client.query(
+        "INSERT INTO tenant_backups (id, product_id, tenant_id, external_id, reason) VALUES ($1, $2, $3, $4, 'manual')",
+        [backupId, tenant.product_id, id, tenant.external_id],
+      );
+      await enqueue(boss, client, { type: 'tenant.backup', tenantId: id, backupId });
+    });
+    return c.json({ tenantId: id, externalId: tenant.external_id, backupId });
+  });
+
   // Makes a site moved in live (docs/site-imports.md), as POST /v1/tenants/go-live does: for any store the caller may
   // see, since it is the owner's own step. A store that isn't held is left as it is.
   app.post('/tenants/:id/go-live', async (c) => {
