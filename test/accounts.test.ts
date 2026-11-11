@@ -315,7 +315,7 @@ describe('a signed-in owner', () => {
 
       // Another storefront's notice reaches only the platform admin; a small one reaches nobody.
       sent.length = 0;
-      await recordNotification(t.pool, { productId: otherProductId, type: 'tenant.failed', title: 'A job on Other store failed', tenantId: theirs.id });
+      await recordNotification(t.pool, { productId: otherProductId, type: 'tenant.failed', title: 'A task on Other store failed', tenantId: theirs.id });
       await recordNotification(t.pool, { productId: t.productId, type: 'tenant.live', title: 'Owner store is live', tenantId: mine.id });
       await waitFor(async () => sent.length === 1);
       await new Promise((r) => setTimeout(r, 200));

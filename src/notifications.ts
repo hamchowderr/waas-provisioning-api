@@ -24,7 +24,7 @@ const TITLES: Partial<Record<EventType, { level: NotificationLevel; title: (name
   'tenant.suspended': { level: 'info', title: (n) => `${n} was taken offline` },
   'tenant.resumed': { level: 'success', title: (n) => `${n} is back online` },
   'tenant.deleted': { level: 'info', title: (n) => `${n} was deleted` },
-  'tenant.failed': { level: 'error', title: (n) => `A job on ${n} failed` },
+  'tenant.failed': { level: 'error', title: (n) => `A task on ${n} failed` },
   'tenant.backup_failed': { level: 'error', title: (n) => `A backup of ${n} failed` },
   'version.ready': { level: 'success', title: (n) => `Version ${n} is ready` },
   'version.failed': { level: 'error', title: (n) => `Version ${n} failed` },
