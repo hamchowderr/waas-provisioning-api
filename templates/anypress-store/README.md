@@ -37,7 +37,7 @@ switch (`wp anypress shop switch`) turns it on when it runs.
 
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
 for signups, offers and booking forms, and Carousel, Counter, Map, Countdown, Before and After, Star Rating, Notice Bar,
-Phone Bar, Location Finder and Age Check blocks (0.4.2). A release is pinned by version and checksum in [`build.sh`](build.sh)
+Phone Bar, Location Finder and Age Check blocks (0.4.3). A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
 And HighLevel's [LeadConnector](https://wordpress.org/plugins/leadconnector/) 4.0.7 (`leadconnector`): HighLevel forms,
@@ -55,6 +55,11 @@ owner has **Languages** on (Dashboard → Your plan → Languages, the AnyPress 
 AnyPress Client then sets it up once with the site's own language as the default, addresses like `/es/` for the others,
 WordPress's translation files and a language switcher in the menus. It is pinned in [`build.sh`](build.sh)
 (`OFF_PLUGINS`) and isn't in `roles.json`.
+
+And [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) 3.0.0 (`redis-cache`), installed off. Community and
+everything sites get their own Redis, and WordPress keeps its object cache there through the plugin's drop-in and its
+Predis client, set up by the platform (the plugin itself stays off). Other site types keep WordPress's own cache. It
+is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in `roles.json`.
 
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners

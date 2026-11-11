@@ -34,10 +34,13 @@ wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf
 # store (always on since AnyPress Client 2.18.0; not in roles.json).
 # LeadConnector (HighLevel's own plugin: its forms, chat widget and calendars) is on only for the highlevel site type.
 # Polylang is on only while the owner has Languages on (AnyPress Client 2.22.0 or later; not in roles.json).
+# Redis Object Cache stays off: only its object-cache.php and Predis client are used, by the drop-in the provisioner's
+# agent installs, on stores that have their own Redis (community and everything; not in roles.json).
 OFF_PLUGINS="
 mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe9b
 leadconnector 4.0.7 03854dce113adde9f792a0b2bd397eb139902c16d08328bcd9c57d6c96a41dbc
 polylang 3.9.2 90d695711f642efd942d9b7ce25698827b7332a7b26222dfd21719c300e5f9cb
+redis-cache 3.0.0 7a03342d3defbe94cac8d0470b42dc1a1c34331b19c47205df20ceccd3c8f54a
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
@@ -51,8 +54,8 @@ fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a290
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.2}
-BLOCKS_SHA256=${BLOCKS_SHA256:-869ee824b460d0867f217628fe06ef4149c6786241c67508887d718c4f2e7f0b}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.3}
+BLOCKS_SHA256=${BLOCKS_SHA256:-b5c77f49f37908bc545b79db247860330bdc40b5e2211a94ad66d7d2c22915e1}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh

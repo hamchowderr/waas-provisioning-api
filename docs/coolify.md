@@ -38,6 +38,10 @@ services:
         target: /waas/agent.php
         content: "<the driver's agent script>"
     mem_limit: 256m
+  redis:                # community and everything stores only: the object cache (below)
+    image: redis:8-alpine
+    command: [redis-server, --maxmemory, 48mb, --maxmemory-policy, allkeys-lru, --save, "", --appendonly, "no"]
+    mem_limit: 64m
 ```
 
 Why a Service and not an Application plus a standalone MariaDB: one resource per store, one delete removes containers, volumes and network together (`DELETE /services/{uuid}?delete_volumes=true&delete_configurations=true&delete_connected_networks=true&docker_cleanup=true`), and Coolify gives each Service its own Docker network.
@@ -125,6 +129,10 @@ The platform counts each store's email too, since an administrator can edit the 
 Every store has a page cache, installed by the agent with its other files (`install_cache` in `agent.php`): `wp-content/advanced-cache.php` (loaded because the compose file turns on `WP_CACHE`) and `mu-plugins/waas-cache.php`. A logged-out visitor's page is saved under `wp-content/cache/waas-pages/` and the next visitors get that copy before WordPress and its plugins load (response header `X-WaaS-Cache: hit`). Never cached: requests with a query string or any cookie other than a few analytics ones (logged-in users, carts, password-protected posts), `wp-admin`, `wp-json` and `.php` URLs, FluentCart's cart, checkout, receipt and account pages, and any page that is not a 200, sets a cookie or says `no-cache`/`private`. Saved pages expire after 10 minutes and are all cleared when content changes (posts, terms, menus, comments, theme, plugins, FluentCart products and paid orders) and on every agent install (restore, configure, suspend). A drop-in another cache plugin wrote is left alone, and ours then stays out of the way.
 
 Measured on a local copy with FluentCart, FluentCRM, Fluent Forms and Rank Math and the live limits: about 400 cached pages a second with no errors at 50 visitors at once, against about 14 a second through WordPress, with memory staying under 180 MB.
+
+## Object cache
+
+Community and everything stores (`ANYPRESS_TENANT_ROLES` names `community` or `everything`) get their own Redis (`redis` in the compose file, 64 MB, a quarter of a core), and `WAAS_REDIS_HOST` tells WordPress where it is. Their visitors are mostly logged-in members, whom the page cache never serves, and WPManageNinja recommends Redis for FluentCommunity. The agent installs `wp-content/object-cache.php` on every store (`install_object_cache` in `agent.php`): with `WAAS_REDIS_HOST` it loads the [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) plugin's drop-in with its bundled Predis client (the plugin's files come with the store template; the plugin stays off), and without it, it does nothing, so WordPress keeps its own cache. Redis keeps nothing on disk and drops the least used keys once it holds 48 MB; if it is down, WordPress carries on without it (`WP_REDIS_GRACEFUL`). The cache is emptied on every agent install (restore, configure, suspend). A drop-in another cache plugin wrote is left alone. A store's description records the cache (`, cache`), and new site types that bring or take it away re-render the compose file with the next update.
 
 ## Store setup
 
