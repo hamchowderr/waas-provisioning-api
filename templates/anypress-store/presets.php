@@ -75,6 +75,9 @@ delete_option('fluent_cart_do_activation_redirect');
     // a reminder 7 days before each charge, on top of the yearly and trial-end ones that are already on.
     'reminders_enabled' => 'yes',
     'monthly_renewal_reminders_enabled' => 'yes',
+    // Settings → Appearance: "Inherit from theme", so the shop, product cards, cart drawer and checkout take the
+    // site's own colours and corners, and follow them when the owner picks another style in the Site Editor.
+    'appearance_source' => \FluentCart\App\Services\Theme\ColorPalette::SOURCE_THEME,
 ]);
 // Settings → Email notifications → Settings: a footer that tells customers how to reach the owner (replies go to the
 // site's sending address; waas-mail sets that). The store logo at the top of each email follows the site logo

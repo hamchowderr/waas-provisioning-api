@@ -161,9 +161,33 @@ function anypress_sample_mail_at(?string $when = null): void
     $seen = $newest;
 }
 
-// Playground keeps the demo in SQLite, which has no JSON_UNQUOTE; FluentCart counts a customer's orders and spend with
-// it when an order is paid. SQLite's own json_extract already answers unquoted text, so the function passes it on.
-$sqlite = "<?php\nif (isset(\$GLOBALS['wpdb']->dbh) && \$GLOBALS['wpdb']->dbh instanceof WP_MySQL_On_SQLite) {\n    \$GLOBALS['wpdb']->dbh->get_connection()->get_pdo()->sqliteCreateFunction('json_unquote', static fn (\$v) => \$v, 1);\n}\n";
+// Playground keeps the demo in SQLite, which has neither JSON_UNQUOTE nor JSON_MERGE_PATCH. FluentCart counts a
+// customer's orders and spend with the first when an order is paid (SQLite's own json_extract already answers unquoted
+// text, so it passes the value on), and keeps a product's review count with the second each time its page opens.
+$sqlite = <<<'PHP'
+<?php
+if (isset($GLOBALS['wpdb']->dbh) && $GLOBALS['wpdb']->dbh instanceof WP_MySQL_On_SQLite) {
+    $pdo = $GLOBALS['wpdb']->dbh->get_connection()->get_pdo();
+    $pdo->sqliteCreateFunction('json_unquote', static fn ($v) => $v, 1);
+    $pdo->sqliteCreateFunction('json_merge_patch', static function ($target, $patch) {
+        $merge = static function ($a, $b) use (&$merge) {
+            if (!is_array($b) || array_is_list($b)) {
+                return $b;
+            }
+            $a = is_array($a) && !array_is_list($a) ? $a : [];
+            foreach ($b as $k => $v) {
+                if ($v === null) {
+                    unset($a[$k]);
+                } else {
+                    $a[$k] = $merge($a[$k] ?? null, $v);
+                }
+            }
+            return $a;
+        };
+        return wp_json_encode($merge(json_decode((string) $target, true), json_decode((string) $patch, true)));
+    }, 2);
+}
+PHP;
 file_put_contents(WPMU_PLUGIN_DIR . '/anypress-sample-sqlite.php', $sqlite);
 require WPMU_PLUGIN_DIR . '/anypress-sample-sqlite.php';
 
