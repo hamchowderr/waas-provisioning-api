@@ -32,16 +32,34 @@ foreach ($posts as $i => [$title, $text, $category]) {
     ]);
 }
 
-// CRM contacts, with a tag, where FluentCRM is on.
+// CRM contacts on the store's own lifecycle (crm/setup.php and the lifecycle mu-plugin): "<offering>: Interested",
+// "Active" or "Past" tags for what this site type offers, the customer group field, and the Newsletter list for
+// those who asked for email. The draft automations the store starts with stay drafts.
 if (function_exists('FluentCrmApi')) {
+    $kinds = [
+        'website' => ['enquiry'],
+        'bookings' => ['booking', 'enquiry'],
+        'online-store' => ['order', 'enquiry'],
+        'community' => ['space', 'course'],
+        'everything' => ['order', 'booking', 'space', 'course'],
+    ][$type] ?? ['enquiry'];
+    $offering = static fn (string $kind) => class_exists('AnyPress_CRM_Lifecycle') ? AnyPress_CRM_Lifecycle::offering($kind) : '';
+    $stages = ['Interested', 'Active', 'Interested', 'Active', 'Past', 'Interested', 'Active', 'Interested'];
+    $newsletter = \FluentCrm\App\Models\Lists::where('slug', 'newsletter')->first();
     foreach ($people as $i => $p) {
-        FluentCrmApi('contacts')->createOrUpdate([
+        $name = $offering($kinds[$i % count($kinds)]) ?: 'Enquiry';
+        $contact = [
             'first_name' => $p[0],
             'last_name' => $p[1],
             'email' => $email($p),
-            'status' => 'subscribed',
-            'tags' => [$i % 2 ? 'Customer' : 'Lead'],
-        ]);
+            'status' => $i % 3 === 2 ? 'transactional' : 'subscribed',
+            'tags' => [$name . ': ' . $stages[$i]],
+            'custom_values' => ['customer_group' => $i % 2 ? 'Already in business' : 'Just starting out', 'source' => 'Sample'],
+        ];
+        if ($newsletter && $contact['status'] === 'subscribed') {
+            $contact['lists'] = [(int) $newsletter->id];
+        }
+        FluentCrmApi('contacts')->createOrUpdate($contact);
     }
 }
 
