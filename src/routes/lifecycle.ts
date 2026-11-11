@@ -8,6 +8,7 @@ import { validateBody } from '../openapi.ts';
 import { DEFAULT_SIZE, STORAGE_PACK_GB } from '../plans.ts';
 import { enqueue } from '../queue.ts';
 import { Status, statusName } from '../status.ts';
+import { type CareParams, careOf, storedCare } from '../care.ts';
 import { checkTenantCap, domainInUse, emailPacksBought, findTenant, goLiveTenant, resumeTenant, suspendTenant } from '../tenants.ts';
 
 /** Suspend, resume, backups (contract draft.3, tag TenantLifecycle), email packs and storage packs. Mounted at /v1/tenants. */
@@ -73,6 +74,16 @@ export function lifecycleRoutes({ pool, boss }: Deps) {
       await enqueue(boss, client, { type: 'tenant.storage-packs', tenantId: tenant.id });
     });
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id, storagePacks: body.packs, storagePacksGb: body.packs * STORAGE_PACK_GB });
+  });
+
+  // The store's care package on the shop and this month's care time, for the dashboard. The shop sends it whenever
+  // care starts, ends or time is logged; `package: null` ends it. Nothing is sent to the store.
+  app.put('/care', async (c) => {
+    const tenant = await liveTenant(c);
+    const body = validateBody<CareParams>('CareParams', await readJson(c));
+    const care = body.package === null ? null : storedCare(body);
+    await pool.query('UPDATE tenants SET care = $2, date_changed = now() WHERE id = $1', [tenant.id, care]);
+    return c.json({ tenantId: tenant.id, externalId: tenant.external_id, care: careOf(care) ?? null });
   });
 
   // Also lists the backups of a deleted tenant, so it doesn't go through findTenant.

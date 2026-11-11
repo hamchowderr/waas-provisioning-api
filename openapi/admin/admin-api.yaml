@@ -4204,6 +4204,20 @@ components:
         size: { type: string, enum: [small, medium, large] }
         siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         keepsOwnCode: { type: boolean, description: A site moved in from another host keeps its own plugins and themes; versions don't replace them. }
+        care:
+          type: object
+          nullable: true
+          description: The care package bought for the store on the shop and this month's care time (PUT /v1/tenants/care); null without care.
+          additionalProperties: false
+          required: [package, minutes, used, left, extra, month]
+          properties:
+            package: { type: string }
+            minutes: { type: integer, description: Minutes of changes a month. }
+            used: { type: integer, description: Minutes used this month. }
+            left: { type: integer, description: Minutes left this month. }
+            extra: { type: integer, description: Extra minutes bought, which never expire. }
+            answer: { type: string, description: How soon requests are answered. }
+            month: { type: string, description: YYYY-MM }
         moveIn:
           type: object
           description: Only for a store made to move a site in (docs/site-imports.md). It waits for the site while startedAt is null.

@@ -387,6 +387,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/care": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set care
+         * @description Added for AnyPress.
+         *
+         *     Records the care package bought for the store on the shop and this month's care time, so the dashboard can show it. Send it whenever care starts, time is logged or extra time is bought, and send `package: null` when care ends. Sending the same values again changes nothing and is safe to retry. Nothing changes on the store itself.
+         *
+         *     `used` counts for `month`; once that month is over and nothing new has been sent, the tenant shows the new month with no time used. Rejected for a tenant that is being removed or has failed.
+         */
+        put: operations["setTenantCare"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -2513,6 +2537,7 @@ export interface components {
              * @example 1
              */
             readonly storagePacks?: number;
+            care?: components["schemas"]["TenantCare"];
             /** @description Added for AnyPress. True for a site moved in from another host (`uploadCustomSnapshot`), which keeps its own plugins and themes when it is restored or moved to another version. Absent otherwise. */
             readonly keepsOwnCode?: boolean;
             /** @description Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise. */
@@ -3025,6 +3050,77 @@ export interface components {
              * @example 1
              */
             packs: number;
+        };
+        CareParams: {
+            /**
+             * @description The care package's name, such as Care Plus. null when the store's care ends.
+             * @example Care Plus
+             */
+            package: string | null;
+            /**
+             * @description The package's minutes of changes a month.
+             * @example 120
+             */
+            minutes?: number;
+            /**
+             * @description Minutes used in `month`.
+             * @example 40
+             */
+            used?: number;
+            /**
+             * @description Extra minutes bought, which never expire and are used once the month's time runs out.
+             * @example 60
+             */
+            extra?: number;
+            /**
+             * @description How soon requests are answered.
+             * @example 1 business day
+             */
+            answer?: string;
+            /**
+             * @description The month `used` counts for, YYYY-MM in the shop's time zone. Defaults to the current month (UTC).
+             * @example 2026-11
+             */
+            month?: string;
+        };
+        /** @description Added for AnyPress. The care package bought for the store on the shop, and this month's care time (see Set care). Absent when it has none. */
+        TenantCare: {
+            /** @example Care Plus */
+            package?: string;
+            /**
+             * @description Minutes of changes a month.
+             * @example 120
+             */
+            minutes?: number;
+            /**
+             * @description Minutes used this month.
+             * @example 40
+             */
+            used?: number;
+            /**
+             * @description Minutes left this month.
+             * @example 80
+             */
+            left?: number;
+            /**
+             * @description Extra minutes bought, which never expire.
+             * @example 60
+             */
+            extra?: number;
+            /**
+             * @description How soon requests are answered.
+             * @example 1 business day
+             */
+            answer?: string;
+            /** @example 2026-11 */
+            month?: string;
+        };
+        CareResult: {
+            /** Format: uuid */
+            readonly tenantId?: string;
+            readonly externalId?: string;
+            /** @description The care the store has now; null when it has none. */
+            care?: components["schemas"]["TenantCare"] | null;
         };
         StoragePackResult: {
             /** Format: uuid */
@@ -4282,6 +4378,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoragePackResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setTenantCare: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CareParams"];
+            };
+        };
+        responses: {
+            /** @description The care was recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CareResult"];
                 };
             };
             /** @description The validation of the request failed. See the message in the response to see why */

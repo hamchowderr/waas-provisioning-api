@@ -171,6 +171,19 @@ final class Client
     }
 
     /**
+     * Records the store's care package and this month's care time, for the dashboard. Pass null as the package
+     * when care ends. Sending the same values again changes nothing.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @param array{minutes?: int, used?: int, extra?: int, answer?: string, month?: string} $time
+     * @return array<string, mixed>
+     */
+    public function setTenantCare(array $tenant, ?string $package, array $time = []): array
+    {
+        return $this->call('setTenantCare', 'PUT', '/v1/tenants/care', $this->ref($tenant), ['package' => $package] + $time);
+    }
+
+    /**
      * Re-creates a deleted tenant, or rolls a live one back, from a backup (the newest finished one when $backupId is null).
      *
      * @param array{externalId?: string, tenantId?: string} $tenant
