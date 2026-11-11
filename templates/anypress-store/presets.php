@@ -238,8 +238,14 @@ foreach ($GLOBALS['ct_registered_tables'] ?? [] as $table) {
 
 // FluentAuth. Saving its settings once is what its first-run wizard does. Its defaults stay (5 failed logins locks
 // an address for 30 minutes, a monthly login digest to the admin email); XML-RPC is off, since no store uses it and
-// it is the usual target for password guessing. Two-factor stays off for the owner to switch on.
-update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), ['disable_xmlrpc' => 'yes']));
+// it is the usual target for password guessing. Two-factor stays off for the owner to switch on. Members, customers
+// and subscribers (the subscriber role) are kept out of wp-admin and its admin bar: opening wp-admin sends them to the
+// home page, as FluentAuth's "keep these roles out of wp-admin" does; anyone who can publish posts still gets in.
+update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), [
+    'disable_xmlrpc' => 'yes',
+    'disable_admin_bar' => 'yes',
+    'disable_bar_roles' => ['subscriber'],
+]));
 
 // Theme (AnyPress). Without a menu the header's navigation lists every page (Receipt, Review Your Order...), so make
 // one; the header and footer navigation blocks use the newest menu. Links to pages a site type hides
