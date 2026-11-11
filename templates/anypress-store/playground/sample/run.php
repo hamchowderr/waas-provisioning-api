@@ -184,6 +184,9 @@ $parts = [
     // Last: buyers, bookers and members are contacts already (each plugin adds them); the CRM part adds the rest of
     // the list, notes, the Newsletter list and the automations they are in.
     'crm' => defined('FLUENTCRM'),
+    // Automations once the CRM's contacts and tags are there, and the login log once every account is made.
+    'automations' => defined('AUTOMATORWP_VER'),
+    'logins' => defined('FLUENT_AUTH_VERSION'),
     // Then the newsletter: months of issues to the list the parts before made.
     'newsletter' => defined('FLUENTCRM') && !empty($sample['newsletter']),
     // The public pages last: they show the posts, the forms, the booking calendar and the shop the parts above made.

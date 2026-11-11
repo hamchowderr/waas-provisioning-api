@@ -1,7 +1,8 @@
 <?php
 /**
  * The rest of the toolkit: Rank Math set up for the business (setup done, the business in the knowledge graph, a
- * description and focus keyword on every post), and an example snippet in FluentSnippets, left off.
+ * description and focus keyword on every post), an example snippet in FluentSnippets, left off, and a video of the
+ * business's kind of work in Fluent Player's library (freely licensed, from Wikimedia Commons, credited in its text).
  */
 if (defined('RANK_MATH_VERSION')) {
     update_option('rank_math_wizard_completed', true);
@@ -35,5 +36,22 @@ if (defined('FLUENT_SNIPPETS_PLUGIN_VERSION') && !empty($sample['snippet'])) {
             'status' => 'draft',
             'tags' => 'example',
         ],
+    ]);
+}
+
+// Played from Wikimedia Commons, as a pasted link is; each is public domain or CC BY / BY-SA, credited as asked.
+$videos = [
+    'website' => ['Chopping a tomato salad', 'https://upload.wikimedia.org/wikipedia/commons/4/40/20160722-AMS-LSC-9000_%28Farmers_Market-Food_Demo-Spanish_Tomato_Salad%29.webm', 'USDA Media by Lance Cheung, public domain.'],
+    'bookings' => ['What a Swedish massage feels like', 'https://upload.wikimedia.org/wikipedia/commons/9/9f/Massage_Therapy_Swedish_%28Basic_Stroke-_Effleurage%29_%28TESDA%29.webm', 'TESDA Online Program, public domain.'],
+    'online-store' => ['How our prints are made', 'https://upload.wikimedia.org/wikipedia/commons/8/83/Tirage_blouse_%28s%C3%A9rigraphie%29.webm', '"Tirage blouse (sérigraphie)" by 4MAPS, CC BY-SA 4.0.'],
+    'community' => ['Screen printing, start to finish', 'https://upload.wikimedia.org/wikipedia/commons/8/83/Tirage_blouse_%28s%C3%A9rigraphie%29.webm', '"Tirage blouse (sérigraphie)" by 4MAPS, CC BY-SA 4.0.'],
+    'everything' => ['How our prints are made', 'https://upload.wikimedia.org/wikipedia/commons/8/83/Tirage_blouse_%28s%C3%A9rigraphie%29.webm', '"Tirage blouse (sérigraphie)" by 4MAPS, CC BY-SA 4.0.'],
+    'highlevel' => ['A day on the roof', 'https://upload.wikimedia.org/wikipedia/commons/0/0e/Workers_on_the_roof.webm', '"Workers on the roof" by Eric Harrison, CC BY-SA 2.0.'],
+];
+if (defined('FLUENT_PLAYER') && isset($videos[$sample['type']])) {
+    [$title, $src, $credit] = $videos[$sample['type']];
+    anypress_sample_api('POST', '/fluent-player/v2/media', [
+        'settings' => [
+            'title' => $title, 'description' => 'Video: ' . $credit . ' From Wikimedia Commons.', 'preset_slug' => 'default', 'src' => $src, 'provider' => 'external', 'viewType' => 'video', 'mediaType' => 'video', 'post_status' => 'publish'],
     ]);
 }

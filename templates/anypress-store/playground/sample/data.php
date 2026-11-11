@@ -70,16 +70,38 @@ return static function (string $type): array {
         $orders = array_values(array_filter($orders, static fn ($o, $n) => $n % 3 !== 1 || $n >= $last - 3, ARRAY_FILTER_USE_BOTH));
     }
 
+    // [title, about, price in cents, how often it bills (once, month or year), photo, category]
     $sample['shop'] = $sellsProducts ? [
         // FluentCart's sample catalogue: three hoodies in several colours, and ten pieces with one photo each.
         'products' => [['menswear', 3], ['clothing', 10]],
         'categories' => ['Bottoms' => ['jeans', 'shorts', 'leggings'], 'Outerwear' => ['jacket'], 'Accessories' => ['cap'], 'Tops' => ['shirt', 'sweater', 'hoodie', 'sweatshirt', 'dress', 'nightgown']],
-        'subscription' => ['Sock club', 'A fresh pair of socks every month, in a colour we pick for you.', 1200],
-        'gift' => ['Gift card', 'A gift card for anything in the shop, sent by email.', 5000],
+        'items' => [
+            ['Sock club', 'A fresh pair of socks every month, in a colour we pick for you.', 1200, 'month', 'online-store/13.webp', 'Accessories'],
+            ['Gift card', 'A gift card for anything in the shop, sent by email.', 5000, 'once', 'everything/17.webp', 'Accessories'],
+        ],
         'coupons' => [['Welcome 10', 'WELCOME10', 'percentage', 10, 'First order'], ['Free shipping', 'FREESHIP', 'fixed', 8, 'Free shipping weekend']],
         'orders' => $orders,
         'subscribers' => [2, 6, 10],
     ] : [];
+    // A business that sells its own things (vouchers, packs, memberships, a course) and no stock: months of orders
+    // for them, regulars among the buyers, one refund and the newest waiting for payment.
+    if (!$sample['shop'] && !empty($sample['sells'])) {
+        $items = $sample['sells']['items'];
+        $once = array_keys(array_filter($items, static fn ($i) => $i[3] === 'once'));
+        $buyers = $sample['sells']['buyers'];
+        $last = count($buyers) - 1;
+        $orders = [];
+        foreach ($buyers as $n => $who) {
+            $outcome = $n === $last ? 'pending' : ($n === 6 ? 'refunded' : 'paid');
+            $orders[] = [$who, round(170 * (1 - $n / $last) ** 1.3 + 0.5, 1), [[$once[($n * 3) % count($once)], 1]], $outcome];
+        }
+        $sample['shop'] = [
+            'items' => $items,
+            'coupons' => $sample['sells']['coupons'],
+            'orders' => $orders,
+            'subscribers' => $sample['sells']['subscribers'],
+        ];
+    }
 
     // [event index, person index, days ahead (negative: past), hour UTC, status]: three months of sessions, done,
     // a few no-shows and cancellations, and the next two weeks filling up.
@@ -118,7 +140,7 @@ return static function (string $type): array {
             [13, 'Pregnancy massage?', 'Do you offer massage in the second trimester?', ['Yes, Elena is trained in pregnancy massage. Book the 60-minute massage and mention it in the notes.'], 'closed', 81],
             [9, 'Missed my session', 'I completely forgot my appointment yesterday. So sorry! Can I rebook?', ['No problem, it happens. I have put you in for next Tuesday at 2pm.'], 'closed', 58],
             [12, 'Receipt for my health plan', 'Could you send a receipt with your registration number for my claim?', ['Here it is, attached as a PDF. Hope the claim goes smoothly.'], 'closed', 34],
-            [5, 'Do you sell gift vouchers?', "I'd like to buy one for my mum's birthday.", ['Yes! You can buy them on the Services page, and they never expire.'], 'closed', 9],
+            [5, 'Do you sell gift vouchers?', "I'd like to buy one for my mum's birthday.", ['Yes! Reply with the amount and your mum\'s name and we will email a voucher today. They never expire.'], 'closed', 9],
             [3, 'Can I move my Thursday booking?', 'Something came up at work. Is there a slot on Friday instead?', ['Of course. I have moved you to Friday at 3pm and sent a new confirmation.'], 'waiting', 2],
             [18, 'Link for my coaching call', 'I cannot find the link for my coaching call tomorrow.', ['It is in your confirmation email, and I have just sent it again.'], 'waiting', 1],
             [7, 'Parking question', 'Is there parking near the studio?', [], 'new', 0.4],

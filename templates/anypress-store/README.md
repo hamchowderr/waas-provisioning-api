@@ -205,10 +205,14 @@ After the set-up, each demo becomes a sample business running for about six mont
 - **Email log:** FluentSMTP keeps a log in simulation mode, so every email the business sent (receipts, shipping notices, booking confirmations, ticket replies, welcome emails) is listed on the day it went out, and none leaves the demo.
 - **Forms:** the contact form, the newsletter sign-up and the business's own form (sponsorship enquiries, a client intake form, a member survey or an order problem form), each with entries.
 - **Shop:** FluentCart products at real prices, three on sale, one nearly and one fully sold out, a subscription, a gift card, coupons, shipping rates and sales tax, and six months of orders from regulars and new customers (completed, shipped, processing, two refunded, one waiting for payment).
-- **Bookings:** two FluentBooking hosts with weekly hours and services, three months of past sessions (with no-shows and cancellations) and the next two weeks filling up.
+- **Bookings:** two FluentBooking hosts with weekly hours and services, three months of past sessions (with no-shows and cancellations) and the next two weeks filling up. Paid services take payment through FluentCart, so every paid session has its order (refunded when it was cancelled).
+- **Memberships:** where the business sells its own course, memberships or vouchers instead of a catalogue (Community), those are FluentCart products with months of orders and monthly and yearly subscriptions.
 - **Support, affiliates and community:** months of Fluent Support tickets, FluentAffiliate affiliates with visits and referrals, and a FluentCommunity of about 40 members with spaces, a pinned welcome post, comments, likes and a course whose students ask questions on the lessons.
 
 - **Pages:** the public site is the business's own, built from the theme's sections: a home page with its photo, the shop, the booking calendar, the latest posts, the newsletter sign-up and questions, plus about, contact and blog pages, a services page with its own form where the business has one, and the menu to match.
+
+- **Automations and sign-ins:** AutomatorWP automations that are switched on (the team hears when a post goes live; new members, buyers and clients are tagged in FluentCRM) with months of runs in their log, and a FluentAuth log of two months of sign-ins, a few wrong passwords and one blocked bot.
+- **Video:** a video of the business's kind of work in Fluent Player's library, played from Wikimedia Commons (public domain or CC BY-SA, credited in its description).
 
 Rank Math is set up for the business and there is an example snippet. The loader says what it is adding while it works ("Taking six months of orders"). A real store never gets any of this. "Make this my site" carries only pages, styles and menus to the store, and leaves behind the sample pages and menu the visitor did not change, so the store starts from its own.
 

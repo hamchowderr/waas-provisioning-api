@@ -43,7 +43,7 @@ const SAMPLE_STEPS = [
       })[type],
   },
   {
-    parts: ['extras', 'crm', 'newsletter', 'pages'],
+    parts: ['extras', 'crm', 'automations', 'logins', 'newsletter', 'pages'],
     caption: (type) => (type === 'highlevel' ? "Building the business's pages" : "Sending the newsletter and building the pages"),
   },
 ];
