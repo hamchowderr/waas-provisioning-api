@@ -208,11 +208,51 @@ foreach (['care', 'care-plus', 'care-pro', 'set-up-my-site', 'move-my-site-in', 
         $careItems[$slug] = [$product, (int) $price];
     }
 }
+// Real jobs each one covers, so a customer knows what to ask for. The time is what the change takes, not a list of rules.
+$careExamples = [
+    'care' => [
+        'Change your opening hours, prices or phone number',
+        'Swap the photos on your home page',
+        'Add a new team member to your About page',
+        'Reword one of the emails your site already sends',
+    ],
+    'care-plus' => [
+        'Add five new products with their photos and prices',
+        'Build a page for an event or a sale',
+        'Add a new kind of booking, with its reminder emails',
+        'Turn on one of your site’s ready-made email series and write it in your words',
+    ],
+    'care-pro' => [
+        'A 30-minute call each month to plan what to change',
+        'Put a new course online, lesson by lesson',
+        'Build a new email automation, for example a follow-up for people who bought one product',
+        'Run a seasonal sale: the coupon, the banner and the email',
+    ],
+    'set-up-my-site' => [
+        'Your words, photos, logo and colours on every page',
+        'Your menus, contact details and opening hours',
+        'Your first products, courses, bookings or spaces',
+        'The welcome and reminder emails that come with your site, signed with your name',
+    ],
+    'move-my-site-in' => [
+        'Your pages, posts and photos from your old site',
+        'Your customers, members, courses or products',
+        'Old links sent to the new pages, so nobody lands on an error',
+        'A check of every page before you switch over',
+    ],
+    'one-hour' => [
+        'Add one new page',
+        'Fix a layout that looks wrong on phones',
+        'Add a new form and have it email you',
+    ],
+];
 $careCards = static fn(array $slugs, string $per) => ap_grid(array_map(
     static fn($slug) => ap_card(
         ap_h(ap_e($careItems[$slug][0]->post_title), 3, ['fontSize' => 'medium']) . "\n\n"
         . ap_p('<strong>' . ap_money($careItems[$slug][1]) . '</strong>' . $per) . "\n\n"
         . ap_p(ap_e($careItems[$slug][0]->post_excerpt), ['textColor' => 'secondary']) . "\n\n"
+        . ap_p('<strong>For example:</strong>') . "\n\n"
+        . ap_list(array_map('ap_e', $careExamples[$slug] ?? [])) . "\n\n"
         . ap_buttons([[$per === ' a month' ? 'Choose ' . $careItems[$slug][0]->post_title : 'Buy', get_permalink($careItems[$slug][0])]]),
         'card-line', 'medium'
     ),
@@ -222,6 +262,11 @@ if (isset($careItems['care'])) {
     ap_page('website-care', 'Website care', $hero('Website care', 'Changes to your website, done for you', 'Add a care package to any website and send us the changes you want: new pages, products, courses or fixes. Pay yearly and get two months free.', [['See the care packages', '#packages']], 'paint')
         . "\n\n" . ap_band(ap_head('Monthly packages', 'Pick how much help you need') . "\n\n" . $careCards(['care', 'care-plus', 'care-pro'], ' a month'), 'tint', 'packages')
         . "\n\n" . ap_band(ap_head('One-time services', 'Or pay once for a single job') . "\n\n" . $careCards(['set-up-my-site', 'move-my-site-in', 'one-hour'], ' once'))
+        . "\n\n" . ap_band(ap_head('Already on your site', 'What you don’t need care for', 'Every website comes with these. Care is for changing them or adding something new.') . "\n\n" . $cards([
+            ['Pages, written', 'Your site starts with its pages written and laid out. You can edit the words yourself any time.'],
+            ['Emails and automations', 'Renewal and booking reminders send on their own. Welcome, thank-you and left-checkout emails come already written, ready for you to switch on.'],
+            ['Updates, backups and fixes', 'Updates, nightly backups and help when something stops working are part of every plan.'],
+        ]))
         . "\n\n" . ap_band(ap_head('How it works', 'Ask for a change, we make it') . "\n\n" . $cards([
             ['Add care to your website', 'Choose a package, then pick the website it’s for at checkout or from your account.'],
             ['Send your request', 'Open a request on the Support page and tell us what you’d like changed.'],
