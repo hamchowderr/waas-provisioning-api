@@ -32,4 +32,9 @@ describe('price list', () => {
     const extra = PRICE_LIST.care.services.find((s) => s.key === 'extra-hour')!;
     expect([hour.price, hour.careOnly, extra.price, extra.careOnly]).toEqual([125, false, 100, true]);
   });
+
+  it('lists the add-on packs and the free trial the shop sells with them', () => {
+    expect(PRICE_LIST.packs).toEqual({ email: { emails: 10000, price: 5 }, storage: { gb: 25, monthly: 5 } });
+    expect(PRICE_LIST.trialDays).toBe(7);
+  });
 });

@@ -51,11 +51,21 @@ const CARE_SERVICES = [
   { key: 'extra-hour', name: 'Extra hour for care customers', price: 100, minutes: 60, careOnly: true },
 ] as const;
 
+/** Free days at the start of a new website plan, one trial per person (AnyPress Host checks at checkout). */
+const TRIAL_DAYS = 7;
+
+/** Add-ons for one website: extra emails (one-time, never expire) and extra storage (monthly, stackable). */
+const PACKS = {
+  email: { emails: 10000, price: 5 },
+  storage: { gb: 25, monthly: 5 },
+};
+
 export interface PriceList {
   currency: 'USD';
   siteTypes: { key: string; name: string; monthly: Record<Size, number>; yearly: Record<Size, number> }[];
   sizeTimes: Record<Size, number>;
   yearlyMonths: number;
+  trialDays: number;
   volumeTiers: { sites: number; percent: number }[];
   wholesalePercent: number;
   affiliatePercent: number;
@@ -63,6 +73,7 @@ export interface PriceList {
     packages: { key: string; name: string; monthly: number; yearly: number; minutes: number; answer: string; call: boolean }[];
     services: { key: string; name: string; price: number; minutes: number; careOnly: boolean }[];
   };
+  packs: { email: { emails: number; price: number }; storage: { gb: number; monthly: number } };
 }
 
 const bySize = (f: (size: Size) => number) =>
@@ -79,6 +90,7 @@ export const PRICE_LIST: PriceList = {
   })),
   sizeTimes: SIZE_TIMES,
   yearlyMonths: YEARLY_MONTHS,
+  trialDays: TRIAL_DAYS,
   volumeTiers: VOLUME_TIERS,
   wholesalePercent: WHOLESALE_PERCENT,
   affiliatePercent: AFFILIATE_PERCENT,
@@ -86,6 +98,7 @@ export const PRICE_LIST: PriceList = {
     packages: CARE_PACKAGES.map((p) => ({ ...p, yearly: p.monthly * YEARLY_MONTHS })),
     services: CARE_SERVICES.map((s) => ({ ...s })),
   },
+  packs: { email: { ...PACKS.email }, storage: { ...PACKS.storage } },
 };
 
 /**

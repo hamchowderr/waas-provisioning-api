@@ -436,6 +436,15 @@ paths:
                   type: string
                   pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
                   description: The site answers on <subdomain>.<platform domain>. Without it, only on its generated base domain
+                siteTypes:
+                  type: array
+                  minItems: 1
+                  items: { type: string, enum: [website, bookings, online-store, community, everything] }
+                  description: The site types it sells; its other plans are taken off the shop on its first visit. Without it, every type
+                audiences:
+                  type: array
+                  items: { type: string, enum: [shops, specialty, courses, associations, churches, locations, freelancers, software] }
+                  description: The kinds of customers it has Who we help pages for; an empty list removes them. Without it, every kind
       responses:
         '201':
           description: The storefront, being built
@@ -3290,9 +3299,21 @@ components:
           pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
           description: With wantsStorefront, the storefront's address <subdomain>.<platform domain>. Must be free
         highLevelAgency: { type: boolean, description: They run a HighLevel agency, and will make sites from its sub-accounts with the AnyPress app. False when left out }
+        siteTypes:
+          type: array
+          minItems: 1
+          nullable: true
+          items: { type: string, enum: [website, bookings, online-store, community, everything] }
+          description: The kinds of sites they sell. Left out or null when they aren't sure yet, which keeps every type on their storefront
+        siteTypesOther: { type: string, maxLength: 300, description: Other kinds of sites they make, in their words }
+        audiences:
+          type: array
+          items: { type: string, enum: [shops, specialty, courses, associations, churches, locations, freelancers, software] }
+          description: The kinds of customers they serve; their storefront gets a Who we help page for each. Empty or left out when none fits
+        audiencesOther: { type: string, maxLength: 300, description: Other customers they serve, in their words }
     Application:
       type: object
-      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, highLevelAgency, status, productId, resellerId, dateDecided, dateCreated]
+      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, highLevelAgency, siteTypes, siteTypesOther, audiences, audiencesOther, status, productId, resellerId, dateDecided, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -3304,6 +3325,10 @@ components:
         wantsStorefront: { type: boolean }
         storefrontSubdomain: { type: string, nullable: true }
         highLevelAgency: { type: boolean, description: They said they run a HighLevel agency }
+        siteTypes: { type: array, nullable: true, items: { type: string }, description: The kinds of sites they sell; null when they weren't sure }
+        siteTypesOther: { type: string, nullable: true }
+        audiences: { type: array, items: { type: string }, description: The kinds of customers they serve }
+        audiencesOther: { type: string, nullable: true }
         status: { type: string, enum: [pending, approved, declined] }
         productId: { type: string, format: uuid, nullable: true, description: The product made when it was approved }
         resellerId: { type: string, format: uuid, nullable: true, description: The reseller account made when it was approved as a reseller }

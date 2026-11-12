@@ -4421,7 +4421,7 @@ components:
         dateCreated: { type: string, format: date-time }
     PriceList:
       type: object
-      required: [currency, siteTypes, sizeTimes, yearlyMonths, volumeTiers, wholesalePercent, affiliatePercent, care]
+      required: [currency, siteTypes, sizeTimes, yearlyMonths, trialDays, volumeTiers, wholesalePercent, affiliatePercent, care, packs]
       properties:
         currency:
           type: string
@@ -4449,6 +4449,9 @@ components:
         yearlyMonths:
           type: integer
           description: How many months a year costs
+        trialDays:
+          type: integer
+          description: Free days at the start of a new website plan, one trial per person
         volumeTiers:
           type: array
           description: The saving off every site's price once a customer has this many live sites
@@ -4495,6 +4498,25 @@ components:
                   price: { type: number, description: One-time price in US dollars }
                   minutes: { type: integer, description: Minutes of changes it adds to the website (0 for a job) }
                   careOnly: { type: boolean, description: Sold only for a website with a care package }
+        packs:
+          type: object
+          description: Add-ons for one website, sold on the shop
+          required: [email, storage]
+          properties:
+            email:
+              type: object
+              description: Extra emails, a one-time price; they never expire
+              required: [emails, price]
+              properties:
+                emails: { type: integer }
+                price: { type: number, description: One-time price in US dollars }
+            storage:
+              type: object
+              description: Extra storage, a monthly price; packs stack
+              required: [gb, monthly]
+              properties:
+                gb: { type: integer }
+                monthly: { type: number, description: Price a month in US dollars }
     PriceBySize:
       type: object
       required: [small, medium, large]
