@@ -3,6 +3,7 @@ import { resolve4 } from 'node:dns/promises';
 import type { Deps } from './app.ts';
 import { badRequest, conflict } from './errors.ts';
 import { addApiKey, revokeApiKey } from './keys.ts';
+import { PRICE_LIST } from './pricing.ts';
 import { createTenant } from './routes/tenants.ts';
 import { TENANT_SELECT, toTenant } from './tenants.ts';
 
@@ -25,7 +26,16 @@ export interface NewStorefront {
   email: string;
   /** <subdomain>.<platform domain> as its address; without it, only its generated base domain. */
   subdomain?: string;
+  /** The site types it sells (the price list's keys); without them, every type. */
+  siteTypes?: string[];
+  /** The kinds of customers it has Who we help pages for (applications.ts AUDIENCES); without them, every kind. */
+  audiences?: string[];
 }
+
+/** The site types a storefront can sell: the price list's (the store template's, except HighLevel's own). */
+export const SITE_TYPES: readonly string[] = PRICE_LIST.siteTypes.map((t) => t.key);
+/** The kinds of customers a storefront has a Who we help page for (templates/seller-storefront/audiences.json). */
+export const AUDIENCES: readonly string[] = ['shops', 'specialty', 'courses', 'associations', 'churches', 'locations', 'freelancers', 'software'];
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -71,6 +81,12 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
   const subdomain = typeof input?.subdomain === 'string' ? input.subdomain.trim().toLowerCase() : '';
   if (subdomain && !LABEL.test(subdomain)) throw badRequest('subdomain can only contain letters, digits and - (at most 63)');
   const domainBase = config.platformDomain ?? config.storesDomain;
+  for (const [field, list, allowed] of [['siteTypes', input?.siteTypes, SITE_TYPES], ['audiences', input?.audiences, AUDIENCES]] as const) {
+    if (list !== undefined && (!Array.isArray(list) || !list.every((v) => typeof v === 'string' && allowed.includes(v)))) {
+      throw badRequest(`${field} must be a list of ${allowed.join(', ')}`);
+    }
+  }
+  if (input?.siteTypes && !input.siteTypes.length) throw badRequest('siteTypes must name at least one site type, or be left out');
 
   const existing = await getStorefront(deps, productId);
   if (existing) throw conflict(`This product already has a ready-made storefront (${existing.domainName})`);
@@ -92,6 +108,11 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         ...(config.platformDomain ? { anypress_root_domain: config.platformDomain } : {}),
         // Custom domains point where the stores' own names do, like the platform's own storefront.
         ...(await customDomainRecords(config.storesDomain)),
+        // Which plans and Who we help pages it opens with; the storefront narrows its shop to them on its first visit
+        // (templates/seller-storefront/mu-plugins/seller-storefront.php).
+        ...(input.siteTypes || input.audiences
+          ? { anypress_storefront_setup: JSON.stringify({ siteTypes: input.siteTypes ?? null, audiences: input.audiences ?? null }) }
+          : {}),
       },
       phpConstants: {
         ANYPRESS_API_BASE_URL: { value: apiUrl },

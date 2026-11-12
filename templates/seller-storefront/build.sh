@@ -181,12 +181,19 @@ echo "== Shop"
 # (shop.php says what it makes).
 mkdir -p "$SITE/shop"
 cp -R "$DESIGN" "$SITE/shop/design"
-cp "$HERE/brand.json" "$SITE/shop/design/brand.json"
-cp "$HERE/shop.php" "$HERE/audiences.json" "$HERE/help.json" "$HERE/../anypress-store/roles.json" "$HERE/../anypress-store/mu-plugins/anypress-patterns.php" "$SITE/shop/"
+cp "$HERE/shop.php" "$HERE/pages.php" "$HERE/brand.json" "$HERE/audiences.json" "$HERE/help.json" "$HERE/../anypress-store/roles.json" "$HERE/../anypress-store/mu-plugins/anypress-patterns.php" "$SITE/shop/"
 node --input-type=module -e 'const { PRICE_LIST } = await import(process.argv[1]); console.log(JSON.stringify(PRICE_LIST));' \
     "$HERE/../../src/pricing.ts" >"$SITE/shop/pricing.json"
 [ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE/shop"
 wp eval-file /var/www/html/shop/shop.php --user=waas-admin
+# What the storefront needs to remake its pages for the seller's site types and customers on its first visit
+# (pages.php, run by mu-plugins/seller-storefront.php), kept out of reach of the web.
+KIT="$SITE/wp-content/anypress-storefront"
+mkdir -p "$KIT"
+mv "$SITE/shop/pages.php" "$SITE/shop/brand.json" "$SITE/shop/audiences.json" "$SITE/shop/anypress-patterns.php" "$SITE/shop/design" "$KIT/"
+printf 'Require all denied\n' >"$KIT/.htaccess"
+printf '<?php\n// Silence is golden.\n' >"$KIT/index.php"
+[ "$WP_USER" = 33:33 ] && chown -R 33:33 "$KIT"
 rm -r "$SITE/shop"
 wp rewrite flush
 wp transient delete --all
@@ -205,9 +212,9 @@ EXPECTED=$(printf '%s\n' $SLUGS anypress-host | sort | tr '\n' ' ')
 [ "$(wp eval 'echo \FluentCrm\App\Models\Funnel::where("status", "draft")->count(), " ", \FluentCrm\App\Models\Funnel::where("status", "published")->count();')" = "0 $(jq length "$HERE/crm-emails.json")" ] || { echo "CRM automations missing or not published" >&2; exit 1; }
 [ "$(wp eval '$f = wpFluent()->table("fluentform_forms")->find((int) get_option("anypress_crm_contact_form")); echo $f && str_contains($f->form_fields, "\"customer_group\"") ? "ok" : "bad";')" = ok ] || { echo "contact form questions missing" >&2; exit 1; }
 [ "$(wp eval '$c = get_option("_fc_ab_cart_settings"); echo ($c["enabled"] ?? "") === "yes" && \FluentCart\App\Models\Coupon::where("code", "COMEBACK20")->exists() ? "ok" : "bad";')" = ok ] || { echo "abandoned checkout or coupon missing" >&2; exit 1; }
-[ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,questions,contact,plans,terms,privacy,refund-policy,support,affiliates,book-a-call --format=count)" = 11 ] || { echo "storefront pages missing" >&2; exit 1; }
+[ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,questions,contact,plans,terms,privacy,refund-policy,support,affiliates,book-a-call,website-care --format=count)" = 12 ] || { echo "storefront pages missing" >&2; exit 1; }
 # Every site type in three sizes, published, at the price list's prices.
-[ "$(wp post list --post_type=fluent-products --post_status=publish --format=count)" = 17 ] || { echo "the 15 plans and 2 packs are missing" >&2; exit 1; }
+[ "$(wp post list --post_type=fluent-products --post_status=publish --format=count)" = 24 ] || { echo "the 15 plans, 2 packs and 7 care products are missing" >&2; exit 1; }
 EXPECTED_PRICE=$(jq '.siteTypes[] | select(.key == "community") | .monthly.small * 100' <(node --input-type=module -e 'const { PRICE_LIST } = await import(process.argv[1]); console.log(JSON.stringify(PRICE_LIST));' "$HERE/../../src/pricing.ts"))
 [ "$(wp eval 'echo (int) \FluentCart\App\Models\ProductVariation::where("post_id", get_page_by_path("community-small", OBJECT, "fluent-products")->ID)->min("item_price");')" = "$EXPECTED_PRICE" ] || { echo "plan prices don't match src/pricing.ts" >&2; exit 1; }
 [ "$(wp option get anypress_shop_brand --format=json | jq -r .whiteLabel)" = true ] || { echo "the shop design isn't in the storefront's own name" >&2; exit 1; }

@@ -5,7 +5,7 @@
   "contact": ["Send us a message", "/contact/"],
   "footerAsk": "Questions? <a href=\"/contact/\">Send us a message</a>",
   "help": ["Read the help pages", "/docs/"],
-  "helpBand": ["Not sure which to pick?", "Ask a person. We answer every message.", "Tell us what your business does and we’ll tell you which plan and size fit. No sales call, just a reply."],
+  "helpBand": ["Need help choosing?", "We’ll help you pick a plan", "Tell us what your business does and we’ll suggest the plan and size that fit."],
   "announce": "",
   "hero": ["No tech skills needed", "Your business online. <mark style=\"background-color:var(--wp--preset--color--primary-alt)\" class=\"has-inline-color\">We set it all up.</mark>", "A website, bookings, a shop or a members’ area, with everything it needs already installed. No add-ons to buy piece by piece, no updates that break your site. Pick a plan and sign in to a working site a few minutes after you pay."],
   "heroTicks": ["From {from} a month", "Hosting, backups and updates included", "Cancel any time from your account"],
@@ -20,7 +20,7 @@
   "examples": false,
   "menu": [["Plans", "plans"], ["Compare sizes", "sizes"], ["Who we help", "/who-we-help/"], ["Help", "/docs/"]],
   "footerHelp": [["Help pages", "/docs/"], ["Support", "/support/"], ["Questions", "/questions/"], ["Contact us", "/contact/"], ["Refund policy", "/refund-policy/"], ["Terms of service", "/terms/"], ["Privacy policy", "/privacy/"]],
-  "footerMore": ["About", [["About us", "/about/"], ["Who we help", "/who-we-help/"], ["Book a call", "/book-a-call/"], ["Referrals", "/affiliates/"]]],
+  "footerMore": ["About", [["About us", "/about/"], ["Website care", "/website-care/"], ["Who we help", "/who-we-help/"], ["Book a call", "/book-a-call/"], ["Referrals", "/affiliates/"]]],
   "copyright": "",
   "signInNew": "New here?",
   "data": {
@@ -30,7 +30,7 @@
       ["lock", "Updates done for you", "WordPress, its plugins and the server are kept up to date, so nothing breaks while you’re busy."],
       ["tools", "Everything already set up", "The tools your kind of site needs come installed and working. Nothing to buy piece by piece."],
       ["email", "Emails that arrive", "Order, account and booking emails always send. Newsletters come with a monthly allowance."],
-      ["lifebuoy", "A person to ask", "Send us a message and a person who knows your site writes back."]
+      ["lifebuoy", "Help when you need it", "Send us a message about your site and we’ll help you sort it out."]
     ],
     "faq": [
       ["How soon is my site ready?", "Usually a few minutes after you pay. We email you when it is. If it’s been more than an hour, send us a message and we’ll look right away."],

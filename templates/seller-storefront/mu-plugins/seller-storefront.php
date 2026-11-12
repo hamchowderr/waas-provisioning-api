@@ -65,4 +65,30 @@ add_action('init', function () {
             error_log("Seller storefront: owner details for $plugin: " . $e->getMessage()); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- one plugin's setup failing must not stop the rest.
         }
     }
+
+    // The shop narrowed to what the seller said they sell and who they sell to (the API's anypress_storefront_setup,
+    // from their application): the template's pages made again with only those plans and Who we help pages.
+    $kit = WP_CONTENT_DIR . '/anypress-storefront/pages.php';
+    if (get_option('anypress_storefront_setup') && is_readable($kit)) {
+        // Remaking the pages takes longer than an ordinary page load; let it finish even if the visitor leaves.
+        ignore_user_abort(true);
+        if (function_exists('set_time_limit')) {
+            set_time_limit(300);
+        }
+        $before = get_current_user_id();
+        if ($owner) {
+            wp_set_current_user($owner->ID);
+        }
+        ob_start();
+        try {
+            (static function () use ($kit) {
+                require $kit;
+            })();
+            update_option('seller_storefront_pages_made', time(), false);
+        } catch (\Throwable $e) {
+            error_log('Seller storefront: pages for the seller\'s site types not made: ' . $e->getMessage()); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- the template's full shop stays; the store's log is where it is looked into.
+        }
+        ob_end_clean();
+        wp_set_current_user($before);
+    }
 }, 9999);

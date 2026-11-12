@@ -1,9 +1,10 @@
 // Ready-made storefronts (src/storefronts.ts): POST /admin/products/{id}/storefront builds a store of the
 // storefront product, connected to the API with a new key of the product it sells for.
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiKey } from '../src/keys.ts';
 import { Status } from '../src/status.ts';
-import { STOREFRONT_KEY_LABEL, storefrontDns } from '../src/storefronts.ts';
+import { AUDIENCES, SITE_TYPES, STOREFRONT_KEY_LABEL, storefrontDns } from '../src/storefronts.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
 let t: TestContext;
@@ -121,5 +122,14 @@ describe('deleting a storefront', () => {
     expect((await t.pool.query('SELECT 1 FROM products WHERE id = $1', [empty.id])).rowCount).toBe(0);
     expect((await t.pool.query('SELECT 1 FROM api_keys WHERE product_id = $1', [empty.id])).rowCount).toBe(0);
     expect((await remove(empty.id)).status).toBe(404);
+  });
+});
+
+describe('what a storefront can be narrowed to', () => {
+  const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as Record<string, unknown>;
+
+  it('names the template\'s Who we help pages and the store template\'s site types', () => {
+    expect([...AUDIENCES]).toEqual(Object.keys(json('../templates/seller-storefront/audiences.json')));
+    expect(SITE_TYPES.every((type) => type in json('../templates/anypress-store/roles.json'))).toBe(true);
   });
 });

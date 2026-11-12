@@ -16,7 +16,7 @@
         ["ul", [
           "<strong>See the plans or buy another site:</strong> the <a href=\"/plans/\">Plans</a> page.",
           "<strong>Open your site, change its address, size or plan:</strong> <a href=\"/account/\">your account</a>.",
-          "<strong>Ask for help:</strong> <a href=\"/support/\">open a support request</a>, and a person writes back."
+          "<strong>Ask for help:</strong> <a href=\"/support/\">open a support request</a>, and we reply by email."
         ]],
         ["h", "Start here"],
         ["ol", [
