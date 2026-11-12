@@ -8,9 +8,9 @@ who doesn't bring a WordPress site of their own. The API builds one with
 |---|---|
 | WordPress | 7.1.4 for the build; storefronts run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Theme | The AnyPress theme, the release the store template pins ([`../anypress-store/theme.sh`](../anypress-store/theme.sh)), the only theme installed |
-| Plugins | AnyPress Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/anypress-host` with its release script, at the version given to `build.sh`), FluentCart 2.3.1, FluentCRM 3.3.1, Fluent Forms 6.2.17, WP Fusion Lite 3.48.0 and FluentAuth 3.1.1 (free, wordpress.org), FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`) and AnyPress Blocks 0.4.3. All active |
-| Pages | A whole shop in the shop design (below), under the owner's own name and logo: Home (what you're making, how it works, the plans, what every plan includes, questions), Plans (FluentCart's shop, at `/plans/`, one card per kind of site) and a page per plan with its sizes, About, Questions, Contact (with the contact form), Terms of service, Privacy policy and Refund policy (plain starting text to edit), Who we help (a page for each kind of customer: shops and makers, specialty retailers, course creators, chambers and associations, churches, franchises and multi-location businesses, freelancers and studios, and software companies, each with what they get, the plan that fits and questions), plus FluentCart's Cart, Checkout, Receipt and Account. The menu has Plans, Compare sizes, Who we help, Questions and Account |
-| Plans | One FluentCart product per site type and size (Small, Medium, Large), monthly and yearly (ten months' price), at the [price list](../../src/pricing.ts)'s prices, made by AnyPress Host's own **Create my plans** |
+| Plugins | AnyPress Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/anypress-host` with its release script, at the version given to `build.sh`), FluentCart 2.3.1, FluentCRM 3.3.1, Fluent Forms 6.2.17, WP Fusion Lite 3.48.0, FluentAuth 3.1.1, FluentBooking 2.6.0, Fluent Support 2.5.0, FluentAffiliate 1.7.0, FluentSnippets 10.58, BetterDocs 4.9.6 and MCP Adapter 0.7.1 (free, wordpress.org), FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`) and AnyPress Blocks 0.4.3. All active |
+| Pages | A whole shop in the shop design (below), under the owner's own name and logo: Home (what you're making, how it works, the plans, what every plan includes, questions), Plans (FluentCart's shop, at `/plans/`, one card per kind of site) and a page per plan with its sizes, About, Questions, Contact (with the contact form), Terms of service, Privacy policy and Refund policy (plain starting text to edit), Who we help (a page for each kind of customer: shops and makers, specialty retailers, course creators, chambers and associations, churches, franchises and multi-location businesses, freelancers and studios, and software companies, each with what they get, the plan that fits and questions), Support (Fluent Support's portal, where customers open and follow requests), Referrals (FluentAffiliate's sign-up and dashboard, at `/affiliates/`), Book a call (a 30-minute FluentBooking call, weekdays 9 to 5), Help pages (BetterDocs, at `/docs/`: ten articles for the people who buy a website, in four topics, with questions; [`help.json`](help.json)), plus FluentCart's Cart, Checkout, Receipt and Account. The menu has Plans, Compare sizes, Who we help, Help and Account |
+| Plans | One FluentCart product per site type and size (Small, Medium, Large), monthly and yearly (ten months' price), at the [price list](../../src/pricing.ts)'s prices, made by AnyPress Host's own **Create my plans**, each with the price list's free trial (one per person). Also an email pack and a 25 GB storage pack, which customers buy from their website's card in the account, domains at checkout and the volume saving, all at the price list's prices |
 | Settings | Permalinks `/%postname%/`, timezone UTC, comments and pingbacks closed, registration off, **search engines discouraged** until launch |
 | Users | `waas-admin` with a random password nobody keeps. The owner's administrator account is made when the storefront is created |
 
@@ -23,13 +23,14 @@ the owner) and WP Fusion Lite connected to FluentCRM on the site.
 
 The CRM is the store template's ([CRM lifecycle](../anypress-store/README.md#crm-lifecycle)), with one offering,
 **Website**: a visitor who sends the contact form or leaves checkout is **Website: Interested**, a buyer
-**Website: Active**, and when their last plan ends **Website: Past**. The draft automations are this template's own
-([`crm-emails.json`](crm-emails.json)): a nurture series per customer group, the welcome (with a referral ask on day 31), the
-win-back with the COMEBACK20 coupon, and the abandoned checkout emails. Nothing sends until
-the owner publishes them.
+**Website: Active**, and when their last plan ends **Website: Past**. The automations are this template's own
+([`crm-emails.json`](crm-emails.json)) and ship published: a nurture series per customer group, the welcome (help pages on
+day 7, the referral program on day 31, packs, domains and sizes on day 60), the win-back with the COMEBACK20 coupon, the
+abandoned checkout emails and a welcome for approved referrers.
 
-[`mu-plugins/seller-storefront.php`](mu-plugins/seller-storefront.php) ships with the storefront. It fills FluentCRM's
-business name and email from the owner's on the first visit, and keeps WP Fusion out of staging mode. To use HighLevel
+[`mu-plugins/seller-storefront.php`](mu-plugins/seller-storefront.php) ships with the storefront. It fills the owner's name and
+email into FluentCRM, FluentCart, Fluent Support (its first mailbox), FluentBooking (the call moves to the owner) and
+FluentAffiliate on the first visit, and keeps WP Fusion out of staging mode. To use HighLevel
 or another CRM instead, the owner picks it in **Settings → WP Fusion → Setup**; the lifecycle tags follow contacts there.
 
 ## How a storefront is connected
@@ -48,8 +49,8 @@ The storefront is a store of the storefront product (`STOREFRONT_PRODUCT_ID`), s
 nightly backups, the page cache for visitors with no cookies (a cart or a login always skips it), email through the
 platform's relay, and its own domains.
 
-What the owner still does: connect a payment method in FluentCart, change the words and prices they want, and turn
-search engines on.
+What the owner still does: connect a payment method in FluentCart and turn search engines on. Everything else (words,
+prices, call times) works as shipped and can be changed.
 
 ## Build and publish
 

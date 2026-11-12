@@ -1,0 +1,221 @@
+{
+  "topics": {
+    "getting-started": ["Getting started", "Sign in, open your site’s editor and find your way around."],
+    "your-website": ["Your website", "Your own domain, email, backups and moving a site in."],
+    "plans-and-billing": ["Plans and billing", "Change your plan or size, add emails or storage, cancel and refunds."],
+    "referrals": ["Referrals", "Recommend us, share your link and get paid."]
+  },
+  "articles": [
+    {
+      "slug": "welcome",
+      "title": "Welcome",
+      "topic": "getting-started",
+      "body": [
+        ["p", "Your plan is a real WordPress website, set up and looked after for you. It runs on its own, with its own database, nightly backups and updates done for you. You add your words and photos."],
+        ["h", "Where things are"],
+        ["ul", [
+          "<strong>See the plans or buy another site:</strong> the <a href=\"/plans/\">Plans</a> page.",
+          "<strong>Open your site, change its address, size or plan:</strong> <a href=\"/account/\">your account</a>.",
+          "<strong>Ask for help:</strong> <a href=\"/support/\">open a support request</a>, and a person writes back."
+        ]],
+        ["h", "Start here"],
+        ["ol", [
+          "<a href=\"/docs/sign-in-and-open-your-sites-editor/\">Sign in and open your site’s editor</a>.",
+          "Change the words and photos on your pages. Every page is ready to edit; nothing starts blank.",
+          "When you’re ready, <a href=\"/docs/use-your-own-domain/\">use your own domain</a> and <a href=\"/docs/send-email-from-your-own-domain/\">send email from it</a>."
+        ]]
+      ]
+    },
+    {
+      "slug": "sign-in-and-open-your-sites-editor",
+      "title": "Sign in and open your site’s editor",
+      "topic": "getting-started",
+      "body": [
+        ["h", "Sign in"],
+        ["ol", [
+          "Go to <a href=\"/account/\">your account</a>.",
+          "Sign in with the email address you bought your plan with.",
+          "Don’t know your password? Choose <strong>Lost your password?</strong> on the sign-in page, and we’ll email you a link to set a new one."
+        ]],
+        ["h", "Open your site’s editor"],
+        ["p", "On your account page, choose <strong>Log in to your website</strong> next to the site. Your site’s WordPress dashboard opens, already signed in, with no second password."],
+        ["p", "Each click makes a fresh, one-time sign-in link that expires after five minutes, so there’s nothing to save or bookmark. Just choose the button again next time."],
+        ["h", "My site isn’t ready yet"],
+        ["p", "A new site is usually ready a few minutes after you pay, and we email you when it is. Until then, your account shows it as being set up."],
+        ["p", "If we ask you to <strong>choose a new name</strong>, the website name you picked at checkout was already taken. Choose a new one on your account page and we’ll set the site up with it."],
+        ["p", "Still waiting after an hour? <a href=\"/support/\">Open a support request</a> and we’ll look right away."]
+      ]
+    },
+    {
+      "slug": "use-your-own-domain",
+      "title": "Use your own domain",
+      "topic": "your-website",
+      "body": [
+        ["p", "Your site starts on a free address with a secure (https) connection. You can switch it to a domain you own, like yourbusiness.com or shop.yourbusiness.com, at any time."],
+        ["h", "Steps"],
+        ["ol", [
+          "Go to <a href=\"/account/\">your account</a> and choose <strong>Manage website</strong> next to the site.",
+          "Under <strong>Website Details</strong>, the page shows the DNS records your domain needs: an A record for each address shown for a domain like example.com, or one CNAME record for a subdomain like shop.example.com.",
+          "Add those records where your domain is managed: the company you bought it from, or Cloudflare.",
+          "Type your domain in <strong>Domain Name</strong> and choose <strong>Update</strong>."
+        ]],
+        ["p", "The secure connection is set up for you. Your old address keeps working for a few minutes while the site switches over."],
+        ["h", "Connect automatically"],
+        ["p", "Once your domain is entered, many DNS hosts show a <strong>Connect automatically</strong> button. It opens your DNS host, which adds the records for you after you approve. If yours doesn’t, the page shows the records to add by hand."],
+        ["h", "Good to know"],
+        ["ul", [
+          "DNS changes can take a little while to reach everyone, usually minutes and sometimes a few hours.",
+          "No domain yet? You can buy one from your account’s website page.",
+          "Stuck? <a href=\"/support/\">Open a support request</a> with your site name and domain."
+        ]]
+      ]
+    },
+    {
+      "slug": "send-email-from-your-own-domain",
+      "title": "Send email from your own domain",
+      "topic": "your-website",
+      "body": [
+        ["p", "Your site sends its own email: receipts, password resets, form notifications, bookings and newsletters. It’s set up from the start, so there’s nothing to install. Email plugins that send through another service (SMTP plugins) aren’t needed."],
+        ["h", "Send from your own domain"],
+        ["ol", [
+          "Go to <a href=\"/account/\">your account</a> and choose <strong>Manage website</strong>.",
+          "Under <strong>Email Sender</strong>, type your domain in <strong>Sending Domain</strong> and choose <strong>Use this domain</strong>.",
+          "The page lists the DNS records to add. Add them where your domain is managed, or use <strong>Connect automatically</strong> if your DNS host offers it.",
+          "We check for the records every 10 minutes. The status says <strong>Waiting for DNS records</strong> until they’re found, then <strong>Sending</strong>. Your site switches over by itself."
+        ]],
+        ["h", "How many emails can I send?"],
+        ["p", "Every plan includes emails each month: 5,000 on Small, 20,000 on Medium and 50,000 on Large. Need more? Add an email pack from your account. Pack emails never expire, and they’re only used once a month’s included emails run out."],
+        ["p", "If you reach your limit, only bulk email (newsletters and campaigns) pauses until the next month or until you add a pack. Receipts, password resets and other everyday emails keep going."]
+      ]
+    },
+    {
+      "slug": "backups-and-getting-your-site-back",
+      "title": "Backups and getting your site back",
+      "topic": "your-website",
+      "body": [
+        ["p", "You don’t need a backup plugin. Your site is backed up for you."],
+        ["h", "What we keep"],
+        ["ul", [
+          "<strong>Every night</strong>, a full copy of your site: its pages, posts, products, orders, customers and settings, and its themes, plugins and photos.",
+          "Daily copies for the last <strong>7 days</strong>, and weekly copies for the last <strong>4 weeks</strong>.",
+          "Copies are stored away from the servers your site runs on, and a backup is test-restored every day."
+        ]],
+        ["h", "Getting your site back"],
+        ["p", "A deleted page, a bad plugin update or a change you regret? <a href=\"/support/\">Open a support request</a> with your site name and roughly when it was last right, and we’ll bring back the copy you need."],
+        ["h", "Backup plugins"],
+        ["p", "Backup and site-moving plugins (UpdraftPlus, Duplicator and others like them) can’t be added, because your site already has both."]
+      ]
+    },
+    {
+      "slug": "move-a-wordpress-site-here",
+      "title": "Move a WordPress site here",
+      "topic": "your-website",
+      "body": [
+        ["p", "Already have a WordPress site somewhere else? Bring it over with a free plugin and an import code. Everything comes across, and your old site keeps running until you switch."],
+        ["h", "Steps"],
+        ["ol", [
+          "Pick a plan, then <a href=\"/support/\">open a support request</a> asking to move your site in. We send you an import code and the plugin to install.",
+          "Install the plugin on your current site, the same way you add any plugin.",
+          "In your current site’s dashboard, open the plugin under <strong>Tools</strong>, paste the code and press send. Keep the page open while it uploads; if it closes, open it again and it carries on where it stopped.",
+          "Check the site on its new address, then <a href=\"/docs/use-your-own-domain/\">point your domain at it</a>."
+        ]],
+        ["h", "What comes across"],
+        ["p", "Your whole database (pages, posts, products, orders, customers and settings) and your themes, plugins, photos, files and languages. Caches and backup archives are left out, because your new site has its own."],
+        ["h", "Before you start"],
+        ["ul", [
+          "Your current site needs PHP 7.4 or newer, and enough free space for a compressed copy of itself.",
+          "The site must fit your plan’s storage: 10 GB on Small, 20 GB on Medium and 30 GB on Large. The plugin tells you before it starts if it’s too big."
+        ]]
+      ]
+    },
+    {
+      "slug": "plans-and-sizes",
+      "title": "Plans and sizes",
+      "topic": "plans-and-billing",
+      "body": [
+        ["p", "Every plan is a kind of site and a size. The kind decides what your site can do. The size decides how much power, storage and email it gets. Prices for each are on the <a href=\"/plans/\">Plans</a> page."],
+        ["h", "Sizes"],
+        ["ul", [
+          "<strong>Small:</strong> 10 GB of storage and 5,000 emails a month.",
+          "<strong>Medium:</strong> 20 GB of storage and 20,000 emails a month.",
+          "<strong>Large:</strong> 30 GB of storage and 50,000 emails a month."
+        ]],
+        ["p", "Paying yearly gets you two months free. Running several sites? The more you have, the less each one costs; the saving is taken off automatically."],
+        ["h", "Need more room?"],
+        ["p", "Add storage in 25 GB steps, or an email pack, from your account’s website page, without changing size."],
+        ["h", "Change your plan or size"],
+        ["p", "<a href=\"/support/\">Open a support request</a> with your site name and what you’d like, and we’ll switch it for you. The new price starts from your next renewal."]
+      ]
+    },
+    {
+      "slug": "cancel-your-plan",
+      "title": "Cancel your plan",
+      "topic": "plans-and-billing",
+      "body": [
+        ["h", "Steps"],
+        ["ol", [
+          "Go to <a href=\"/account/\">your account</a>.",
+          "Choose <strong>Manage or cancel plan</strong> next to the site, then cancel."
+        ]],
+        ["h", "What happens next"],
+        ["ul", [
+          "Your site stays online until the end of the period you’ve paid for, and you won’t be charged again. Your account shows the date.",
+          "After that date, the site is backed up and taken offline, and deleted some days later. Your account tells you how many.",
+          "Changed your mind? Pay again before it’s deleted and your site comes back exactly as it was."
+        ]],
+        ["h", "Keep a copy"],
+        ["p", "Export what you need from your site’s WordPress dashboard before the end date, or <a href=\"/support/\">ask us</a> and we’ll help."]
+      ]
+    },
+    {
+      "slug": "refunds",
+      "title": "Refunds",
+      "topic": "plans-and-billing",
+      "body": [
+        ["p", "Something not right with a payment? <a href=\"/support/\">Open a support request</a> with the email address on your account and your site’s name, and we’ll work it out with you."],
+        ["h", "Good to know"],
+        ["ul", [
+          "A refund ends the plan and takes the site offline, so export anything you want to keep first.",
+          "The full details are in our <a href=\"/refund-policy/\">refund policy</a>."
+        ]]
+      ]
+    },
+    {
+      "slug": "how-referrals-work",
+      "title": "How referrals work",
+      "topic": "referrals",
+      "body": [
+        ["p", "Recommend us and earn a share of every new customer’s first payment. Joining is free."],
+        ["h", "Join"],
+        ["ol", [
+          "Apply on the <a href=\"/affiliates/\">Referrals</a> page.",
+          "We look at each application and approve it.",
+          "Once you’re approved, your link, your rate and your earnings are in your referral dashboard on the same page."
+        ]],
+        ["h", "How you earn"],
+        ["ul", [
+          "Someone clicks your link and buys a plan within 30 days: that sale is yours.",
+          "Each commission is held for 30 days before it can be paid. If the customer is refunded, the commission on that sale is cancelled.",
+          "Your own purchases don’t earn commission. Commissions are paid by PayPal."
+        ]],
+        ["h", "The rules"],
+        ["p", "Don’t bid on our name in search ads, send spam, or promise things we don’t offer. We may close accounts that do."]
+      ]
+    }
+  ],
+  "faq": {
+    "Your account": [
+      ["My site isn’t ready yet. Is that normal?", "A new site is usually ready a few minutes after you pay, and we email you when it is. If it’s been more than an hour, open a support request and we’ll look right away."],
+      ["How do I open my site’s editor?", "Sign in to your account and choose Log in to your website next to the site. It opens your site’s WordPress dashboard already signed in."],
+      ["How do I sign in?", "Go to your account and sign in with the email address you bought your plan with. Forgot your password? Choose Lost your password? and we’ll email you a link."]
+    ],
+    "Billing": [
+      ["Can I change my plan or size?", "Yes. Open a support request with your site name and what you’d like, and we’ll switch it for you. The new price starts from your next renewal."],
+      ["How do I cancel?", "Sign in to your account and choose Manage or cancel plan next to the site. Your site stays online until the end of the period you’ve paid for."]
+    ],
+    "Looking after your site": [
+      ["Who keeps WordPress up to date?", "We do. WordPress, its plugins and the server are kept up to date for you."],
+      ["Is my site backed up?", "Yes, every night, with daily and weekly copies kept. If something goes wrong, open a support request and we’ll bring it back."]
+    ]
+  }
+}

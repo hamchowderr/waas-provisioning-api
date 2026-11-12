@@ -2166,6 +2166,8 @@ export interface components {
             sizeTimes: components["schemas"]["PriceBySize"];
             /** @description How many months a year costs */
             yearlyMonths: number;
+            /** @description Free days at the start of a new website plan, one trial per person */
+            trialDays: number;
             /** @description The saving off every site's price once a customer has this many live sites */
             volumeTiers: {
                 sites: number;
@@ -2201,6 +2203,21 @@ export interface components {
                     /** @description Sold only for a website with a care package */
                     careOnly: boolean;
                 }[];
+            };
+            /** @description Add-ons for one website, sold on the shop */
+            packs: {
+                /** @description Extra emails, a one-time price; they never expire */
+                email: {
+                    emails: number;
+                    /** @description One-time price in US dollars */
+                    price: number;
+                };
+                /** @description Extra storage, a monthly price; packs stack */
+                storage: {
+                    gb: number;
+                    /** @description Price a month in US dollars */
+                    monthly: number;
+                };
             };
         };
         PriceBySize: {

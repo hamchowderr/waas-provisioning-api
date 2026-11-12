@@ -1,7 +1,7 @@
 <?php
 /*
  * Plugin Name: Seller storefront defaults
- * Description: Settings the seller storefront template keeps in code: WP Fusion kept out of staging mode and the owner's details filled in once. Buyers and leads are tagged by the AnyPress CRM lifecycle plugin. Part of the storefront template.
+ * Description: Settings the seller storefront template keeps in code: WP Fusion kept out of staging mode and the owner’s details filled in once (FluentCRM, FluentCart, Fluent Support, FluentBooking, FluentAffiliate). Buyers and leads are tagged by the AnyPress CRM lifecycle plugin. Part of the storefront template.
  */
 
 // WP Fusion compares the site URL with the one it was set up on and stops syncing when they differ. Every
@@ -14,7 +14,7 @@ add_filter('wp_fusion_hide_upgrade_nags', '__return_true');
 /*
  * The owner's details, filled in once. The API sets the site title and admin email after the storefront is made from
  * the template, so FluentCRM's business name and email (its email footers) wait for the first web request that has a
- * real admin email.
+ * real admin email. The other plugins' copies of the owner's name and email follow in the same step.
  */
 add_action('init', function () {
     if ((defined('WP_CLI') && WP_CLI) || get_option('seller_storefront_owner_applied') || !defined('FLUENTCRM')) {
@@ -33,4 +33,36 @@ add_action('init', function () {
         'admin_email' => $email,
     ]);
     update_option('fluentcrm-global-settings', $crm);
+
+    $name = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
+    $owner = get_user_by('email', $email);
+    $steps = [
+        // FluentCart: the store's name on receipts and invoices.
+        'fluent-cart' => static fn() => (new \FluentCart\Api\StoreSettings())->save(['store_name' => $name]),
+        // Fluent Support: its first mailbox, which the Support page's requests need, under the owner's name and email.
+        'fluent-support' => static function () use ($name, $email, $owner) {
+            if (!\FluentSupport\App\Models\MailBox::first()) {
+                \FluentSupport\App\Models\MailBox::create(['name' => $name, 'email' => $email, 'box_type' => 'web', 'is_default' => 'yes', 'created_by' => $owner ? $owner->ID : 0, 'settings' => ['admin_email_address' => $email]]);
+            }
+        },
+        // FluentBooking: the Book a call calendar, made for the template's admin, moves to the owner.
+        'fluent-booking' => static function () use ($owner, $name) {
+            if ($owner) {
+                \FluentBooking\App\Models\Calendar::query()->update(['user_id' => $owner->ID, 'title' => $name]);
+                \FluentBooking\App\Models\CalendarSlot::query()->update(['user_id' => $owner->ID]);
+            }
+        },
+        // FluentAffiliate: where its notices about new referrers go.
+        'fluent-affiliate' => static function () use ($email) {
+            $utility = '\FluentAffiliate\App\Helper\Utility';
+            $utility::updateOption('global_email_settings', array_merge($utility::defaultEmailSettings(), (array) $utility::getOption('global_email_settings', []), ['admin_email' => $email]));
+        },
+    ];
+    foreach ($steps as $plugin => $step) {
+        try {
+            $step();
+        } catch (\Throwable $e) {
+            error_log("Seller storefront: owner details for $plugin: " . $e->getMessage()); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- one plugin's setup failing must not stop the rest.
+        }
+    }
 }, 9999);
