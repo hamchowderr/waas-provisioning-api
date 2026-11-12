@@ -96,6 +96,12 @@ export interface Config {
    */
   applicationNotify?: string[];
   /**
+   * Where someone who applied to sell books their set-up call (SELLER_CALL_URL, an https booking page). Sellers and
+   * resellers talk to us before they're approved, and billing is agreed on that call. Unset: the email asks them to
+   * reply to pick a time.
+   */
+  sellerCallUrl?: string;
+  /**
    * The CRM told when an application is approved (src/crm.ts): CRM_URL and CRM_SECRET. Unset: off.
    */
   crm?: CrmConfig;
@@ -249,6 +255,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     storefrontProductId: loadProductId('STOREFRONT_PRODUCT_ID', env.STOREFRONT_PRODUCT_ID),
     storeTemplateProductId: loadProductId('STORE_TEMPLATE_PRODUCT_ID', env.STORE_TEMPLATE_PRODUCT_ID),
     applicationNotify: loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
+    sellerCallUrl: loadHttpsUrl('SELLER_CALL_URL', env.SELLER_CALL_URL),
     crm: loadCrmConfig(env, brandDomain),
     jobAlerts: loadEmails('JOB_ALERT_EMAILS', env.JOB_ALERT_EMAILS) ?? loadEmails('APPLICATION_NOTIFY_EMAILS', env.APPLICATION_NOTIFY_EMAILS),
     resellerInvoices: loadResellerInvoiceConfig(env),
@@ -262,6 +269,14 @@ function loadProductId(name: string, value: string | undefined): string | undefi
   if (!id) return undefined;
   if (!isUuid(id)) throw new Error(`${name} must be a product id (a UUID)`);
   return id;
+}
+
+function loadHttpsUrl(name: string, value: string | undefined): string | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  const url = new URL(raw);
+  if (url.protocol !== 'https:') throw new Error(`${name} must be an https address`);
+  return url.toString();
 }
 
 function loadEmails(name: string, value: string | undefined): string[] | undefined {
