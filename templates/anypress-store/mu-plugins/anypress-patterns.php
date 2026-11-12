@@ -110,6 +110,14 @@ function anypress_call_to_action(string $title, string $text, array $buttons): s
     );
 }
 
+/** One of the AnyPress theme's own sections, by pattern slug, or $fallback when the theme doesn't have it. */
+function anypress_theme_section(string $slug, string $fallback = ''): string
+{
+    $pattern = WP_Block_Patterns_Registry::get_instance()->get_registered($slug);
+
+    return is_array($pattern) && !empty($pattern['content']) ? $pattern['content'] : $fallback;
+}
+
 /** A heading over a plugin's shortcode (a product list, a booking calendar, a form). */
 function anypress_embed(string $title, string $shortcode, string $anchor = '', string $style = ''): string
 {
@@ -152,7 +160,9 @@ function anypress_starter_pages(): array
         ],
         'anypress/home-store' => [__('Home: online store', 'anypress'), 'home, homepage, shop, store, products', 'fluent-cart/fluent-cart.php', fn () =>
             anypress_hero($name, __('Say in a sentence what you sell and why people love it.', 'anypress'), [[__('Shop now', 'anypress'), $page('shop', '/shop/')], $about])
-            . anypress_embed(__('Our products', 'anypress'), '[fluent_cart_products per_page="6" paginator="numbers"]')
+            // The theme's newest products and its category tiles, as blocks the owner edits like any other section.
+            . anypress_theme_section('anypress/shop-new-arrivals', anypress_embed(__('Our products', 'anypress'), '[fluent_cart_products per_page="6" paginator="numbers"]'))
+            . anypress_theme_section('anypress/shop-categories')
             . anypress_features(__('Good to know', 'anypress'), [
                 [__('Shipping', 'anypress'), __('Where you ship to and how long it takes.', 'anypress')],
                 [__('Secure checkout', 'anypress'), __('Pay safely by card. Your details are never stored on this site.', 'anypress')],
