@@ -253,11 +253,13 @@ export function createServer(deps: ServerDeps) {
   // the API can't be reached: the panel then shows nothing rather than a wrong number.
   app.get('/agent-controller/usage', async (c) => {
     try {
-      const path = c.get('demo' as never) ? '/demos/assistant/usage' : '/oauth/site/assistant-usage';
+      const demo = c.get('demo' as never) as boolean;
+      const path = demo ? '/demos/assistant/usage' : '/oauth/site/assistant-usage';
       const res = await fetchImpl(new URL(path, deps.apiUrl), { headers: { Authorization: `Bearer ${bearer(c)}` } });
       if (!res.ok) return c.json({});
       const usage = (await res.json()) as { used?: number; limit?: number; resetsAt?: string };
-      return c.json({ used: usage.used, limit: usage.limit, resetsAt: usage.resetsAt });
+      // A demo's messages are for the demo, not the month.
+      return c.json(demo ? { used: usage.used, limit: usage.limit, demo: true } : { used: usage.used, limit: usage.limit, resetsAt: usage.resetsAt });
     } catch {
       return c.json({});
     }

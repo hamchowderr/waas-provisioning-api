@@ -98,15 +98,16 @@ function suggestionsFor(selected: Selected): Suggestion[] {
   ];
 }
 
-type Usage = { used?: number; limit?: number };
+type Usage = { used?: number; limit?: number; demo?: boolean };
 
-/** "128 messages left" in the chat's header, once the month's count is known. */
+/** "128 messages left this month" (or "in this demo") in the chat's header, once the count is known. */
 function MessagesLeft({ usage }: { usage: Usage | null }) {
   if (!usage || typeof usage.used !== 'number' || typeof usage.limit !== 'number') return null;
   const left = Math.max(0, usage.limit - usage.used);
+  const when = usage.demo ? 'in this demo' : 'this month';
   return (
-    <span className={`font-normal text-xs ${left <= usage.limit * 0.1 ? 'text-amber-700' : 'text-muted-foreground'}`} title={`${usage.used} of ${usage.limit} messages used this month`}>
-      {left} {left === 1 ? 'message' : 'messages'} left this month
+    <span className={`font-normal text-xs ${left <= usage.limit * 0.1 ? 'text-amber-700' : 'text-muted-foreground'}`} title={`${usage.used} of ${usage.limit} messages used ${when}`}>
+      {left} {left === 1 ? 'message' : 'messages'} left {when}
     </span>
   );
 }
