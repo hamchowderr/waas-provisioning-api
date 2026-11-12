@@ -15,7 +15,7 @@ import { badRequest, conflict, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import { publicBase } from './oauth.ts';
 import { versionService } from './routes/versions.ts';
-import { AUDIENCES, createStorefront, SITE_TYPES } from './storefronts.ts';
+import { AUDIENCES, createStorefront, knownKeys, SITE_TYPES } from './storefronts.ts';
 import { domainInUse } from './tenants.ts';
 
 /**
@@ -81,13 +81,19 @@ function text(value: unknown, name: string, max: number, required = true): strin
   return s;
 }
 
-/** A list of known keys, without repeats; `null` and a missing value give `missing`. */
-function keys(value: unknown, name: string, allowed: readonly string[], missing: string[] | null): string[] | null {
-  if (value === undefined || value === null) return missing;
-  if (!Array.isArray(value) || !value.every((v) => typeof v === 'string' && allowed.includes(v))) {
-    throw badRequest(`${name} must be a list of ${allowed.join(', ')}`);
-  }
-  return [...new Set(value as string[])];
+/**
+ * The kinds of sites they sell (left out or null when they aren't sure yet, which keeps every kind on their storefront)
+ * and the kinds of customers they serve (none when no group fits: then the storefront has no Who we help pages).
+ */
+function parseKinds(body: Record<string, unknown>) {
+  const siteTypes = knownKeys(body.siteTypes, 'siteTypes', SITE_TYPES, null);
+  if (siteTypes && !siteTypes.length) throw badRequest('siteTypes must name at least one site type, or be left out when not sure');
+  return {
+    siteTypes,
+    siteTypesOther: text(body.siteTypesOther, 'siteTypesOther', 300, false),
+    audiences: knownKeys(body.audiences, 'audiences', AUDIENCES, [])!,
+    audiencesOther: text(body.audiencesOther, 'audiencesOther', 300, false),
+  };
 }
 
 function parseWebsite(value: unknown): string | null {
@@ -136,13 +142,7 @@ export function publicApplicationRoutes(deps: Deps) {
     const wantsStorefront = body.wantsStorefront;
     if (body.highLevelAgency !== undefined && typeof body.highLevelAgency !== 'boolean') throw badRequest('highLevelAgency must be true or false');
     const highLevelAgency = body.highLevelAgency === true;
-    // The site types they sell; left out (or null) when they aren't sure yet, which keeps every type on their storefront.
-    const siteTypes = keys(body.siteTypes, 'siteTypes', SITE_TYPES, null);
-    if (siteTypes && !siteTypes.length) throw badRequest('siteTypes must name at least one site type, or be left out when not sure');
-    const siteTypesOther = text(body.siteTypesOther, 'siteTypesOther', 300, false);
-    // The kinds of customers they serve; none when no group fits, and then the storefront has no Who we help pages.
-    const audiences = keys(body.audiences, 'audiences', AUDIENCES, [])!;
-    const audiencesOther = text(body.audiencesOther, 'audiencesOther', 300, false);
+    const { siteTypes, siteTypesOther, audiences, audiencesOther } = parseKinds(body);
     let subdomain: string | null = null;
     if (wantsStorefront && body.storefrontSubdomain !== undefined && body.storefrontSubdomain !== null && body.storefrontSubdomain !== '') {
       subdomain = typeof body.storefrontSubdomain === 'string' ? body.storefrontSubdomain.trim().toLowerCase() : '';
@@ -296,13 +296,7 @@ export function adminApplicationRoutes(deps: Deps) {
         storefront = await createStorefront(
           deps,
           product.id,
-          {
-            name: application.business,
-            email: application.email,
-            subdomain: application.storefrontSubdomain ?? undefined,
-            siteTypes: application.siteTypes ?? undefined,
-            audiences: application.audiences,
-          },
+          { name: application.business, email: application.email, subdomain: application.storefrontSubdomain ?? undefined, siteTypes: application.siteTypes, audiences: application.audiences },
           publicBase(c, config.publicUrl),
         );
       } catch (err) {

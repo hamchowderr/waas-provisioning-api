@@ -27,7 +27,7 @@ export interface NewStorefront {
   /** <subdomain>.<platform domain> as its address; without it, only its generated base domain. */
   subdomain?: string;
   /** The site types it sells (the price list's keys); without them, every type. */
-  siteTypes?: string[];
+  siteTypes?: string[] | null;
   /** The kinds of customers it has Who we help pages for (applications.ts AUDIENCES); without them, every kind. */
   audiences?: string[];
 }
@@ -36,6 +36,26 @@ export interface NewStorefront {
 export const SITE_TYPES: readonly string[] = PRICE_LIST.siteTypes.map((t) => t.key);
 /** The kinds of customers a storefront has a Who we help page for (templates/seller-storefront/audiences.json). */
 export const AUDIENCES: readonly string[] = ['shops', 'specialty', 'courses', 'associations', 'churches', 'locations', 'freelancers', 'software'];
+
+/** A list of known keys, without repeats; `null` and a missing value give `missing`. */
+export function knownKeys(value: unknown, name: string, allowed: readonly string[], missing: string[] | null): string[] | null {
+  if (value === undefined || value === null) return missing;
+  if (!Array.isArray(value) || !value.every((v) => typeof v === 'string' && allowed.includes(v))) {
+    throw badRequest(`${name} must be a list of ${allowed.join(', ')}`);
+  }
+  return [...new Set(value as string[])];
+}
+
+/**
+ * Which plans and Who we help pages a storefront opens with, as the option the storefront reads on its first visit to
+ * narrow its shop (templates/seller-storefront/mu-plugins/seller-storefront.php). None when neither is given.
+ */
+function setupOption(input: NewStorefront | undefined): Record<string, string> {
+  const siteTypes = knownKeys(input?.siteTypes, 'siteTypes', SITE_TYPES, null);
+  if (siteTypes && !siteTypes.length) throw badRequest('siteTypes must name at least one site type, or be left out');
+  const audiences = knownKeys(input?.audiences, 'audiences', AUDIENCES, null);
+  return siteTypes || audiences ? { anypress_storefront_setup: JSON.stringify({ siteTypes, audiences }) } : {};
+}
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -81,12 +101,7 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
   const subdomain = typeof input?.subdomain === 'string' ? input.subdomain.trim().toLowerCase() : '';
   if (subdomain && !LABEL.test(subdomain)) throw badRequest('subdomain can only contain letters, digits and - (at most 63)');
   const domainBase = config.platformDomain ?? config.storesDomain;
-  for (const [field, list, allowed] of [['siteTypes', input?.siteTypes, SITE_TYPES], ['audiences', input?.audiences, AUDIENCES]] as const) {
-    if (list !== undefined && (!Array.isArray(list) || !list.every((v) => typeof v === 'string' && allowed.includes(v)))) {
-      throw badRequest(`${field} must be a list of ${allowed.join(', ')}`);
-    }
-  }
-  if (input?.siteTypes && !input.siteTypes.length) throw badRequest('siteTypes must name at least one site type, or be left out');
+  const setup = setupOption(input);
 
   const existing = await getStorefront(deps, productId);
   if (existing) throw conflict(`This product already has a ready-made storefront (${existing.domainName})`);
@@ -108,11 +123,7 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
         ...(config.platformDomain ? { anypress_root_domain: config.platformDomain } : {}),
         // Custom domains point where the stores' own names do, like the platform's own storefront.
         ...(await customDomainRecords(config.storesDomain)),
-        // Which plans and Who we help pages it opens with; the storefront narrows its shop to them on its first visit
-        // (templates/seller-storefront/mu-plugins/seller-storefront.php).
-        ...(input.siteTypes || input.audiences
-          ? { anypress_storefront_setup: JSON.stringify({ siteTypes: input.siteTypes ?? null, audiences: input.audiences ?? null }) }
-          : {}),
+        ...setup,
       },
       phpConstants: {
         ANYPRESS_API_BASE_URL: { value: apiUrl },
