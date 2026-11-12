@@ -94,7 +94,7 @@ ${siteGuide()}`;
 const ASSISTANT_ID = 'website-assistant';
 
 /** A demo on anypress.io/try: its resource id starts with this (server.ts), and it has no website behind it. */
-export const isDemo = (resourceId: string | undefined) => !!resourceId?.startsWith('demo:');
+const isDemo = (resourceId: string | undefined) => !!resourceId?.startsWith('demo:');
 
 const DEMO = `## This is a demo
 

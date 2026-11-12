@@ -205,6 +205,16 @@ export function createServer(deps: ServerDeps) {
   const app = new Hono();
   app.get('/health', (c) => c.json({ ok: true }));
 
+  /** The website (or demo) a token signs in to, or why it can't. */
+  async function signIn(token: string, demo: boolean): Promise<{ connection: { resource: string; url: string } } | { refused: string; status: 401 | 502 }> {
+    try {
+      return { connection: demo ? await connectDemo(token) : await connect(token) };
+    } catch (error) {
+      if (error instanceof SignedOut) return { refused: demo ? 'This demo has ended. Start it again to keep going.' : 'Sign in with your website again.', status: 401 };
+      return { refused: demo ? 'The assistant can’t be reached right now. Try again in a minute.' : 'The website can’t be reached right now. Try again in a minute.', status: 502 };
+    }
+  }
+
   app.use('/agent-controller/*', async (c, next) => {
     const origin = c.req.header('Origin');
     if (origin && deps.allowedOrigins?.includes(origin)) {
@@ -217,14 +227,9 @@ export function createServer(deps: ServerDeps) {
     const token = bearer(c);
     if (!token) return c.json({ error: 'Sign in with your website first.' }, 401);
     const demo = DEMO_TOKEN.test(token);
-    let connection: { resource: string; url: string };
-    try {
-      connection = demo ? await connectDemo(token) : await connect(token);
-    } catch (error) {
-      const signedOut = error instanceof SignedOut;
-      if (demo) return c.json({ error: signedOut ? 'This demo has ended. Start it again to keep going.' : 'The assistant can’t be reached right now. Try again in a minute.' }, signedOut ? 401 : 502);
-      return c.json({ error: signedOut ? 'Sign in with your website again.' : 'The website can’t be reached right now. Try again in a minute.' }, signedOut ? 401 : 502);
-    }
+    const signed = await signIn(token, demo);
+    if ('refused' in signed) return c.json({ error: signed.refused }, signed.status);
+    const { connection } = signed;
     if (!demo) byResource.set(connection.resource, hash(token));
     tokenOf.set(connection.resource, token);
     // Each message the owner sends counts against the store's monthly allowance, which the API keeps per plan size.
