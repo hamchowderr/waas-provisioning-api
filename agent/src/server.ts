@@ -42,6 +42,14 @@ interface Connection {
 /** How long a checked token is trusted before the API is asked again. */
 const RECHECK_MS = 5 * 60_000;
 
+/**
+ * A demo on anypress.io/try signs in with a demo sign-in from the API (src/demo-assistant.ts), not a website's. There is
+ * no website behind it: the assistant only changes the page open in the demo's editor (isDemo in assistant.ts).
+ */
+const DEMO_TOKEN = /^apdemo_[A-Za-z0-9_-]{43}$/;
+/** Where demos run: the panel beside a demo's editor only talks to an editor there. */
+const DEMO_SITE_URL = 'https://demo.anypress.site';
+
 const bearer = (c: Context) => /^Bearer\s+(\S+)$/i.exec(c.req.header('Authorization') ?? '')?.[1];
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -65,6 +73,23 @@ export function createServer(deps: ServerDeps) {
   const byResource = new Map<string, string>();
   /** The newest sign-in token for each website, which its model steps' token counts are sent with. */
   const tokenOf = new Map<string, string>();
+
+  /** A demo's sign-in, checked with the API. A demo has no site tools: its connection only names it. */
+  const demos = new Map<string, { resource: string; checked: number }>();
+  async function connectDemo(token: string): Promise<{ resource: string; url: string }> {
+    const key = hash(token);
+    const known = demos.get(key);
+    if (!known || Date.now() - known.checked >= RECHECK_MS) {
+      const res = await fetchImpl(new URL('/demos/assistant/usage', deps.apiUrl), { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 403) {
+        demos.delete(key);
+        throw new SignedOut();
+      }
+      if (!res.ok) throw new Error(`The API answered ${res.status} for a demo.`);
+      demos.set(key, { resource: `demo:${key.slice(0, 32)}`, checked: Date.now() });
+    }
+    return { resource: demos.get(key)!.resource, url: DEMO_SITE_URL };
+  }
 
   async function connect(token: string): Promise<Connection> {
     const key = hash(token);
@@ -121,6 +146,12 @@ export function createServer(deps: ServerDeps) {
    */
   async function countMessage(token: string): Promise<string | null> {
     try {
+      if (DEMO_TOKEN.test(token)) {
+        const res = await fetchImpl(new URL('/demos/assistant/usage', deps.apiUrl), { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+        if (res.status !== 429) return null;
+        const usage = (await res.json().catch(() => null)) as { limit?: number } | null;
+        return `This demo has used all ${usage?.limit ?? 'its'} assistant messages. Make it your website to keep going: your own website's plan comes with many more.`;
+      }
       const res = await fetchImpl(new URL('/oauth/site/assistant-usage', deps.apiUrl), { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       if (res.status !== 429) return null;
       const usage = (await res.json().catch(() => null)) as { limit?: number; resetsAt?: string } | null;
@@ -138,7 +169,8 @@ export function createServer(deps: ServerDeps) {
    */
   function recordTokens(resourceId: string, tokens: StepTokens): void {
     const token = tokenOf.get(resourceId);
-    if (!token) return;
+    // A demo's messages are capped per demo instead (src/demo-assistant.ts in the API).
+    if (!token || DEMO_TOKEN.test(token)) return;
     fetchImpl(new URL('/oauth/site/assistant-usage/tokens', deps.apiUrl), {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -184,14 +216,16 @@ export function createServer(deps: ServerDeps) {
     }
     const token = bearer(c);
     if (!token) return c.json({ error: 'Sign in with your website first.' }, 401);
-    let connection: Connection;
+    const demo = DEMO_TOKEN.test(token);
+    let connection: { resource: string; url: string };
     try {
-      connection = await connect(token);
+      connection = demo ? await connectDemo(token) : await connect(token);
     } catch (error) {
       const signedOut = error instanceof SignedOut;
+      if (demo) return c.json({ error: signedOut ? 'This demo has ended. Start it again to keep going.' : 'The assistant can’t be reached right now. Try again in a minute.' }, signedOut ? 401 : 502);
       return c.json({ error: signedOut ? 'Sign in with your website again.' : 'The website can’t be reached right now. Try again in a minute.' }, signedOut ? 401 : 502);
     }
-    byResource.set(connection.resource, hash(token));
+    if (!demo) byResource.set(connection.resource, hash(token));
     tokenOf.set(connection.resource, token);
     // Each message the owner sends counts against the store's monthly allowance, which the API keeps per plan size.
     if (c.req.method === 'POST' && c.req.path === '/agent-controller/stream') {
@@ -203,6 +237,7 @@ export function createServer(deps: ServerDeps) {
     c.set('requestContext' as never, requestContext as never);
     c.set('siteUrl' as never, connection.url as never);
     c.set('resource' as never, connection.resource as never);
+    c.set('demo' as never, demo as never);
     await next();
   });
 
@@ -213,7 +248,8 @@ export function createServer(deps: ServerDeps) {
   // the API can't be reached: the panel then shows nothing rather than a wrong number.
   app.get('/agent-controller/usage', async (c) => {
     try {
-      const res = await fetchImpl(new URL('/oauth/site/assistant-usage', deps.apiUrl), { headers: { Authorization: `Bearer ${bearer(c)}` } });
+      const path = c.get('demo' as never) ? '/demos/assistant/usage' : '/oauth/site/assistant-usage';
+      const res = await fetchImpl(new URL(path, deps.apiUrl), { headers: { Authorization: `Bearer ${bearer(c)}` } });
       if (!res.ok) return c.json({});
       const usage = (await res.json()) as { used?: number; limit?: number; resetsAt?: string };
       return c.json({ used: usage.used, limit: usage.limit, resetsAt: usage.resetsAt });
@@ -227,6 +263,8 @@ export function createServer(deps: ServerDeps) {
   // wait for an approval the way the assistant's own business_profile_change does.
   const business = async (c: Context, args: Record<string, unknown>) => {
     const resource = c.get('resource' as never) as string;
+    // A demo has no website to keep the details: nothing to show, and nowhere to save.
+    if (c.get('demo' as never)) return args.action === 'read' ? c.json({}) : c.json({ error: 'A demo can’t keep these details. Make it your website first.' }, 409);
     try {
       const answer = await callSite(resource, 'business_profile', args);
       if (args.action !== 'read') assistant.forgetBusiness(resource);

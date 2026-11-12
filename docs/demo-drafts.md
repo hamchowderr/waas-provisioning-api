@@ -16,3 +16,11 @@ For whoever runs the API or builds a demo page. Anyone can build their own demo 
 5. **The store gets the demo.** The store is built from its template exactly as without a demo. Then, through its site routes: each photo is copied into its media library and the placeholders become the store's own links; the styles, header and footer are saved; each page replaces the store's page with the same slug, or is added as a new page; each menu replaces the store's menu with the same title; and the business details are saved. Pages keep their status from the demo. If a step fails, the steps after it are skipped (the store keeps its template's content there), and the reason is kept with the draft.
 
 Drafts nobody used are removed after 14 days, with their photos.
+
+## The assistant in a demo
+
+A demo on anypress.io/try has the website assistant beside its page editor. A demo has no store, so anypress.io asks
+`POST /demos/assistant` (`{ "siteType": "website" }`) for a demo sign-in and puts it in the demo. With it, the assistant
+changes only the page open in the editor, in the visitor's browser: it can't reach any website. Each demo gets 12
+messages (`GET` and `POST /demos/assistant/usage`, with the sign-in as a Bearer token), and only 40 demos can start the
+assistant in an hour. A sign-in lasts three hours.
