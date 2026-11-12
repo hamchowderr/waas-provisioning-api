@@ -24,7 +24,7 @@ Plugins are listed in the order AnyPress shows them everywhere.
 | Fluent Support | `fluent-support` | 2.5.0 |
 | FluentSnippets | `easy-code-manager` | 10.58 |
 | Rank Math SEO | `seo-by-rank-math` | 1.0.282 |
-| AutomatorWP | `automatorwp` | 6.0.9 |
+| AutomatorWP | `automatorwp` | 6.1.0 |
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 
 Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
