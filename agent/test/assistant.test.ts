@@ -373,7 +373,7 @@ describe('the assistant in a demo', () => {
     const refused = await h.post('/agent-controller/stream', d, { text: 'One more', editor });
     expect(refused.status).toBe(429);
     expect((await refused.json()).error).toMatch(/^This demo has used all 12 assistant messages\./);
-    expect(await (await h.get('/agent-controller/usage', d)).json()).toMatchObject({ used: 12, limit: 12 });
+    expect(await (await h.get('/agent-controller/usage', d)).json()).toEqual({ used: 12, limit: 12, demo: true });
     expect(await (await h.get('/agent-controller/business', d)).json()).toEqual({});
   });
 
