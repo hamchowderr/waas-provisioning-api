@@ -8,10 +8,13 @@ who doesn't bring a WordPress site of their own. The API builds one with
 |---|---|
 | WordPress | 7.1.4 for the build; storefronts run `wordpress:7.1-php8.3-apache` (version `7.1`, PHP `8.3`) |
 | Theme | The AnyPress theme, the release the store template pins ([`../anypress-store/theme.sh`](../anypress-store/theme.sh)), the only theme installed |
-| Plugins | AnyPress Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/anypress-host` with its release script, at the version given to `build.sh`), FluentCart 2.2.0, FluentCRM 3.3.1, Fluent Forms 6.2.16, WP Fusion Lite 3.48.0 and FluentAuth 3.1.0 (free, wordpress.org), FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`) and AnyPress Blocks 0.3.0. All active |
-| Pages | A whole website built from the theme's sections: Home (what a website includes, how it works, the plans, questions), How it works, Plans (FluentCart's shop, at `/plans/`), About, Questions and Contact (with the contact form), Who we help (a page for each kind of customer: shops and makers, specialty retailers, course creators, chambers and associations, churches, franchises and multi-location businesses, agencies and freelancers, and software companies, each with what they get, questions and the plans), plus FluentCart's Cart, Checkout, Receipt, Review Your Order and Account. The main menu has How it works, Who we help, Plans, About, Questions, Contact and Account |
+| Plugins | AnyPress Host (built from [`waas-plugins`](https://github.com/hamchowderr/waas-plugins) `packages/anypress-host` with its release script, at the version given to `build.sh`), FluentCart 2.3.1, FluentCRM 3.3.1, Fluent Forms 6.2.17, WP Fusion Lite 3.48.0 and FluentAuth 3.1.1 (free, wordpress.org), FluentKit 2.1.4 (WPManageNinja, GPL; the zip in `../anypress-store/plugins`) and AnyPress Blocks 0.4.3. All active |
+| Pages | A whole shop in the shop design (below), under the owner's own name and logo: Home (what you're making, how it works, the plans, what every plan includes, questions), Plans (FluentCart's shop, at `/plans/`, one card per kind of site) and a page per plan with its sizes, About, Questions, Contact (with the contact form), Terms of service, Privacy policy and Refund policy (plain starting text to edit), Who we help (a page for each kind of customer: shops and makers, specialty retailers, course creators, chambers and associations, churches, franchises and multi-location businesses, freelancers and studios, and software companies, each with what they get, the plan that fits and questions), plus FluentCart's Cart, Checkout, Receipt and Account. The menu has Plans, Compare sizes, Who we help, Questions and Account |
+| Plans | One FluentCart product per site type and size (Small, Medium, Large), monthly and yearly (ten months' price), at the [price list](../../src/pricing.ts)'s prices, made by AnyPress Host's own **Create my plans** |
 | Settings | Permalinks `/%postname%/`, timezone UTC, comments and pingbacks closed, registration off, **search engines discouraged** until launch |
 | Users | `waas-admin` with a random password nobody keeps. The owner's administrator account is made when the storefront is created |
+
+**The shop design** is shop.anypress.io's: the block styles, drawings, pictures and page builders in `waas-plugins` `scripts/test-storefront/remote/design`, with the words in [`brand.json`](brand.json) instead of AnyPress's (no AnyPress name, address or logo; the site's own title and logo instead). [`shop.php`](shop.php) builds the plans and pages from it, [`audiences.json`](audiences.json) holds the Who we help pages' words. Every word is ordinary page content the owner edits in WordPress.
 
 [`presets.php`](presets.php) runs once on the build: FluentCart's first activation marked done, the cart icon in the
 menu, renewal reminders, a terms checkbox at checkout, FluentAuth's first-run defaults with XML-RPC off, FluentKit's one dashboard (merged menus, app headers hidden), FluentCRM (no setup wizard, an unticked newsletter box at checkout
@@ -45,14 +48,16 @@ The storefront is a store of the storefront product (`STOREFRONT_PRODUCT_ID`), s
 nightly backups, the page cache for visitors with no cookies (a cart or a login always skips it), email through the
 platform's relay, and its own domains.
 
-What the owner still does: connect a payment method in FluentCart, then make a subscription product with the
-**AnyPress websites** integration (AnyPress Host's home page lists the steps).
+What the owner still does: connect a payment method in FluentCart, change the words and prices they want, and turn
+search engines on.
 
 ## Build and publish
 
+The build needs Docker and Node 22.18 or newer (it reads the price list from `src/pricing.ts`).
+
 ```sh
-git -C ../waas-plugins checkout anypress-host-v2.3.0-beta.11
-templates/seller-storefront/build.sh ../waas-plugins 2.3.0-beta.11
+git -C ../waas-plugins checkout anypress-host-v2.20.0
+templates/seller-storefront/build.sh ../waas-plugins 2.20.0
 WAAS_API_URL=https://api.example.com WAAS_KEY=<storefront product key> WAAS_SECRET=<secret> templates/seller-storefront/publish.sh v1.0.0 --production
 ```
 

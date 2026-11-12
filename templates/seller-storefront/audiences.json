@@ -1,0 +1,250 @@
+{
+  "shops": {
+    "name": "Shops and makers",
+    "title": "Your own shop, on your own domain",
+    "lead": "Stop paying marketplace fees on every sale. Sell from a shop with your name on it, keep every customer and email them again whenever you like.",
+    "type": "store",
+    "drawing": "store",
+    "points": [
+      [
+        "Paid straight to you",
+        "Checkout uses your own payment account, so the money goes to you, not through a marketplace."
+      ],
+      [
+        "Your buyers, your list",
+        "Every buyer lands in your own email list, with follow-up emails already written."
+      ],
+      [
+        "Change it yourself",
+        "Products, shipping and discounts you can update any time, no developer needed."
+      ]
+    ],
+    "questions": [
+      [
+        "I already sell on a marketplace. Do I have to leave?",
+        "No. Keep it if it works for you. Your own shop sits beside it, and every customer who finds you there is yours to keep."
+      ],
+      [
+        "Can I use my own payment account?",
+        "Yes. You connect the payment account you already use, and payments go straight to it."
+      ]
+    ]
+  },
+  "specialty": {
+    "name": "Specialty retailers",
+    "title": "A shop that stays open",
+    "lead": "If big platforms have closed your shop or frozen your payments before, sell from your own site on your own domain, with the payment account you choose.",
+    "type": "store",
+    "drawing": "lock",
+    "points": [
+      [
+        "Bring your own processor",
+        "Checkout works with the payment account you already have, including processors that accept your industry."
+      ],
+      [
+        "Age check and terms",
+        "Add an age check and your own terms pages, so the shop fits the rules you sell under."
+      ],
+      [
+        "Your customers stay yours",
+        "Your customer list and order history stay with you, with follow-up emails ready to go."
+      ]
+    ],
+    "questions": [
+      [
+        "Will my shop be closed without warning?",
+        "Your shop runs on your own site and domain, so it doesn't depend on a marketplace's product rules."
+      ],
+      [
+        "Which payment processors work?",
+        "You connect your own account. Ask us about yours before you start and we'll tell you how it connects."
+      ]
+    ]
+  },
+  "courses": {
+    "name": "Course creators",
+    "title": "Your courses, community and list in one place",
+    "lead": "Stop paying for several tools and giving a platform its cut. Teach on a site with your name on it, for one monthly price.",
+    "type": "community",
+    "drawing": "courses",
+    "points": [
+      [
+        "Courses that track progress",
+        "Lessons, quizzes and progress for every student."
+      ],
+      [
+        "Your own community",
+        "A members' area on your own site instead of a separate app."
+      ],
+      [
+        "Email from the same place",
+        "Write to students and new leads without another tool."
+      ]
+    ],
+    "questions": [
+      [
+        "Can I move my courses over?",
+        "Yes. We can help you move your first course in so you can see how it works."
+      ],
+      [
+        "Do you take a cut of my sales?",
+        "No. You pay one monthly price and keep what you sell."
+      ]
+    ]
+  },
+  "associations": {
+    "name": "Chambers and associations",
+    "title": "Members, events and dues on one site",
+    "lead": "Bring your member directory, event sign-ups and dues together on one site your staff can run, without a developer.",
+    "type": "community",
+    "drawing": "note",
+    "points": [
+      [
+        "Member directory",
+        "Profiles each member can keep up to date themselves."
+      ],
+      [
+        "Events with sign-up",
+        "Members sign up and pay for events online."
+      ],
+      [
+        "Dues paid online",
+        "Renewals paid by card, with reminder emails sent for you."
+      ]
+    ],
+    "questions": [
+      [
+        "Can we keep our current domain?",
+        "Yes. Your site moves to your own domain whenever you are ready."
+      ],
+      [
+        "Can our members get websites too?",
+        "Yes. You can offer every member business its own website as a member benefit."
+      ]
+    ]
+  },
+  "churches": {
+    "name": "Churches",
+    "title": "A church website that runs itself",
+    "lead": "Events, online giving, small groups and your weekly email on one simple site, and nobody at church has to run the tech.",
+    "type": "community",
+    "drawing": "email",
+    "points": [
+      [
+        "Online giving",
+        "One-time and recurring gifts, paid into your church's own account."
+      ],
+      [
+        "Events and groups",
+        "People sign up for events and small groups online."
+      ],
+      [
+        "Sermons and a weekly email",
+        "Post sermons and send your weekly email from the same place."
+      ]
+    ],
+    "questions": [
+      [
+        "Who keeps it up to date?",
+        "Anyone on your team can change the words and photos. We look after hosting, updates and backups."
+      ],
+      [
+        "Where does giving go?",
+        "Straight to your church's own payment account."
+      ]
+    ]
+  },
+  "locations": {
+    "name": "Franchises and multi-location businesses",
+    "title": "One look for every location",
+    "lead": "Give every location the same site, each with its own bookings, hours and domain, all managed from one place.",
+    "type": "bookings",
+    "drawing": "bookings",
+    "points": [
+      [
+        "New locations in minutes",
+        "Each new location starts from your brand's own design."
+      ],
+      [
+        "Bookings per location",
+        "Every location takes bookings with its own staff and hours."
+      ],
+      [
+        "One bill",
+        "One monthly bill for every location's website."
+      ]
+    ],
+    "questions": [
+      [
+        "Can each location change its own site?",
+        "Yes, within your brand. Locations update their hours, staff and offers; the look stays yours."
+      ],
+      [
+        "Can every location have its own domain?",
+        "Yes. Each site can use its own domain or a page of yours."
+      ]
+    ]
+  },
+  "freelancers": {
+    "name": "Freelancers and studios",
+    "title": "Websites for your clients, under your name",
+    "lead": "Say yes when clients ask for a website. We host, update and back them up; you keep the client and add a monthly line to every invoice.",
+    "type": "website",
+    "drawing": "sell",
+    "points": [
+      [
+        "Live in minutes",
+        "Each client site starts from a ready-made design you make their own."
+      ],
+      [
+        "Looked after for you",
+        "Updates, security, backups and support are handled."
+      ],
+      [
+        "Your price on top",
+        "Charge your own price, so every site adds monthly income."
+      ]
+    ],
+    "questions": [
+      [
+        "Will my clients see your name?",
+        "No. Your clients deal with you, and the sites carry your brand."
+      ],
+      [
+        "Do I have to look after the sites?",
+        "No. Hosting, updates and backups are handled. You stay the person your client talks to."
+      ]
+    ]
+  },
+  "software": {
+    "name": "Software companies",
+    "title": "A website for every customer, from inside your product",
+    "lead": "When a customer signs up, their website is made automatically under your brand, and removed when they leave.",
+    "type": "website",
+    "drawing": "key",
+    "points": [
+      [
+        "Made on sign-up",
+        "Connect our API, Zapier, Make, n8n or HighLevel, and each new customer gets a site."
+      ],
+      [
+        "Tidy when they leave",
+        "Sites are suspended or removed automatically when a customer cancels."
+      ],
+      [
+        "One bill",
+        "One monthly bill for every customer's website."
+      ]
+    ],
+    "questions": [
+      [
+        "How do we connect it?",
+        "Through our API, or with Zapier, Make, n8n or HighLevel if you'd rather not write code."
+      ],
+      [
+        "Whose name do customers see?",
+        "Yours. The websites carry your brand."
+      ]
+    ]
+  }
+}

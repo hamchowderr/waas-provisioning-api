@@ -10,7 +10,9 @@
 # storefront gets later releases from the update channel. Check out the matching tag first.
 #
 # Output: templates/seller-storefront/dist/seller-storefront.zip (database.sql + wp-content/).
-# Needs Docker, curl, unzip, zip and composer. Starts dockerd itself when it isn't running.
+# The shop's design comes from the same checkout (scripts/test-storefront/remote/design, the shop.anypress.io design) with
+# this template's brand.json; the plans' prices from this repository's price list (src/pricing.ts).
+# Needs Docker, curl, unzip, zip, composer and Node 22.18 or later. Starts dockerd itself when it isn't running.
 set -euo pipefail
 
 # Pinned inputs. Bump these (and the checksums) to rebuild on newer releases.
@@ -102,6 +104,9 @@ SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | so
 # lifecycle (Website: Interested / Active / Past, the draft emails, the weekly numbers) is the store template's plugin.
 mkdir -p "$SITE/wp-content/mu-plugins"
 cp "$HERE/mu-plugins/seller-storefront.php" "$HERE/../anypress-store/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
+# The shop design's block styles and plan page shortcodes, which its pages use.
+DESIGN=$PLUGINS_REPO/scripts/test-storefront/remote/design
+cp "$DESIGN/anypress-shop.php" "$SITE/wp-content/mu-plugins/"
 
 echo "== AnyPress Host $HOST_VERSION from $PLUGINS_REPO"
 # The release build: production dependencies only, the version stamped, one anypress-host/ folder.
@@ -162,6 +167,19 @@ rm "$SITE/presets.php" "$SITE/anypress-patterns.php"
 mkdir -p "$SITE/crm" && cp "$HERE/../anypress-store/crm/setup.php" "$SITE/crm/" && cp "$HERE/crm-emails.json" "$SITE/crm/emails.json"
 wp eval-file /var/www/html/crm/setup.php --user=waas-admin
 rm -r "$SITE/crm"
+
+echo "== Shop"
+# The plans at the price list's prices, the shop design in this template's words (brand.json) and the pages around it
+# (shop.php says what it makes).
+mkdir -p "$SITE/shop"
+cp -R "$DESIGN" "$SITE/shop/design"
+cp "$HERE/brand.json" "$SITE/shop/design/brand.json"
+cp "$HERE/shop.php" "$HERE/audiences.json" "$HERE/../anypress-store/roles.json" "$HERE/../anypress-store/mu-plugins/anypress-patterns.php" "$SITE/shop/"
+node --input-type=module -e 'const { PRICE_LIST } = await import(process.argv[1]); console.log(JSON.stringify(PRICE_LIST));' \
+    "$HERE/../../src/pricing.ts" >"$SITE/shop/pricing.json"
+[ "$WP_USER" = 33:33 ] && chown -R 33:33 "$SITE/shop"
+wp eval-file /var/www/html/shop/shop.php --user=waas-admin
+rm -r "$SITE/shop"
 wp rewrite flush
 wp transient delete --all
 wp cache flush 2>/dev/null || true
@@ -179,7 +197,13 @@ EXPECTED=$(printf '%s\n' $SLUGS anypress-host | sort | tr '\n' ' ')
 [ "$(wp eval 'echo \FluentCrm\App\Models\Funnel::where("status", "draft")->count(), " ", \FluentCrm\App\Models\Funnel::where("status", "published")->count();')" = "$(jq length "$HERE/crm-emails.json") 0" ] || { echo "CRM automations missing or published" >&2; exit 1; }
 [ "$(wp eval '$f = wpFluent()->table("fluentform_forms")->find((int) get_option("anypress_crm_contact_form")); echo $f && str_contains($f->form_fields, "\"customer_group\"") ? "ok" : "bad";')" = ok ] || { echo "contact form questions missing" >&2; exit 1; }
 [ "$(wp eval '$c = get_option("_fc_ab_cart_settings"); echo ($c["enabled"] ?? "") === "yes" && \FluentCart\App\Models\Coupon::where("code", "COMEBACK20")->exists() ? "ok" : "bad";')" = ok ] || { echo "abandoned checkout or coupon missing" >&2; exit 1; }
-[ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,how-it-works,questions,contact,plans --format=count)" = 6 ] || { echo "storefront pages missing" >&2; exit 1; }
+[ "$(wp post list --post_type=page --post_status=publish --post_name__in=home,about,questions,contact,plans,terms,privacy,refund-policy --format=count)" = 8 ] || { echo "storefront pages missing" >&2; exit 1; }
+# Every site type in three sizes, published, at the price list's prices.
+[ "$(wp post list --post_type=fluent-products --post_status=publish --format=count)" = 15 ] || { echo "the 15 plans are missing" >&2; exit 1; }
+EXPECTED_PRICE=$(jq '.siteTypes[] | select(.key == "community") | .monthly.small * 100' <(node --input-type=module -e 'const { PRICE_LIST } = await import(process.argv[1]); console.log(JSON.stringify(PRICE_LIST));' "$HERE/../../src/pricing.ts"))
+[ "$(wp eval 'echo (int) \FluentCart\App\Models\ProductVariation::where("post_id", get_page_by_path("community-small", OBJECT, "fluent-products")->ID)->min("item_price");')" = "$EXPECTED_PRICE" ] || { echo "plan prices don't match src/pricing.ts" >&2; exit 1; }
+[ "$(wp option get anypress_shop_brand --format=json | jq -r .whiteLabel)" = true ] || { echo "the shop design isn't in the storefront's own name" >&2; exit 1; }
+[ "$(wp eval 'global $wpdb; echo (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = \"publish\" AND (post_content LIKE \"%support@anypress.io%\" OR post_content LIKE \"%anypress.site%\" OR post_content LIKE \"%Otaku%\")");')" = 0 ] || { echo "AnyPress's own name or address on a storefront page" >&2; exit 1; }
 HUB=$(wp post list --post_type=page --name=who-we-help --field=ID)
 [ -n "$HUB" ] && [ "$(wp post list --post_type=page --post_status=publish --post_parent="$HUB" --format=count)" = 8 ] || { echo "Who we help pages missing" >&2; exit 1; }
 [ "$(wp eval 'echo var_export(WPF_STAGING_MODE, true), " ", wpf_get_option("crm"), wpf_get_option("connection_configured") ? " connected" : "";')" = "false fluentcrm connected" ] || { echo "WP Fusion must ship connected to FluentCRM and out of staging mode" >&2; exit 1; }

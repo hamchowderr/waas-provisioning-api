@@ -134,15 +134,16 @@ jobs:
             echo "HOST_VERSION=$HOST_VERSION" >> "$GITHUB_ENV"
           fi
           echo "AnyPress Host $HOST_VERSION"
+      # Before the build too: the storefront's build reads the price list from src/pricing.ts with Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Build
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           templates/release.sh "$PWD/waas-plugins" "$HOST_VERSION" "$VERSION" out
           cat checks/*.txt > out/checks.txt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
       # The built zip as a new store gets it: the store's own compose file in Docker, restored by the agent, every
       # site type loading over HTTP (templates/anypress-store/restore-check.sh). Playground can't show this.
       - name: Restore check
