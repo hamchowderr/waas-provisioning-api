@@ -24,6 +24,7 @@ import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
 import { isAppsResource, oauthRoutes, verifyAccessToken, type TokenOwner } from './oauth.ts';
 import { assistantUsageRoutes } from './assistant-usage.ts';
+import { demoAssistantRoutes } from './demo-assistant.ts';
 import { voiceRoutes } from './voice.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
@@ -272,6 +273,8 @@ export function createApp(deps: Deps) {
   oauthRoutes(app, deps);
   // The website assistant's monthly allowance per store (src/assistant-usage.ts).
   assistantUsageRoutes(app, deps);
+  // The assistant inside a demo on anypress.io/try (src/demo-assistant.ts). Public, capped per demo.
+  demoAssistantRoutes(app, deps);
   // The phone receptionist agent's calls about a store, by the number that was called (src/voice.ts).
   voiceRoutes(app, deps);
   mcpRoutes(app, deps);

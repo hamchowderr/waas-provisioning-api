@@ -93,6 +93,13 @@ ${siteGuide()}`;
 
 const ASSISTANT_ID = 'website-assistant';
 
+/** A demo on anypress.io/try: its resource id starts with this (server.ts), and it has no website behind it. */
+const isDemo = (resourceId: string | undefined) => !!resourceId?.startsWith('demo:');
+
+const DEMO = `## This is a demo
+
+The owner is trying a website in a demo on their own computer, before buying it. There is no website for your site tools to reach: only editor_change works, on the page open in the editor beside you. Write and change that page for them; it's the quickest way to see what the website can be. If they ask for something editor_change can't do (another page, the menus, the site's colours or fonts, settings), say that in this demo you can only change the open page, and that once it's their website you can do the rest too. Don't call the other site tools, support or business_profile.`;
+
 /**
  * What the assistant knows about WordPress, loaded when a job needs it (Mastra skills: the model sees each one's
  * name and description, and reads the rest with the skill tools). Ours, in agent/skills: this site's theme and
@@ -144,12 +151,14 @@ export function createAssistant(config: AssistantConfig) {
     instructions: async ({ requestContext }) => {
       const view = editorOf(requestContext);
       const resourceId = requestContext?.get(MASTRA_RESOURCE_ID_KEY) as string | undefined;
-      const about = resourceId ? describeBusiness(await businessOf(resourceId)) : '';
+      const demo = isDemo(resourceId);
+      const about = resourceId && !demo ? describeBusiness(await businessOf(resourceId)) : '';
       // Anthropic's prompt cache: the tools and these instructions are the same for every website, and the business
       // profile the same for every message on one website, so each is read back from the cache (about a tenth of
       // the price) instead of paid in full on every model step. The open editor changes often, so it comes last.
       return [
         { role: 'system' as const, content: INSTRUCTIONS, providerOptions: CACHED },
+        ...(demo ? [{ role: 'system' as const, content: DEMO, providerOptions: CACHED }] : []),
         ...(about ? [{ role: 'system' as const, content: about, providerOptions: CACHED }] : []),
         ...(view ? [{ role: 'system' as const, content: describeEditor(view) }] : []),
       ];
@@ -207,6 +216,8 @@ export function createAssistant(config: AssistantConfig) {
         await created.permissions.setForTool({ toolName: 'ask_user', policy: 'allow' });
         // An explicit "ask" outranks any grant, so a change always waits.
         for (const tool of CHANGE_TOOLS) await created.permissions.setForTool({ toolName: tool, policy: 'ask' });
+        // A demo has no website: its site tools are refused outright, so only the open editor can change.
+        if (isDemo(resourceId)) for (const tool of [...SAFE_TOOLS, ...CHANGE_TOOLS]) await created.permissions.setForTool({ toolName: tool, policy: 'deny' });
         return created;
       })();
       open.catch(() => sessions.delete(resourceId));
