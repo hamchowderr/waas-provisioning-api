@@ -103,6 +103,41 @@ function confirmPage(verifyUrl: string): string {
   return url.toString();
 }
 
+/**
+ * Whether `email` is on the team of the storefront `productId`: a member, or invited and not yet answered, of its own
+ * organization or of its reseller's.
+ */
+async function onTeam(pool: Pool, productId: string, email: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM products p JOIN auth.organization o ON o."productId" = p.id OR (p.reseller_id IS NOT NULL AND o."resellerId" = p.reseller_id)
+      WHERE p.id = $1 AND (
+        EXISTS (SELECT 1 FROM auth.member m JOIN auth."user" u ON u.id = m."userId" WHERE m."organizationId" = o.id AND lower(u.email) = $2)
+        OR EXISTS (SELECT 1 FROM auth.invitation i WHERE i."organizationId" = o.id AND lower(i.email) = $2 AND i.status = 'pending' AND i."expiresAt" > now()))
+      LIMIT 1`,
+    [productId, email],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** A sign-in link moved to the platform's own address, its callbackURL kept as a path on it. */
+function onPlatform(link: string, platform: string): string {
+  const moved = new URL(link);
+  const own = new URL(platform);
+  moved.protocol = own.protocol;
+  moved.host = own.host;
+  for (const name of ['callbackURL', 'newUserCallbackURL', 'errorCallbackURL']) {
+    const value = moved.searchParams.get(name);
+    if (!value) continue;
+    try {
+      const target = new URL(value, platform);
+      moved.searchParams.set(name, `${target.pathname}${target.search}`);
+    } catch {
+      moved.searchParams.set(name, '/');
+    }
+  }
+  return moved.toString();
+}
+
 /** Days an invitation can be accepted. */
 export const INVITATION_DAYS = 7;
 
@@ -189,10 +224,15 @@ export function createAuth(
               storeToken: 'hashed',
               // On a seller's own dashboard address, the email comes in the seller's look (src/branding.ts).
               sendMagicLink: async ({ email, url }) => {
-                const host = new URL(url).host;
-                const productId = host === new URL(config.url).host ? null : await dashboardHostProduct(pool, host);
-                const mail = productId ? await brandedMail(pool, config.mail!, productId) : config.mail!;
                 const to = email.toLowerCase();
+                const host = new URL(url).host;
+                const sellerProduct = host === new URL(config.url).host ? null : await dashboardHostProduct(pool, host);
+                // A seller's own address is a domain the seller controls: if its DNS ever pointed somewhere else, a link
+                // on it would hand the sign-in to them. So only that storefront's own team gets a link there; anyone
+                // else's link is on the platform's address, in the platform's look.
+                const productId = sellerProduct && (await onTeam(pool, sellerProduct, to)) ? sellerProduct : null;
+                if (sellerProduct && !productId) url = onPlatform(url, config.url);
+                const mail = productId ? await brandedMail(pool, config.mail!, productId) : config.mail!;
                 // The same email carries a code for the sign-in page (POST /sign-in/email-otp), for mail
                 // systems that block or rewrite links.
                 const code = await auth.api.createVerificationOTP({ body: { email: to, type: 'sign-in' } });

@@ -107,7 +107,22 @@ describe('signing and URLs', () => {
     for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1']) {
       expect(isPrivateAddress(ip), ip).toBe(true);
     }
-    for (const ip of ['191.101.15.236', '8.8.8.8', '172.32.0.1', '2606:4700::1111']) expect(isPrivateAddress(ip), ip).toBe(false);
+    for (const ip of ['191.101.15.236', '8.8.8.8', '172.32.0.1', '2606:4700::1111', '::ffff:808:808', '2002:808:808::1']) expect(isPrivateAddress(ip), ip).toBe(false);
+  });
+
+  it('sees IPv4 addresses written inside IPv6, the way new URL() writes them', () => {
+    // new URL('http://[::ffff:127.0.0.1]/').hostname is [::ffff:7f00:1]: the hex form must count as 127.0.0.1.
+    const host = (url: string) => new URL(url).hostname.replace(/^\[|\]$/g, '');
+    for (const url of ['http://[::ffff:127.0.0.1]/', 'http://[::ffff:10.0.1.5]/', 'http://[0:0:0:0:0:ffff:a9fe:a9fe]/', 'http://[::127.0.0.1]/', 'http://[::]/']) {
+      expect(isPrivateAddress(host(url)), url).toBe(true);
+    }
+    for (const ip of ['::ffff:7f00:1', '::ffff:a00:105', '::7f00:1', '64:ff9b::808:808', '64:ff9b:1::1', '2002:a00:1::1', '2002:7f00:1::', 'fec0::1', '2001:db8::1', 'not-an-address']) {
+      expect(isPrivateAddress(ip), ip).toBe(true);
+    }
+  });
+
+  it('refuses a mapped private address in a webhook URL', () => {
+    expect(() => checkEndpointUrl('https://[::ffff:127.0.0.1]/hook', { allowPrivate: false, logDays: 30 })).toThrow('public address');
   });
 
   it('takes only public https URLs unless private ones are allowed', () => {

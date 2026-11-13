@@ -95,6 +95,50 @@ export type AppEnv = {
   Variables: { productId: string; apiKeyId?: string; userId?: string; storeTenantId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string; appScopes?: string[] };
 };
 
+/** The sign-in parameters that say where to send the browser afterwards. */
+const REDIRECT_PARAMS = ['callbackURL', 'newUserCallbackURL', 'errorCallbackURL', 'redirectTo', 'updateCallbackURL'];
+
+/**
+ * The first redirect parameter (in the query or a JSON or form body) that points off `hosts`, or null. A path
+ * ("/stores") is fine; so is a full address on one of `hosts`.
+ */
+async function offSiteRedirect(request: Request, hosts: string[]): Promise<string | null> {
+  const url = new URL(request.url);
+  const body = request.method === 'POST' ? await formOrJson(request) : {};
+  for (const name of REDIRECT_PARAMS) {
+    const values: unknown[] = [...url.searchParams.getAll(name), body[name]];
+    if (values.some((value) => !onSite(value, hosts))) return name;
+  }
+  return null;
+}
+
+/** A request's JSON or form body as an object; empty for anything else. */
+async function formOrJson(request: Request): Promise<Record<string, unknown>> {
+  const type = request.headers.get('content-type') ?? '';
+  const text = await request.text().catch(() => '');
+  if (type.includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
+  if (!type.includes('application/json')) return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Whether a redirect value stays here: empty, a path, or an http(s) address on one of `hosts`. */
+function onSite(value: unknown, hosts: string[]): boolean {
+  if (value === undefined || value === null || value === '') return true;
+  // "//evil.example" and "/\evil.example" are addresses on another host to a browser.
+  return typeof value === 'string' && (/^\/(?![/\\])/.test(value) || onHosts(value, hosts));
+}
+
+/** Whether `value` is an http(s) address on one of `hosts`. */
+function onHosts(value: string, hosts: string[]): boolean {
+  const target = URL.canParse(value) ? new URL(value) : null;
+  return /^https?:$/.test(target?.protocol ?? '') && hosts.includes(target!.host.toLowerCase());
+}
+
 /** The largest request body the API reads. */
 const MAX_BODY_BYTES = 25 * 1024 ** 2;
 
@@ -155,7 +199,12 @@ export function createApp(deps: Deps) {
     const mode = c.req.header('x-forwarded-sec-fetch-mode');
     if (mode && /^[a-z-]{1,20}$/.test(mode)) headers.set('sec-fetch-mode', mode);
     headers.delete('x-forwarded-sec-fetch-mode');
-    return deps.auth.handler(new Request(c.req.raw, { headers }));
+    // Better Auth trusts every origin here (its allowedHosts is '*', so sellers' addresses resolve), so where a
+    // sign-in sends the person afterwards is checked here: a path, or an address on the host this request is for.
+    const request = new Request(c.req.raw, { headers });
+    const away = await offSiteRedirect(request.clone(), [own.host, live ?? own.host]);
+    if (away) return c.json({ statusCode: 400, message: `${away} must be a path on this dashboard` }, 400);
+    return deps.auth.handler(request);
   });
   // Applications to sell on the platform, from the marketing site's form (src/applications.ts). No sign-in.
   app.route('/applications', publicApplicationRoutes(deps));
