@@ -7,7 +7,7 @@ Every storefront and reseller has a setup checklist. Each step ticks itself from
 | Key | Step | Done when |
 |---|---|---|
 | `approved` | Application approved | The seller's application was approved. It is also done for a storefront made without an application. |
-| `shop-connected` | Shop connected | One of the storefront's API keys has been used, which means AnyPress Host on the shop has signed in. |
+| `shop-connected` | Shop connected | One of the storefront's API keys has been used, which means AnyPress Host on the shop has signed in. A seller with a ready-made storefront is told it connects itself; others are told to install AnyPress Host and add their key. |
 | `starting-site` | Starting site picked | The storefront has a production version. |
 | `plans` | Plans on sale | The shop's AnyPress Host reports a published plan. Reads `not-reported` until AnyPress Host sends it. |
 | `payments` | Payments on | The shop's AnyPress Host reports a live payment method. Reads `not-reported` until AnyPress Host sends it. |

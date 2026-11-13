@@ -83,6 +83,16 @@ describe('ready-made storefronts', () => {
     expect(await own.json()).toEqual([]);
   });
 
+  it("is named after the business when no address was chosen, unless that name is taken", async () => {
+    const first = await newProduct('Named seller');
+    const named = (await (await build(first.id, { name: 'Bright Pixel Studio', email: 'sam@pixel.example' })).json()) as any;
+    expect(named.domainName).toBe('bright-pixel-studio.waas.example');
+    const second = await newProduct('Same name seller');
+    const random = (await (await build(second.id, { name: 'Bright Pixel Studio!', email: 'jo@pixel.example' })).json()) as any;
+    expect(random.domainName).not.toBe('bright-pixel-studio.waas.example');
+    expect(random.domainName).toMatch(/\.waas\.example$/);
+  });
+
   it('builds only one per product', async () => {
     const res = await build(sellerId, { name: 'Again', email: 'owner@agency.example' });
     expect(res.status).toBe(409);
