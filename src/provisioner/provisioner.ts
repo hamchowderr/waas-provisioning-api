@@ -89,6 +89,17 @@ export interface Provisioner {
   /** Removes a draft's photos. */
   deleteDemoDraft(input: { draftId: string; names: string[] }): Promise<void>;
 
+  // A prospect's logo and photos, copied from its website for its branded demo (src/prospectdemos.ts).
+
+  /** Stores one file of a prospect's demo. */
+  putProspectFile(input: { code: string; name: string; body: Uint8Array; contentType: string }): Promise<void>;
+
+  /** The file's bytes, or null when there is none. */
+  readProspectFile(input: { code: string; name: string }): Promise<Uint8Array | null>;
+
+  /** Removes a prospect demo's files. */
+  deleteProspectFiles(input: { code: string; names: string[] }): Promise<void>;
+
   deleteVersion(input: { versionId: string }): Promise<void>;
 
   /**
