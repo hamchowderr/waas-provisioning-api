@@ -166,3 +166,9 @@ wp_fusion()->settings->set('create_users', 0);
 (new \WPF_FluentCRM())->sync();
 
 // The pages (About, Questions, Contact, the legal pages, Who we help) and the shop design are shop.php's, run next by build.sh.
+
+// BetterDocs: its "help make BetterDocs more awesome" usage-tracking offer answered "No thanks", as the notice's own
+// button does (wpins_block_notice), so the seller isn't asked to send their site's data for a coupon.
+$blocked = (array) get_option('wpins_block_notice', []);
+$blocked['betterdocs'] = 'betterdocs';
+update_option('wpins_block_notice', $blocked, false);

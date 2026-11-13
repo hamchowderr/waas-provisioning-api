@@ -109,7 +109,7 @@ SLUGS=$( (awk 'NF {print $1}' <<<"$PLUGINS$VENDORED"; echo anypress-blocks) | so
 # Settings kept in code (WP Fusion out of staging mode, the owner's details): mu-plugins/seller-storefront.php. The CRM
 # lifecycle (Website: Interested / Active / Past, the lifecycle emails, the weekly numbers) is the store template's plugin.
 mkdir -p "$SITE/wp-content/mu-plugins"
-cp "$HERE/mu-plugins/seller-storefront.php" "$HERE/../anypress-store/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
+cp "$HERE/mu-plugins/seller-storefront.php" "$HERE/mu-plugins/seller-storefront-admin.php" "$HERE/../anypress-store/mu-plugins/anypress-crm-lifecycle.php" "$SITE/wp-content/mu-plugins/"
 # The shop design's block styles and plan page shortcodes, which its pages use.
 DESIGN=$PLUGINS_REPO/scripts/test-storefront/remote/design
 cp "$DESIGN/anypress-shop.php" "$SITE/wp-content/mu-plugins/"
