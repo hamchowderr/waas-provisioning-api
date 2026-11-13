@@ -102,11 +102,43 @@ function ipv4Private(ip: string): boolean {
 
 /** Loopback, private, link-local, shared (CGNAT), multicast and reserved addresses. */
 export function isPrivateAddress(ip: string): boolean {
-  if (isIP(ip) === 4) return ipv4Private(ip);
-  const v6 = ip.toLowerCase();
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6);
-  if (mapped) return ipv4Private(mapped[1]!);
-  return v6 === '::' || v6 === '::1' || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6) || v6.startsWith('ff') || v6.startsWith('64:ff9b:');
+  const kind = isIP(ip);
+  if (kind === 4) return ipv4Private(ip);
+  // Anything that isn't an address is refused rather than guessed at.
+  if (kind !== 6) return true;
+  const groups = ipv6Groups(ip.toLowerCase());
+  if (!groups) return true;
+  const [a, b, c, d, e, f, g, h] = groups as [number, number, number, number, number, number, number, number];
+  const v4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  // IPv4 inside IPv6: mapped (::ffff:a.b.c.d, which new URL() writes as ::ffff:7f00:1), the old compatible form
+  // (::a.b.c.d, and :: and ::1), NAT64 (64:ff9b::/96 and the local 64:ff9b:1::/48) and 6to4 (2002::/16) all
+  // reach the IPv4 address inside, so they count as that address.
+  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && (f === 0xffff || f === 0)) return f === 0 && g === 0 ? true : ipv4Private(v4(g, h));
+  if (a === 0x64 && b === 0xff9b) return true;
+  if (a === 0x2002) return ipv4Private(v4(b, c));
+  // Unique local (fc00::/7), link-local (fe80::/10), site-local (fec0::/10), multicast (ff00::/8), documentation (2001:db8::/32).
+  return (a & 0xfe00) === 0xfc00 || (a & 0xffc0) === 0xfe80 || (a & 0xffc0) === 0xfec0 || (a & 0xff00) === 0xff00 || (a === 0x2001 && b === 0xdb8);
+}
+
+/** The eight 16-bit groups of an IPv6 address (dotted IPv4 tail included), or null when it isn't one. */
+function ipv6Groups(ip: string): number[] | null {
+  let text = ip.replace(/%.*$/, '');
+  const tail = /(\d+\.\d+\.\d+\.\d+)$/.exec(text);
+  if (tail) {
+    if (isIP(tail[1]!) !== 4) return null;
+    const [p, q, r, s] = tail[1]!.split('.').map(Number) as [number, number, number, number];
+    text = `${text.slice(0, -tail[1]!.length)}${((p << 8) | q).toString(16)}:${((r << 8) | s).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const part = (s: string) => (s ? s.split(':') : []);
+  const head = part(halves[0]!);
+  const rest = halves.length === 2 ? part(halves[1]!) : [];
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
+  if (fill < 0 || (halves.length === 1 && head.length !== 8)) return null;
+  const groups = [...head, ...Array<string>(fill).fill('0'), ...rest];
+  if (groups.length !== 8 || groups.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return null;
+  return groups.map((x) => parseInt(x, 16));
 }
 
 /** Checks an endpoint URL; throws 400 with the reason. Returns it normalised. */

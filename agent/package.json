@@ -16,12 +16,12 @@
     "test:browser": "vitest run test/browser.test.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.5",
+    "@hono/node-server": "^2.1.8",
     "@mastra/core": "^1.80.0",
     "@mastra/mcp": "^2.6.0",
     "@mastra/memory": "^1.39.1",
     "@mastra/pg": "^1.33.0",
-    "hono": "^4.13.14",
+    "hono": "^4.13.18",
     "tsx": "^4.23.15",
     "zod": "^4.6.7"
   },

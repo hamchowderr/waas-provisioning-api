@@ -128,6 +128,12 @@ describe("sign-in on a seller's own dashboard address", () => {
     [sellerId, otherId] = products.rows.map((r) => r.id) as [string, string];
     await t.pool.query("INSERT INTO dashboard_domains (product_id, domain, status, records) VALUES ($1, $2, 'active', '[]')", [sellerId, OWN]);
     forgetDashboardHosts();
+    // The seller's team: an invitation waiting for team@seller.example.
+    const org = await t.pool.query('INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2, now(), $3) RETURNING id', ['Seller team', 'seller-team', sellerId]);
+    await t.pool.query(
+      `INSERT INTO auth.invitation ("organizationId", email, role, status, "expiresAt") VALUES ($1, 'team@seller.example', 'admin', 'pending', now() + interval '1 day')`,
+      [org.rows[0].id],
+    );
   });
 
   it('emails a link on that address, and it signs the person in there', async () => {
@@ -146,6 +152,18 @@ describe("sign-in on a seller's own dashboard address", () => {
     expect(verified.headers.get('location')).toMatch(new RegExp(`^(https://${OWN.replaceAll('.', '\\.')})?/`));
   });
 
+  it("sends anyone who isn't on that storefront's team a link on the platform's address instead", async () => {
+    // The seller controls the address's DNS, so a link there for someone else (a platform admin, say) could be captured.
+    const { res, link } = await signInOn(OWN, 'admin@platform.example');
+    expect(res.status).toBe(200);
+    expect(link!.origin).toBe(AUTH.url);
+    expect(link!.searchParams.get('callbackURL')).toBe('/');
+    expect(sent[0]!.body.from).toEqual({ email: MAIL.from, name: 'AnyPress' });
+    const verified = await app.request(link!.pathname + link!.search, { redirect: 'manual' });
+    expect(verified.status).toBe(302);
+    expect(verified.headers.getSetCookie().some((c) => /session_token=/.test(c))).toBe(true);
+  });
+
   it('puts any other address back to the platform one', async () => {
     const { res, link } = await signInOn('evil.example', 'victim@seller.example');
     expect(res.status).toBe(200);
@@ -158,7 +176,7 @@ describe("sign-in on a seller's own dashboard address", () => {
     const cookie = verified.headers.getSetCookie().find((c) => /session_token=/.test(c))!.split(';')[0]!;
     const userId = (await t.pool.query('SELECT id FROM auth."user" WHERE email = $1', ['both@seller.example'])).rows[0].id;
     for (const [i, productId] of [sellerId, otherId].entries()) {
-      const org = await t.pool.query('INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2, now(), $3) RETURNING id', [`Org ${i}`, `org-host-${i}`, productId]);
+      const org = await t.pool.query('INSERT INTO auth.organization (name, slug, "createdAt", "productId") VALUES ($1, $2, now(), $3) ON CONFLICT ("productId") DO UPDATE SET name = EXCLUDED.name RETURNING id', [`Org ${i}`, `org-host-${i}`, productId]);
       await t.pool.query('INSERT INTO auth.member ("organizationId", "userId", role, "createdAt") VALUES ($1, $2, \'owner\', now())', [org.rows[0].id, userId]);
     }
     const me = async (host?: string) =>
