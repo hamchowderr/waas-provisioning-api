@@ -66,13 +66,13 @@ export async function getMailDomain(pool: Pool, domains: SendingDomains | undefi
 /**
  * Gives the store its own sending domain: registered on toSend now, used once verified. A store has
  * one; setting the one it already has returns it, and a different one must be removed first.
- * `platformFrom` is the platform's sender (STORE_MAIL_FROM), whose domain stores can't take.
+ * `reserved` are the platform's own domains (platformMailDomains), which stores can't take: toSend hands back a
+ * domain the account already holds, verified, so a store taking one could send as the platform.
  */
-export async function setMailDomain(pool: Pool, domains: SendingDomains | undefined, tenantId: string, domainName: string, platformFrom: string): Promise<MailDomain> {
+export async function setMailDomain(pool: Pool, domains: SendingDomains | undefined, tenantId: string, domainName: string, reserved: string[]): Promise<MailDomain> {
   const sending = need(domains);
   const name = normalizeDomain(domainName);
-  const platform = platformFrom.split('@')[1]!.toLowerCase();
-  if (name === platform || name.endsWith(`.${platform}`)) throw badRequest(`${name} belongs to the platform; use a domain the store owns`);
+  if (reserved.some((d) => name === d || name.endsWith(`.${d}`) || d.endsWith(`.${name}`))) throw badRequest(`${name} belongs to the platform; use a domain the store owns`);
   const existing = await rowOf(pool, tenantId);
   if (existing) {
     if (existing.status === 'removing') throw badRequest(`${existing.domain_name} is still being removed from this store; try again in a few minutes`);
@@ -91,6 +91,15 @@ export async function setMailDomain(pool: Pool, domains: SendingDomains | undefi
     [tenantId, name, domain.id, domain.status === 'verified' ? 'verified' : 'pending'],
   );
   return { ...(await present(sending, rows[0])), records: domain.records };
+}
+
+/**
+ * The platform's own domains, none of which a store may send from as its own: the stores' sending domain
+ * (STORE_MAIL_FROM's), PLATFORM_DOMAIN and BRAND_DOMAIN.
+ */
+export function platformMailDomains(config: { platformDomain?: string; brandDomain?: string }, from: string): string[] {
+  const all = [from.split('@')[1], config.platformDomain, config.brandDomain].map((d) => d?.trim().toLowerCase());
+  return [...new Set(all.filter((d): d is string => !!d))];
 }
 
 /** Moves the store back to the platform's address (on the next check) and drops its domain. */

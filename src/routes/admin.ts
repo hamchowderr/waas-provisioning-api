@@ -21,7 +21,7 @@ import { setHighLevelAgency, siteLinkOf } from '../highlevel.ts';
 import { listHostUpdates, queueHostUpdates } from '../hostupdates.ts';
 import { importCode, importDetail, renewImport, reprintSite, startReprintCopy } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
-import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
+import { getMailDomain, platformMailDomains, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey, wantsForever } from '../keys.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
@@ -861,7 +861,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
     const from = config.coolify?.mail?.from;
     if (!from) throw badRequest('Stores send no email: STORE_SMTP_PASSWORD is not set on the API');
-    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, from) });
+    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, platformMailDomains(config, from)) });
   });
 
   app.get('/tenants/:id/domain-connect', async (c) => {
