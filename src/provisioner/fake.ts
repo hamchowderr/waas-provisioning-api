@@ -142,6 +142,22 @@ export class FakeProvisioner implements Provisioner {
     for (const name of names) this.demoImages.delete(`${draftId}/${name}`);
   }
 
+  /** Prospect demo files: "<code>/<name>" -> bytes. */
+  readonly prospectFiles = new Map<string, Uint8Array>();
+
+  async putProspectFile({ code, name, body }: { code: string; name: string; body: Uint8Array; contentType: string }) {
+    this.check('putProspectFile');
+    this.prospectFiles.set(`${code}/${name}`, body);
+  }
+
+  async readProspectFile({ code, name }: { code: string; name: string }) {
+    return this.prospectFiles.get(`${code}/${name}`) ?? null;
+  }
+
+  async deleteProspectFiles({ code, names }: { code: string; names: string[] }) {
+    for (const name of names) this.prospectFiles.delete(`${code}/${name}`);
+  }
+
   async deleteVersion({ versionId }: { versionId: string }) {
     this.check('deleteVersion');
     this.versions.delete(versionId);

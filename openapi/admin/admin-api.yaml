@@ -2506,6 +2506,159 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /admin/prospect-demos:
+    get:
+      operationId: adminListProspectDemos
+      summary: Businesses with a branded demo
+      description: >-
+        Businesses AnyPress may contact, each with a private branded demo made from its own website
+        (docs/prospect-demos.md), by priority. Platform admin only: 404 at /account.
+      responses:
+        '200':
+          description: Every prospect demo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProspectDemo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminAddProspectDemos
+      summary: Add businesses and read their websites
+      description: >-
+        Adds up to 200 businesses. Each with a website is read in the background (statusCode 0 until it is
+        done); one without a website is saved with statusCode 2. A business whose website is already on the
+        list is skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prospects]
+              properties:
+                prospects:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    allOf:
+                      - $ref: '#/components/schemas/ProspectDemoSettings'
+                      - type: object
+                        required: [company, route, siteType]
+                        properties:
+                          website: { type: string, nullable: true, maxLength: 2000 }
+      responses:
+        '201':
+          description: What was added, and what was skipped
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, skipped]
+                properties:
+                  created:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProspectDemo' }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      required: [company, reason]
+                      properties:
+                        company: { type: string }
+                        reason: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/prospect-demos/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetProspectDemo
+      summary: One prospect demo
+      responses:
+        '200':
+          description: The prospect demo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectDemo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: adminUpdateProspectDemo
+      summary: Change a prospect's route, site type, kit or notes
+      description: Fields left out stay as they are. The website can't be changed; remove the prospect and add it again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProspectDemoSettings' }
+      responses:
+        '200':
+          description: The prospect demo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectDemo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteProspectDemo
+      summary: Remove a prospect and its demo
+      description: Removes the business, its copied logo and photos; its demo link stops working.
+      responses:
+        '204': { description: Removed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/prospect-demos/{id}/gather:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminGatherProspectDemo
+      summary: Read the website again
+      description: For a website that changed or a read that failed. The demo keeps its old look until the new read is done.
+      responses:
+        '202':
+          description: Reading (statusCode 0)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectDemo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /demos/prospects/{code}:
+    parameters:
+      - { name: code, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getProspectDemo
+      summary: A branded demo's settings (public)
+      description: >-
+        What anypress.io/try?for=<code> reads to brand its WordPress Playground demo. No key: the private
+        code is the key. 404 until the website has been read. Sent with X-Robots-Tag noindex.
+      security: []
+      responses:
+        '200':
+          description: The demo's settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicProspectDemo' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /demos/prospects/{code}/files/{name}:
+    parameters:
+      - { name: code, in: path, required: true, schema: { type: string } }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getProspectDemoFile
+      summary: A branded demo's logo or photo (public)
+      description: A copy of an image from the business's website, which any site may load.
+      security: []
+      responses:
+        '200':
+          description: The image
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/resellers:
     get:
       operationId: adminListResellers
@@ -3186,6 +3339,90 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    ProspectDemoSettings:
+      type: object
+      properties:
+        company: { type: string, maxLength: 200 }
+        route:
+          type: string
+          enum: [seller, reseller, affiliate, chamber, owner]
+          description: >-
+            What the demo shows them: seller, a client's shop with "Made by" credit; reseller, one of their
+            locations; affiliate, a site for the kind of business their customers run; chamber, their own
+            member site; owner, their own site.
+        siteType: { type: string, enum: [website, bookings, online-store, community, everything, store, highlevel] }
+        kit: { type: string, nullable: true, maxLength: 40, description: 'The AnyPress theme kit, such as parcel' }
+        label: { type: string, nullable: true, maxLength: 100, description: 'The group on the board, such as Agency' }
+        city: { type: string, nullable: true, maxLength: 100 }
+        priority: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        notes: { type: string, nullable: true, maxLength: 4000 }
+    ProspectBrand:
+      type: object
+      description: >-
+        What was read from the business's website. Images are copies kept by AnyPress, at links any site can
+        load. A price is given only where the website prints one.
+      required: [source, name, tagline, about, phone, city, address, hours, colors, fonts, colorScheme, logo, photos, items]
+      properties:
+        source: { type: string }
+        name: { type: string, nullable: true }
+        tagline: { type: string, nullable: true }
+        about: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        hours: { type: array, items: { type: string } }
+        colors: { type: object, additionalProperties: { type: string } }
+        fonts:
+          type: object
+          required: [heading, body]
+          properties:
+            heading: { type: string, nullable: true }
+            body: { type: string, nullable: true }
+        colorScheme: { type: string, nullable: true, enum: [light, dark, null] }
+        logo: { type: string, nullable: true }
+        photos: { type: array, items: { type: string } }
+        items:
+          type: array
+          items:
+            type: object
+            required: [name, description, price, image]
+            properties:
+              name: { type: string }
+              description: { type: string, nullable: true }
+              price: { type: string, nullable: true }
+              image: { type: string, nullable: true }
+    PublicProspectDemo:
+      type: object
+      required: [company, route, siteType, kit, brand]
+      properties:
+        company: { type: string }
+        route: { type: string }
+        siteType: { type: string }
+        kit: { type: string, nullable: true }
+        brand:
+          anyOf: [{ $ref: '#/components/schemas/ProspectBrand' }, { type: object, nullable: true, enum: [null] }]
+    ProspectDemo:
+      type: object
+      required: [id, code, company, website, route, siteType, kit, label, city, priority, notes, statusCode, error, creditsUsed, brand, createdAt, gatheredAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, description: 'The private code in the demo link, anypress.io/try?for=<code>' }
+        company: { type: string }
+        website: { type: string, nullable: true }
+        route: { type: string }
+        siteType: { type: string }
+        kit: { type: string, nullable: true }
+        label: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        priority: { type: integer, nullable: true }
+        notes: { type: string, nullable: true }
+        statusCode: { type: integer, enum: [0, 1, 2], description: '0 reading the website, 1 ready, 2 could not be read (see error)' }
+        error: { type: string, nullable: true }
+        creditsUsed: { type: integer, description: 'Firecrawl credits spent on this business so far' }
+        brand:
+          anyOf: [{ $ref: '#/components/schemas/ProspectBrand' }, { type: object, nullable: true, enum: [null] }]
+        createdAt: { type: string, format: date-time }
+        gatheredAt: { type: string, format: date-time, nullable: true }
     SiteDownloadResult:
       type: object
       additionalProperties: false

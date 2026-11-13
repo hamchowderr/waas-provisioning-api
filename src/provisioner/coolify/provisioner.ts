@@ -260,6 +260,8 @@ const keys = {
   pluginUpload: (uploadId: string) => `plugins/uploads/${uploadId}.zip`,
   /** A photo in a demo draft (src/demodrafts.ts). */
   demoImage: (draftId: string, name: string) => `demos/${draftId}/${name}`,
+  /** A file of a prospect's branded demo (src/prospectdemos.ts). */
+  prospectFile: (code: string, name: string) => `prospects/${code}/${name}`,
   /** A version's plugin choices with signed links to their zips, for the agent's plugins step. */
   pluginChoices: (versionId: string) => `versions/${versionId}/plugin-choices.json`,
   backup: (id: string) => `backups/${id}.zip`,
@@ -713,6 +715,18 @@ export class CoolifyProvisioner implements Provisioner {
 
   async deleteDemoDraft({ draftId, names }: { draftId: string; names: string[] }) {
     for (const name of names) await this.s3.delete(keys.demoImage(draftId, name));
+  }
+
+  async putProspectFile({ code, name, body, contentType }: { code: string; name: string; body: Uint8Array; contentType: string }) {
+    await this.s3.put(keys.prospectFile(code, name), body, contentType);
+  }
+
+  async readProspectFile({ code, name }: { code: string; name: string }) {
+    return this.s3.getIfExists(keys.prospectFile(code, name));
+  }
+
+  async deleteProspectFiles({ code, names }: { code: string; names: string[] }) {
+    for (const name of names) await this.s3.delete(keys.prospectFile(code, name));
   }
 
   async deleteVersion({ versionId }: { versionId: string }) {

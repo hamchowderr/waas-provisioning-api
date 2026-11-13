@@ -23,7 +23,7 @@ import type { CpuWatch } from './cpuwatch.ts';
 import { checkHealth, publicHealth } from './health.ts';
 import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
-import { isAppsResource, oauthRoutes, verifyAccessToken, type TokenOwner } from './oauth.ts';
+import { isAppsResource, oauthRoutes, publicBase, verifyAccessToken, type TokenOwner } from './oauth.ts';
 import { assistantUsageRoutes } from './assistant-usage.ts';
 import { demoAssistantRoutes } from './demo-assistant.ts';
 import { voiceRoutes } from './voice.ts';
@@ -34,6 +34,7 @@ import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.
 import { pluginChoiceRoutes } from './pluginchoices.ts';
 import type { WpOrg } from './wporg.ts';
 import { demoDraftRoutes } from './demodrafts.ts';
+import { publicProspectDemoRoutes } from './prospectdemos.ts';
 import { importRoutes } from './imports.ts';
 import { referenceRoutes } from './references.ts';
 import { siteDownloadRoutes } from './sitedownloads.ts';
@@ -216,6 +217,8 @@ export function createApp(deps: Deps) {
   app.route('/imports', importRoutes(deps));
   // Demos people build on Playground, saved for their checkout (src/demodrafts.ts). No API key.
   app.route('/demos', demoDraftRoutes(deps));
+  // Branded demos made for businesses AnyPress may contact (src/prospectdemos.ts). No API key: the code is the key.
+  app.route('/demos/prospects', publicProspectDemoRoutes(deps, (c) => publicBase(c, deps.config.publicUrl)));
   // Dashboard logos and icons (src/branding.ts). Public: the sign-in page shows them.
   app.route('/branding', publicBrandingRoutes(deps));
   // The one price list (src/pricing.ts). Public: anypress.io and the dashboard show it.

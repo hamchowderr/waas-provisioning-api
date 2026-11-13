@@ -4,6 +4,7 @@ import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebh
 import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
 import { addAutomation, automationInput, listAutomations } from '../outreachautomation.ts';
 import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
+import { adminProspectDemoRoutes } from '../prospectdemos.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
@@ -327,6 +328,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/voice-lines', adminOnly);
   app.use('/voice-lines/*', adminOnly);
   app.use('/resellers/*', adminOnly);
+  app.use('/prospect-demos', adminOnly);
+  app.use('/prospect-demos/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
@@ -341,6 +344,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Reseller accounts: storefronts grouped under one partner, and their usage (src/resellers.ts).
   app.route('/resellers', adminResellerRoutes(deps));
+  // Branded demos for businesses AnyPress may contact (src/prospectdemos.ts). Platform admin only.
+  app.route('/prospect-demos', adminProspectDemoRoutes(deps, (c) => publicBase(c, config.publicUrl)));
 
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
