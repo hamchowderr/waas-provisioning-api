@@ -28,6 +28,7 @@ import { demoAssistantRoutes } from './demo-assistant.ts';
 import { voiceRoutes } from './voice.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
+import { setClientIp } from './clientip.ts';
 import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
 import { pluginChoiceRoutes } from './pluginchoices.ts';
 import type { WpOrg } from './wporg.ts';
@@ -199,6 +200,7 @@ export function createApp(deps: Deps) {
     const mode = c.req.header('x-forwarded-sec-fetch-mode');
     if (mode && /^[a-z-]{1,20}$/.test(mode)) headers.set('sec-fetch-mode', mode);
     headers.delete('x-forwarded-sec-fetch-mode');
+    setClientIp(headers, deps.config.adminToken);
     // Better Auth trusts every origin here (its allowedHosts is '*', so sellers' addresses resolve), so where a
     // sign-in sends the person afterwards is checked here: a path, or an address on the host this request is for.
     const request = new Request(c.req.raw, { headers });

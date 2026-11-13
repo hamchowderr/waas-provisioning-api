@@ -5,6 +5,7 @@ import type { ClientMetadataResourceFetch } from '@better-auth/oauth-provider';
 import { ANYPRESS_MAIL, sendSignInLink, type AuthMail } from './authmail.ts';
 import { platformBrandOf } from './brand.ts';
 import { brandedMail } from './branding.ts';
+import { CLIENT_IP_HEADER } from './clientip.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Pool } from './db.ts';
 import { mcpSignInPlugins } from './oauthserver.ts';
@@ -181,7 +182,8 @@ export function createAuth(
       // The JWT plugin signs AI apps' access tokens (src/oauthserver.ts); sessions don't become JWTs.
       '/token',
     ],
-    advanced: { database: { generateId: 'uuid' }, trustedProxyHeaders: true },
+    // Rate limits count per caller: the address the /api/auth route sets from Cloudflare or the dashboard (src/clientip.ts).
+    advanced: { database: { generateId: 'uuid' }, trustedProxyHeaders: true, ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
     // githubLogin: the GitHub username, so the dashboard can tell its platform admins
     // (ALLOWED_GITHUB_LOGINS) from customers. Set from GitHub only, never from what the user sends.
     // storeTenantId: set only on the one user each store gets for "Sign in with your website" (src/oauthserver.ts).
