@@ -8,6 +8,7 @@
  */
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
+import { STOREFRONT_KEY_LABEL } from './storefronts.ts';
 
 export type StepState = 'done' | 'todo' | 'not-reported';
 
@@ -107,7 +108,7 @@ export async function loadSetup(
   const ids = products.map((p) => p.id as string);
   const resellerIds = scope.resellerIds ?? [...new Set(products.map((p) => p.reseller_id as string | null).filter(Boolean))];
 
-  const [apps, keys, prod, sites, brands, teams, selfBuilt, live] = await Promise.all([
+  const [apps, keys, prod, sites, brands, teams, selfBuilt, live, readyMade] = await Promise.all([
     pool.query(`SELECT product_id, max(decided_at) AS at FROM seller_applications WHERE status = 'approved' AND product_id = ANY($1) GROUP BY product_id`, [ids]),
     pool.query(`SELECT product_id, max(last_used_at) AS at FROM api_keys WHERE product_id = ANY($1) AND last_used_at IS NOT NULL GROUP BY product_id`, [ids]),
     pool.query(`SELECT product_id, date_created AS at, name FROM versions WHERE is_production AND product_id = ANY($1)`, [ids]),
@@ -141,10 +142,12 @@ export async function loadSetup(
       `SELECT product_id, min(date_live) AS at FROM tenants WHERE product_id = ANY($1) AND date_live IS NOT NULL GROUP BY product_id`,
       [ids],
     ),
+    // Storefronts we built for them (src/storefronts.ts) connect themselves: nothing for them to install.
+    pool.query(`SELECT DISTINCT product_id FROM api_keys WHERE product_id = ANY($1) AND label = $2 AND revoked_at IS NULL`, [ids, STOREFRONT_KEY_LABEL]),
   ]);
   const by = <T extends { product_id: string }>(rows: T[]) => new Map(rows.map((r) => [r.product_id, r]));
   const appBy = by(apps.rows), keyBy = by(keys.rows), prodBy = by(prod.rows), siteBy = by(sites.rows);
-  const selfBy = by(selfBuilt.rows), liveBy = by(live.rows);
+  const selfBy = by(selfBuilt.rows), liveBy = by(live.rows), readyMadeBy = by(readyMade.rows);
   const brandOf = (productId: string, resellerId: string | null) =>
     brands.rows.find((b) => b.product_id === productId) ?? (resellerId ? brands.rows.find((b) => b.reseller_id === resellerId) : undefined);
   const teamOf = (productId: string, resellerId: string | null) =>
@@ -165,7 +168,13 @@ export async function loadSetup(
       app
         ? step('approved', 'Application approved', app.at ?? p.created_at, `Approved ${day(app.at ?? p.created_at)}`, '')
         : step('approved', 'Application approved', p.created_at, 'Set up by AnyPress', ''),
-      step('shop-connected', 'Shop connected', key?.at, key ? `AnyPress Host last signed in ${day(key.at)}` : '', 'Install AnyPress Host on your shop and add your API key'),
+      step(
+        'shop-connected',
+        'Shop connected',
+        key?.at,
+        key ? `AnyPress Host last signed in ${day(key.at)}` : '',
+        readyMadeBy.has(p.id) ? 'Your ready-made storefront connects itself a few minutes after it is built' : 'Install AnyPress Host on your shop and add your API key',
+      ),
       step('starting-site', 'Starting site picked', production?.at, production ? `New stores start as ${production.name}` : '', 'Pick a production version on Templates'),
       { key: 'plans', label: 'Plans on sale', state: 'not-reported', doneAt: null, detail: 'Checked from your shop once AnyPress Host reports it' },
       { key: 'payments', label: 'Payments on', state: 'not-reported', doneAt: null, detail: 'Checked from your shop once AnyPress Host reports it' },

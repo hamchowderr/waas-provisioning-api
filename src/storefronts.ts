@@ -5,7 +5,7 @@ import { badRequest, conflict } from './errors.ts';
 import { addApiKey, revokeApiKey } from './keys.ts';
 import { PRICE_LIST } from './pricing.ts';
 import { createTenant } from './routes/tenants.ts';
-import { TENANT_SELECT, toTenant } from './tenants.ts';
+import { domainInUse, TENANT_SELECT, toTenant } from './tenants.ts';
 
 /**
  * Ready-made storefronts: a WordPress site with AnyPress Host, built for a product so its owner can sell
@@ -59,6 +59,20 @@ function setupOption(input: NewStorefront | undefined): Record<string, string> {
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/** The business name as an address label ("Bright Pixel Studio" is bright-pixel-studio), or '' when it isn't free. */
+async function freeNameFor(deps: Pick<Deps, 'pool' | 'config'>, name: string, domainBase: string): Promise<string> {
+  const label = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 63)
+    .replace(/^-+|-+$/g, '');
+  if (!LABEL.test(label)) return '';
+  const taken = await domainInUse(deps.pool, `${label}.${domainBase}`, deps.config.platformDomain, deps.config.brandDomain);
+  return taken ? '' : label;
+}
+
 export const STOREFRONT_KEY_LABEL = 'Ready-made storefront';
 
 const externalId = (productId: string) => `storefront-${productId}`;
@@ -98,9 +112,12 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
   if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
   const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
   if (!EMAIL.test(email) || email.length > 254) throw badRequest('email must be an email address');
-  const subdomain = typeof input?.subdomain === 'string' ? input.subdomain.trim().toLowerCase() : '';
-  if (subdomain && !LABEL.test(subdomain)) throw badRequest('subdomain can only contain letters, digits and - (at most 63)');
+  const asked = typeof input?.subdomain === 'string' ? input.subdomain.trim().toLowerCase() : '';
+  if (asked && !LABEL.test(asked)) throw badRequest('subdomain can only contain letters, digits and - (at most 63)');
   const domainBase = config.platformDomain ?? config.storesDomain;
+  // Without an address of their own choosing, the storefront is named after the business when that name is free,
+  // rather than a random t-1a2b3c4d one in the approval email.
+  const subdomain = asked || (await freeNameFor(deps, name, domainBase));
   const setup = setupOption(input);
 
   const existing = await getStorefront(deps, productId);
