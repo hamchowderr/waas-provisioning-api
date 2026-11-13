@@ -7,7 +7,10 @@ import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { publicBase } from './oauth.ts';
+import { withTransaction } from './db.ts';
+import { enqueue } from './queue.ts';
 import { channelKey, parseManifest, type ReleaseStore } from './releases.ts';
+import { Status } from './status.ts';
 import { getStorefront } from './storefronts.ts';
 
 /**
@@ -293,6 +296,30 @@ async function save(pool: Deps['pool'], owner: BrandOwner, set: Record<string, u
  * Mounted in the admin API for /products/:productId (also /account, its own storefront) and
  * /resellers/:id (platform admin only).
  */
+/** The option a ready-made storefront takes its look from (templates/seller-storefront/mu-plugins/seller-storefront.php). */
+export const STOREFRONT_BRAND_OPTION = 'anypress_storefront_brand';
+
+/**
+ * A storefront's look reaches its ready-made storefront too: the site title, logo, icon, main colour and support
+ * address, as one option the template applies once per change. Saved on the store (restores and rollbacks keep it)
+ * and written by a tenant.update job. A reseller's change reaches each of its storefronts that has one.
+ */
+async function pushStorefrontBrand(deps: Deps, base: string, owner: BrandOwner) {
+  const { pool } = deps;
+  if (!deps.config.storefrontProductId) return;
+  const products =
+    'productId' in owner ? [owner.productId] : (await pool.query<{ id: string }>('SELECT id FROM products WHERE reseller_id = $1', [owner.resellerId])).rows.map((r) => r.id);
+  for (const productId of products) {
+    const storefront = await getStorefront(deps, productId);
+    if (!storefront || storefront.statusCode === Status.Removing || storefront.statusCode === Status.Failed) continue;
+    const wpOptions = { [STOREFRONT_BRAND_OPTION]: JSON.stringify((await effectiveBrand(pool, base, productId)) ?? {}) };
+    await withTransaction(pool, async (client) => {
+      await client.query('UPDATE tenants SET wp_options = wp_options || $2, status = $3, date_changed = now() WHERE id = $1', [storefront.id, wpOptions, Status.Pending]);
+      await enqueue(deps.boss, client, { type: 'tenant.update', tenantId: storefront.id, wpOptions });
+    });
+  }
+}
+
 export function brandingRoutes(deps: Deps) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
@@ -313,6 +340,12 @@ export function brandingRoutes(deps: Deps) {
     return { resellerId: id };
   }
 
+  /** After a change: the new look goes to the ready-made storefront, then the answer. */
+  async function changed(c: Context<AppEnv>, owner: BrandOwner) {
+    await pushStorefrontBrand(deps, base(c), owner);
+    return answer(c, owner);
+  }
+
   /** The owner's own branding, and for a storefront what its dashboard shows once its reseller's fills the gaps. */
   async function answer(c: Context<AppEnv>, owner: BrandOwner) {
     const own = view(base(c), await ownBrand(pool, owner));
@@ -328,7 +361,7 @@ export function brandingRoutes(deps: Deps) {
       const owner = await find(c);
       const fields = parseFields(await readJson(c));
       await save(pool, owner, { name: fields.name, color: fields.color, support_email: fields.supportEmail, shop_url: fields.shopUrl });
-      return answer(c, owner);
+      return changed(c, owner);
     });
 
     for (const kind of Object.keys(IMAGES) as ImageKind[]) {
@@ -346,14 +379,14 @@ export function brandingRoutes(deps: Deps) {
           throw badRequest(`${spec.label} must be a PNG, JPEG or WebP image${kind === 'icon' ? ', or an .ico file' : ''}`);
         }
         await save(pool, owner, { [kind]: Buffer.from(bytes), [`${kind}_type`]: type });
-        return answer(c, owner);
+        return changed(c, owner);
       });
 
       app.delete(`${prefix}/branding/${kind}`, async (c) => {
         const owner = await find(c);
         const { column, id } = ownerColumn(owner);
         await pool.query(`UPDATE dashboard_brands SET ${kind} = NULL, ${kind}_type = NULL, updated_at = now() WHERE ${column} = $1`, [id]);
-        return answer(c, owner);
+        return changed(c, owner);
       });
     }
   }

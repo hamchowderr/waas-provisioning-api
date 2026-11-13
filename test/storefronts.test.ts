@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiKey } from '../src/keys.ts';
+import { STOREFRONT_BRAND_OPTION } from '../src/branding.ts';
 import { Status } from '../src/status.ts';
 import { AUDIENCES, SITE_TYPES, STOREFRONT_KEY_LABEL, storefrontDns } from '../src/storefronts.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
@@ -85,6 +86,23 @@ describe('ready-made storefronts', () => {
   it('builds only one per product', async () => {
     const res = await build(sellerId, { name: 'Again', email: 'owner@agency.example' });
     expect(res.status).toBe(409);
+  });
+
+  it("takes the seller's Branding: the look goes to the storefront as one option, and stays on the store", async () => {
+    const storefront = await get(sellerId);
+    const brand = () => JSON.parse(t.provisioner.stores.get(storefront.id)!.wpOptions[STOREFRONT_BRAND_OPTION] ?? 'null');
+    const res = await t.call('PUT', `/admin/products/${sellerId}/branding`, { body: { name: 'Jane Designs', color: '#1D4ED8', supportEmail: 'help@jane.example' }, auth: ADMIN });
+    expect(res.status).toBe(200);
+    await waitFor(async () => brand()?.name === 'Jane Designs');
+    expect(brand()).toMatchObject({ name: 'Jane Designs', color: '#1d4ed8', supportEmail: 'help@jane.example', logoUrl: null });
+    expect((await get(sellerId)).statusCode).toBe(Status.Done);
+    const { rows } = await t.pool.query('SELECT wp_options FROM tenants WHERE id = $1', [storefront.id]);
+    expect(JSON.parse(rows[0].wp_options[STOREFRONT_BRAND_OPTION]).name).toBe('Jane Designs');
+
+    // A cleared field is cleared on the storefront too.
+    await t.call('PUT', `/admin/products/${sellerId}/branding`, { body: { name: null }, auth: ADMIN });
+    await waitFor(async () => brand()?.name === null);
+    expect(brand().color).toBe('#1d4ed8');
   });
 
   it('checks the request, and makes no key when it is refused', async () => {

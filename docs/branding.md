@@ -9,6 +9,10 @@ Branding belongs to a storefront (a product) or to a reseller:
 
 A storefront nobody branded shows the platform's own look.
 
+## On the ready-made storefront
+
+A storefront with a [ready-made storefront](../templates/seller-storefront/README.md) gets the same look on that shop: every change on the Branding page (or the reseller's, for the fields it fills) is sent to it within a minute or two. The name becomes the site title, the logo the site logo in the header, the icon the browser-tab icon, the main color the theme's accent color (links and buttons that use it, made darker when needed so text in it stays readable on white) and light tints of it for highlights and pale panels, and the support address the Support page's mailbox. A field left empty leaves what the shop already has. It is the store option `anypress_storefront_brand`, kept with the store, so a restore or rollback keeps it.
+
 ## Fields
 
 | Field | What it is |
