@@ -127,6 +127,37 @@ if ($primary) {
     }, $palette);
     $styles['settings']['color']['palette'] = $palette;
 }
+// Their own fonts, where the website's are open-licence and the API copied them: headings in the first, text in the
+// second (or the first again).
+$faces = [];
+foreach ($ownSite ? $brand['fontFaces'] ?? [] : [] as $face) {
+    if (is_array($face) && !empty($face['family']) && !empty($face['file']) && in_array((int) ($face['weight'] ?? 0), [400, 700], true)) {
+        $faces[(string) $face['family']][] = $face;
+    }
+}
+if ($faces) {
+    $families = [];
+    foreach ($faces as $family => $list) {
+        $generic = in_array($list[0]['category'] ?? '', ['serif', 'monospace'], true) ? $list[0]['category'] : 'sans-serif';
+        $families[] = [
+            'name' => $family,
+            'slug' => 'brand-' . sanitize_title($family),
+            'fontFamily' => '"' . str_replace('"', '', $family) . '", ' . $generic,
+            'fontFace' => array_map(static fn (array $f): array => ['fontFamily' => $family, 'fontWeight' => (string) (int) $f['weight'], 'fontStyle' => 'normal', 'fontDisplay' => 'swap', 'src' => [esc_url_raw((string) $f['file'])]], $list),
+        ];
+    }
+    $styles['settings']['typography']['fontFamilies']['custom'] = $families;
+    $heading = 'var:preset|font-family|' . $families[0]['slug'];
+    $body = 'var:preset|font-family|' . ($families[1] ?? $families[0])['slug'];
+    $styles['styles']['typography']['fontFamily'] = $body;
+    $styles['styles']['elements']['heading']['typography']['fontFamily'] = $heading;
+    $styles['styles']['blocks']['core/site-title']['typography']['fontFamily'] = $heading;
+    foreach (['button', 'link'] as $element) {
+        if (isset($styles['styles']['elements'][$element]['typography']['fontFamily'])) {
+            $styles['styles']['elements'][$element]['typography']['fontFamily'] = $body;
+        }
+    }
+}
 if ($styles) {
     $styles['version'] = WP_Theme_JSON::LATEST_SCHEMA;
     $styles['isGlobalStylesUserThemeJSON'] = true;
@@ -225,4 +256,75 @@ if ($reach) {
 $front = (int) get_option('page_on_front');
 if ($front) {
     wp_update_post(['ID' => $front, 'post_content' => wp_slash(implode("\n\n", $blocks) . "\n\n" . get_post_field('post_content', $front))]);
+}
+
+// Only what their own website has: when we know what it has, the shop, booking, community and blog of the sample
+// leave the home page and the menu if their site has none of it. The sample's own opening goes too: theirs replaces it.
+$site = $ownSite && is_array($brand['site'] ?? null) ? $brand['site'] : null;
+$has = static fn (string $feature): bool => !$site || in_array($feature, (array) ($site['features'] ?? []), true);
+if ($site && $front) {
+    $drop = static function (array $block) use ($has): bool {
+        $name = $block['attrs']['metadata']['name'] ?? '';
+        $anchor = $block['attrs']['anchor'] ?? '';
+        return $name === 'Hero'
+            || ($anchor === 'shop' && !$has('shop'))
+            || ($anchor === 'book' && !$has('bookings'))
+            || ($name === 'Latest posts' && !$has('blog'));
+    };
+    $kept = array_filter(parse_blocks((string) get_post_field('post_content', $front)), static fn (array $b): bool => !$drop($b));
+    wp_update_post(['ID' => $front, 'post_content' => wp_slash(serialize_blocks(array_values($kept)))]);
+}
+// No shop on their site: the header's product search, account button and cart go too (every page, so a must-use plugin).
+if ($site && !$has('shop')) {
+    file_put_contents(WPMU_PLUGIN_DIR . '/anypress-prospect-no-shop.php', "<?php\nadd_filter('render_block', static function (\$html, \$block) {\n    return in_array(\$block['blockName'], ['fluent-cart/fluent-products-search-bar', 'fluent-cart/customer-dashboard-button', 'fluent-cart/mini-cart'], true) ? '' : \$html;\n}, 10, 2);\n");
+}
+$menu = $site ? get_posts(['post_type' => 'wp_navigation', 'title' => 'Main menu', 'numberposts' => 1, 'suppress_filters' => true]) : [];
+if ($menu) {
+    $shopPage = get_page_by_path('shop');
+    $blogPage = (int) get_option('page_for_posts');
+    $links = array_filter(parse_blocks((string) $menu[0]->post_content), static function (array $b) use ($has, $shopPage, $blogPage): bool {
+        $id = (int) ($b['attrs']['id'] ?? 0);
+        return !(($shopPage && $id === (int) $shopPage->ID && !$has('shop'))
+            || ($blogPage && $id === $blogPage && !$has('blog'))
+            || (($b['attrs']['kind'] ?? '') === 'custom' && function_exists('anypress_portal_url') && ($b['attrs']['url'] ?? '') === anypress_portal_url() && !$has('members')));
+    });
+    wp_update_post(['ID' => $menu[0]->ID, 'post_content' => wp_slash(serialize_blocks(array_values($links)))]);
+}
+
+// Their shop: what they sell, at the prices their website prints, in front of the sample catalogue (which goes to
+// draft, so the shop shows only theirs). Items without a printed price stay on the home page only.
+if ($ownSite && $has('shop') && defined('FLUENTCART_VERSION') && class_exists('\\FluentCart\\App\\Services\\BulkProductInsertService')) {
+    $made = [];
+    foreach ($items as $i => $item) {
+        $cents = preg_match('/(\d[\d,]*)(?:\.(\d{1,2}))?/', (string) ($item['price'] ?? ''), $m) ? (int) str_replace(',', '', $m[1]) * 100 + (int) str_pad($m[2] ?? '0', 2, '0') : 0;
+        if ($cents <= 0) {
+            continue;
+        }
+        $result = (new \FluentCart\App\Services\BulkProductInsertService())->insertChunk([[
+            '_cid' => 'prospect' . $i,
+            'post_title' => (string) $item['name'],
+            'post_excerpt' => (string) ($item['description'] ?? ''),
+            'post_content' => (string) ($item['description'] ?? ''),
+            'post_status' => 'published',
+            'detail' => ['fulfillment_type' => 'physical', 'variation_type' => 'simple'],
+            'variants' => [['item_price' => $cents, 'other_info' => ['payment_type' => 'onetime']]],
+        ]]);
+        $id = (int) ($result['created'][0]['id'] ?? 0);
+        $picture = $id ? anypress_prospect_media($item['image'] ?? null, (string) $item['name']) : 0;
+        if ($picture) {
+            set_post_thumbnail($id, $picture);
+        }
+        if ($id) {
+            $made[] = $id;
+        }
+    }
+    if ($made) {
+        foreach (get_posts(['post_type' => 'fluent-products', 'numberposts' => -1, 'fields' => 'ids', 'post_status' => 'publish', 'exclude' => $made]) as $sampleProduct) {
+            wp_update_post(['ID' => $sampleProduct, 'post_status' => 'draft']);
+        }
+        // The sample's categories (clothing and the like) would only confuse the shop's filter.
+        foreach (get_terms(['taxonomy' => 'product-categories', 'hide_empty' => false, 'fields' => 'ids']) as $term) {
+            wp_delete_term((int) $term, 'product-categories');
+        }
+    }
 }
