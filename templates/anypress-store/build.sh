@@ -44,8 +44,11 @@ redis-cache 3.0.0 7a03342d3defbe94cac8d0470b42dc1a1c34331b19c47205df20ceccd3c8f5
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
+# FluentCart Customer Rights (FluentCart's free add-on, from addons-cdn.fluentcart.com: the EU's 14-day cancellation form,
+# on the "Withdraw from contract" page FluentCart makes with its other pages) updates itself from FluentCart too.
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
+fluent-cart-customer-rights 0.1.3 55b0f9307a8cc98e29d492d8bd7842b3a80b0f3be2e3b79bde72cdfd7734e7d3
 "
 # Vendored plugins installed but left off. The FluentCart Migrator add-on (FluentCart's own WooCommerce importer, from
 # addons-cdn.fluentcart.com) is only for AnyPress Client's shop switch, which turns it on when it runs.

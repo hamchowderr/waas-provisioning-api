@@ -31,6 +31,10 @@ Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one 
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
 
+FluentCart Customer Rights 0.1.3 (`fluent-cart-customer-rights`, FluentCart's free add-on for the EU's 14-day right to
+cancel: a cancellation form on the "Withdraw from contract" page FluentCart makes with its other pages, and each request
+kept on its order) is kept in [`plugins/`](plugins/) the same way and is on wherever FluentCart is.
+
 The FluentCart Migrator add-on 1.1.0-beta (`fluent-cart-migrator`, FluentCart's own importer for WooCommerce shops) is kept
 in [`plugins/`](plugins/) the same way and installed switched off, so it doesn't load on every page. AnyPress Client's shop
 switch (`wp anypress shop switch`) turns it on when it runs.
@@ -175,9 +179,9 @@ owner sees it in WordPress on Dashboard > Your plan, and the AnyPress dashboard 
 | Role | Site type | Plugins on |
 |---|---|---|
 | `website` | Website | FluentAuth, FluentSMTP, FluentCRM, Fluent Forms, FluentPlayer, FluentSnippets, Rank Math, AutomatorWP, WP Fusion Lite, FluentToolkit |
-| `bookings` | Bookings | Website's, plus FluentBooking, FluentCart (to take payment for bookings, with no Shop or Cart page) and Fluent Support |
-| `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
-| `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
+| `bookings` | Bookings | Website's, plus FluentBooking, FluentCart (to take payment for bookings, with no Shop or Cart page) with Customer Rights, and Fluent Support |
+| `online-store` | Online store | Website's, plus FluentCart with Customer Rights, Fluent Support and FluentAffiliate |
+| `community` | Community & courses | Website's, plus FluentCommunity and FluentCart with Customer Rights (to sell memberships and courses) |
 | `everything` | Everything | all of them |
 | `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), FluentSnippets (code snippets and shortcodes), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector, FluentHub (FluentToolkit). HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin. Owners may add plugins of their own (`ownPlugins`) |
 | `store` | Everything, for stores bought before site types | all of them |
