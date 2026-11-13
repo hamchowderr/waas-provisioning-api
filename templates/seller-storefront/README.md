@@ -33,6 +33,11 @@ email into FluentCRM, FluentCart, Fluent Support (its first mailbox), FluentBook
 FluentAffiliate on the first visit, and keeps WP Fusion out of staging mode. To use HighLevel
 or another CRM instead, the owner picks it in **Settings → WP Fusion → Setup**; the lifecycle tags follow contacts there.
 
+The owner has all of wp-admin. [`mu-plugins/seller-storefront-admin.php`](mu-plugins/seller-storefront-admin.php) only takes out
+the upgrade nags of the plugins the storefront comes with ("Upgrade to Pro" menu items, buttons and plugin-row links;
+BetterDocs' usage-tracking offer is answered "No thanks" on the build) and asks before AnyPress Host is turned off.
+Licence and add-on pages stay, for Pro licences the owner buys.
+
 ## How a storefront is connected
 
 Nothing that connects a storefront ships in the template; `build.sh` fails if the API settings are filled in. When the
