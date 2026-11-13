@@ -24,7 +24,7 @@
 			"step": "installTheme",
 			"themeData": {
 				"resource": "url",
-				"url": "https://api.anypress.io/branding/demo-files/anypress-theme-v0.23.1.zip",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-theme-v0.23.2.zip",
 				"caption": "Installing the AnyPress theme"
 			},
 			"options": {
@@ -102,7 +102,7 @@
 			"step": "installPlugin",
 			"pluginData": {
 				"resource": "url",
-				"url": "https://downloads.wordpress.org/plugin/fluent-community.2.13.0.zip",
+				"url": "https://downloads.wordpress.org/plugin/fluent-community.2.14.0.zip",
 				"caption": "Installing fluent-community"
 			},
 			"options": {
@@ -168,7 +168,7 @@
 			"step": "installPlugin",
 			"pluginData": {
 				"resource": "url",
-				"url": "https://downloads.wordpress.org/plugin/automatorwp.6.1.0.zip",
+				"url": "https://downloads.wordpress.org/plugin/automatorwp.6.1.1.zip",
 				"caption": "Installing automatorwp"
 			},
 			"options": {
