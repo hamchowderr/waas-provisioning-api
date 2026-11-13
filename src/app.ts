@@ -18,8 +18,9 @@ import { isUuid } from './http.ts';
 import type { PlacesSearch } from './prospects.ts';
 import { APP_PATHS, highLevelRoutes } from './highlevel.ts';
 import { authenticateKey } from './keys.ts';
+import { callerAddress, recordWrongKey, tooManyWrongKeys, WRONG_KEY_RETRY_SECONDS } from './keyattempts.ts';
 import type { CpuWatch } from './cpuwatch.ts';
-import { checkHealth } from './health.ts';
+import { checkHealth, publicHealth } from './health.ts';
 import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
 import { isAppsResource, oauthRoutes, verifyAccessToken, type TokenOwner } from './oauth.ts';
@@ -159,13 +160,13 @@ export function createApp(deps: Deps) {
   );
 
   // For uptime monitoring; outside /v1 and unauthenticated. 503 when Postgres or
-  // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
-  // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
+  // the job queue doesn't answer within 3 seconds. Only the flags monitors alert on (src/health.ts publicHealth);
+  // backup times, failed-job counts and CPU figures are in /admin/overview. A stale backup never causes a 503.
   iconRoutes(app);
 
   app.get('/health', async (c) => {
     const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup, !!deps.config.restoreTest, deps.cpuWatch);
-    return c.json(health, health.ok ? 200 : 503);
+    return c.json(publicHealth(health), health.ok ? 200 : 503);
   });
 
   // The public API reference, unauthenticated like /health. Built on first request, once every
@@ -264,8 +265,13 @@ export function createApp(deps: Deps) {
     // The key is an id, kept in the request log even when the secret is wrong; anything else typed
     // as the username (a pasted secret, say) is not.
     if (isUuid(key)) c.set('apiKeyId', key);
+    const ip = callerAddress(c.req.header('cf-connecting-ip'));
+    if (key && tooManyWrongKeys(ip)) {
+      return c.json({ statusCode: 429, message: 'Too many wrong API keys from this address. Try again in a few minutes' }, 429, { 'Retry-After': String(WRONG_KEY_RETRY_SECONDS) });
+    }
     const caller = key ? await authenticateKey(deps.pool, key, decoded.slice(colon + 1)) : null;
     if (!caller) {
+      if (key) recordWrongKey(ip);
       // HighLevel shows this message in the workflow's history: say what the install is missing.
       if (!match && APP_PATHS.test(c.req.path)) {
         const message = !appKey

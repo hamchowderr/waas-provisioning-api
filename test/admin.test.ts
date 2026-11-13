@@ -439,10 +439,10 @@ describe('admin versions and templates (any product)', () => {
       expect(list).toMatchObject({ status: 'failed', sizeBytes: 1234, stale: true, total: 2, pageSize: 1 });
       expect(list.items).toEqual([expect.objectContaining({ status: 'failed', objectKey: null, error: 'S3 PUT failed: HTTP 403' })]);
       expect((await admin('GET', '/admin/overview')).health.dbBackup).toMatchObject({ status: 'failed', sizeBytes: 1234 });
-      // /health shows the status but not keys or errors, and a failed backup is not a 503.
+      // /health shows the status but not times, sizes, keys or errors, and a failed backup is not a 503.
       const health = await t.call('GET', '/health', { auth: null });
       expect(health.status).toBe(200);
-      expect((await health.json()).dbBackup).toEqual({ status: 'failed', lastAttemptAt: expect.any(String), lastSuccessAt: expect.any(String), sizeBytes: 1234, stale: true });
+      expect((await health.json()).dbBackup).toEqual({ status: 'failed', stale: true });
     } finally {
       t.deps.config.dbBackup = undefined;
       await t.pool.query('DELETE FROM db_backups');

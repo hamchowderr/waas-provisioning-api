@@ -51,7 +51,8 @@ describe('Basic auth', () => {
   it('leaves /health open, and it checks Postgres and the queue', async () => {
     const res = await t.call('GET', '/health', { auth: null });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', lastAttemptAt: null, lastSuccessAt: null, sizeBytes: null, stale: false }, jobs: { ok: true, failedLastDay: 0 }, restoreTest: { ok: true, status: 'off', lastPassedAt: null }, cpu: { ok: true, status: 'off' } });
+    // Only the flags monitors alert on; times, counts and CPU figures are in /admin/overview.
+    expect(await res.json()).toEqual({ ok: true, database: 'ok', queue: 'ok', dbBackup: { status: 'off', stale: false }, jobs: { ok: true }, restoreTest: { ok: true }, cpu: { ok: true } });
   });
 
   it("reports the server's CPU in /health, and an hour over the limit doesn't make it a 503", async () => {
@@ -61,7 +62,7 @@ describe('Basic auth', () => {
     for (; tick <= 60; tick++, now += 60_000) cpuWatch.sample();
     const res = await createApp({ ...t.deps, cpuWatch }).request('/health');
     expect(res.status).toBe(200);
-    expect((await res.json()).cpu).toEqual({ ok: false, busy: 0.6, steal: 0, minutes: 60 });
+    expect((await res.json()).cpu).toEqual({ ok: false });
   });
 
   it('answers 503 from /health when Postgres is unreachable', async () => {

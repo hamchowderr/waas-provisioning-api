@@ -124,11 +124,24 @@ describe('nightly restore test', () => {
     const tenant = await newTenant('Cut Off');
     const backupId = await nightlyBackup(tenant);
     const { rows } = await t.pool.query("INSERT INTO restore_tests (tenant_id, backup_id, started_at) VALUES ($1, $2, now() - interval '4 hours') RETURNING id", [tenant.id, backupId]);
-    let deleted: string | undefined;
-    const provisioner = Object.create(t.provisioner, { deleteRestoreTest: { value: async ({ testId }: { testId: string }) => void (deleted = testId) } });
+    const deleted: string[] = [];
+    const provisioner = Object.create(t.provisioner, { deleteRestoreTest: { value: async ({ testId }: { testId: string }) => void deleted.push(testId) } });
     expect(await cleanUpInterruptedTests(t.pool, provisioner)).toBe(1);
-    expect(deleted).toBe(rows[0].id);
+    expect(deleted).toContain(rows[0].id);
     expect((await t.pool.query('SELECT status, error FROM restore_tests WHERE id = $1', [rows[0].id])).rows[0]).toMatchObject({ status: 'failed' });
+  });
+
+  it('deletes the test store of a recent finished test again, in case its own delete failed', async () => {
+    const tenant = await newTenant('Left Behind');
+    const backupId = await nightlyBackup(tenant);
+    const { rows } = await t.pool.query(
+      "INSERT INTO restore_tests (tenant_id, backup_id, status, error, finished_at) VALUES ($1, $2, 'failed', 'broken', now()) RETURNING id",
+      [tenant.id, backupId],
+    );
+    const deleted: string[] = [];
+    const provisioner = Object.create(t.provisioner, { deleteRestoreTest: { value: async ({ testId }: { testId: string }) => void deleted.push(testId) } });
+    expect(await cleanUpInterruptedTests(t.pool, provisioner)).toBe(0);
+    expect(deleted).toContain(rows[0].id);
   });
 
   it('schedules the nightly run, runs a catch-up when one is due, and unschedules when off', async () => {

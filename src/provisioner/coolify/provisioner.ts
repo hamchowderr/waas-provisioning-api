@@ -237,8 +237,9 @@ function wantsCache(phpConstants: Record<string, { value: string }> | null | und
  * 23: community and everything stores take uploads up to 512 MB (renderCompose's uploadMb), for members' videos.
  * 24: storage 10 / 20 / 30 GB by size (plans.ts), and storage packs: the plan mu-plugin adds the packs' storage
  *    (the agent's storage-packs operation) to the plan's.
+ * 25: Nginx hides readme.html, license.txt and wp-config-sample.php, which name WordPress's version.
  */
-export const STORE_SETUP = 24;
+export const STORE_SETUP = 25;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -448,6 +449,8 @@ export class CoolifyProvisioner implements Provisioner {
     /** A store's object cache (StoreMeta's `cache`). */
     cache?: boolean;
     domains: string[];
+    /** Plain http: Coolify then asks for no TLS certificate (a restore test's .invalid name can't get one). */
+    plainHttp?: boolean;
     envs: Record<string, string>;
   }): Promise<string> {
     let service = await this.findService(input.envName, input.name);
@@ -462,9 +465,12 @@ export class CoolifyProvisioner implements Provisioner {
         environment_name: input.envName,
         server_uuid: this.config.serverUuid,
         docker_compose_raw: b64(
-          renderCompose({ ...input, assistant: input.meta.kind === 'store' ? { router: `${input.name}-assistant`, domains: input.domains } : undefined }),
+          renderCompose({
+            ...input,
+            assistant: input.meta.kind === 'store' && !input.plainHttp ? { router: `${input.name}-assistant`, domains: input.domains } : undefined,
+          }),
         ),
-        urls: urlsFor(input.domains),
+        urls: input.plainHttp ? [{ name: 'wordpress', url: input.domains.map((d) => `http://${d}`).join(',') }] : urlsFor(input.domains),
         // Variables first, then start.
         instant_deploy: false,
       });
@@ -1343,6 +1349,7 @@ export class CoolifyProvisioner implements Provisioner {
         phpVersion: version.phpVersion,
         size,
         domains: [domain],
+        plainHttp: true,
         envs: { WAAS_CONSTANTS_B64: encodeConstants({}) },
       });
       await this.exec(uuid, 'suspend', { brand: this.config.brand ?? { name: '' } });
@@ -1358,7 +1365,7 @@ export class CoolifyProvisioner implements Provisioner {
       failed = true;
       throw err;
     } finally {
-      // The restore's own error matters more; a test store left behind is deleted on the next run.
+      // The restore's own error matters more; a test store left behind is deleted on the next run (cleanUpInterruptedTests).
       await this.deleteRestoreTest({ testId }).catch((err: unknown) => {
         if (!failed) throw err;
       });

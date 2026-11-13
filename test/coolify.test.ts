@@ -1244,7 +1244,9 @@ describe('CoolifyProvisioner', () => {
       posts: 12,
     });
     expect(seen!.name).toBe('store-restore-test-t-1');
-    expect(seen!.urls).toEqual([{ name: 'wordpress', url: 'https://restore-test-t-1.invalid' }]);
+    // Plain http and no assistant router, so Traefik asks Let's Encrypt for nothing.
+    expect(seen!.urls).toEqual([{ name: 'wordpress', url: 'http://restore-test-t-1.invalid' }]);
+    expect(seen!.compose).not.toContain('certresolver');
     expect([...seen!.envs.keys()]).toEqual(['WAAS_CONSTANTS_B64']);
     expect(parse(seen!.compose).services.wordpress.cpus).toBe(2);
     // Suspended before the backup goes in, then checked.
@@ -1415,6 +1417,7 @@ describe('Store compose file', () => {
       'location ^~ /wp-content/uploads/fluent-support/ { deny all; }',
       'location ~* ^/wp-content/uploads/.*\\.(php|phtml|phar|php[3-8])$ { deny all; }',
       'location / { try_files $uri $uri/ /index.php?$args; }',
+      'location ~* ^/(readme\\.html|license\\.txt|wp-config-sample\\.php)$ { return 404; }',
       'set_real_ip_from 173.245.48.0/20;',
       'fastcgi_pass $waas_php;',
     ]) {
