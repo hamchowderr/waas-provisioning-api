@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import type { JobWithMetadata, PgBoss } from 'pg-boss';
 import type { Client, Pool } from './db.ts';
 import { badRequest, HttpError } from './errors.ts';
@@ -87,57 +87,52 @@ export function sign(secret: string, id: string, timestamp: number, body: string
 
 // --- Where an endpoint may be ---
 
-function ipv4Private(ip: string): boolean {
-  const [a, b] = ip.split('.').map(Number) as [number, number];
-  return (
-    a === 0 || a === 10 || a === 127 || a >= 224 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 192 && b === 0 && ip.split('.')[2] === '0') ||
-    (a === 198 && (b === 18 || b === 19))
-  );
+/** IPv4 ranges no endpoint may be in: this-network, private, CGNAT, loopback, link-local, IETF, benchmarking, multicast and reserved. */
+const PRIVATE_V4 = new BlockList();
+for (const [net, bits] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]] as const) {
+  PRIVATE_V4.addSubnet(net, bits, 'ipv4');
 }
 
-/** Loopback, private, link-local, shared (CGNAT), multicast and reserved addresses. */
+/** IPv6 ranges: NAT64 (64:ff9b::/32), unique local, link-local, site-local, multicast and documentation. */
+const PRIVATE_V6 = new BlockList();
+for (const [net, bits] of [['64:ff9b::', 32], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8], ['2001:db8::', 32]] as const) {
+  PRIVATE_V6.addSubnet(net, bits, 'ipv6');
+}
+
+/** Loopback, private, link-local, shared (CGNAT), multicast and reserved addresses. Anything that isn't an address counts as private. */
 export function isPrivateAddress(ip: string): boolean {
   const kind = isIP(ip);
-  if (kind === 4) return ipv4Private(ip);
-  // Anything that isn't an address is refused rather than guessed at.
+  if (kind === 4) return PRIVATE_V4.check(ip, 'ipv4');
   if (kind !== 6) return true;
-  const groups = ipv6Groups(ip.toLowerCase());
+  const groups = ipv6Groups(ip);
   if (!groups) return true;
-  const [a, b, c, d, e, f, g, h] = groups as [number, number, number, number, number, number, number, number];
-  const v4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
-  // IPv4 inside IPv6: mapped (::ffff:a.b.c.d, which new URL() writes as ::ffff:7f00:1), the old compatible form
-  // (::a.b.c.d, and :: and ::1), NAT64 (64:ff9b::/96 and the local 64:ff9b:1::/48) and 6to4 (2002::/16) all
-  // reach the IPv4 address inside, so they count as that address.
-  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && (f === 0xffff || f === 0)) return f === 0 && g === 0 ? true : ipv4Private(v4(g, h));
-  if (a === 0x64 && b === 0xff9b) return true;
-  if (a === 0x2002) return ipv4Private(v4(b, c));
-  // Unique local (fc00::/7), link-local (fe80::/10), site-local (fec0::/10), multicast (ff00::/8), documentation (2001:db8::/32).
-  return (a & 0xfe00) === 0xfc00 || (a & 0xffc0) === 0xfe80 || (a & 0xffc0) === 0xfec0 || (a & 0xff00) === 0xff00 || (a === 0x2001 && b === 0xdb8);
+  const inner = embeddedIpv4(groups);
+  return inner ? PRIVATE_V4.check(inner, 'ipv4') : PRIVATE_V6.check(ip.replace(/%.*$/, ''), 'ipv6');
 }
 
-/** The eight 16-bit groups of an IPv6 address (dotted IPv4 tail included), or null when it isn't one. */
+/**
+ * The IPv4 address an IPv6 address reaches: mapped (::ffff:a.b.c.d, which new URL() writes as ::ffff:7f00:1), the
+ * old compatible form (::a.b.c.d, and :: and ::1, which come out as 0.0.0.0 and 0.0.0.1) and 6to4 (2002::/16).
+ */
+function embeddedIpv4(g: number[]): string | null {
+  const v4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0xffff || g[5] === 0)) return v4(g[6]!, g[7]!);
+  return g[0] === 0x2002 ? v4(g[1]!, g[2]!) : null;
+}
+
+/** The eight 16-bit groups of an IPv6 address, or null when it isn't one. URL parsing writes it in plain hex first. */
 function ipv6Groups(ip: string): number[] | null {
-  let text = ip.replace(/%.*$/, '');
-  const tail = /(\d+\.\d+\.\d+\.\d+)$/.exec(text);
-  if (tail) {
-    if (isIP(tail[1]!) !== 4) return null;
-    const [p, q, r, s] = tail[1]!.split('.').map(Number) as [number, number, number, number];
-    text = `${text.slice(0, -tail[1]!.length)}${((p << 8) | q).toString(16)}:${((r << 8) | s).toString(16)}`;
+  let text: string;
+  try {
+    text = new URL(`http://[${ip.replace(/%.*$/, '')}]`).hostname.slice(1, -1);
+  } catch {
+    return null;
   }
-  const halves = text.split('::');
-  if (halves.length > 2) return null;
+  const [head = '', tail = ''] = text.split('::');
   const part = (s: string) => (s ? s.split(':') : []);
-  const head = part(halves[0]!);
-  const rest = halves.length === 2 ? part(halves[1]!) : [];
-  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
-  if (fill < 0 || (halves.length === 1 && head.length !== 8)) return null;
-  const groups = [...head, ...Array<string>(fill).fill('0'), ...rest];
-  if (groups.length !== 8 || groups.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return null;
+  const front = part(head);
+  const back = part(tail);
+  const groups = [...front, ...Array<string>(8 - front.length - back.length).fill('0'), ...back];
   return groups.map((x) => parseInt(x, 16));
 }
 

@@ -103,39 +103,40 @@ const REDIRECT_PARAMS = ['callbackURL', 'newUserCallbackURL', 'errorCallbackURL'
  * ("/stores") is fine; so is a full address on one of `hosts`.
  */
 async function offSiteRedirect(request: Request, hosts: string[]): Promise<string | null> {
-  const values: [string, unknown][] = [];
   const url = new URL(request.url);
-  for (const name of REDIRECT_PARAMS) for (const v of url.searchParams.getAll(name)) values.push([name, v]);
-  if (request.method === 'POST') {
-    const type = request.headers.get('content-type') ?? '';
-    const text = await request.text().catch(() => '');
-    let body: Record<string, unknown> | null = null;
-    if (type.includes('application/json')) {
-      try {
-        const parsed = JSON.parse(text) as unknown;
-        if (parsed && typeof parsed === 'object') body = parsed as Record<string, unknown>;
-      } catch {
-        body = null;
-      }
-    } else if (type.includes('application/x-www-form-urlencoded')) {
-      body = Object.fromEntries(new URLSearchParams(text));
-    }
-    for (const name of REDIRECT_PARAMS) if (body && name in body) values.push([name, body[name]]);
-  }
-  for (const [name, value] of values) {
-    if (value === undefined || value === null || value === '') continue;
-    if (typeof value !== 'string') return name;
-    // "//evil.example" and "/\evil.example" are addresses on another host to a browser.
-    if (/^\/(?![/\\])/.test(value)) continue;
-    let target: URL;
-    try {
-      target = new URL(value);
-    } catch {
-      return name;
-    }
-    if ((target.protocol !== 'https:' && target.protocol !== 'http:') || !hosts.includes(target.host.toLowerCase())) return name;
+  const body = request.method === 'POST' ? await formOrJson(request) : {};
+  for (const name of REDIRECT_PARAMS) {
+    const values: unknown[] = [...url.searchParams.getAll(name), body[name]];
+    if (values.some((value) => !onSite(value, hosts))) return name;
   }
   return null;
+}
+
+/** A request's JSON or form body as an object; empty for anything else. */
+async function formOrJson(request: Request): Promise<Record<string, unknown>> {
+  const type = request.headers.get('content-type') ?? '';
+  const text = await request.text().catch(() => '');
+  if (type.includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
+  if (!type.includes('application/json')) return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Whether a redirect value stays here: empty, a path, or an http(s) address on one of `hosts`. */
+function onSite(value: unknown, hosts: string[]): boolean {
+  if (value === undefined || value === null || value === '') return true;
+  // "//evil.example" and "/\evil.example" are addresses on another host to a browser.
+  return typeof value === 'string' && (/^\/(?![/\\])/.test(value) || onHosts(value, hosts));
+}
+
+/** Whether `value` is an http(s) address on one of `hosts`. */
+function onHosts(value: string, hosts: string[]): boolean {
+  const target = URL.canParse(value) ? new URL(value) : null;
+  return /^https?:$/.test(target?.protocol ?? '') && hosts.includes(target!.host.toLowerCase());
 }
 
 /** The largest request body the API reads. */
