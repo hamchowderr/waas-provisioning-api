@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Deps } from '../app.ts';
 import { badRequest } from '../errors.ts';
 import { readJson } from '../http.ts';
-import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
+import { getMailDomain, platformMailDomains, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { findTenant } from '../tenants.ts';
 import { assertChangeable } from './domains.ts';
 
@@ -27,7 +27,7 @@ export function mailDomainRoutes(deps: Deps) {
     if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
     const from = config.coolify?.mail?.from;
     if (!from) throw badRequest('Stores send no email: STORE_SMTP_PASSWORD is not set on the API');
-    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, from) });
+    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, platformMailDomains(config, from)) });
   });
 
   app.delete('/mail-domain', async (c) => {

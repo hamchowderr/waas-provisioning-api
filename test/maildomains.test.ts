@@ -62,6 +62,7 @@ beforeAll(async () => {
   t = await setup();
   t.deps.config.sendingDomains = domains;
   t.deps.config.coolify = { mail: { from: 'no-reply@waas.example' } } as any;
+  t.deps.config.platformDomain = 'platform.example';
   t.provisioner.ensureStoreMail = async (input) => {
     senders.push(input);
     return 'updated';
@@ -82,6 +83,9 @@ describe('store sending domains', () => {
   it('starts with none, and refuses the platform domain or a bad name', async () => {
     expect(await admin('GET', path())).toEqual({ mailDomain: null });
     await admin('PUT', path(), 400, { domainName: 'shop.waas.example' });
+    // The platform's own domains too, not only the stores' sending one: toSend would hand back the verified domain.
+    await admin('PUT', path(), 400, { domainName: 'platform.example' });
+    await admin('PUT', path(), 400, { domainName: 'mail.Platform.example' });
     await admin('PUT', path(), 400, { domainName: 'https://nope' });
     await admin('DELETE', path(), 404);
   });
