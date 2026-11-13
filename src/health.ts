@@ -62,3 +62,16 @@ export async function checkHealth(pool: Pool, boss: PgBoss, dbBackupEnabled = fa
   ]);
   return { ok: database === 'ok' && queue === 'ok', database, queue, dbBackup, jobs: { ok: failedLastDay === 0, failedLastDay }, restoreTest, cpu: cpuWatch?.status() ?? { ok: true, status: 'off' } };
 }
+
+/** What /health shows anyone: the flags outside monitors alert on, no times, counts or CPU figures (those are in /admin/overview). */
+export type PublicHealth = Pick<Health, 'ok' | 'database' | 'queue'> & {
+  dbBackup: Pick<DbBackupStatus, 'status' | 'stale'>;
+  jobs: { ok: boolean };
+  restoreTest: { ok: boolean };
+  cpu: { ok: boolean };
+};
+
+export function publicHealth(health: Health): PublicHealth {
+  const { ok, database, queue, dbBackup, jobs, restoreTest, cpu } = health;
+  return { ok, database, queue, dbBackup: { status: dbBackup.status, stale: dbBackup.stale }, jobs: { ok: jobs.ok }, restoreTest: { ok: restoreTest.ok }, cpu: { ok: cpu.ok } };
+}

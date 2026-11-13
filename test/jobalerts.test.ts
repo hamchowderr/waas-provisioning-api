@@ -81,7 +81,7 @@ describe('failed job alerts', () => {
     expect(health.jobs).toEqual({ ok: false, failedLastDay: 1 });
     const res = await t.call('GET', '/health', { auth: null });
     expect(res.status).toBe(200);
-    expect(JSON.stringify(await res.json())).toContain('"jobs":{"ok":false,"failedLastDay":1}');
+    expect(JSON.stringify(await res.json())).toContain('"jobs":{"ok":false}');
     await t.pool.query("UPDATE job_failures SET status = 'retried'");
     expect((await checkHealth(t.pool, t.boss)).jobs.ok).toBe(true);
   });

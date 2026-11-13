@@ -1976,7 +1976,7 @@ paths:
       operationId: adminListDbBackups
       summary: Off-site backups of the API's own database
       description: >-
-        The status /health reports, plus each backup attempt, newest first, with its object key in
+        The backup status the overview reports (/health shows only status and stale), plus each backup attempt, newest first, with its object key in
         the bucket and the error when it failed. prunedAt is set once retention deleted the object.
         Restore runbook: docs/db-backups.md.
       parameters:

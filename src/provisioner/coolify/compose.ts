@@ -151,6 +151,8 @@ const nginxConf = (upload: number) => [
   '  location = /favicon.ico { log_not_found off; access_log off; try_files $uri /index.php?$args; }',
   '  location = /robots.txt { log_not_found off; access_log off; try_files $uri /index.php?$args; }',
   '  location ~ /\\.(?!well-known/) { deny all; }',
+  // WordPress's readme and licence files name its version.
+  '  location ~* ^/(readme\\.html|license\\.txt|wp-config-sample\\.php)$ { return 404; }',
   '  location ^~ /wp-content/uploads/fluent-support/ { deny all; }',
   '  location ^~ /wp-content/leadconnector-logs/ { deny all; }',
   '  location ~* ^/wp-content/(fluent-snippet-storage|uploads/fluent-snippets)/.*\\.php$ { deny all; }',

@@ -12,6 +12,7 @@ import { createWaasMcpServer } from '../mcp/src/server.ts';
 import type { AppEnv, Deps } from './app.ts';
 import { mcpIcons } from './icon.ts';
 import { authenticate } from './keys.ts';
+import { callerAddress, recordWrongKey, tooManyWrongKeys } from './keyattempts.ts';
 import { MCP_PATHS, protectedResourceMetadataUrl, publicBase, scopesFor, tokenRequest, verifyAccessToken, type TokenOwner } from './oauth.ts';
 
 type Caller = TokenOwner & { readOnly: boolean; scopes: string[]; [key: string]: unknown };
@@ -76,7 +77,9 @@ export function mcpRoutes(app: Hono<AppEnv>, deps: Deps) {
       const decoded = Buffer.from(basic[1]!, 'base64').toString('utf8');
       const colon = decoded.indexOf(':');
       const key = colon > 0 ? decoded.slice(0, colon) : '';
-      const productId = key ? await authenticate(deps.pool, key, decoded.slice(colon + 1)) : null;
+      const ip = callerAddress(c.req.header('cf-connecting-ip'));
+      const productId = key && !tooManyWrongKeys(ip) ? await authenticate(deps.pool, key, decoded.slice(colon + 1)) : null;
+      if (key && !productId) recordWrongKey(ip);
       if (productId) {
         const scopes = [...scopesFor(path)];
         const caller: Caller = { productId, apiKeyId: key, readOnly: readOnlyPath, scopes };
