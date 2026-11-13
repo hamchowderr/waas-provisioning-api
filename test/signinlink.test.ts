@@ -95,6 +95,23 @@ describe('emailed sign-in links', () => {
     expect((await typed(code)).status).toBe(400);
   });
 
+  it('only sends people on to a path or this dashboard after signing in', async () => {
+    const ask = (callbackURL: string) =>
+      app.request('/api/auth/sign-in/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: AUTH.url },
+        body: JSON.stringify({ email: 'redirect@agency.example', callbackURL }),
+      });
+    for (const away of ['https://evil.example/steal', '//evil.example/x', '/\\evil.example', 'javascript:alert(1)', 'https://app.waas.example.evil.example/']) {
+      sent.splice(0);
+      const res = await ask(away);
+      expect(res.status, away).toBe(400);
+      expect(sent, away).toHaveLength(0);
+    }
+    for (const fine of ['/stores', `${AUTH.url}/stores`]) expect((await ask(fine)).status, fine).toBe(200);
+    expect((await app.request('/api/auth/magic-link/verify?token=x&callbackURL=https%3A%2F%2Fevil.example', { redirect: 'manual' })).status).toBe(400);
+  });
+
   it("doesn't send codes on their own", async () => {
     sent.splice(0);
     const res = await app.request('/api/auth/email-otp/send-verification-otp', {
