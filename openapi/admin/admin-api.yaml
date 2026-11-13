@@ -3378,6 +3378,26 @@ components:
           properties:
             heading: { type: string, nullable: true }
             body: { type: string, nullable: true }
+        site:
+          type: object
+          description: What their website is now. Missing on prospects read before it was recorded.
+          required: [platform, features]
+          properties:
+            platform: { type: string, nullable: true, description: The website builder it runs on, when the page shows it., example: Wix }
+            features:
+              type: array
+              items: { type: string, enum: [shop, bookings, events, members, blog, donations] }
+        fontFaces:
+          type: array
+          description: The heading and body fonts' files, regular (400) and bold (700), when the font is open-licence. Empty when it isn't, and the demo keeps its kit's fonts.
+          items:
+            type: object
+            required: [family, category, weight, file]
+            properties:
+              family: { type: string, example: Poppins }
+              category: { type: string, description: CSS generic family to fall back to, example: sans-serif }
+              weight: { type: integer, enum: [400, 700] }
+              file: { type: string, format: uri, description: A woff2 file anyone can load, like the images. }
         colorScheme: { type: string, nullable: true, enum: [light, dark, null] }
         logo: { type: string, nullable: true }
         photos: { type: array, items: { type: string } }
