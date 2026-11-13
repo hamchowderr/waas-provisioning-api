@@ -24,7 +24,7 @@
 			"step": "installTheme",
 			"themeData": {
 				"resource": "url",
-				"url": "https://api.anypress.io/branding/demo-files/anypress-theme-v0.22.1.zip",
+				"url": "https://api.anypress.io/branding/demo-files/anypress-theme-v0.23.1.zip",
 				"caption": "Installing the AnyPress theme"
 			},
 			"options": {
