@@ -98,6 +98,18 @@ export async function getStorefront({ config, pool }: Pick<Deps, 'config' | 'poo
   return rows[0] ? toTenant(rows[0]) : null;
 }
 
+/** Checks the storefront's name, email and the address asked for (empty when none was). */
+function readNewStorefront(input: NewStorefront) {
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  const name = text(input?.name);
+  if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
+  const email = text(input?.email).toLowerCase();
+  if (!EMAIL.test(email) || email.length > 254) throw badRequest('email must be an email address');
+  const asked = text(input?.subdomain).toLowerCase();
+  if (asked && !LABEL.test(asked)) throw badRequest('subdomain can only contain letters, digits and - (at most 63)');
+  return { name, email, asked };
+}
+
 /**
  * Builds the product's ready-made storefront. Makes the product a key for it (the secret goes only into the
  * storefront) and creates the store; the build runs as a queue job like any store's. Answers the store.
@@ -108,12 +120,7 @@ export async function createStorefront(deps: StorefrontDeps, productId: string, 
   if (!storefrontProductId) throw badRequest('Ready-made storefronts are not set up on this API (STOREFRONT_PRODUCT_ID)');
   if (productId === storefrontProductId) throw badRequest('The storefront product cannot have a ready-made storefront of its own');
 
-  const name = typeof input?.name === 'string' ? input.name.trim() : '';
-  if (!name || name.length > 100) throw badRequest('name is required, at most 100 characters');
-  const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
-  if (!EMAIL.test(email) || email.length > 254) throw badRequest('email must be an email address');
-  const asked = typeof input?.subdomain === 'string' ? input.subdomain.trim().toLowerCase() : '';
-  if (asked && !LABEL.test(asked)) throw badRequest('subdomain can only contain letters, digits and - (at most 63)');
+  const { name, email, asked } = readNewStorefront(input);
   const domainBase = config.platformDomain ?? config.storesDomain;
   // Without an address of their own choosing, the storefront is named after the business when that name is free,
   // rather than a random t-1a2b3c4d one in the approval email.
