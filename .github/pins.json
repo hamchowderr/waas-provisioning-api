@@ -62,10 +62,6 @@
           "match": "WP_VERSION=\\$\\{WP_VERSION:-(?<version>[^}]+)\\}\\nWP_SHA256=\\$\\{WP_SHA256:-(?<sha>[0-9a-f]{64})\\}"
         },
         {
-          "file": "templates/starter-fluentcart/build.sh",
-          "match": "WP_VERSION=\\$\\{WP_VERSION:-(?<version>[^}]+)\\}\\nWP_SHA256=\\$\\{WP_SHA256:-(?<sha>[0-9a-f]{64})\\}"
-        },
-        {
           "file": "templates/anypress-store/README.md",
           "match": "\\| WordPress \\| (?<version>[0-9.]+) for the build"
         }

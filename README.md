@@ -242,7 +242,7 @@ Settings: `RELEASES_S3_BUCKET` turns it on. `RELEASES_S3_ENDPOINT`, `RELEASES_S3
 
 ## Store templates
 
-`templates/` holds the build scripts for the templates new stores start from. [`templates/starter-fluentcart`](templates/starter-fluentcart/README.md) is the starter store: WordPress, AnyPress Client, FluentCart and Twenty Twenty-Five. `build.sh` makes the archive, and `publish.sh` uploads it through the API and creates a version from it.
+`templates/` holds the build scripts for the templates new stores start from. [`templates/anypress-store`](templates/anypress-store/README.md) is the store template and [`templates/seller-storefront`](templates/seller-storefront/README.md) the ready-made storefront. Each `build.sh` makes the archive, and `publish.sh` uploads it through the API and creates a version from it.
 
 ## OpenAPI files
 

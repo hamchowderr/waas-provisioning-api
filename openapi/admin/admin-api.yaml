@@ -1117,10 +1117,16 @@ paths:
       description: >-
         Removes the store, as the storefront's deleteTenant does: the tenant is Removing until the
         job finishes, then it is gone and tenant.deleted is sent to the storefront's webhooks. Its
-        backups are kept for the retention period, so it can still be brought back. Platform admin
-        only; a signed-in customer gets 404. A store already being removed is left as it is.
+        backups are kept for the retention period, so it can still be brought back, unless
+        backups=delete (a test store): then they go with it. Platform admin only; a signed-in
+        customer gets 404. A store already being removed is left as it is.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - name: backups
+          in: query
+          required: false
+          description: keep (the default) or delete
+          schema: { type: string, enum: [keep, delete] }
       responses:
         '200':
           description: The deletion was scheduled
@@ -1133,6 +1139,31 @@ paths:
                 properties:
                   tenantId: { type: string, format: uuid }
                   externalId: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/backups/purge:
+    post:
+      operationId: adminPurgeDeletedTenantBackups
+      summary: Remove a deleted store's backups now
+      description: >-
+        Deletes every backup of a store that was already deleted, instead of waiting for the retention
+        period to end; after this it can't be brought back. For test stores. A store that still exists
+        gets 400 (delete it with backups=delete). Platform admin only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The backups that were deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, deleted]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  deleted: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/suspend:

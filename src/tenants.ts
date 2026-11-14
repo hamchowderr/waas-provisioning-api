@@ -267,10 +267,10 @@ export async function goLiveTenant(pool: Pool, boss: PgBoss, tenant: TenantRef):
 }
 
 /** Removes the store; its backups are kept for the retention period. A store already being removed is left as it is. */
-export async function deleteTenant(pool: Pool, boss: PgBoss, tenant: TenantRef): Promise<void> {
+export async function deleteTenant(pool: Pool, boss: PgBoss, tenant: TenantRef, { dropBackups = false }: { dropBackups?: boolean } = {}): Promise<void> {
   if (tenant.status === Status.Removing) return;
   await withTransaction(pool, async (client) => {
     await client.query('UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1', [tenant.id, Status.Removing]);
-    await enqueue(boss, client, { type: 'tenant.delete', tenantId: tenant.id });
+    await enqueue(boss, client, { type: 'tenant.delete', tenantId: tenant.id, ...(dropBackups ? { dropBackups: true } : {}) });
   });
 }
