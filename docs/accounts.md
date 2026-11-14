@@ -50,7 +50,7 @@ After that the team runs itself from the dashboard's Team page, which calls the 
 
 ## Applications to sell
 
-People can also apply for an account themselves. The marketing site's form sends `POST /applications` (no sign-in) with their name, email, business, website, who they sell to, how many sites they expect in their first year, and whether they want a ready-made storefront (with its address). Nothing is made yet: the applicant is emailed that it arrived, and the addresses in `APPLICATION_NOTIFY_EMAILS` get an email linking to it on the dashboard (`<AUTH_URL>/applications/<id>`). One application per email address waits at a time, and the API takes 20 an hour from everyone together.
+People can also apply for an account themselves. The marketing site's form sends `POST /applications` (no sign-in) with their name, email, business, website, who they sell to, how many sites they expect in their first year, and whether they want a ready-made storefront (with its address). Nothing is made yet: the applicant is emailed that it arrived, with the next step, a short call where you agree how billing works before you approve them. With `SELLER_CALL_URL` set, the email has a **Book your call** button to that booking page; without it, it asks them to reply with times that suit them. The addresses in `APPLICATION_NOTIFY_EMAILS` get an email linking to it on the dashboard (`<AUTH_URL>/applications/<id>`). One application per email address waits at a time, and the API takes 20 an hour from everyone together.
 
 The platform admin reviews them on the dashboard (`GET /admin/applications?status=pending`):
 

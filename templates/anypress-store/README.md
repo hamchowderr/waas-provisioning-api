@@ -18,18 +18,22 @@ Plugins are listed in the order AnyPress shows them everywhere.
 | Fluent Forms | `fluentform` | 6.2.17 |
 | FluentBooking | `fluent-booking` | 2.6.0 |
 | FluentCart | `fluent-cart` | 2.3.1 |
-| FluentCommunity | `fluent-community` | 2.13.0 |
+| FluentCommunity | `fluent-community` | 2.14.0 |
 | FluentPlayer | `fluent-player` | 1.4.0 |
 | FluentAffiliate | `fluent-affiliate` | 1.7.0 |
 | Fluent Support | `fluent-support` | 2.5.0 |
 | FluentSnippets | `easy-code-manager` | 10.58 |
 | Rank Math SEO | `seo-by-rank-math` | 1.0.282 |
-| AutomatorWP | `automatorwp` | 6.0.9 |
+| AutomatorWP | `automatorwp` | 6.1.1 |
 | WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
 
 Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
 once installed it updates itself from the vendor.
+
+FluentCart Customer Rights 0.1.3 (`fluent-cart-customer-rights`, FluentCart's free add-on for the EU's 14-day right to
+cancel: a cancellation form on the "Withdraw from contract" page FluentCart makes with its other pages, and each request
+kept on its order) is kept in [`plugins/`](plugins/) the same way and is on wherever FluentCart is.
 
 The FluentCart Migrator add-on 1.1.0-beta (`fluent-cart-migrator`, FluentCart's own importer for WooCommerce shops) is kept
 in [`plugins/`](plugins/) the same way and installed switched off, so it doesn't load on every page. AnyPress Client's shop
@@ -37,7 +41,7 @@ switch (`wp anypress shop switch`) turns it on when it runs.
 
 And [AnyPress Blocks](https://github.com/hamchowderr/anypress-blocks) (`anypress-blocks`), our own blocks plugin: the Popup block
 for signups, offers and booking forms, and Carousel, Counter, Map, Countdown, Before and After, Star Rating, Notice Bar,
-Phone Bar, Location Finder and Age Check blocks (0.4.2). A release is pinned by version and checksum in [`build.sh`](build.sh)
+Phone Bar, Location Finder and Age Check blocks (0.4.3). A release is pinned by version and checksum in [`build.sh`](build.sh)
 (`BLOCKS_VERSION`, `BLOCKS_SHA256`) and it is active on every site type.
 
 And HighLevel's [LeadConnector](https://wordpress.org/plugins/leadconnector/) 4.0.7 (`leadconnector`): HighLevel forms,
@@ -48,13 +52,19 @@ And WordPress's [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) 0.7.1 
 AnyPress Client on every site type (it is always on, with no switch). AI apps that speak MCP can work on the site's
 pages and design at `/wp-json/mcp/anypress`, signed in as a WordPress user with an application password; Dashboard →
 Your plan → AI apps (MCP) shows the address. It is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in
-`roles.json`.
+`roles.json`. FluentHub carries its own copy of the MCP Adapter; `mu-plugins/anypress-store.php` keeps that copy off
+(`FLUENT_TOOLKIT_DISABLE_BUNDLED_MCP_ADAPTER`), so the standalone plugin is the only one and a new store doesn't load both.
 
 And [Polylang](https://wordpress.org/plugins/polylang/) 3.9.2 (`polylang`), installed off. It is on only while the site's
 owner has **Languages** on (Dashboard → Your plan → Languages, the AnyPress dashboard, or the connector's `site_languages`):
 AnyPress Client then sets it up once with the site's own language as the default, addresses like `/es/` for the others,
 WordPress's translation files and a language switcher in the menus. It is pinned in [`build.sh`](build.sh)
 (`OFF_PLUGINS`) and isn't in `roles.json`.
+
+And [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) 3.0.0 (`redis-cache`), installed off. Community and
+everything sites get their own Redis, and WordPress keeps its object cache there through the plugin's drop-in and its
+Predis client, set up by the platform (the plugin itself stays off). Other site types keep WordPress's own cache. It
+is pinned in [`build.sh`](build.sh) (`OFF_PLUGINS`) and isn't in `roles.json`.
 
 Without a menu the theme's header lists every page, so [`presets.php`](presets.php) adds a Main menu (Shop, Cart,
 Account, Support; links to pages a site type hides show nothing), which the header and the footer both show. Owners
@@ -104,7 +114,8 @@ a random password nobody keeps.
 - Theme: the Main menu above.
 - Starter pages (`mu-plugins/anypress-patterns.php`); the build checks they register.
 - FluentAuth: first-run wizard done with its defaults (5 failed logins locks an address for 30 minutes, monthly
-  login digest to the admin email), XML-RPC off. Two-factor is left for the owner to switch on.
+  login digest to the admin email), XML-RPC off, and subscribers (members and customers) kept out of wp-admin and
+  its admin bar. Two-factor is left for the owner to switch on.
 
 ### CRM lifecycle
 
@@ -168,9 +179,9 @@ owner sees it in WordPress on Dashboard > Your plan, and the AnyPress dashboard 
 | Role | Site type | Plugins on |
 |---|---|---|
 | `website` | Website | FluentAuth, FluentSMTP, FluentCRM, Fluent Forms, FluentPlayer, FluentSnippets, Rank Math, AutomatorWP, WP Fusion Lite, FluentToolkit |
-| `bookings` | Bookings | Website's, plus FluentBooking, FluentCart (to take payment for bookings, with no Shop or Cart page) and Fluent Support |
-| `online-store` | Online store | Website's, plus FluentCart, Fluent Support and FluentAffiliate |
-| `community` | Community & courses | Website's, plus FluentCommunity and FluentCart (to sell memberships and courses) |
+| `bookings` | Bookings | Website's, plus FluentBooking, FluentCart (to take payment for bookings, with no Shop or Cart page) with Customer Rights, and Fluent Support |
+| `online-store` | Online store | Website's, plus FluentCart with Customer Rights, Fluent Support and FluentAffiliate |
+| `community` | Community & courses | Website's, plus FluentCommunity and FluentCart with Customer Rights (to sell memberships and courses) |
 | `everything` | Everything | all of them |
 | `highlevel` | HighLevel site, for a HighLevel agency's sites | FluentAuth (login protection), FluentPlayer (video), FluentSnippets (code snippets and shortcodes), Rank Math, AutomatorWP, WP Fusion Lite, LeadConnector, FluentHub (FluentToolkit). HighLevel is the CRM, forms, calendars, payments and email, so no Fluent business plugin. Owners may add plugins of their own (`ownPlugins`) |
 | `store` | Everything, for stores bought before site types | all of them |
@@ -186,6 +197,30 @@ Pages that need one plugin carry the post meta `_anypress_needs` (FluentCart's s
 mu-plugin puts them back to draft while that plugin is off, and the home page shows the latest posts while the shop is
 hidden. When a plan change turns the plugin on, the pages come back, and the owner details step for that plugin runs
 then.
+
+## Try a site type in your browser
+
+`playground/<site type>.json` is a WordPress Playground blueprint for each site type sold (website, bookings, online-store, community, everything, highlevel). Each one sets up a site the way a new store of that type starts: this template's theme, plugins, must-use plugins, presets and CRM set-up, with the latest AnyPress Client and `ANYPRESS_TENANT_ROLES` set to the type, so only that type's plugins are on. It runs in the visitor's browser; nothing is made on a server. Open one at `https://anypress.io/try?type=website` (or `bookings`, `store`, `community`, `everything`, `highlevel`).
+
+After the set-up, each demo becomes a sample business running for about six months, made by `playground/sample/run.php` with each plugin's own functions and routes, for the plugins the type has on. Each business is written in `playground/sample/business-<site type>.php`: a food blog that earns from its newsletter and sponsors (Website), a massage and coaching studio (Bookings), a clothing brand (Online store), a makers' community with a course (Community), a design studio that does all of these (Everything) and a roofing company that works in HighLevel.
+
+- **Blog:** about 18 posts by the business's two or three writers, with photos (CC0, from StockSnap, in `playground/sample/images/`), categories, tags, threaded comments with replies, a few comments waiting for approval, a draft and a scheduled post.
+- **Newsletter:** six to twelve months of sent issues in FluentCRM with opens, clicks and unsubscribes, the list growing from the sign-up form over that time (about 100 contacts), the next issue scheduled, one in draft, and a welcome series automation with recent sign-ups in it.
+- **Email log:** FluentSMTP keeps a log in simulation mode, so every email the business sent (receipts, shipping notices, booking confirmations, ticket replies, welcome emails) is listed on the day it went out, and none leaves the demo.
+- **Forms:** the contact form, the newsletter sign-up and the business's own form (sponsorship enquiries, a client intake form, a member survey or an order problem form), each with entries.
+- **Shop:** FluentCart products at real prices, three on sale, one nearly and one fully sold out, a subscription, a gift card, coupons, shipping rates and sales tax, and six months of orders from regulars and new customers (completed, shipped, processing, two refunded, one waiting for payment).
+- **Bookings:** two FluentBooking hosts with weekly hours and services, three months of past sessions (with no-shows and cancellations) and the next two weeks filling up. Paid services take payment through FluentCart, so every paid session has its order (refunded when it was cancelled).
+- **Memberships:** where the business sells its own course, memberships or vouchers instead of a catalogue (Community), those are FluentCart products with months of orders and monthly and yearly subscriptions.
+- **Support, affiliates and community:** months of Fluent Support tickets, FluentAffiliate affiliates with visits and referrals, and a FluentCommunity of about 40 members with spaces, a pinned welcome post, comments, likes and a course whose students ask questions on the lessons.
+
+- **Pages:** the public site is the business's own, built from the theme's sections: a home page with its photo, the shop, the booking calendar, the latest posts, the newsletter sign-up and questions, plus about, contact and blog pages, a services page with its own form where the business has one, and the menu to match.
+
+- **Automations and sign-ins:** AutomatorWP automations that are switched on (the team hears when a post goes live; new members, buyers and clients are tagged in FluentCRM) with months of runs in their log, and a FluentAuth log of two months of sign-ins, a few wrong passwords and one blocked bot.
+- **Video:** a video of the business's kind of work in Fluent Player's library, played from Wikimedia Commons (public domain or CC BY-SA, credited in its description).
+
+Rank Math is set up for the business and there is an example snippet. The loader says what it is adding while it works ("Taking six months of orders"). A real store never gets any of this. "Make this my site" carries only pages, styles and menus to the store, and leaves behind the sample pages and menu the visitor did not change, so the store starts from its own.
+
+The files are made from `build.sh`, `theme.sh` and `roles.json` by `node templates/anypress-store/playground/blueprints.mjs`; CI fails when one is out of date, and the Update pins workflow remakes them when it moves a pin.
 
 ## Build and publish
 

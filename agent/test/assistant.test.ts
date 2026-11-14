@@ -225,6 +225,26 @@ describe('what it knows before the owner says a word', () => {
     expect(system).not.toContain('## Colours');
   });
 
+  it('keeps its instructions and the business profile in the prompt cache', async () => {
+    const [a] = h.stores;
+    h.script('Hi', 'get_site', {}, 'Hello.');
+    await h.send(a!, { text: 'Hi' }).done;
+    const body = h.anthropicBodies.at(-1) as { system?: { text: string; cache_control?: { type: string } }[] };
+    const cached = (body.system ?? []).filter((block) => block.cache_control?.type === 'ephemeral').map((block) => block.text);
+    expect(cached).toHaveLength(2);
+    expect(cached[0]).toContain('You are the website assistant for one website.');
+    expect(cached[1]).toContain('## About this business');
+  });
+
+  it('stops after its step limit', async () => {
+    const [a] = h.stores;
+    const before = h.llm.getRequests().length;
+    // A model that never stops calling tools.
+    h.llm.on({ userMessage: 'Keep looking' }, { toolCalls: [{ name: 'get_site', arguments: {} }] });
+    await h.send(a!, { text: 'Keep looking' }).done;
+    expect(h.llm.getRequests().length - before).toBe(12);
+  });
+
   it('loads a skill when it needs one, without asking the owner', async () => {
     const [a] = h.stores;
     h.script('Make the hero section blue', 'skill', { name: 'site-design' }, 'I checked the design rules.');
@@ -284,6 +304,19 @@ describe('the monthly allowance', () => {
     expect(await h.send(h.stores[0]!, { text: 'Good morning' }).text()).toBe('Morning.');
   });
 
+  it('records each model step’s tokens for the store, so its real cost can be read', async () => {
+    const [, b] = h.stores;
+    const month = new Date().toISOString().slice(0, 7) + '-01';
+    const steps = async () =>
+      (await h.t.pool.query<{ model_steps: number }>('SELECT model_steps FROM assistant_usage WHERE tenant_id = $1 AND month = $2', [b!.id, month])).rows[0]?.model_steps ?? 0;
+    await h.t.pool.query('UPDATE assistant_usage SET messages = 0 WHERE tenant_id = $1 AND month = $2', [b!.id, month]);
+    const before = await steps();
+    h.script('What pages do I have?', 'get_site', {}, 'You have a home page.');
+    expect(await h.send(b!, { text: 'What pages do I have?' }).text()).toBe('You have a home page.');
+    // A tool call and the answer after it: two model steps, sent without holding up the reply.
+    await expect.poll(steps).toBe(before + 2);
+  });
+
   it('tells the panel how many messages are used this month, without counting one', async () => {
     const [, b] = h.stores;
     const month = new Date().toISOString().slice(0, 7) + '-01';
@@ -293,5 +326,58 @@ describe('the monthly allowance', () => {
     expect(Date.parse(first.resetsAt)).toBeGreaterThan(Date.now());
     expect(await (await h.get('/agent-controller/usage', b!)).json()).toMatchObject({ used: 40 });
     expect((await h.get('/agent-controller/usage', null)).status).toBe(401);
+  });
+});
+
+describe('the assistant in a demo', () => {
+  const demoToken = async () =>
+    ((await (await h.t.app.request('/demos/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ siteType: 'website' }) })).json()) as { token: string }).token;
+  const demo = (token: string) => ({ id: 'demo', domain: 'demo.anypress.site', token });
+  const editor = {
+    screen: 'post',
+    postType: 'page',
+    postId: 2,
+    title: 'Home',
+    blocks: [{ clientId: 'hero-1', name: 'core/group', markup: '<!-- wp:group --><div class="wp-block-group"><!-- wp:heading --><h2>Welcome</h2><!-- /wp:heading --></div><!-- /wp:group -->' }],
+  };
+
+  it('changes the open page in the demo, and says it is a demo', async () => {
+    const d = demo(await demoToken());
+    expect(await (await h.get('/agent-controller/site', d)).json()).toEqual({ url: 'https://demo.anypress.site' });
+    const content = '<!-- wp:group --><div class="wp-block-group"><!-- wp:heading --><h2>Fresh bread every morning</h2><!-- /wp:heading --></div><!-- /wp:group -->';
+    h.script('Write my hero for a bakery', 'editor_change', { action: 'replace', clientId: 'hero-1', content }, 'Done.');
+    const turn = h.send(d, { text: 'Write my hero for a bakery', editor });
+    expect(await turn.text()).toBe('Done.');
+    const end = turn.events.find((event) => event.type === 'tool_end') as { result?: { editor?: unknown }; isError?: boolean } | undefined;
+    expect(end?.isError).toBe(false);
+    expect(end?.result?.editor).toEqual({ action: 'replace', clientId: 'hero-1', content });
+    const system = JSON.stringify(h.llm.getRequests().at(-1)?.body);
+    expect(system).toContain('This is a demo');
+    expect(writes()).toEqual([]);
+  });
+
+  it('never reaches a website from a demo, even when the model tries', async () => {
+    const d = demo(await demoToken());
+    const before = writes().length;
+    h.script('Publish my about page', 'site_pages_change', { action: 'publish', id: 12 }, 'I can only change the open page here.');
+    const turn = h.send(d, { text: 'Publish my about page', editor });
+    await turn.done;
+    expect(turn.gates()).toEqual([]);
+    expect(writes().length).toBe(before);
+  });
+
+  it('counts the demo’s few messages and stops with a plain answer', async () => {
+    const token = await demoToken();
+    const d = demo(token);
+    await h.t.pool.query('UPDATE demo_assistants SET messages = 12');
+    const refused = await h.post('/agent-controller/stream', d, { text: 'One more', editor });
+    expect(refused.status).toBe(429);
+    expect((await refused.json()).error).toMatch(/^This demo has used all 12 assistant messages\./);
+    expect(await (await h.get('/agent-controller/usage', d)).json()).toEqual({ used: 12, limit: 12, demo: true });
+    expect(await (await h.get('/agent-controller/business', d)).json()).toEqual({});
+  });
+
+  it('refuses an ended or made-up demo sign-in', async () => {
+    expect((await h.get('/agent-controller/site', demo(`apdemo_${'a'.repeat(43)}`))).status).toBe(401);
   });
 });

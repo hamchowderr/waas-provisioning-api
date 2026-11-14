@@ -6,19 +6,22 @@ import { withTransaction, type Pool } from './db.ts';
 import { planFor, step, withProgress } from './progress.ts';
 import { promoteVersion } from './promote.ts';
 import type { PgBoss } from 'pg-boss';
-import { BRAND_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
+import { BRAND_OPTION, CLEAN_DASHBOARD_OPTION, type Brand, type Provisioner, type VersionPlugin } from './provisioner/provisioner.ts';
 import { storeJobWaiting, type JobData, type JobHandlers } from './queue.ts';
 import { failHostUpdate, forgetHostUpdate, pushHostUpdate } from './hostupdates.ts';
+import type { SiteRequest, SiteResponse } from './sitekeys.ts';
+import { applyDemoDraft, purgeExpiredDemoDrafts } from './demodrafts.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure, reprintSource } from './imports.ts';
 import { failMailbox, pushMailbox } from './outreach.ts';
 import { failAutomations, pushAutomations } from './outreachautomation.ts';
 import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
-import type { Size } from './plans.ts';
+import { STORAGE_PACK_GB, type Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
 import { pruneRequestLog } from './requestlog.ts';
 import type { ReleaseStore } from './releases.ts';
 import type { Secrets } from './secrets.ts';
+import { failDownload, makeDownload, purgeExpiredDownloads } from './sitedownloads.ts';
 import { Status } from './status.ts';
 import { decodePhpConstants, emailPacksBought, TENANT_SELECT } from './tenants.ts';
 import type { DashboardHost } from './vercel.ts';
@@ -27,6 +30,22 @@ import type { DashboardHost } from './vercel.ts';
  * `mailboxDomains` names each store's mailbox at the platform's sending domain (src/mailcount.ts); without
  * them stores send from the platform's address.
  */
+/** A request to a store's site routes (src/sitekeys.ts callSite), signed with that store's key. */
+export type SiteCall = (storeId: string, domain: string, request: SiteRequest) => Promise<SiteResponse>;
+
+/** Sends a store the storage packs on record when the job runs (a change made meanwhile is included). */
+async function sendStoragePacks(pool: Pool, provisioner: Provisioner, tenantId: string): Promise<void> {
+  const { rows } = await pool.query<{ storage_packs: number }>('SELECT storage_packs FROM tenants WHERE id = $1', [tenantId]);
+  if (rows[0]) await provisioner.setStoragePacks({ storeId: tenantId, gb: rows[0].storage_packs * STORAGE_PACK_GB });
+}
+
+/** After a rollback: the backup's database holds the email and storage packs of its day, so tell the store the ones on record again. */
+async function resendPacks(pool: Pool, provisioner: Provisioner, tenantId: string, storagePacks: number): Promise<void> {
+  const purchased = await emailPacksBought(pool, tenantId);
+  if (purchased) await provisioner.setEmailPacks({ storeId: tenantId, purchased });
+  if (storagePacks) await provisioner.setStoragePacks({ storeId: tenantId, gb: storagePacks * STORAGE_PACK_GB });
+}
+
 export function createJobHandlers(
   pool: Pool,
   provisioner: Provisioner,
@@ -42,6 +61,8 @@ export function createJobHandlers(
   releases?: ReleaseStore,
   /** For a follower's copied version that takes over once built (promote_when_done, src/promote.ts). */
   boss?: PgBoss,
+  /** Calls a store's site routes, signed with its key: a new store made from a demo gets the demo's content. */
+  siteCall?: SiteCall,
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -93,7 +114,7 @@ export function createJobHandlers(
         await pool.query('DELETE FROM versions WHERE id = $1', [data.versionId]);
         return;
       case 'tenant.create':
-        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail(), boss);
+        return createTenant(pool, provisioner, secrets, data, await mailbox(data.tenantId), ownerMail(), boss, siteCall);
       case 'tenant.update': {
         const { rows } = await pool.query('SELECT php_constants, size FROM tenants WHERE id = $1', [data.tenantId]);
         if (!rows[0]) return;
@@ -113,12 +134,17 @@ export function createJobHandlers(
         // A move queued behind another job (src/promote.ts) starts once that job has set the store Done: show it
         // as busy again. A store that failed or is being deleted meanwhile stays where it is.
         const { rows } = await pool.query(
-          'UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status IN ($2, $3) RETURNING own_code',
+          'UPDATE tenants SET status = $2, date_changed = now() WHERE id = $1 AND status IN ($2, $3) RETURNING own_code, size',
           [data.tenantId, Status.Pending, Status.Done],
         );
         if (!rows[0]) return;
         await provisioner.moveStore({ storeId: data.tenantId, targetVersionId: data.targetVersionId, ownCode: rows[0]?.own_code === true });
         await pool.query('UPDATE tenants SET version_id = $2, date_changed = now() WHERE id = $1', [data.tenantId, data.targetVersionId]);
+        // A store moving while a new store setup rolled out was skipped (maintainStores takes only ready stores):
+        // it gets the setup now. The move stands either way; the next start tries again.
+        await provisioner.ensureStoreSetup({ storeId: data.tenantId, size: rows[0].size }).catch((err: Error) => {
+          console.error(`Store ${data.tenantId}: store setup not ensured after its move: ${err.message}`);
+        });
         await forgetHostUpdate(pool, data.tenantId);
         await finishTenant(data.tenantId);
         return;
@@ -198,9 +224,7 @@ export function createJobHandlers(
           mainDomain: rows[0].main_domain,
           ownCode: rows[0].own_code,
         });
-        // The backup's database holds the pack total of its day; tell the store the one on record again.
-        const purchased = await emailPacksBought(pool, data.tenantId);
-        if (purchased) await provisioner.setEmailPacks({ storeId: data.tenantId, purchased });
+        await resendPacks(pool, provisioner, data.tenantId, rows[0].storage_packs);
         // Its platform email count is an older one too: the next count tells the store again.
         await pool.query('DELETE FROM tenant_mail_usage WHERE tenant_id = $1', [data.tenantId]);
         await forgetHostUpdate(pool, data.tenantId);
@@ -222,6 +246,9 @@ export function createJobHandlers(
         return;
       case 'tenant.backup':
         await backUp(pool, provisioner, data.tenantId, data.backupId);
+        return;
+      case 'tenant.download':
+        await makeDownload(pool, provisioner, data.tenantId, data.downloadId);
         return;
       case 'storefront.update-host':
         await pushHostUpdate(pool, provisioner, releases, data.tenantId, data.version);
@@ -257,6 +284,9 @@ export function createJobHandlers(
         await provisioner.setEmailPacks({ storeId: data.tenantId, purchased: await emailPacksBought(pool, data.tenantId) });
         return;
       }
+      case 'tenant.storage-packs':
+        await sendStoragePacks(pool, provisioner, data.tenantId);
+        return;
     }
   }
 
@@ -268,7 +298,9 @@ export function createJobHandlers(
 
     async maintenance() {
       await purgeExpiredBackups(pool, provisioner, backupRetentionDays);
+      await purgeExpiredDownloads(pool, provisioner);
       await purgeExpiredImports(pool, provisioner);
+      await purgeExpiredDemoDrafts(pool, provisioner);
       await pruneRequestLog(pool, requestLogDays);
       await purgeExpiredSignIns(pool);
       await maintainDashboardDomains(pool, dashboardHost());
@@ -335,7 +367,8 @@ export function createJobHandlers(
           await failHostUpdate(pool, data.tenantId, data.version, error);
           return;
         case 'tenant.email-packs':
-          // The store still works; it just doesn't have its new pack emails yet. The shop's retry sends them again.
+        case 'tenant.storage-packs':
+          // The store still works with the packs it had; the shop's retry sends the count again.
           return;
         case 'tenant.delete':
           await setTenantStatus(data.tenantId, Status.Failed);
@@ -348,6 +381,10 @@ export function createJobHandlers(
           return;
         case 'tenant.backup':
           await failBackup(pool, data.backupId);
+          return;
+        case 'tenant.download':
+          // The store still works; the person sees the copy failed and can ask again.
+          await failDownload(pool, data.downloadId);
           return;
         case 'tenant.restore':
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
@@ -375,12 +412,20 @@ async function resellerBrand(pool: Pool, tenantId: string): Promise<Brand | unde
 }
 
 /**
- * The option AnyPress Client (2.13.0+) reads to go by the reseller's brand instead of AnyPress (see BRAND_OPTION):
- * set on a reseller's stores whenever the store's database is written from elsewhere (built, restored, rolled back).
+ * The options AnyPress Client reads that its storefront decides, set whenever the store's database is written from
+ * elsewhere (built, restored, rolled back): on a reseller's stores the reseller's brand instead of AnyPress
+ * (BRAND_OPTION, 2.13.0+), and the clean Dashboard home on or off (CLEAN_DASHBOARD_OPTION, 2.28.0+).
  */
 async function brandOptions(pool: Pool, tenantId: string): Promise<Record<string, string>> {
   const brand = await resellerBrand(pool, tenantId);
-  return brand ? { [BRAND_OPTION]: brand.name } : {};
+  const { rows } = await pool.query<{ clean_dashboard: boolean }>(
+    'SELECT p.clean_dashboard FROM tenants t JOIN products p ON p.id = t.product_id WHERE t.id = $1',
+    [tenantId],
+  );
+  return {
+    ...(brand ? { [BRAND_OPTION]: brand.name } : {}),
+    ...(rows[0] ? { [CLEAN_DASHBOARD_OPTION]: rows[0].clean_dashboard ? 'on' : 'off' } : {}),
+  };
 }
 
 async function createVersion(pool: Pool, provisioner: Provisioner, secrets: Secrets, data: Extract<JobData, { type: 'version.create' }>, boss?: PgBoss) {
@@ -461,6 +506,7 @@ async function createTenant(
   mailbox?: string,
   ownerMail?: AuthMail,
   boss?: PgBoss,
+  siteCall?: SiteCall,
 ) {
   const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
   const tenant = rows[0];
@@ -493,6 +539,8 @@ async function createTenant(
   await recordMailSender(pool, provisioner, tenant.id, { mailbox });
   if (imported) await recordImportBuilt(pool, tenant.id, built?.check, built?.moved);
   if (imported) await pool.query('UPDATE tenants SET on_hold = true, date_held = COALESCE(date_held, now()) WHERE id = $1', [tenant.id]);
+  // Made from a demo someone built on Playground: the demo's pages, styles and photos (src/demodrafts.ts).
+  if (!imported && siteCall) await applyDemoDraft(pool, provisioner, tenant.id, (request) => siteCall(tenant.id, tenant.main_domain, request));
   await finishStore(pool, boss, tenant.id);
   // A site moved in is built: its upload is no longer needed.
   if (imported) await provisioner.deleteImport({ storeId: tenant.id });  if (data.notifyOwner && user && !imported) await notifyOwner(pool, provisioner, ownerMail, tenant, user);

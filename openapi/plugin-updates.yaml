@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - plugin updates
+  title: AnyPress API - plugin updates
   version: 0.1.0
   description: >-
     Update checks from our WordPress plugins (waas-hw4). A storefront

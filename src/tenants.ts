@@ -7,6 +7,7 @@ import { badRequest, conflict } from './errors.ts';
 import { compact, isUuid } from './http.ts';
 import type { PhpConstant } from './provisioner/provisioner.ts';
 import { enqueue } from './queue.ts';
+import { careOf } from './care.ts';
 import type { Secrets } from './secrets.ts';
 import { Status, statusName } from './status.ts';
 
@@ -164,6 +165,9 @@ export function toTenant(row: any) {
     statusCode: row.status,
     statusName: statusName(row.status),
     size: row.size,
+    storagePacks: row.storage_packs || undefined,
+    // The care package bought for it on the shop, and this month's care time (src/care.ts).
+    care: careOf(row.care),
     // A site moved in from another host (src/imports.ts), and whether it still waits for its upload.
     keepsOwnCode: row.own_code || undefined,
     waitingForSite: row.waiting_for_site || undefined,

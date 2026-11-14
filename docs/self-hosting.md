@@ -56,7 +56,7 @@ This is how [AnyPress](https://anypress.io) runs: one server with [Coolify](http
 | A second bucket (optional) | Signed plugin releases for the update channel | R2, bucket `waas-releases` |
 | An SMTP relay (optional) | Store email (receipts, password resets) | [toSend](https://tosend.com) |
 
-Stores come in three sizes, set per store (`size` on `POST`/`PUT /v1/tenants`, or per plan on the storefront): **small** (1 CPU, 512 MB, 5 GB storage, 5,000 emails a month), **medium** (2 CPU, 512 MB, 10 GB, 20,000) and **large** (4 CPU, 768 MB, 25 GB, 50,000). Every size also has a 384 MB MariaDB and a 256 MB agent container. Details in [coolify.md](coolify.md).
+Stores come in three sizes, set per store (`size` on `POST`/`PUT /v1/tenants`, or per plan on the storefront): **small** (1 CPU, 768 MB, 10 GB storage, 5,000 emails a month), **medium** (2 CPU, 1280 MB, 20 GB, 20,000) and **large** (4 CPU, 2048 MB, 30 GB, 50,000). Storage packs (`PUT /v1/tenants/storage-packs`) add 25 GB each. Every size also has a 384 MB MariaDB and a 256 MB agent container. Details in [coolify.md](coolify.md).
 
 Measured sizes (Docker stats, real images and plugins): a small store uses about **273 MB** warm and peaks near 414 MB under load. Limits cap a busy store; they are not reservations. Keeping room for Coolify and the platform itself, a 32 GB server holds roughly **55 to 68** normal stores. Disk is not the bound: about 150 MB per store plus its uploads and database.
 
@@ -146,10 +146,10 @@ One host cron job keeps Coolify's own database small: every command the API send
 
 Run the `docker exec …` part once by hand first: it prints `DELETE <n>`. It only removes the history of past task runs.
 
-A second job keeps the images new stores start from current. Docker keeps the first copy of a tag such as `wordpress:7.1-php8.3-apache`, so without it new stores start on an older WordPress patch and update themselves on their first run. Add:
+A second job keeps the images new stores start from current. Docker keeps the first copy of a tag such as `wordpress:7.1-php8.3-fpm` or `nginx:1.30-alpine`, so without it new stores start on an older WordPress patch and update themselves on their first run. Add:
 
 ```
-41 3 * * * docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|mariadb):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
+41 3 * * * docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wordpress|nginx|mariadb|redis):' | xargs -r -n1 docker pull -q > /dev/null 2>&1; docker image prune -f > /dev/null 2>&1
 ```
 
 Running stores keep their image until they restart, and `docker image prune` only removes copies no container uses.
@@ -174,7 +174,7 @@ Any WordPress site with **FluentCart** 1.7+ (recommended) or **WooCommerce** wit
 
 1. In `wp-config.php`, set `WAAS_HOST_KEY_ENCRYPTION_KEY` (`openssl rand -base64 48`) and keep it stable.
 2. In **WaaS → Settings**, enter the **API URL**, **API key** and **API secret** on the **Connection** tab (or use the `WAAS_API_BASE_URL` constant), and set **Website domain** to your domain on the **Websites** tab, so customers' stores are named `<website name>.<domain>`. Use the same domain as the API's `PLATFORM_DOMAIN`.
-3. Make a subscription product and add WaaS Provisioning to it (FluentCart: the product's **Integrations**; WooCommerce: the WaaS product option), with its role (site type), size and snapshot group.
+3. Make a subscription product and add **AnyPress websites** to it (FluentCart: the product's **Integrations**; WooCommerce: the product's **AnyPress** tab), with its role (site type), size and snapshot group.
 
 **Or let the API build the storefront.** Publish `templates/seller-storefront` as the production version of a product of its own, set `STOREFRONT_PRODUCT_ID` to that product's id (and `PUBLIC_URL`), and `POST /admin/products/{productId}/storefront` builds a store that is already a connected storefront for that product: AnyPress Host installed, the API key and encryption key in wp-config, the website domain set, and the owner made an administrator. Its owner then connects a payment method in FluentCart and makes the subscription products. Details in [the template's README](../templates/seller-storefront/README.md).
 
@@ -197,7 +197,7 @@ Stores have no mailer of their own. To give them one, verify your domain with to
 
 ### 9. Watch it
 
-- `GET /health` answers 200 when Postgres and the queue respond, and 503 otherwise. Point an uptime monitor at it (UptimeRobot, for example). Its `dbBackup.stale` turns true when the last database backup is over 26 hours old.
+- `GET /health` answers 200 when Postgres and the queue respond, and 503 otherwise. Point an uptime monitor at it (UptimeRobot, for example). It shows only the flags below, which anyone can read; the times, counts and CPU figures behind them are on the dashboard's overview (`/admin/overview`). Its `dbBackup.stale` turns true when the last database backup is over 26 hours old.
 - `/health`'s `jobs.ok` turns false while a store or version job has failed its last retry in the last 24 hours and hasn't been retried. A keyword monitor on `"jobs":{"ok":true` alerts you through the monitor's own channels. The API also emails each failure to `JOB_ALERT_EMAILS` (comma-separated), or to `APPLICATION_NOTIFY_EMAILS` when that's unset, through the sign-in email settings.
 - `/health`'s `cpu.ok` turns false when the whole server averaged over 45% of its cores busy (`CPU_WATCH_BUSY`), or over 20% steal (`CPU_WATCH_STEAL`, CPU the provider held back), for an hour (`CPU_WATCH_MINUTES`). The API reads the host's `/proc/stat` once a minute, which a Docker container sees unless lxcfs is installed. A provider with CPU credits (Hostinger: baseline 60%, then held to 30%) lets you run hot for a few hours only, so this warns well before the limit. A keyword monitor on `"cpu":{"ok":true` alerts on it. `CPU_WATCH=off` turns it off.
 - `/health`'s `restoreTest.ok` turns false when last night's restore test of a store's backup failed, or none passed in about two days ([store-backups.md](store-backups.md#restore-test-nightly)). A keyword monitor on `"restoreTest":{"ok":true` alerts on it; failures are emailed to the same addresses.
@@ -291,6 +291,7 @@ Everything the API reads, in `src/config.ts` and the modules it loads:
 | `FIRECRAWL_API_KEY`, `FIGMA_TOKEN`, `REFERENCE_READS_PER_MONTH`, `REFERENCE_CREDITS_PER_MONTH`, `REFERENCE_MAX_PAGES` | off, off, 50, 5000, 500 | Reading references to build sites from ([references.md](references.md)): a Firecrawl API key for websites, shops and documents, a Figma personal access token (scope `file_content:read`) for Figma links, how many reads and Firecrawl credits each storefront gets a calendar month, and the most pages one read takes |
 | `NAMECOM_USERNAME`, `NAMECOM_TEST_USERNAME`, `NAMECOM_TEST_TOKEN`, `NAMECOM_TOKEN`, `NAMECOM_SANDBOX`, `DOMAIN_MARKUP_CENTS`, `DOMAIN_TLDS`, `DOMAIN_SHOP_PRODUCTS` | off, username + `-test`, off, off, on, 500, common endings, none | Buying domains for stores ([domains.md](domains.md)): your Name.com reseller username and API tokens, and `STRIPE_SECRET_KEY` for the invoices. `NAMECOM_SANDBOX` (on until you set it to `off`) uses Name.com's test system with the test token; `DOMAIN_MARKUP_CENTS` is added to each year's price; `DOMAIN_TLDS` lists the endings sold, comma-separated; `DOMAIN_SHOP_PRODUCTS` lists storefronts without a reseller that take payment for domains at their own checkout |
 | `APPLICATION_NOTIFY_EMAILS` | off | Comma-separated addresses emailed when someone applies to sell (`POST /applications`, [accounts](accounts.md#applications-to-sell)). Needs sign-in email. Without it, applications only show on the dashboard |
+| `SELLER_CALL_URL` | off | An https booking page (FluentBooking or any other) where people who applied to sell book their set-up call. The application email links it. Without it, the email asks them to reply with times that suit them |
 | `CRM_URL`, `CRM_SECRET` | off | Where to tell your CRM that an application was approved ([accounts](accounts.md#applications-to-sell)), and the secret sent with it in the `X-CRM-Secret` header. With `CRM_SECRET` and `BRAND_DOMAIN` set, `CRM_URL` defaults to `https://shop.<BRAND_DOMAIN>/wp-json/anypress/v1/offering` |
 | `JOB_ALERT_EMAILS` | `APPLICATION_NOTIFY_EMAILS` | Comma-separated addresses emailed when a store or version job fails its last retry, with a link to the dashboard's failed jobs. Needs sign-in email |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | off | Phone and computer alerts for the dashboard's important notices ([notifications](notifications.md#phone-and-computer-alerts)). Make a pair with `npx web-push generate-vapid-keys`. Set both or neither |

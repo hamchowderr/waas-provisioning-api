@@ -286,7 +286,7 @@ do_action('shutdown');
 `;
   const visit = async (path = '/', headers: Record<string, string> = {}) => {
     const res = await fetch(base + path, { headers: { host: 'shop.example', ...headers } });
-    return { body: await res.text(), cache: res.headers.get('x-waas-cache') };
+    return { body: await res.text(), cache: res.headers.get('x-anypress-cache') };
   };
   const saved = () => (existsSync(join(content(), 'cache/waas-pages')) ? readdirSync(join(content(), 'cache/waas-pages')) : []);
 
@@ -453,7 +453,7 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     const upload = (size: number) => `echo json_encode(apply_filters('wp_handle_upload_prefilter', ['name' => 'a.jpg', 'size' => ${size}, 'error' => 0]));`;
     expect(JSON.parse(plan(quotas, usage, upload(50)).out)).toEqual({ name: 'a.jpg', size: 50, error: 0 });
     expect(JSON.parse(plan(quotas, usage, upload(200)).out).error).toBe(
-      'This website has used its 1 GB of storage. Delete files you no longer need, or move to a bigger plan, to upload more.',
+      'This website has used its 1 GB of storage. Delete files you no longer need, or add more storage, to upload more.',
     );
     // Sideloads (media from a URL) too.
     expect(JSON.parse(plan(quotas, usage, upload(200).replace('wp_handle_upload_prefilter', 'wp_handle_sideload_prefilter')).out).error).toContain('1 GB');
@@ -463,10 +463,17 @@ describe.skipIf(!hasPhp)('store agent: plan mu-plugin', () => {
     expect(options.waas_plan_usage.bytes).toBe(GB - 30);
 
     expect(plan(quotas, { waas_plan_usage: { bytes: Math.ceil(0.85 * GB) } }, `do_action('admin_notices');`).out).toBe(
-      '<div class="notice notice-warning"><p>This website has used 85% of its 1 GB of storage. Delete files you no longer need, or move to a bigger plan, before uploads stop.</p></div>',
+      '<div class="notice notice-warning"><p>This website has used 85% of its 1 GB of storage. Delete files you no longer need, or add more storage, before uploads stop.</p></div>',
     );
     expect(plan(quotas, { waas_plan_usage: { bytes: GB } }, `do_action('admin_notices');`).out).toContain('notice-error');
     expect(plan(quotas, { waas_plan_usage: { bytes: 0.5 * GB } }, `do_action('admin_notices');`).out).toBe('');
+  });
+
+  it('adds the storage packs to the plan’s storage', () => {
+    const usage = { waas_plan_usage: { bytes: GB - 100, at: 1 } };
+    const upload = `echo json_encode(apply_filters('wp_handle_upload_prefilter', ['name' => 'a.jpg', 'size' => 200, 'error' => 0]));`;
+    expect(JSON.parse(plan(quotas, { ...usage, waas_plan_storage_packs: 2 }, upload).out).error).toBe(0);
+    expect(plan(quotas, { waas_plan_usage: { bytes: Math.ceil(0.85 * GB) }, waas_plan_storage_packs: 2 }, `do_action('admin_notices');`).out).toBe('');
   });
 
   it('counts email per month and pauses only bulk email past the quota', () => {
@@ -1048,5 +1055,62 @@ esac
     expect(agent({ ...release('anypress-host', '2.11.1'), sha256: '0'.repeat(64) }).error).toContain('does not match its SHA-256');
     expect(agent({ ...release('anypress-host', '2.11.1'), version: '2.12.0' }).error).toContain('holds version 2.11.1, not 2.12.0');
     expect(agent({ ...release('anypress-host', '2.11.1'), slug: '../x' }).error).toContain('bad plugin slug');
+  });
+});
+
+describe.skipIf(!hasPhp)('store agent: site download', () => {
+  it('zips WordPress, wp-content and the database, without the platform files or wp-config.php', () => {
+    const root = mkdtempSync(join(tmpdir(), 'waas-agent-'));
+    const bin = mkdtempSync(join(tmpdir(), 'waas-bin-'));
+    const out = mkdtempSync(join(tmpdir(), 'waas-out-'));
+    for (const dir of ['wp-admin', 'wp-includes', 'wp-content/plugins/fluent-crm', 'wp-content/mu-plugins', 'wp-content/uploads/2026', 'wp-content/cache/waas-pages']) {
+      mkdirSync(join(root, dir), { recursive: true });
+    }
+    writeFileSync(join(root, 'index.php'), '<?php');
+    writeFileSync(join(root, 'wp-load.php'), '<?php');
+    writeFileSync(join(root, 'wp-config.php'), "<?php define('DB_PASSWORD', 'secret');");
+    writeFileSync(join(root, 'wp-config-sample.php'), "<?php\n$table_prefix = 'wp_';\n");
+    writeFileSync(join(root, 'wp-admin', 'index.php'), '<?php');
+    writeFileSync(join(root, 'wp-includes', 'version.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/plugins/fluent-crm/fluent-crm.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/mu-plugins/waas-guard.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/mu-plugins/anypress-store.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/object-cache.php'), '<?php');
+    writeFileSync(join(root, 'wp-content/uploads/2026/photo.jpg'), 'jpg');
+    writeFileSync(join(root, 'wp-content/cache/waas-pages/x.html'), 'cached');
+    writeFileSync(join(root, 'wp-content/.waas-cron'), '');
+    writeFileSync(
+      join(bin, 'wp'),
+      `#!/bin/sh
+case "$*" in
+  *"db export"*) echo '-- dump' > "$6" ;;
+  *"config get table_prefix"*) echo 'shop_' ;;
+  *"option get home"*) echo 'https://bakery.example' ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    execFileSync('chmod', ['-R', '777', root, out]);
+    chmodSync(bin, 0o755);
+    const target = join(out, 'site.zip');
+    const result = execFileSync('php', [AGENT, 'site-download', Buffer.from(JSON.stringify({ url: `file://${target}` })).toString('base64')], {
+      env: { ...process.env, WAAS_ROOT: root, PATH: `${bin}:${process.env.PATH}` },
+      encoding: 'utf8',
+    });
+    expect(result).toMatch(/^WAAS_RESULT \{"sizeBytes":\d+\}/m);
+    const files = execFileSync('unzip', ['-Z1', target], { encoding: 'utf8' }).split('\n').filter(Boolean);
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'database.sql', 'index.php', 'wp-load.php', 'wp-admin/index.php', 'wp-includes/version.php', 'wp-config-sample.php', '.htaccess', 'README.txt',
+        'wp-content/plugins/fluent-crm/fluent-crm.php', 'wp-content/mu-plugins/anypress-store.php', 'wp-content/uploads/2026/photo.jpg',
+      ]),
+    );
+    for (const left of ['wp-config.php', 'wp-content/mu-plugins/waas-guard.php', 'wp-content/object-cache.php', 'wp-content/cache/waas-pages/x.html', 'wp-content/.waas-cron']) {
+      expect(files).not.toContain(left);
+    }
+    expect(execFileSync('unzip', ['-p', target, 'wp-config-sample.php'], { encoding: 'utf8' })).toContain("$table_prefix = 'shop_';");
+    const readme = execFileSync('unzip', ['-p', target, 'README.txt'], { encoding: 'utf8' });
+    expect(readme).toContain("wp search-replace 'https://bakery.example'");
+    expect(readme).not.toMatch(/waas|wpcs/i);
   });
 });

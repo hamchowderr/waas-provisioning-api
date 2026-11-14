@@ -8,8 +8,12 @@ Each store is one Coolify **Service** built from a Docker Compose file the drive
 
 ```yaml
 services:
-  wordpress:            # serves the store; Coolify routes the store's domains here
-    image: wordpress:${WP_VERSION}-php${PHP_VERSION}-apache
+  wordpress:            # the web server: Coolify routes the store's domains here
+    image: nginx:1.30-alpine
+    volumes: [wp:/var/www/html:ro]   # serves files itself, passes PHP to `php`
+    mem_limit: 128m
+  php:                  # WordPress on PHP-FPM
+    image: wordpress:${WP_VERSION}-php${PHP_VERSION}-fpm
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_NAME: wordpress
@@ -21,7 +25,7 @@ services:
       WAAS_STORAGE_GB: "5"            # the size's quotas, read by the plan mu-plugin; none on version sites
       WAAS_EMAILS_PER_MONTH: "5000"
     volumes: [wp:/var/www/html]
-    mem_limit: 512m                 # memory, CPUs and Apache workers follow the store's size
+    mem_limit: 768m                 # memory, CPUs and PHP workers follow the store's size
     cpus: 1
   db:
     image: mariadb:11
@@ -38,6 +42,10 @@ services:
         target: /waas/agent.php
         content: "<the driver's agent script>"
     mem_limit: 256m
+  redis:                # community and everything stores only: the object cache (below)
+    image: redis:8-alpine
+    command: [redis-server, --maxmemory, 48mb, --maxmemory-policy, allkeys-lru, --save, "", --appendonly, "no"]
+    mem_limit: 128m
 ```
 
 Why a Service and not an Application plus a standalone MariaDB: one resource per store, one delete removes containers, volumes and network together (`DELETE /services/{uuid}?delete_volumes=true&delete_configurations=true&delete_connected_networks=true&docker_cleanup=true`), and Coolify gives each Service its own Docker network.
@@ -51,7 +59,7 @@ Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on d
 | Provisioner method | Coolify calls and store-side work |
 |---|---|
 | `createUploadUrl` | Pre-signed `PUT` to `uploads/<versionId>.(tgz\|zip)` in object storage. No Coolify call |
-| `buildVersion` | Create and deploy Service `version-<id>` (env `versions`) on the version's domain with `wordpress:<wp>-php<php>-apache`; once healthy, exec: restore the source snapshot, base snapshot or uploaded archive into it; then export its `plugins` and `themes` to `versions/<id>/code.zip` |
+| `buildVersion` | Create and deploy Service `version-<id>` (env `versions`) on the version's domain with `wordpress:<wp>-php<php>-fpm` behind Nginx; once healthy, exec: restore the source snapshot, base snapshot or uploaded archive into it; then export its `plugins` and `themes` to `versions/<id>/code.zip` |
 | `deleteVersion` | Delete the Service (all flags), delete `versions/<id>/*` |
 | `copySnapshot`, `copyBaseSnapshot` | Server-side S3 copy to `snapshots/<newId>.zip`, plus a manifest naming the target version |
 | `createBaseSnapshotUpload` | Pre-signed `PUT` to `base/<id>.zip`; `uri` is the object's key URL |
@@ -74,7 +82,7 @@ Coolify has no "exec" endpoint, but it can run a Service's **scheduled task on d
 
 **Restarts.** Coolify fills in container statuses from a periodic check, so for up to a minute after `POST /services/{uuid}/restart` they still read the old `running:healthy`. The driver therefore first waits until some status shows the restart (not running healthy), then waits for healthy and pings the agent, so the next command never runs in containers about to stop. If no status shows the restart within 3 minutes (a restart quicker than Coolify's check), it goes on to wait for healthy.
 
-<a id="store-cron"></a>**Store cron.** WP-cron normally runs only when a page is loaded (and Action Scheduler's async runner only from wp-admin requests), so on a quiet store renewals, dunning and other scheduled jobs would run late or never. Stores therefore set `DISABLE_WP_CRON` (in `WORDPRESS_CONFIG_EXTRA`, after the phpConstants, so a constant of that name wins), and the store's `agent` container runs them itself (`AGENT_COMMAND` in `compose.ts`): after writing the agent script it waits a random 1 to 5 minutes, then every 5 minutes runs
+<a id="store-cron"></a>**Store cron.** WP-cron normally runs only when a page is loaded (and Action Scheduler's async runner only from wp-admin requests), so on a quiet store renewals, dunning and other scheduled jobs would run late or never. Stores therefore set `DISABLE_WP_CRON` (in `WORDPRESS_CONFIG_EXTRA`, after the phpConstants, so a constant of that name wins), and the store's `agent` container runs them itself (`AGENT_COMMAND` in `compose.ts`): after writing the agent script it waits a random 1 to 5 minutes, then every minute (FluentCRM asks for a cron every minute) runs
 
 ```
 wp action-scheduler run --quiet; wp cron event run --due-now --quiet
@@ -96,7 +104,7 @@ From setup 11 the agent script travels gzipped and base64-encoded in `WAAS_AGENT
 
 Run the `docker exec ...` part once by hand first: it prints `DELETE <n>`. It touches only execution history (status and output of past runs), never tasks, and covers every Coolify resource's tasks, not only stores'. (`docker exec coolify php artisan cleanup:database --yes --keep-days=7` would also work, but it trims sessions, the activity log and deployment history to 7 days as well.)
 
-Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 a suspended store must answer with. The 503 body is one shared "website unavailable" page (the agent's `render_unavailable_page`), branded per suspend and written to `wp-content/waas-unavailable.html`: Apache serves it as the 503 error document, and the guard mu-plugin serves it if a request reaches PHP. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
+Why suspend with a flag rather than `POST /services/{uuid}/stop`: a stopped Service drops its Traefik routers, so its domains answer Traefik's 404, not the 503 a suspended store must answer with. The 503 body is one shared "website unavailable" page (the agent's `render_unavailable_page`), branded per suspend and written to `wp-content/waas-unavailable.html`: Nginx serves it as the 503 error document, and the guard mu-plugin serves it if a request reaches PHP. A later option, for stores suspended for long: stop the Service and point the domains at one shared "store unavailable" responder.
 
 ## Object storage
 
@@ -104,17 +112,21 @@ All archives live in one private S3-compatible bucket, with these prefixes: `upl
 
 ## Resource limits
 
-Each store has a size (`tenants.size`, set with `size` on POST and PUT `/v1/tenants`; `src/plans.ts`), which sets its WordPress container's limits and its plan's quotas:
+Each store has a size (`tenants.size`, set with `size` on POST and PUT `/v1/tenants`; `src/plans.ts`), which sets its PHP container's limits and its plan's quotas:
 
-| Size | CPUs | WordPress memory | Apache workers | Storage | Emails a calendar month (UTC) |
+| Size | CPUs | PHP memory | PHP workers | Storage | Emails a calendar month (UTC) |
 |---|---|---|---|---|---|
-| small (default) | 1 | 512 MB | 8 | 5 GB | 5,000 |
-| medium | 2 | 512 MB | 16 | 10 GB | 20,000 |
-| large | 4 | 768 MB | 32 | 25 GB | 50,000 |
+| small (default) | 1 | 768 MB | 8 | 10 GB | 5,000 |
+| medium | 2 | 1280 MB | 16 | 20 GB | 20,000 |
+| large | 4 | 2048 MB | 32 | 30 GB | 50,000 |
 
-More visitors at once than workers wait in Apache's queue instead of running the store out of memory. MariaDB 384 MB and agent 256 MB (it loads WordPress with all plugins for the store's cron every 5 minutes) for every size. Version sites run as small, without quotas. Limits cap a busy or broken store; they are not reservations. Measured use is about 273 MB per small store when warm.
+More visitors at once than workers wait in Nginx's queue instead of running the store out of memory. Nginx 128 MB (its own memory is a few MB; the rest is the file cache for the files it serves), MariaDB 384 MB and agent 256 MB (it loads WordPress with all plugins for the store's cron every minute) for every size. Version sites run as small, without quotas. Limits cap a busy or broken store; they are not reservations.
 
-The quotas reach WordPress as `WAAS_STORAGE_GB` and `WAAS_EMAILS_PER_MONTH` and are enforced by the agent's `mu-plugins/waas-plan.php`. Storage is wp-content (without `wp-content/cache`) plus the database, measured by a daily WP-cron event and counted up with each upload in between (1 GB = 1024³ bytes); an upload past it is refused with a message to delete files or move to a bigger plan. Email counts what WordPress sent this calendar month; past it FluentCRM campaigns, sequences and automation emails wait for the next month while all other email (orders, accounts, bookings, support) still goes out, and the owner is warned. The store's administrators see a notice from 80% of either quota. The agent's `usage` operation reports storage (measured then), and this month's emails, for later use by the API. A size change (PUT) re-renders the compose file, restarts the store once and reinstalls the agent's files. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database. To grow past one server, see [self-hosting.md](self-hosting.md).
+The memory follows the workers: OPcache's 192 MB is shared by them all, and each worker uses about 40 to 45 MB more with the template's plugins, so a size needs about 192 MB plus 45 MB a worker plus room for the file cache. Measured on a local copy of a new store (the template restored by the agent, site type everything, these compose files) with as many logged-in visitors at once as the size has workers, opening the page editor, the site editor, the community portal, its feed and search: no failed requests, with PHP's memory peaking at 691 MB (small), 876 MB (medium) and 1054 MB (large) on Nginx and PHP-FPM (633, 972 and 1633 MB on Apache before). With the earlier 512/512/768 MB, medium failed 21% of those requests and large 26% (the kernel killed workers that ran out of memory). Re-measure whenever a plugin joins the template.
+
+<a id="store-php"></a>**PHP and web server settings.** The `php` entrypoint writes `conf.d/waas-php.ini`: `memory_limit` 256M, `upload_max_filesize` and `post_max_size` 64M (512M on community and everything stores, for the videos members post; Nginx's `client_max_body_size` matches, and a domain proxied by Cloudflare is still held to Cloudflare's 100 MB), `max_execution_time` 120, and OPcache at 192 MB with 32 MB of strings and 20,000 files (the image's defaults are 128M, 2M, 8M, and a 128 MB OPcache that the template's plugins filled), and `php-fpm.d/zz-waas.conf`: at most the size's workers, started as visitors arrive, each replaced after 500 requests. Nginx (`nginxConf` in `compose.ts`, after [WordPress's Nginx guide](https://developer.wordpress.org/advanced-administration/server/web-server/nginx/)) serves files itself and passes everything else to WordPress. It answers a suspended store's 503 page before PHP runs, runs no PHP from uploads, serves nothing hidden, and locks the folders the template's plugins lock with `.htaccess` (which Nginx doesn't read): Fluent Support's attachments, LeadConnector's logs, and Fluent Snippets' PHP files. It sends `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and HSTS (a year, no preload) where WordPress set none, gzips text, and gives CSS, JavaScript and fonts (which WordPress versions with `?ver=`) a year of browser caching and images a month. It takes the visitor's address from Coolify's proxy and Cloudflare's (their published ranges), so FluentAuth's login limits count each visitor. There is no frame policy, because AI apps and the dashboard frame store pages. `DISALLOW_FILE_EDIT` is on in `WORDPRESS_CONFIG_EXTRA`, and the agent's `mu-plugins/waas-auth.php` turns on FluentAuth's own recommended XML-RPC and REST-usernames switches once per store (owners can change them in FluentAuth afterwards).
+
+The quotas reach WordPress as `WAAS_STORAGE_GB` and `WAAS_EMAILS_PER_MONTH` and are enforced by the agent's `mu-plugins/waas-plan.php`. Storage is wp-content (without `wp-content/cache`) plus the database, measured by a daily WP-cron event and counted up with each upload in between (1 GB = 1024³ bytes); storage packs add 25 GB each (the agent's `storage-packs` operation writes them to `waas_plan_storage_packs`); an upload past it is refused with a message to delete files or add more storage. Email counts what WordPress sent this calendar month; past it FluentCRM campaigns, sequences and automation emails wait for the next month while all other email (orders, accounts, bookings, support) still goes out, and the owner is warned. The store's administrators see a notice from 80% of either quota. The agent's `usage` operation reports storage (measured then), and this month's emails, for later use by the API. A size change (PUT) re-renders the compose file, restarts the store once and reinstalls the agent's files. Disk: ~150 MB for core and images per store (images are shared between stores on one version) plus the store's uploads and database. To grow past one server, see [self-hosting.md](self-hosting.md).
 
 Email packs add emails on top of the plan: `POST /v1/tenants/email-packs` with `{"emails": 10000, "reference": "fluentcart-order-123"}` records a pack in `tenant_email_packs` (a repeat of a tenant's `reference` adds nothing and answers the same) and queues `tenant.email-packs`, which runs the agent's `mail-packs` operation with the total bought (`{purchased}`). The agent writes option `waas_plan_mail_packs` as `{purchased, used}`, keeping the store's own `used`. Pack emails never expire: this month's allowance is the plan's emails plus `purchased − used`, and bulk email pauses only when that is reached. When a new month starts, the mu-plugin adds what the month before sent beyond the plan to `used` (no more than was left), once. Without a plan limit (version sites) nothing changes. The administrators' notices say how many pack emails are left, and `usage` also reports `packPurchased` and `packUsed` (this month's included). A rollback to a backup tells the store the total on record again, since the backup's database holds an older one. A store set up before email packs gets the current setup (one restart) the first time a pack is applied to it, if the API's start has not already given it.
 
@@ -122,9 +134,13 @@ The platform counts each store's email too, since an administrator can edit the 
 
 ## Page cache
 
-Every store has a page cache, installed by the agent with its other files (`install_cache` in `agent.php`): `wp-content/advanced-cache.php` (loaded because the compose file turns on `WP_CACHE`) and `mu-plugins/waas-cache.php`. A logged-out visitor's page is saved under `wp-content/cache/waas-pages/` and the next visitors get that copy before WordPress and its plugins load (response header `X-WaaS-Cache: hit`). Never cached: requests with a query string or any cookie other than a few analytics ones (logged-in users, carts, password-protected posts), `wp-admin`, `wp-json` and `.php` URLs, FluentCart's cart, checkout, receipt and account pages, and any page that is not a 200, sets a cookie or says `no-cache`/`private`. Saved pages expire after 10 minutes and are all cleared when content changes (posts, terms, menus, comments, theme, plugins, FluentCart products and paid orders) and on every agent install (restore, configure, suspend). A drop-in another cache plugin wrote is left alone, and ours then stays out of the way.
+Every store has a page cache, installed by the agent with its other files (`install_cache` in `agent.php`): `wp-content/advanced-cache.php` (loaded because the compose file turns on `WP_CACHE`) and `mu-plugins/waas-cache.php`. A logged-out visitor's page is saved under `wp-content/cache/waas-pages/` and the next visitors get that copy before WordPress and its plugins load (response header `X-AnyPress-Cache: hit`). Never cached: requests with a query string or any cookie other than a few analytics ones (logged-in users, carts, password-protected posts), `wp-admin`, `wp-json` and `.php` URLs, FluentCart's cart, checkout, receipt and account pages, and any page that is not a 200, sets a cookie or says `no-cache`/`private`. Saved pages expire after 10 minutes and are all cleared when content changes (posts, terms, menus, comments, theme, plugins, FluentCart products and paid orders) and on every agent install (restore, configure, suspend). A drop-in another cache plugin wrote is left alone, and ours then stays out of the way.
 
 Measured on a local copy with FluentCart, FluentCRM, Fluent Forms and Rank Math and the live limits: about 400 cached pages a second with no errors at 50 visitors at once, against about 14 a second through WordPress, with memory staying under 180 MB.
+
+## Object cache
+
+Community and everything stores (`ANYPRESS_TENANT_ROLES` names `community` or `everything`) get their own Redis (`redis` in the compose file, 64 MB, a quarter of a core), and `WAAS_REDIS_HOST` tells WordPress where it is. Their visitors are mostly logged-in members, whom the page cache never serves, and WPManageNinja recommends Redis for FluentCommunity. The agent installs `wp-content/object-cache.php` on every store (`install_object_cache` in `agent.php`): with `WAAS_REDIS_HOST` it loads the [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) plugin's drop-in with its bundled Predis client (the plugin's files come with the store template; the plugin stays off), and without it, it does nothing, so WordPress keeps its own cache. Redis keeps nothing on disk and drops the least used keys once it holds 48 MB; if it is down, WordPress carries on without it (`WP_REDIS_GRACEFUL`). The cache is emptied on every agent install (restore, configure, suspend). A drop-in another cache plugin wrote is left alone. A store's description records the cache (`, cache`), and new site types that bring or take it away re-render the compose file with the next update.
 
 ## Store setup
 

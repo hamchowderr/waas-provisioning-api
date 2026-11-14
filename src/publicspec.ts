@@ -36,6 +36,7 @@ const TAGS: Record<string, [string, string]> = {
   TenantSite: ['Site editing', "Edit a store's pages and design (sections, patterns, colours and fonts, header, footer, menus) through its AnyPress Client, for AI agents. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-editing.md)."],
   Support: ['Support tickets', 'Tickets for the signed-in person (a website owner, seller or reseller), filed with whoever helps them: a reseller by email, or the support desk. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/support.md).'],
   Reference: ['References', 'Read a website, Shopify shop, Figma file or document into one bundle (design, page text, screenshots, images, products) to build a site from. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/references.md).'],
+  DemoDraft: ['Demo drafts', 'Save a demo someone built on WordPress Playground, so the store made after checkout starts with its pages, styles and photos. These calls take no API key. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/demo-drafts.md).'],
   SiteImport: ['Moving a site in', 'Move an existing WordPress site in from another host with the AnyPress Export plugin. These calls take the import code instead of an API key. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/site-imports.md).'],
   TenantMail: ['Sending domain', "A store's own sending domain, and the Domain Connect link that adds DNS records at the customer's DNS host."],
   Version: ['Versions', 'Versions of your storefront product: the WordPress install each new store is copied from.'],
@@ -46,8 +47,9 @@ const TAGS: Record<string, [string, string]> = {
   ApiKeys: ['API keys', 'List, create, rotate and revoke your own API keys. A secret is shown once, in the response that creates the key.'],
   Webhooks: ['Webhooks', 'Endpoints that get a signed POST when a store or version finishes a change, and their deliveries. How to verify them: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/webhooks.md).'],
   PluginChoices: ['Plugin choices', "wordpress.org plugins your stores get on top of your template, or that it switches off, per site type. Applied to each new version as it builds. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/plugin-choices.md)."],
-  PluginUpdates: ['Plugin updates', 'Update checks made by the WaaS plugins. The response points at a signed release package.'],
+  PluginUpdates: ['Plugin updates', 'Update checks made by the AnyPress plugins. The response points at a signed release package.'],
   Branding: ['Demo page', "The name, look and shop link of a seller's or reseller's demo page, and the theme zips its demos install. Public, no key needed. How: [guide](https://github.com/hamchowderr/waas-provisioning-api/blob/main/docs/branding.md)."],
+  Pricing: ['Prices', "AnyPress's price list: every site type's monthly and yearly price per size, the volume savings, the reseller discount and the affiliate share. Public, no key needed."],
 };
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head'];
@@ -148,7 +150,7 @@ export function buildPublicSpec(served: Set<string>): any {
   const publicSpec = scrub({
     openapi: '3.0.1',
     info: {
-      title: 'WaaS Provisioning API',
+      title: 'AnyPress API',
       version,
       description: DESCRIPTION,
       license: { name: 'GPL-3.0-or-later', url: 'https://www.gnu.org/licenses/gpl-3.0.html' },
@@ -178,7 +180,7 @@ export const docsPage = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WaaS Provisioning API reference</title>
+<title>AnyPress API reference</title>
 </head>
 <body>
 <div id="app"></div>

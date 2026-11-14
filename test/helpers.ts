@@ -4,7 +4,7 @@ import type { PgBoss } from 'pg-boss';
 import { createApp, type Deps } from '../src/app.ts';
 import type { Config } from '../src/config.ts';
 import { createPool, migrate, type Pool } from '../src/db.ts';
-import { createJobHandlers } from '../src/jobs.ts';
+import { createJobHandlers, type SiteCall } from '../src/jobs.ts';
 import { createApiKey } from '../src/keys.ts';
 import { FakeProvisioner } from '../src/provisioner/fake.ts';
 import { startBoss, startWorker } from '../src/queue.ts';
@@ -38,7 +38,7 @@ export const OWNER = { wordPressUserName: 'owner', wordPressUserEmail: 'owner@ex
 export const basic = (key: string, secret: string) => `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`;
 
 /** Wipes the test database, migrates it, and starts the app with a queue worker and the fake provisioner. */
-export async function setup({ releases }: { releases?: ReleaseStore } = {}): Promise<TestContext> {
+export async function setup({ releases, siteCall }: { releases?: ReleaseStore; siteCall?: SiteCall } = {}): Promise<TestContext> {
   const admin = new pg.Client({ connectionString: TEST_DATABASE_URL });
   await admin.connect();
   await admin.query('DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS pgboss CASCADE; DROP SCHEMA IF EXISTS auth CASCADE; CREATE SCHEMA public;');
@@ -53,7 +53,7 @@ export async function setup({ releases }: { releases?: ReleaseStore } = {}): Pro
   // Webhook endpoints in tests are local test servers.
   const webhooks: WebhookConfig = { allowPrivate: true, logDays: 30 };
   config.webhooks = webhooks;
-  const jobs = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, 30, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss), pool, boss, webhooks);
+  const jobs = withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, 30, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss, siteCall), pool, boss, webhooks);
   await startWorker(boss, jobs, 0.5, 0.5);
   await startWebhookWorker(boss, pool, secrets, webhooks, { retryDelaySeconds: 1, retryLimit: 2, pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 0.5 });
   const deps: Deps = { config, pool, boss, provisioner, secrets, releases };

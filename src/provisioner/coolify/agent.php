@@ -1,6 +1,6 @@
 <?php
 /*
- * WaaS store agent. The Coolify provisioner runs it in a store's `agent` container (the
+ * AnyPress store agent. The Coolify provisioner runs it in a store's `agent` container (the
  * wordpress:cli image, sharing the WordPress volume) through a Coolify scheduled task:
  *
  *   php /tmp/waas-agent.php <operation> <base64 JSON arguments>
@@ -116,16 +116,48 @@ function extract_archive(string $file, string $dir): void
 }
 
 /** Adds a directory to a zip under $prefix, skipping caches and the suspension, cron and hold flags. */
-function zip_dir(ZipArchive $zip, string $dir, string $prefix): void
+function zip_dir(ZipArchive $zip, string $dir, string $prefix, ?string $skip = null): void
 {
     if (!is_dir($dir)) return;
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
     foreach ($it as $path => $info) {
         $rel = substr($path, strlen($dir) + 1);
         if ($rel === '.waas-suspended' || $rel === '.waas-cron' || $rel === '.waas-hold' || $rel === 'waas-unavailable.html' || preg_match('#^(cache|upgrade|upgrade-temp-backup)(/|$)#', $rel)) continue;
+        if ($skip !== null && preg_match($skip, $rel)) continue;
         if ($info->isDir()) $zip->addEmptyDir("$prefix/$rel");
         elseif ($info->isFile()) $zip->addFile($path, "$prefix/$rel");
     }
+}
+
+/** How to put a site download (the site-download operation) back up on another host. */
+function site_download_readme(string $home, string $prefix): string
+{
+    $taken = gmdate('Y-m-d H:i') . ' UTC';
+    return <<<TXT
+Your whole website: every file and the database, as of $taken.
+Website address: $home
+
+What is in this archive
+- WordPress itself (wp-admin, wp-includes and the files next to them)
+- wp-content: your themes, plugins and uploads
+- database.sql: your database (posts, pages, settings, users, orders and everything else)
+- wp-config-sample.php: WordPress's settings file, with your table prefix ($prefix) already filled in
+
+Putting it on another host
+1. Make an empty MySQL or MariaDB database and a user for it at your new host.
+2. Upload everything in this archive into the folder your domain points to (often public_html).
+3. Import database.sql into the new database (phpMyAdmin's Import tab, or: wp db import database.sql).
+4. Rename wp-config-sample.php to wp-config.php and fill in the new database's name, user, password and host.
+   Get new secret keys from https://api.wordpress.org/secret-key/1.1/salt/ and paste them in too.
+5. Point your domain at the new host. If the site gets a different address, change the old one everywhere with
+   WP-CLI: wp search-replace '$home' 'https://your-new-address' --all-tables
+   (or a search and replace plugin), then save Settings > Permalinks once.
+
+Your passwords and logins stay the same. AnyPress Client, the plugin that connects the site to its dashboard, can be
+deactivated and deleted on the new host; the site works without it.
+
+Most hosts' migration teams accept this archive as it is if you would rather they move it for you.
+TXT;
 }
 
 /** The wp-content directory inside an extracted archive. */
@@ -613,8 +645,8 @@ function install_guard(?array $brand = null): void
     file_put_contents(CONTENT . '/mu-plugins/waas-guard.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store guard
- * Description: Suspension (503) and redirect domains (301). Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store guard
+ * Description: Suspension (503) and redirect domains (301). Managed by AnyPress; edits are overwritten.
  */
 if (defined('WP_CLI') && WP_CLI) return;
 if (file_exists(WP_CONTENT_DIR . '/.waas-suspended')) {
@@ -643,8 +675,8 @@ PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-hold.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store hold
- * Description: Holds a site moved in until its owner makes it live: no email to customers, no background jobs, not indexed. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store hold
+ * Description: Holds a site moved in until its owner makes it live: no email to customers, no background jobs, not indexed. Managed by AnyPress; edits are overwritten.
  */
 /*
  * Only while wp-content/.waas-hold exists: from the move until the owner presses Go live in AnyPress (the agent's
@@ -732,8 +764,8 @@ PHP) !== false || fail('cannot write the hold mu-plugin');
     file_put_contents(CONTENT . '/mu-plugins/waas-mail.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store mail
- * Description: Sends the store's email through the platform's mail relay. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store mail
+ * Description: Sends the store's email through the platform's mail relay. Managed by AnyPress; edits are overwritten.
  */
 $waas_mail = json_decode((string) base64_decode((string) getenv('WAAS_MAIL_B64')), true);
 if (!is_array($waas_mail) || empty($waas_mail['host']) || empty($waas_mail['from'])) return;
@@ -771,7 +803,7 @@ add_action('phpmailer_init', function ($mailer) use ($waas_mail) {
     $mailer->Sender = $waas_mail['from'];
 }, PHP_INT_MAX);
 add_action('wp_mail_failed', function ($error) {
-    error_log('WaaS store mail: ' . $error->get_error_message());
+    error_log('AnyPress store mail: ' . $error->get_error_message());
 });
 
 /*
@@ -879,7 +911,7 @@ add_action('init', function () use ($waas_mail) {
         try {
             $step();
         } catch (\Throwable $e) {
-            error_log("WaaS store mail: $plugin sender: " . $e->getMessage());
+            error_log("AnyPress store mail: $plugin sender: " . $e->getMessage());
         }
     }
     update_option('waas_mail_senders', ['key' => $key, 'set' => $want], false);
@@ -1176,8 +1208,8 @@ PHP) !== false || fail('cannot write the outreach mu-plugin');
     file_put_contents(CONTENT . '/mu-plugins/waas-owner.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store owner
- * Description: Fills in the owner's business details from the purchase. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store owner
+ * Description: Fills in the owner's business details from the purchase. Managed by AnyPress; edits are overwritten.
  */
 /*
  * The platform sets `anypress_store_owner` (JSON) from the buyer's billing details: name, phone, address_1, address_2,
@@ -1338,25 +1370,45 @@ add_action('init', function () {
         try {
             $step();
         } catch (\Throwable $e) {
-            error_log("WaaS store owner: $what: " . $e->getMessage());
+            error_log("AnyPress store owner: $what: " . $e->getMessage());
         }
     }
     update_option('anypress_owner_details', ['key' => $key, 'set' => $want], false);
 }, PHP_INT_MAX);
 PHP);
+    file_put_contents(CONTENT . '/mu-plugins/waas-auth.php', <<<'PHP'
+<?php
+/*
+ * Plugin Name: AnyPress store login safety
+ * Description: Turns on two of FluentAuth's own recommended settings once: XML-RPC off and usernames kept out of the REST API. Managed by AnyPress; edits are overwritten.
+ */
+// Once per store, and only while the owner hasn't chosen otherwise: FluentAuth's settings page changes them later.
+add_action('init', function () {
+    if (get_option('waas_auth_defaults') || !class_exists('\FluentAuth\App\Helpers\Helper')) return;
+    $settings = get_option('__fls_auth_settings');
+    $settings = is_array($settings) ? $settings : \FluentAuth\App\Helpers\Helper::getAuthSettings();
+    foreach (['disable_xmlrpc', 'disable_users_rest'] as $key) {
+        if (($settings[$key] ?? 'no') !== 'yes') $settings[$key] = 'yes';
+    }
+    update_option('__fls_auth_settings', $settings, false);
+    update_option('waas_auth_defaults', 1, false);
+});
+PHP);
     file_put_contents(CONTENT . '/mu-plugins/waas-plan.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS store plan
- * Description: Keeps the store within its plan's storage and monthly email. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress store plan
+ * Description: Keeps the store within its plan's storage and monthly email. Managed by AnyPress; edits are overwritten.
  */
 // The quotas come with the store's size (compose.ts). Version sites have none, and nothing here applies to them.
 if ((string) getenv('WAAS_STORAGE_GB') === '' && (string) getenv('WAAS_EMAILS_PER_MONTH') === '') return;
 
-/** The plan's storage (GB, and bytes) and emails a calendar month; 0 is no limit. */
+/** The plan's storage with its storage packs (GB, and bytes) and emails a calendar month; 0 is no limit. */
 function waas_plan_limits(): array
 {
     $gb = (int) getenv('WAAS_STORAGE_GB');
+    // Storage packs (the agent's storage-packs operation) add to the plan's storage, never to "no limit".
+    if ($gb > 0) $gb += max(0, (int) get_option('waas_plan_storage_packs', 0));
     return ['storageGb' => $gb, 'storage' => $gb * 1024 ** 3, 'emails' => (int) getenv('WAAS_EMAILS_PER_MONTH')];
 }
 
@@ -1403,7 +1455,7 @@ function waas_plan_check_upload($file)
     if (!$limits['storage'] || !is_array($file) || !empty($file['error'])) return $file;
     $size = (int) ($file['size'] ?? @filesize((string) ($file['tmp_name'] ?? '')));
     if (waas_plan_used() + $size > $limits['storage']) {
-        $file['error'] = sprintf('This website has used its %d GB of storage. Delete files you no longer need, or move to a bigger plan, to upload more.', $limits['storageGb']);
+        $file['error'] = sprintf('This website has used its %d GB of storage. Delete files you no longer need, or add more storage, to upload more.', $limits['storageGb']);
     }
     return $file;
 }
@@ -1515,9 +1567,9 @@ add_action('admin_notices', function () {
     if ($limits['storage']) {
         $used = waas_plan_used();
         if ($used >= $limits['storage']) {
-            $notices[] = ['error', sprintf('This website has used all of its %d GB of storage, so uploads are refused. Delete files you no longer need, or move to a bigger plan.', $limits['storageGb'])];
+            $notices[] = ['error', sprintf('This website has used all of its %d GB of storage, so uploads are refused. Delete files you no longer need, or add more storage.', $limits['storageGb'])];
         } elseif ($used >= 0.8 * $limits['storage']) {
-            $notices[] = ['warning', sprintf('This website has used %d%% of its %d GB of storage. Delete files you no longer need, or move to a bigger plan, before uploads stop.', floor(100 * $used / $limits['storage']), $limits['storageGb'])];
+            $notices[] = ['warning', sprintf('This website has used %d%% of its %d GB of storage. Delete files you no longer need, or add more storage, before uploads stop.', floor(100 * $used / $limits['storage']), $limits['storageGb'])];
         }
     }
     if ($limits['emails']) {
@@ -1541,7 +1593,8 @@ add_action('admin_notices', function () {
     foreach ($notices as [$type, $text]) printf('<div class="notice notice-%s"><p>%s</p></div>', $type, esc_html($text));
 });
 PHP);
-    // Apache answers 503 before PHP runs, with the page as the error document (which itself is let through).
+    // The web server answers 503 before PHP runs, with the page as the error document (Nginx's own rule in compose.ts;
+    // this one is for a store still on Apache until its new setup).
     $block = "# BEGIN WaaS\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteCond %{DOCUMENT_ROOT}/wp-content/.waas-suspended -f\n"
         . "RewriteCond %{REQUEST_URI} !^/wp-content/waas-unavailable\\.html$\nRewriteRule ^ - [R=503,L]\n</IfModule>\n"
         . "ErrorDocument 503 /wp-content/waas-unavailable.html\n# END WaaS\n";
@@ -1550,6 +1603,40 @@ PHP);
     $current = preg_replace('/# BEGIN WaaS\n.*?# END WaaS\n/s', '', $current);
     file_put_contents($htaccess, $block . $current);
     install_cache();
+    install_object_cache();
+}
+
+/**
+ * The object cache: object-cache.php hands WordPress's cache to the store's own Redis (compose.ts, only community
+ * and everything stores have one, WAAS_REDIS_HOST) through the Redis Object Cache plugin's drop-in and its Predis
+ * client (the plugin's files come with the store template; the plugin itself stays off). Without WAAS_REDIS_HOST,
+ * or without the plugin's files, it returns at once and WordPress keeps its own cache. A drop-in another cache
+ * plugin put there is left alone. The cache is emptied on every install, so a restored, moved or reconfigured store
+ * never reads a value from before.
+ */
+function install_object_cache(): void
+{
+    $dropin = CONTENT . '/object-cache.php';
+    $current = is_file($dropin) ? (string) file_get_contents($dropin) : null;
+    if ($current !== null && strpos($current, 'AnyPress object cache') === false && strpos($current, 'WaaS object cache') === false) return;
+    file_put_contents($dropin, <<<'PHP'
+<?php
+/*
+ * AnyPress object cache: WordPress's cache in the store's own Redis. Managed by AnyPress; edits are overwritten.
+ */
+defined('ABSPATH') || exit;
+$waas_redis = (string) getenv('WAAS_REDIS_HOST');
+$waas_redis_dropin = WP_CONTENT_DIR . '/plugins/redis-cache/includes/object-cache.php';
+if ($waas_redis === '' || !is_readable($waas_redis_dropin)) return;
+defined('WP_REDIS_HOST') || define('WP_REDIS_HOST', $waas_redis);
+defined('WP_REDIS_CLIENT') || define('WP_REDIS_CLIENT', 'predis');
+defined('WP_REDIS_PLUGIN_PATH') || define('WP_REDIS_PLUGIN_PATH', WP_CONTENT_DIR . '/plugins/redis-cache');
+// A Redis that is down never takes the store down (a second's timeout, the drop-in's own): WordPress then runs without the cache.
+defined('WP_REDIS_GRACEFUL') || define('WP_REDIS_GRACEFUL', true);
+defined('WP_REDIS_DISABLE_METRICS') || define('WP_REDIS_DISABLE_METRICS', true);
+require_once $waas_redis_dropin;
+PHP) !== false || fail('cannot write the object cache drop-in');
+    if ((string) getenv('WAAS_REDIS_HOST') !== '') wpMayFail('cache', 'flush');
 }
 
 /**
@@ -1563,11 +1650,11 @@ function install_cache(): void
 {
     $dropin = CONTENT . '/advanced-cache.php';
     $current = is_file($dropin) ? (string) file_get_contents($dropin) : null;
-    if ($current === null || strpos($current, 'WaaS page cache') !== false) {
+    if ($current === null || strpos($current, 'AnyPress page cache') !== false || strpos($current, 'WaaS page cache') !== false) {
         file_put_contents($dropin, <<<'PHP'
 <?php
 /*
- * WaaS page cache: serves saved pages. Managed by the WaaS provisioner; edits are overwritten.
+ * AnyPress page cache: serves saved pages. Managed by AnyPress; edits are overwritten.
  * Saved by mu-plugins/waas-cache.php, which also says which requests are cached.
  */
 defined('WAAS_CACHE_TTL') || define('WAAS_CACHE_TTL', 600);
@@ -1592,7 +1679,7 @@ if ($waas_cacheable) {
     $waas_saved = @filemtime($waas_file);
     if ($waas_saved && time() - $waas_saved < WAAS_CACHE_TTL) {
         header('Content-Type: text/html; charset=UTF-8');
-        header('X-WaaS-Cache: hit');
+        header('X-AnyPress-Cache: hit');
         if ($waas_method === 'GET') readfile($waas_file);
         exit;
     }
@@ -1604,8 +1691,8 @@ PHP) !== false || fail('cannot write the page cache drop-in');
     file_put_contents(CONTENT . '/mu-plugins/waas-cache.php', <<<'PHP'
 <?php
 /*
- * Plugin Name: WaaS page cache
- * Description: Saves pages for visitors who are not logged in and clears them when content changes. Managed by the WaaS provisioner; edits are overwritten.
+ * Plugin Name: AnyPress page cache
+ * Description: Saves pages for visitors who are not logged in and clears them when content changes. Managed by AnyPress; edits are overwritten.
  */
 defined('WAAS_CACHE_TTL') || define('WAAS_CACHE_TTL', 600);
 
@@ -2262,6 +2349,33 @@ switch ($op) {
         done(['sizeBytes' => $size]);
     }
 
+    case 'site-download': {
+        // "Download my site" (src/sitedownloads.ts): the whole site as a plain WordPress archive that restores on any
+        // host: WordPress itself, wp-content, database.sql and README.txt. Not the store's wp-config.php (its database
+        // login and the platform's settings) nor the platform's own must-use plugins and drop-ins, which only work here.
+        $tmp = tempDir();
+        wp('db', 'export', "$tmp/database.sql");
+        $prefix = wpMayFail('config', 'get', 'table_prefix') ?: 'wp_';
+        $home = wpMayFail('option', 'get', 'home') ?: '';
+        $zip = new ZipArchive();
+        $zip->open("$tmp/site.zip", ZipArchive::CREATE) === true || fail('cannot create zip');
+        $zip->addFile("$tmp/database.sql", 'database.sql');
+        foreach (scandir(ROOT) ?: [] as $name) {
+            $path = ROOT . "/$name";
+            if ($name === 'wp-admin' || $name === 'wp-includes') zip_dir($zip, $path, $name);
+            elseif (is_file($path) && $name !== 'wp-config.php' && $name !== 'wp-config-sample.php' && preg_match('/^(wp-[a-z-]+\.php|index\.php|xmlrpc\.php|license\.txt|readme\.html)$/', $name)) $zip->addFile($path, $name);
+        }
+        zip_dir($zip, CONTENT, 'wp-content', '#^(mu-plugins/waas-[^/]*\.php|object-cache\.php|advanced-cache\.php)$#');
+        $sample = (string) @file_get_contents(ROOT . '/wp-config-sample.php');
+        if ($sample !== '') $zip->addFromString('wp-config-sample.php', preg_replace('/^\$table_prefix\s*=.*$/m', '$table_prefix = ' . var_export($prefix, true) . ';', $sample));
+        $zip->addFromString('.htaccess', "# BEGIN WordPress\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\nRewriteBase /\nRewriteRule ^index\\.php$ - [L]\nRewriteCond %{REQUEST_FILENAME} !-f\nRewriteCond %{REQUEST_FILENAME} !-d\nRewriteRule . /index.php [L]\n</IfModule>\n# END WordPress\n");
+        $zip->addFromString('README.txt', site_download_readme($home, $prefix));
+        $zip->close() || fail('cannot write zip');
+        $size = filesize("$tmp/site.zip");
+        curlTransfer($args['url'], "$tmp/site.zip", true);
+        done(['sizeBytes' => $size]);
+    }
+
     case 'plugins': {
         // Plugin choices (docs/plugin-choices.md), applied to a version site before its code is exported:
         // wordpress.org plugins added to wp-content/plugins and to roles.json's site types, or taken out of
@@ -2545,6 +2659,15 @@ switch ($op) {
         $used = mail_packs()['used'];
         wp('option', 'update', 'waas_plan_mail_packs', json_encode(['purchased' => $purchased, 'used' => $used]), '--format=json', '--autoload=no');
         done(['purchased' => $purchased, 'used' => $used]);
+    }
+
+    case 'storage-packs': {
+        // The storage the store's storage packs add to its plan's, in GB (the API's record; 0 is none). The
+        // waas-plan mu-plugin adds it to WAAS_STORAGE_GB.
+        $gb = $args['gb'] ?? null;
+        if (!is_int($gb) || $gb < 0) fail('gb must be a whole number');
+        wp('option', 'update', 'waas_plan_storage_packs', (string) $gb, '--autoload=no');
+        done(['gb' => $gb]);
     }
 
     case 'mail-count': {

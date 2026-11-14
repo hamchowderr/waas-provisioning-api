@@ -2,10 +2,18 @@
 # WordPress Playground as every site type, and only then attaches them, with their checksums and checks.txt, to a
 # GitHub release templates-v<version>. The AnyPress API publishes each such release and makes it production by itself
 # (docs/template-releases.md); install/anypress-install.sh publishes the newest one on a new server.
-# Update pins starts it after a merge that changes a template; it can also be run from the Actions tab.
+# A merge to main that changes a template starts it (Update pins merges with the workflow token, which starts no push
+# workflows, so it starts this itself afterwards); it can also be run from the Actions tab.
 name: Release templates
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'templates/**'
+      - '!templates/**/*.md'
+      # The Playground demos (anypress.io/try) aren't part of a store: changing them releases nothing.
+      - '!templates/anypress-store/playground/**'
   workflow_dispatch:
     inputs:
       version:
@@ -126,12 +134,22 @@ jobs:
             echo "HOST_VERSION=$HOST_VERSION" >> "$GITHUB_ENV"
           fi
           echo "AnyPress Host $HOST_VERSION"
+      # Before the build too: the storefront's build reads the price list from src/pricing.ts with Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Build
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           templates/release.sh "$PWD/waas-plugins" "$HOST_VERSION" "$VERSION" out
           cat checks/*.txt > out/checks.txt
+      # The built zip as a new store gets it: the store's own compose file in Docker, restored by the agent, every
+      # site type loading over HTTP (templates/anypress-store/restore-check.sh). Playground can't show this.
+      - name: Restore check
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          templates/anypress-store/restore-check.sh out/anypress-store.zip | sed 's/^/restore /' >> out/checks.txt
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -142,7 +160,7 @@ jobs:
             echo "- anypress-store.zip: AnyPress Client from waas-plugins $(git -C waas-plugins describe --tags --always), $(unzip -p out/anypress-store.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
             echo "- seller-storefront.zip: $(unzip -p out/seller-storefront.zip waas-template.json | jq -r '"WordPress \(.wordPress), " + (.plugins | to_entries | map("\(.key) \(.value)") | join(", "))')"
             echo
-            echo "Checked on WordPress Playground:"
+            echo "Checked on WordPress Playground, and restored by the agent in the store's own containers:"
             sed 's/^/- /' out/checks.txt
           } > notes.md
           gh release create "templates-v$VERSION" out/anypress-store.zip out/seller-storefront.zip out/version.txt out/SHA256SUMS out/checks.txt \

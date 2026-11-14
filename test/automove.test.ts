@@ -74,6 +74,24 @@ describe('a new production version', () => {
     expect(t.provisioner.stores.get(e)?.versionId).toBe(v5);
   });
 
+  it('gives a moved store the current store setup, which it missed while moving (waas-api-xkj.3)', async () => {
+    const f = await newStore('Store F');
+    // F missed the setup rollout: the fake keeps an older size until ensureStoreSetup runs.
+    t.provisioner.stores.get(f)!.size = 'large';
+    const v6 = await newVersion('v6');
+    await setProduction(v6);
+    await waitFor(async () => (await store(f)).version_id === v6 && (await store(f)).status === Status.Done);
+    expect(t.provisioner.stores.get(f)?.size).toBe('small');
+  });
+
+  it('finishes the move when the store setup after it fails', async () => {
+    const g = await newStore('Store G');
+    t.provisioner.failNext('ensureStoreSetup');
+    const v7 = await newVersion('v7');
+    await setProduction(v7);
+    await waitFor(async () => (await store(g)).version_id === v7 && (await store(g)).status === Status.Done);
+  });
+
   it('puts a store back on its version when its move fails', async () => {
     const [{ id: current }] = (await t.pool.query('SELECT id FROM versions WHERE product_id = $1 AND is_production', [t.productId])).rows;
     const d = await newStore('Store D');

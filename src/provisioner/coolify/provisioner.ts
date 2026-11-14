@@ -89,6 +89,16 @@ const envValue = (envs: CoolifyEnv[], key: string) => {
 };
 /** A value without the quotes that envValue's old reading of real_value left around it. */
 const unquote = (value: string | undefined) => value?.replace(/^'+|'+$/g, '');
+
+/** WAAS_CONSTANTS_B64 (encodeConstants) read back as phpConstants; nothing when it is missing or unreadable. */
+function decodeConstants(value: string | undefined): Record<string, { value: string }> {
+  try {
+    const plain = JSON.parse(Buffer.from(unquote(value) ?? '', 'base64').toString('utf8')) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(plain).map(([name, v]) => [name, { value: String(v) }]));
+  } catch {
+    return {};
+  }
+}
 const domainOf = (address: string | undefined) => address?.split('@')[1]?.toLowerCase();
 const decodeMail = (value: string | undefined): Partial<StoreMail> | null => {
   try {
@@ -113,6 +123,7 @@ const OP_STEPS: Partial<Record<string, StepKey>> = {
   configure: 'configure',
   'check-site': 'check',
   snapshot: 'backup',
+  'site-download': 'backup',
 };
 const STAGE_CHUNK = 200;
 /** What a task's output says when Coolify ran it in the database or WordPress container: the agent never started. */
@@ -172,6 +183,17 @@ export interface StoreMeta {
   setup?: number;
   /** The size (plans.ts) the store's compose file was last rendered with. */
   size: Size;
+  /** Whether the store has its own Redis object cache (renderCompose's `cache`): its site type wants one (CACHED_SITE_TYPES). */
+  cache?: boolean;
+}
+
+/** Site types whose stores get their own Redis object cache: their visitors are mostly logged-in members. */
+const CACHED_SITE_TYPES = ['community', 'everything'];
+
+/** Whether a store with these phpConstants gets an object cache (its ANYPRESS_TENANT_ROLES). */
+function wantsCache(phpConstants: Record<string, { value: string }> | null | undefined): boolean {
+  const roles = phpConstants?.ANYPRESS_TENANT_ROLES?.value ?? '';
+  return roles.split(',').some((type) => CACHED_SITE_TYPES.includes(type.trim()));
 }
 
 /**
@@ -205,8 +227,19 @@ export interface StoreMeta {
  *    tagged Replied or Customer, and the agent's crm-automation operation makes those automations (src/outreachautomation.ts).
  * 19: the guard mu-plugin answers a signed preview link (?anypress_preview=) on any of the store's addresses instead
  *    of redirecting it to the main domain, so AI apps can frame previews from the platform address.
+ * 20: community and everything stores get their own Redis object cache (renderCompose's `cache`), and every store the
+ *    agent's object-cache.php drop-in, which uses it where there is one (install_object_cache in agent.php).
+ * 21: server settings from WordPress's hosting handbook and the plugins' own docs: memory per size for its workers,
+ *    PHP's memory, upload and OPcache limits, cron every minute, security and browser-caching headers,
+ *    DISALLOW_FILE_EDIT, and the login safety mu-plugin (FluentAuth's XML-RPC and REST usernames off, once).
+ * 22: Nginx in front of PHP-FPM instead of Apache (renderCompose): the `wordpress` service, which keeps the store's
+ *    domains, is Nginx, and WordPress runs in a new `php` service with the size's workers.
+ * 23: community and everything stores take uploads up to 512 MB (renderCompose's uploadMb), for members' videos.
+ * 24: storage 10 / 20 / 30 GB by size (plans.ts), and storage packs: the plan mu-plugin adds the packs' storage
+ *    (the agent's storage-packs operation) to the plan's.
+ * 25: Nginx hides readme.html, license.txt and wp-config-sample.php, which name WordPress's version.
  */
-export const STORE_SETUP = 19;
+export const STORE_SETUP = 25;
 
 const storeName = (storeId: string) => `store-${storeId}`;
 const versionName = (versionId: string) => `version-${versionId}`;
@@ -225,9 +258,15 @@ const keys = {
   plugin: (slug: string, version: string) => `plugins/wporg/${slug}/${version}.zip`,
   /** A plugin zip a seller uploaded. */
   pluginUpload: (uploadId: string) => `plugins/uploads/${uploadId}.zip`,
+  /** A photo in a demo draft (src/demodrafts.ts). */
+  demoImage: (draftId: string, name: string) => `demos/${draftId}/${name}`,
+  /** A file of a prospect's branded demo (src/prospectdemos.ts). */
+  prospectFile: (code: string, name: string) => `prospects/${code}/${name}`,
   /** A version's plugin choices with signed links to their zips, for the agent's plugins step. */
   pluginChoices: (versionId: string) => `versions/${versionId}/plugin-choices.json`,
   backup: (id: string) => `backups/${id}.zip`,
+  /** A copy of a store for its owner to download (downloadStore), deleted after a week. */
+  download: (id: string) => `downloads/${id}.zip`,
   /** A site being moved in: a zip or a gzipped tar, so no extension. */
   import: (storeId: string) => `imports/${storeId}`,
   /** Businesses for a store's FluentCRM (addCrmProspects), read once by its agent. */
@@ -380,7 +419,7 @@ export class CoolifyProvisioner implements Provisioner {
 
   private async storeComposeText(storeId: string, meta: StoreMeta, uuid: string, domains?: string[]): Promise<string> {
     const hosts = domains ?? (await this.serviceDomains(uuid));
-    return renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, assistant: assistantFor(storeId, hosts) });
+    return renderCompose({ ...(await this.versionMeta(meta.versionId)), size: meta.size, cache: meta.cache, assistant: assistantFor(storeId, hosts) });
   }
 
   /** The domains a store's Service answers on (its wordpress URLs). */
@@ -409,7 +448,11 @@ export class CoolifyProvisioner implements Provisioner {
     phpVersion: string;
     /** A store's; version sites have none. */
     size?: Size;
+    /** A store's object cache (StoreMeta's `cache`). */
+    cache?: boolean;
     domains: string[];
+    /** Plain http: Coolify then asks for no TLS certificate (a restore test's .invalid name can't get one). */
+    plainHttp?: boolean;
     envs: Record<string, string>;
   }): Promise<string> {
     let service = await this.findService(input.envName, input.name);
@@ -424,9 +467,12 @@ export class CoolifyProvisioner implements Provisioner {
         environment_name: input.envName,
         server_uuid: this.config.serverUuid,
         docker_compose_raw: b64(
-          renderCompose({ ...input, assistant: input.meta.kind === 'store' ? { router: `${input.name}-assistant`, domains: input.domains } : undefined }),
+          renderCompose({
+            ...input,
+            assistant: input.meta.kind === 'store' && !input.plainHttp ? { router: `${input.name}-assistant`, domains: input.domains } : undefined,
+          }),
         ),
-        urls: urlsFor(input.domains),
+        urls: input.plainHttp ? [{ name: 'wordpress', url: input.domains.map((d) => `http://${d}`).join(',') }] : urlsFor(input.domains),
         // Variables first, then start.
         instant_deploy: false,
       });
@@ -655,6 +701,34 @@ export class CoolifyProvisioner implements Provisioner {
     await this.s3.delete(keys.pluginUpload(uploadId));
   }
 
+  async createDemoImageUpload({ draftId, name, expiresInSeconds }: { draftId: string; name: string; expiresInSeconds: number }) {
+    return this.s3.presign('PUT', keys.demoImage(draftId, name), expiresInSeconds);
+  }
+
+  async demoImageSize({ draftId, name }: { draftId: string; name: string }) {
+    return this.s3.head(keys.demoImage(draftId, name));
+  }
+
+  async demoImageUrl({ draftId, name, expiresInSeconds }: { draftId: string; name: string; expiresInSeconds: number }) {
+    return this.s3.presign('GET', keys.demoImage(draftId, name), expiresInSeconds);
+  }
+
+  async deleteDemoDraft({ draftId, names }: { draftId: string; names: string[] }) {
+    for (const name of names) await this.s3.delete(keys.demoImage(draftId, name));
+  }
+
+  async putProspectFile({ code, name, body, contentType }: { code: string; name: string; body: Uint8Array; contentType: string }) {
+    await this.s3.put(keys.prospectFile(code, name), body, contentType);
+  }
+
+  async readProspectFile({ code, name }: { code: string; name: string }) {
+    return this.s3.getIfExists(keys.prospectFile(code, name));
+  }
+
+  async deleteProspectFiles({ code, names }: { code: string; names: string[] }) {
+    for (const name of names) await this.s3.delete(keys.prospectFile(code, name));
+  }
+
   async deleteVersion({ versionId }: { versionId: string }) {
     await this.deleteService(VERSIONS_ENV, versionName(versionId));
     await this.s3.delete(keys.code(versionId));
@@ -732,6 +806,7 @@ export class CoolifyProvisioner implements Provisioner {
     const reprint = imported ? input.reprint : undefined;
     if (!reprint && (await this.s3.head(sourceKey)) === null) throw new Error(`No archive at ${sourceKey}`);
     const envs: Record<string, string> = { WAAS_CONSTANTS_B64: encodeConstants(input.phpConstants) };
+    const cache = wantsCache(input.phpConstants);
     if (input.user?.password) envs.WAAS_INIT_PASSWORD = input.user.password;
     Object.assign(envs, this.siteKeyEnvs(input.storeId));
     // A retried create finds the Service, and the key it minted, from last time.
@@ -740,10 +815,11 @@ export class CoolifyProvisioner implements Provisioner {
     const uuid = await this.ensureService({
       envName: STORES_ENV,
       name: storeName(input.storeId),
-      meta: { kind: 'store', versionId: input.versionId, size: input.size },
+      meta: { kind: 'store', versionId: input.versionId, size: input.size, cache },
       wordPressVersion: version.wordPressVersion,
       phpVersion: version.phpVersion,
       size: input.size,
+      cache,
       domains: [input.mainDomain, ...input.redirectDomains],
       envs,
     });
@@ -811,7 +887,9 @@ export class CoolifyProvisioner implements Provisioner {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     const meta = this.storeMeta(store);
     if ((meta.setup ?? 1) >= STORE_SETUP && meta.size === size) return 'unchanged';
-    const want: StoreMeta = { ...meta, setup: STORE_SETUP, size };
+    // A store set up before the object cache (setup 20) has no record of it yet: its site types say.
+    const cache = (meta.setup ?? 1) >= 20 ? meta.cache : wantsCache(decodeConstants(envValue(await this.coolify.listEnvs(store.uuid), 'WAAS_CONSTANTS_B64')));
+    const want: StoreMeta = { ...meta, setup: STORE_SETUP, size, cache };
     const compose = await this.storeComposeText(storeId, want, store.uuid);
     const siteKey = this.siteKeyEnvs(storeId);
     if (await this.onlyAgentChanged(store.uuid, compose, siteKey)) {
@@ -1012,7 +1090,11 @@ export class CoolifyProvisioner implements Provisioner {
     const store = await this.requireService(STORES_ENV, storeName(storeId));
     // A new size is a new compose file (resources and quotas). With the restart and configure below the store also
     // has the current setup; the description says both once the store runs them.
-    const resized: StoreMeta | undefined = size && { ...this.storeMeta(store), setup: STORE_SETUP, size };
+    const meta = this.storeMeta(store);
+    // New site types can bring or take away the object cache, which is a new compose file too.
+    const cache = phpConstants ? wantsCache(phpConstants) : meta.cache;
+    const resized: StoreMeta | undefined =
+      size || !!cache !== !!meta.cache ? { ...meta, setup: STORE_SETUP, size: size ?? meta.size, cache } : undefined;
     if (resized) await this.coolify.updateService(store.uuid, { docker_compose_raw: await this.storeCompose(storeId, resized, store.uuid) });
     if (phpConstants) {
       // The complete set (see Provisioner.updateStore); Coolify's API does not hand values back to merge with.
@@ -1033,6 +1115,14 @@ export class CoolifyProvisioner implements Provisioner {
     const meta = this.storeMeta(store);
     if ((meta.setup ?? 1) < STORE_SETUP) await this.ensureStoreSetup({ storeId, size: meta.size });
     await this.exec(store.uuid, 'mail-packs', { purchased });
+  }
+
+  /** As setEmailPacks: a store set up before storage packs is brought to the current setup first. */
+  async setStoragePacks({ storeId, gb }: { storeId: string; gb: number }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const meta = this.storeMeta(store);
+    if ((meta.setup ?? 1) < STORE_SETUP) await this.ensureStoreSetup({ storeId, size: meta.size });
+    await this.exec(store.uuid, 'storage-packs', { gb });
   }
 
   /** As setEmailPacks: a store set up before the platform counted its email is brought to the current setup first. */
@@ -1106,6 +1196,24 @@ export class CoolifyProvisioner implements Provisioner {
     const result = await this.exec(store.uuid, 'snapshot', { url: await this.s3.presign('PUT', keys.backup(backupId)) });
     const sizeBytes = (await this.s3.head(keys.backup(backupId))) ?? Number(result.sizeBytes ?? 0);
     return { sizeBytes };
+  }
+
+  async downloadStore({ storeId, downloadId }: { storeId: string; downloadId: string }) {
+    const store = await this.requireService(STORES_ENV, storeName(storeId));
+    const result = await this.exec(store.uuid, 'site-download', { url: await this.s3.presign('PUT', keys.download(downloadId), 3600) });
+    const sizeBytes = (await this.s3.head(keys.download(downloadId))) ?? Number(result.sizeBytes ?? 0);
+    return { sizeBytes };
+  }
+
+  async downloadUrl({ downloadId, fileName, expiresInSeconds }: { downloadId: string; fileName: string; expiresInSeconds: number }) {
+    // The browser saves it under the site's own name, not the object's id.
+    return this.s3.presign('GET', keys.download(downloadId), expiresInSeconds, {
+      'response-content-disposition': `attachment; filename="${fileName.replace(/[^A-Za-z0-9._-]/g, '-')}"`,
+    });
+  }
+
+  async deleteDownload({ downloadId }: { downloadId: string }) {
+    await this.s3.delete(keys.download(downloadId));
   }
 
   async deleteBackup({ backupId }: { backupId: string }) {
@@ -1255,6 +1363,7 @@ export class CoolifyProvisioner implements Provisioner {
         phpVersion: version.phpVersion,
         size,
         domains: [domain],
+        plainHttp: true,
         envs: { WAAS_CONSTANTS_B64: encodeConstants({}) },
       });
       await this.exec(uuid, 'suspend', { brand: this.config.brand ?? { name: '' } });
@@ -1270,7 +1379,7 @@ export class CoolifyProvisioner implements Provisioner {
       failed = true;
       throw err;
     } finally {
-      // The restore's own error matters more; a test store left behind is deleted on the next run.
+      // The restore's own error matters more; a test store left behind is deleted on the next run (cleanUpInterruptedTests).
       await this.deleteRestoreTest({ testId }).catch((err: unknown) => {
         if (!failed) throw err;
       });
@@ -1294,17 +1403,17 @@ function allHealthy(statuses: string[]): boolean {
 export function formatMeta(meta: VersionMeta | StoreMeta): string {
   return meta.kind === 'version'
     ? `WaaS version, WordPress ${meta.wordPressVersion}, PHP ${meta.phpVersion}`
-    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}, size ${meta.size}`;
+    : `WaaS store, version ${meta.versionId}, setup ${meta.setup ?? STORE_SETUP}, size ${meta.size}${meta.cache ? ', cache' : ''}`;
 }
 
 export function parseMeta(description: string | null | undefined): VersionMeta | StoreMeta | null {
   const version = /^WaaS version, WordPress ([\d.]+), PHP ([\d.]+)$/.exec(description ?? '');
   if (version) return { kind: 'version', wordPressVersion: version[1]!, phpVersion: version[2]! };
-  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?(?:, size (\w+))?$/.exec(description ?? '');
+  const store = /^WaaS store, version ([\w-]+)(?:, setup (\d+))?(?:, size (\w+))?(, cache)?$/.exec(description ?? '');
   if (!store) return null;
   const size = store[3] ?? DEFAULT_SIZE;
   // A size this API does not know (a newer one's) is no metadata it can act on.
-  return isSize(size) ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1), size } : null;
+  return isSize(size) ? { kind: 'store', versionId: store[1]!, setup: Number(store[2] ?? 1), size, ...(store[4] && { cache: true }) } : null;
 }
 
 /** The agent's restore answer, as a MoveReport: only well-formed rows and lines. */

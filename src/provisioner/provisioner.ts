@@ -21,6 +21,8 @@ export interface Brand {
 
 /** The WordPress option that holds a reseller's brand on its stores; AnyPress Client 2.13.0+ goes by that name. */
 export const BRAND_OPTION = 'anypress_brand_name';
+/** The WordPress option that turns AnyPress Client's clean Dashboard home (2.28.0+) "on" or "off" on a store. */
+export const CLEAN_DASHBOARD_OPTION = 'anypress_clean_dashboard';
 
 /**
  * A plugin choice applied while a version builds (docs/plugin-choices.md): a wordpress.org plugin added
@@ -72,6 +74,31 @@ export interface Provisioner {
   readPluginUpload(input: { uploadId: string; maxBytes: number }): Promise<Uint8Array | null>;
 
   deletePluginUpload(input: { uploadId: string }): Promise<void>;
+
+  // Photos in a demo someone built on Playground (src/demodrafts.ts), kept until a store is made with the demo.
+
+  /** Where the demo page PUTs one photo of a draft, for `expiresInSeconds`. */
+  createDemoImageUpload(input: { draftId: string; name: string; expiresInSeconds: number }): Promise<string>;
+
+  /** The photo's size in bytes, or null when it was never uploaded. */
+  demoImageSize(input: { draftId: string; name: string }): Promise<number | null>;
+
+  /** A link the store's site routes copy the photo from, for `expiresInSeconds`. */
+  demoImageUrl(input: { draftId: string; name: string; expiresInSeconds: number }): Promise<string>;
+
+  /** Removes a draft's photos. */
+  deleteDemoDraft(input: { draftId: string; names: string[] }): Promise<void>;
+
+  // A prospect's logo and photos, copied from its website for its branded demo (src/prospectdemos.ts).
+
+  /** Stores one file of a prospect's demo. */
+  putProspectFile(input: { code: string; name: string; body: Uint8Array; contentType: string }): Promise<void>;
+
+  /** The file's bytes, or null when there is none. */
+  readProspectFile(input: { code: string; name: string }): Promise<Uint8Array | null>;
+
+  /** Removes a prospect demo's files. */
+  deleteProspectFiles(input: { code: string; names: string[] }): Promise<void>;
 
   deleteVersion(input: { versionId: string }): Promise<void>;
 
@@ -140,6 +167,9 @@ export interface Provisioner {
    */
   setEmailPacks(input: { storeId: string; purchased: number }): Promise<void>;
 
+  /** Tells a store the storage its storage packs add to its plan's (`gb`; 0 when it has none). */
+  setStoragePacks(input: { storeId: string; gb: number }): Promise<void>;
+
   /**
    * Tells a store how many emails it sent in `month` (UTC, YYYY-MM) as the platform counted them on the relay
    * (src/mailcount.ts). The store keeps its own count too and goes by the higher of the two.
@@ -160,6 +190,18 @@ export interface Provisioner {
 
   /** Takes a full backup (files and database) of a store. Returns its size. */
   backupStore(input: { storeId: string; backupId: string }): Promise<{ sizeBytes: number }>;
+
+  /**
+   * "Download my site" (src/sitedownloads.ts): the whole store as a plain WordPress archive (WordPress, wp-content
+   * without the platform's own files, database.sql and how to restore it) that restores on any host. Returns its size.
+   */
+  downloadStore(input: { storeId: string; downloadId: string }): Promise<{ sizeBytes: number }>;
+
+  /** A link anyone can download the copy from for `expiresInSeconds`, saved as `fileName`. */
+  downloadUrl(input: { downloadId: string; fileName: string; expiresInSeconds: number }): Promise<string>;
+
+  /** Removes a copy from storage. */
+  deleteDownload(input: { downloadId: string }): Promise<void>;
 
   /**
    * Re-creates a deleted store from one of its backups (files and database), on the given version

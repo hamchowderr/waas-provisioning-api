@@ -118,11 +118,42 @@ describe('applying', () => {
     expect(json).toMatchObject({ email: 'ada@agency.example', website: 'https://agency.example/', status: 'pending', productId: null, highLevelAgency: false });
   });
 
+  it('asks the applicant to book their set-up call, with the booking page when there is one', async () => {
+    expect((await apply(form({ email: 'reply@agency.example' }))).status).toBe(201);
+    expect(sent.find((m) => m.to === 'reply@agency.example')?.text).toContain('reply to this email with a few times');
+    t.deps.config.sellerCallUrl = 'https://shop.platform.example/seller-call/';
+    try {
+      expect((await apply(form({ email: 'call@agency.example' }))).status).toBe(201);
+    } finally {
+      t.deps.config.sellerCallUrl = undefined;
+    }
+    expect(sent.find((m) => m.to === 'call@agency.example')?.text).toContain('Book your call: https://shop.platform.example/seller-call/');
+  });
+
   it('keeps whether the applicant runs a HighLevel agency', async () => {
     const res = await apply(form({ email: 'hl@agency.example', highLevelAgency: true }));
     expect(res.status).toBe(201);
     expect((await call('GET', `/admin/applications/${res.json.id}`)).json).toMatchObject({ highLevelAgency: true });
     expect((await apply(form({ email: 'hl2@agency.example', highLevelAgency: 'yes' }))).status).toBe(400);
+  });
+
+  it('keeps the kinds of sites they sell and the customers they serve, and turns away unknown ones', async () => {
+    const res = await apply(
+      form({ email: 'kinds@agency.example', siteTypes: ['website', 'bookings', 'website'], siteTypesOther: 'Menus', audiences: ['churches'], audiencesOther: 'Dentists' }),
+    );
+    expect(res.status).toBe(201);
+    expect((await call('GET', `/admin/applications/${res.json.id}`)).json).toMatchObject({
+      siteTypes: ['website', 'bookings'],
+      siteTypesOther: 'Menus',
+      audiences: ['churches'],
+      audiencesOther: 'Dentists',
+    });
+    // Not sure yet: no site types, every one kept; no group fits: no audiences.
+    const unsure = await apply(form({ email: 'unsure@agency.example' }));
+    expect((await call('GET', `/admin/applications/${unsure.json.id}`)).json).toMatchObject({ siteTypes: null, audiences: [], audiencesOther: null });
+    expect((await apply(form({ email: 'k2@agency.example', siteTypes: ['highlevel'] }))).status).toBe(400);
+    expect((await apply(form({ email: 'k3@agency.example', siteTypes: [] }))).status).toBe(400);
+    expect((await apply(form({ email: 'k4@agency.example', audiences: 'churches' }))).status).toBe(400);
   });
 
   it('keeps one waiting application per email address', async () => {
@@ -196,6 +227,21 @@ describe('reviewing', () => {
     expect(sent.at(-1)!.text).toContain('https://hopper.waas.example');
     await waitFor(async () => t.provisioner.stores.get(res.json.storefront.id)?.user);
     expect(t.provisioner.stores.get(res.json.storefront.id)!.user).toMatchObject({ email: 'grace@shop.example', role: 'administrator' });
+    // Not sure of their site types and no customer group picked: every plan, no Who we help pages.
+    expect(JSON.parse(t.provisioner.stores.get(res.json.storefront.id)!.wpOptions.anypress_storefront_setup!)).toEqual({ siteTypes: null, audiences: [] });
+  });
+
+  it('opens the storefront with only the site types and customer groups the applicant picked', async () => {
+    const applied = await apply(
+      form({ email: 'picks@shop.example', business: 'Picks Sites', wantsStorefront: true, storefrontSubdomain: 'picks', siteTypes: ['online-store'], audiences: ['shops', 'specialty'] }),
+    );
+    const res = await call('POST', `/admin/applications/${applied.json.id}/approve`, {});
+    expect(res.json.storefrontError).toBeNull();
+    await waitFor(async () => t.provisioner.stores.get(res.json.storefront.id)?.user);
+    expect(JSON.parse(t.provisioner.stores.get(res.json.storefront.id)!.wpOptions.anypress_storefront_setup!)).toEqual({
+      siteTypes: ['online-store'],
+      audiences: ['shops', 'specialty'],
+    });
   });
 
   it('keeps the approval when the storefront fails, and says why', async () => {

@@ -138,6 +138,23 @@ export async function startShopSignIn(handoff: string, back = '/'): Promise<{ ne
   return { next: ((await response.json()) as { redirectUrl: string }).redirectUrl };
 }
 
+/** A demo's sign-in from the API (its src/demo-assistant.ts), which anypress.io put in the demo. */
+const DEMO_TOKEN = /^apdemo_[A-Za-z0-9_-]{43}$/;
+
+/**
+ * The chat beside a demo's editor on anypress.io/try. The demo runs inside anypress.io's page, so these cookies are
+ * a third party's there: SameSite=None and Partitioned, kept for anypress.io's page only. A demo's sign-in has no
+ * refresh; it lasts as long as the demo (three hours).
+ */
+export async function startDemoSignIn(demo: string): Promise<boolean> {
+  if (!DEMO_TOKEN.test(demo)) return false;
+  const jar = await cookies();
+  const options = { ...COOKIE_OPTIONS, sameSite: 'none' as const, partitioned: true, maxAge: 3 * 3600 };
+  jar.set(ACCESS, demo, options);
+  jar.set(EXPIRES, String(Date.now() + 3 * 3600 * 1000), options);
+  return true;
+}
+
 type Tokens = { access_token: string; refresh_token?: string; expires_in?: number };
 
 /** Keeps the tokens, and the client they were issued to: a refresh must come from that same client. */

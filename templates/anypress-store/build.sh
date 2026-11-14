@@ -21,28 +21,34 @@ fluent-crm 3.3.1 3559061805e780c60b5078917b702786f829a8e49e15f0edfc7288d55fc1f63
 fluentform 6.2.17 e5dda0290afa0232758017ce63c63c76a57c6f000a0861eb43772a88a39909bc
 fluent-booking 2.6.0 83eb315ddb562532ca38a362abae4bc787bd83c3d549e1736739ccb525ddcc34
 fluent-cart 2.3.1 dcd1af4986129b61e933bd07d9d71ca04087bbf0a7e947421a2ed065cc9f98c1
-fluent-community 2.13.0 9bb3d74d8662633083b396464242419366c4582b2a89391a13da074c42118f81
+fluent-community 2.14.0 79c5f804ce12cfa19e58ff2b200a2d661b7ddb8c56c3828e9d675aa78a1ec53a
 fluent-player 1.4.0 edba3f48662136605564bb040fda0b51d50c154c167c699cca47ce3f43f20f1c
 fluent-affiliate 1.7.0 f1c617715aaae58657b155c75752adab2db42dd1a8a896469823a19a3b3ee8c8
 fluent-support 2.5.0 a9525ca9fdc5e6de34a37b3075db01cd7249818f76e93464d7aec44ac5f04899
 easy-code-manager 10.58 39bfd2fe29b099147949086c42dfe715cedd4ddce3631c9ef33165470ed25667
 seo-by-rank-math 1.0.282 d4434c5726c62cdd819f0129cac3df5fea0c8efafbcd812856cf87f5e05691a3
-automatorwp 6.0.9 f9540e4be51228b5851e4572f0a0d0eed2d99313958efcea9521a97f9cab74fa
+automatorwp 6.1.1 5b63d943831bd90e7df4576cf9ac9dbf5afd054d590eedd2b6cb4c9262eff082
 wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
 "
 # wordpress.org plugins installed but left off: slug version sha256. AnyPress Client turns the MCP Adapter on on every
 # store (always on since AnyPress Client 2.18.0; not in roles.json).
 # LeadConnector (HighLevel's own plugin: its forms, chat widget and calendars) is on only for the highlevel site type.
 # Polylang is on only while the owner has Languages on (AnyPress Client 2.22.0 or later; not in roles.json).
+# Redis Object Cache stays off: only its object-cache.php and Predis client are used, by the drop-in the provisioner's
+# agent installs, on stores that have their own Redis (community and everything; not in roles.json).
 OFF_PLUGINS="
 mcp-adapter 0.7.1 719d81aa1250615acfd8256f0acc8c13f1712f1ae398c3d5883c8b166024fe9b
 leadconnector 4.0.7 03854dce113adde9f792a0b2bd397eb139902c16d08328bcd9c57d6c96a41dbc
 polylang 3.9.2 90d695711f642efd942d9b7ce25698827b7332a7b26222dfd21719c300e5f9cb
+redis-cache 3.0.0 7a03342d3defbe94cac8d0470b42dc1a1c34331b19c47205df20ceccd3c8f54a
 "
 # Plugins that aren't on wordpress.org: slug version sha256, zipped in plugins/<slug>-<version>.zip (GPL, from the vendor).
 # FluentToolkit (WPManageNinja's "FluentHub": one dashboard for the Fluent plugins) updates itself from the vendor afterwards.
+# FluentCart Customer Rights (FluentCart's free add-on, from addons-cdn.fluentcart.com: the EU's 14-day cancellation form,
+# on the "Withdraw from contract" page FluentCart makes with its other pages) updates itself from FluentCart too.
 VENDORED="
 fluent-toolkit 2.1.4 2441af4234fa809022962dca0032a7f7fb3d5d1bb79d185ec9f2b1577fad2c6a
+fluent-cart-customer-rights 0.1.3 55b0f9307a8cc98e29d492d8bd7842b3a80b0f3be2e3b79bde72cdfd7734e7d3
 "
 # Vendored plugins installed but left off. The FluentCart Migrator add-on (FluentCart's own WooCommerce importer, from
 # addons-cdn.fluentcart.com) is only for AnyPress Client's shop switch, which turns it on when it runs.
@@ -51,8 +57,8 @@ fluent-cart-migrator 1.1.0-beta 69de5e9033dfad69ccbf4a7c4ece96d5e28f1fc23bb4a290
 "
 # AnyPress Blocks (the Popup block and more): a release of github.com/hamchowderr/anypress-blocks, pinned by version
 # and checksum (from the release's SHA256SUMS). Active on every site type (roles.json).
-BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.2}
-BLOCKS_SHA256=${BLOCKS_SHA256:-869ee824b460d0867f217628fe06ef4149c6786241c67508887d718c4f2e7f0b}
+BLOCKS_VERSION=${BLOCKS_VERSION:-0.4.3}
+BLOCKS_SHA256=${BLOCKS_SHA256:-b5c77f49f37908bc545b79db247860330bdc40b5e2211a94ad66d7d2c22915e1}
 # The AnyPress block theme: a release of github.com/hamchowderr/anypress-theme, pinned in theme.sh.
 THEME=anypress
 # shellcheck source=theme.sh

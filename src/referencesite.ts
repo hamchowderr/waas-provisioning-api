@@ -187,7 +187,7 @@ function radiusOf(b: BrandingProfile): string | null {
   return typeof radius === 'string' ? radius : null;
 }
 
-function designFromBranding(b: BrandingProfile | undefined): ReferenceDesign {
+export function designFromBranding(b: BrandingProfile | undefined): ReferenceDesign {
   if (!b) return emptyDesign();
   const fontSizes = Object.fromEntries(Object.entries(b.typography?.fontSizes ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string' && !!e[1]));
   return { colors: colorsOf(b), fonts: fontsOf(b), fontSizes, radius: radiusOf(b), colorScheme: b.colorScheme ?? null, logo: b.logo ?? null };

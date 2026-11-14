@@ -10,7 +10,7 @@ import { beta, cli, defineAgent, inference, type JobContext, type JobProcess, Se
 import * as silero from '@livekit/agents-plugin-silero';
 import { SipClient } from 'livekit-server-sdk';
 import { VoiceApi } from './api.ts';
-import { businessName, instructions } from './prompt.ts';
+import { greeting, instructions } from './prompt.ts';
 import { createTools, newCallState } from './tools.ts';
 
 export const AGENT_NAME = 'anypress-receptionist';
@@ -87,7 +87,7 @@ export default defineAgent({
     });
 
     await session.start({ agent, room: ctx.room });
-    session.generateReply({ instructions: `Greet the caller: "Thanks for calling ${businessName(line)}, how can I help?" Say only that.` });
+    session.generateReply({ instructions: `Greet the caller: "${greeting(line)}" Say only that.` });
   },
 });
 

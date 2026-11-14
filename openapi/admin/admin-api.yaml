@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: WaaS Provisioning API - admin
+  title: AnyPress API - admin
   version: 0.1.0
   description: >-
     Admin endpoints for the dashboard (waas-api-plu). The version
@@ -435,7 +435,16 @@ paths:
                 subdomain:
                   type: string
                   pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
-                  description: The site answers on <subdomain>.<platform domain>. Without it, only on its generated base domain
+                  description: The site answers on <subdomain>.<platform domain>. Without it, on <the name as an address>.<platform domain> when that is free, else only on its generated base domain
+                siteTypes:
+                  type: array
+                  minItems: 1
+                  items: { type: string, enum: [website, bookings, online-store, community, everything] }
+                  description: The site types it sells; its other plans are taken off the shop on its first visit. Without it, every type
+                audiences:
+                  type: array
+                  items: { type: string, enum: [shops, specialty, courses, associations, churches, locations, freelancers, software] }
+                  description: The kinds of customers it has Who we help pages for; an empty list removes them. Without it, every kind
       responses:
         '201':
           description: The storefront, being built
@@ -500,6 +509,36 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{productId}/clean-dashboard:
+    parameters:
+      - $ref: '#/components/parameters/productId'
+    put:
+      operationId: setCleanDashboard
+      summary: Turn the clean wp-admin Dashboard home on or off for the product's stores
+      description: >-
+        On (the default), the product's stores show their own wp-admin Dashboard home (links to edit the site,
+        what comes with the site type, the plan) instead of WordPress's Welcome, Site Health Status, Quick Draft,
+        At a Glance, Activity and Events and News boxes (AnyPress Client 2.28.0+). Off, WordPress's boxes come
+        back. Written to the product's running stores at once, without a restart. A seller or reseller can set it
+        for their own product.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [on]
+              properties:
+                on: { type: boolean }
+      responses:
+        '200':
+          description: The product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/products/{productId}:
     parameters:
       - $ref: '#/components/parameters/productId'
@@ -1641,6 +1680,69 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /admin/tenants/{id}/backups:
+    post:
+      operationId: adminCreateTenantBackup
+      summary: Take a backup of a store now
+      description: >-
+        Takes a full backup of the store's files and database now (reason manual), as POST
+        /v1/tenants/backups does. The backup is Pending until the job finishes; the store keeps
+        running meanwhile. For any store the caller may see. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The backup was scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tenantId, externalId, backupId]
+                properties:
+                  tenantId: { type: string, format: uuid }
+                  externalId: { type: string }
+                  backupId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tenants/{id}/download:
+    get:
+      operationId: adminGetTenantDownload
+      summary: The store's newest copy to download
+      description: >-
+        "Download my site": the newest copy of the whole store (WordPress, its files, its database and how to
+        restore it) made in the last 7 days, in any status, or null. A Done copy carries a link that works for an
+        hour. For any store the caller may see.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The newest copy, or null
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteDownloadResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: adminCreateTenantDownload
+      summary: Make a copy of the store to download
+      description: >-
+        Starts a new copy of the whole store as a plain WordPress archive that restores on any host. It is Pending
+        until it is made (minutes, depending on the site's size); the store keeps running meanwhile. When a copy is
+        already being made, or one was made in the last 10 minutes, that one is returned instead. Copies are kept
+        7 days. 400 when the tenant is Removing or Failed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The copy being made, or the one just made
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteDownloadResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /admin/tenants/{id}/restore:
     post:
       operationId: adminRestoreTenant
@@ -1874,7 +1976,7 @@ paths:
       operationId: adminListDbBackups
       summary: Off-site backups of the API's own database
       description: >-
-        The status /health reports, plus each backup attempt, newest first, with its object key in
+        The backup status the overview reports (/health shows only status and stale), plus each backup attempt, newest first, with its object key in
         the bucket and the error when it failed. prunedAt is set once retention deleted the object.
         Restore runbook: docs/db-backups.md.
       parameters:
@@ -1990,7 +2092,8 @@ paths:
       summary: Apply to sell websites on the platform
       description: >-
         Public, no authentication: the marketing site's application form sends it. Nothing is made until
-        the platform admin approves it. The applicant gets an email saying it arrived, and the addresses in
+        the platform admin approves it. The applicant gets an email saying it arrived and asking them to book a
+        short set-up call (SELLER_CALL_URL, else they reply with times), and the addresses in
         APPLICATION_NOTIFY_EMAILS get one linking to it on the dashboard. One application per email address
         may wait at a time, and the API takes a limited number per hour from everyone together.
       security: []
@@ -2402,6 +2505,159 @@ paths:
               schema: { $ref: '#/components/schemas/WebhookDelivery' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/prospect-demos:
+    get:
+      operationId: adminListProspectDemos
+      summary: Businesses with a branded demo
+      description: >-
+        Businesses AnyPress may contact, each with a private branded demo made from its own website
+        (docs/prospect-demos.md), by priority. Platform admin only: 404 at /account.
+      responses:
+        '200':
+          description: Every prospect demo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProspectDemo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminAddProspectDemos
+      summary: Add businesses and read their websites
+      description: >-
+        Adds up to 200 businesses. Each with a website is read in the background (statusCode 0 until it is
+        done); one without a website is saved with statusCode 2. A business whose website is already on the
+        list is skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prospects]
+              properties:
+                prospects:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    allOf:
+                      - $ref: '#/components/schemas/ProspectDemoSettings'
+                      - type: object
+                        required: [company, route, siteType]
+                        properties:
+                          website: { type: string, nullable: true, maxLength: 2000 }
+      responses:
+        '201':
+          description: What was added, and what was skipped
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, skipped]
+                properties:
+                  created:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProspectDemo' }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      required: [company, reason]
+                      properties:
+                        company: { type: string }
+                        reason: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/prospect-demos/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: adminGetProspectDemo
+      summary: One prospect demo
+      responses:
+        '200':
+          description: The prospect demo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectDemo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: adminUpdateProspectDemo
+      summary: Change a prospect's route, site type, kit or notes
+      description: Fields left out stay as they are. The website can't be changed; remove the prospect and add it again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProspectDemoSettings' }
+      responses:
+        '200':
+          description: The prospect demo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectDemo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminDeleteProspectDemo
+      summary: Remove a prospect and its demo
+      description: Removes the business, its copied logo and photos; its demo link stops working.
+      responses:
+        '204': { description: Removed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/prospect-demos/{id}/gather:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: adminGatherProspectDemo
+      summary: Read the website again
+      description: For a website that changed or a read that failed. The demo keeps its old look until the new read is done.
+      responses:
+        '202':
+          description: Reading (statusCode 0)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProspectDemo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /demos/prospects/{code}:
+    parameters:
+      - { name: code, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getProspectDemo
+      summary: A branded demo's settings (public)
+      description: >-
+        What anypress.io/try?for=<code> reads to brand its WordPress Playground demo. No key: the private
+        code is the key. 404 until the website has been read. Sent with X-Robots-Tag noindex.
+      security: []
+      responses:
+        '200':
+          description: The demo's settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicProspectDemo' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /demos/prospects/{code}/files/{name}:
+    parameters:
+      - { name: code, in: path, required: true, schema: { type: string } }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getProspectDemoFile
+      summary: A branded demo's logo or photo (public)
+      description: A copy of an image from the business's website, which any site may load.
+      security: []
+      responses:
+        '200':
+          description: The image
+          content:
+            image/*:
+              schema: { type: string, format: binary }
         '404': { $ref: '#/components/responses/NotFound' }
   /admin/resellers:
     get:
@@ -2846,7 +3102,8 @@ paths:
       operationId: adminResellerBill
       summary: A month's wholesale bill
       description: >-
-        Each store is charged its size's monthly list price less the wholesale discount, for the share
+        Each store is charged its site type's monthly list price for its size (the shop's prices, or the
+        reseller's own price per size when it has no site type with a public price) less the wholesale discount, for the share
         of the calendar month (UTC) it was live: a store live all month pays the whole monthly price,
         one live 10 days of a 30-day month a third. Amounts are US cents, rounded per line.
       parameters:
@@ -3082,6 +3339,130 @@ components:
       description: Plugin updates are not configured (RELEASES_S3_BUCKET unset)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    ProspectDemoSettings:
+      type: object
+      properties:
+        company: { type: string, maxLength: 200 }
+        route:
+          type: string
+          enum: [seller, reseller, affiliate, chamber, owner]
+          description: >-
+            What the demo shows them: seller, a client's shop with "Made by" credit; reseller, one of their
+            locations; affiliate, a site for the kind of business their customers run; chamber, their own
+            member site; owner, their own site.
+        siteType: { type: string, enum: [website, bookings, online-store, community, everything, store, highlevel] }
+        kit: { type: string, nullable: true, maxLength: 40, description: 'The AnyPress theme kit, such as parcel' }
+        label: { type: string, nullable: true, maxLength: 100, description: 'The group on the board, such as Agency' }
+        city: { type: string, nullable: true, maxLength: 100 }
+        priority: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        notes: { type: string, nullable: true, maxLength: 4000 }
+    ProspectBrand:
+      type: object
+      description: >-
+        What was read from the business's website. Images are copies kept by AnyPress, at links any site can
+        load. A price is given only where the website prints one.
+      required: [source, name, tagline, about, phone, city, address, hours, colors, fonts, colorScheme, logo, photos, items]
+      properties:
+        source: { type: string }
+        name: { type: string, nullable: true }
+        tagline: { type: string, nullable: true }
+        about: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        hours: { type: array, items: { type: string } }
+        colors: { type: object, additionalProperties: { type: string } }
+        fonts:
+          type: object
+          required: [heading, body]
+          properties:
+            heading: { type: string, nullable: true }
+            body: { type: string, nullable: true }
+        site:
+          type: object
+          description: What their website is now. Missing on prospects read before it was recorded.
+          required: [platform, features]
+          properties:
+            platform: { type: string, nullable: true, description: The website builder it runs on, when the page shows it., example: Wix }
+            features:
+              type: array
+              items: { type: string, enum: [shop, bookings, events, members, blog, donations] }
+        fontFaces:
+          type: array
+          description: The heading and body fonts' files, regular (400) and bold (700), when the font is open-licence. Empty when it isn't, and the demo keeps its kit's fonts.
+          items:
+            type: object
+            required: [family, category, weight, file]
+            properties:
+              family: { type: string, example: Poppins }
+              category: { type: string, description: CSS generic family to fall back to, example: sans-serif }
+              weight: { type: integer, enum: [400, 700] }
+              file: { type: string, format: uri, description: A woff2 file anyone can load, like the images. }
+        colorScheme: { type: string, nullable: true, enum: [light, dark, null] }
+        logo: { type: string, nullable: true }
+        photos: { type: array, items: { type: string } }
+        items:
+          type: array
+          items:
+            type: object
+            required: [name, description, price, image]
+            properties:
+              name: { type: string }
+              description: { type: string, nullable: true }
+              price: { type: string, nullable: true }
+              image: { type: string, nullable: true }
+    PublicProspectDemo:
+      type: object
+      required: [company, route, siteType, kit, brand]
+      properties:
+        company: { type: string }
+        route: { type: string }
+        siteType: { type: string }
+        kit: { type: string, nullable: true }
+        brand:
+          anyOf: [{ $ref: '#/components/schemas/ProspectBrand' }, { type: object, nullable: true, enum: [null] }]
+    ProspectDemo:
+      type: object
+      required: [id, code, company, website, route, siteType, kit, label, city, priority, notes, statusCode, error, creditsUsed, brand, createdAt, gatheredAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, description: 'The private code in the demo link, anypress.io/try?for=<code>' }
+        company: { type: string }
+        website: { type: string, nullable: true }
+        route: { type: string }
+        siteType: { type: string }
+        kit: { type: string, nullable: true }
+        label: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        priority: { type: integer, nullable: true }
+        notes: { type: string, nullable: true }
+        statusCode: { type: integer, enum: [0, 1, 2], description: '0 reading the website, 1 ready, 2 could not be read (see error)' }
+        error: { type: string, nullable: true }
+        creditsUsed: { type: integer, description: 'Firecrawl credits spent on this business so far' }
+        brand:
+          anyOf: [{ $ref: '#/components/schemas/ProspectBrand' }, { type: object, nullable: true, enum: [null] }]
+        createdAt: { type: string, format: date-time }
+        gatheredAt: { type: string, format: date-time, nullable: true }
+    SiteDownloadResult:
+      type: object
+      additionalProperties: false
+      required: [download]
+      properties:
+        download:
+          nullable: true
+          type: object
+          additionalProperties: false
+          required: [id, statusCode, statusName, sizeBytes, dateCreated, dateDone, expiresAt, fileName, url]
+          properties:
+            id: { type: string, format: uuid }
+            statusCode: { type: integer, enum: [0, 1, 2] }
+            statusName: { type: string, enum: [Pending, Done, Failed] }
+            sizeBytes: { type: integer, nullable: true }
+            dateCreated: { type: string, format: date-time }
+            dateDone: { type: string, format: date-time, nullable: true }
+            expiresAt: { type: string, format: date-time, description: When the copy is deleted }
+            fileName: { type: string, example: bakery.example-2026-11-11.zip }
+            url: { type: string, nullable: true, description: A link to the copy that works for an hour, once it is Done }
     NotificationList:
       type: object
       required: [unread, readUntil, items]
@@ -3175,9 +3556,21 @@ components:
           pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
           description: With wantsStorefront, the storefront's address <subdomain>.<platform domain>. Must be free
         highLevelAgency: { type: boolean, description: They run a HighLevel agency, and will make sites from its sub-accounts with the AnyPress app. False when left out }
+        siteTypes:
+          type: array
+          minItems: 1
+          nullable: true
+          items: { type: string, enum: [website, bookings, online-store, community, everything] }
+          description: The kinds of sites they sell. Left out or null when they aren't sure yet, which keeps every type on their storefront
+        siteTypesOther: { type: string, maxLength: 300, description: Other kinds of sites they make, in their words }
+        audiences:
+          type: array
+          items: { type: string, enum: [shops, specialty, courses, associations, churches, locations, freelancers, software] }
+          description: The kinds of customers they serve; their storefront gets a Who we help page for each. Empty or left out when none fits
+        audiencesOther: { type: string, maxLength: 300, description: Other customers they serve, in their words }
     Application:
       type: object
-      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, highLevelAgency, status, productId, resellerId, dateDecided, dateCreated]
+      required: [id, name, email, business, website, clients, expectedSites, wantsStorefront, storefrontSubdomain, highLevelAgency, siteTypes, siteTypesOther, audiences, audiencesOther, status, productId, resellerId, dateDecided, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -3189,6 +3582,10 @@ components:
         wantsStorefront: { type: boolean }
         storefrontSubdomain: { type: string, nullable: true }
         highLevelAgency: { type: boolean, description: They said they run a HighLevel agency }
+        siteTypes: { type: array, nullable: true, items: { type: string }, description: The kinds of sites they sell; null when they weren't sure }
+        siteTypesOther: { type: string, nullable: true }
+        audiences: { type: array, items: { type: string }, description: The kinds of customers they serve }
+        audiencesOther: { type: string, nullable: true }
         status: { type: string, enum: [pending, approved, declined] }
         productId: { type: string, format: uuid, nullable: true, description: The product made when it was approved }
         resellerId: { type: string, format: uuid, nullable: true, description: The reseller account made when it was approved as a reseller }
@@ -3349,7 +3746,7 @@ components:
     Product:
       type: object
       additionalProperties: false
-      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, followsProductId, highlevelAgency, dateCreated]
+      required: [id, name, tenantCount, maxTenants, versionCount, productionVersionId, resellerId, resellerName, followsProductId, highlevelAgency, cleanDashboard, dateCreated]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -3365,6 +3762,7 @@ components:
           nullable: true
           description: 'The storefront whose new production versions this one gets (it started from it); null for none'
         highlevelAgency: { type: boolean, description: "A HighLevel agency's storefront: its tenants made without a site type get the highlevel one" }
+        cleanDashboard: { type: boolean, description: "Its stores show their own wp-admin Dashboard home instead of WordPress's default boxes (setCleanDashboard)" }
         dateCreated: { type: string, format: date-time }
     StoreDays:
       type: object
@@ -3389,7 +3787,7 @@ components:
         listPriceCents:
           type: object
           additionalProperties: false
-          description: 'Monthly list price of one store of each size, in US cents (default 1200, 2400, 4800)'
+          description: "Monthly list price of one store of each size, in US cents (default 1200, 2400, 4800), for stores with no site type with a public price (such as HighLevel sites); other stores are billed their site type's shop price"
           properties:
             small: { type: integer, minimum: 0, maximum: 1000000 }
             medium: { type: integer, minimum: 0, maximum: 1000000 }
@@ -3483,18 +3881,24 @@ components:
         wholesalePercent: { type: integer }
         lines:
           type: array
-          description: One per storefront and store size
+          description: One per storefront, store size and site type
           items:
             type: object
             additionalProperties: false
-            required: [productId, name, size, storeDays, stores, listPriceCents, wholesalePriceCents, amountCents]
+            required: [productId, name, size, siteType, storeDays, stores, listPriceCents, wholesalePriceCents, amountCents]
             properties:
               productId: { type: string, format: uuid }
               name: { type: string, nullable: true, description: 'null once the storefront is deleted' }
               size: { type: string, enum: [small, medium, large] }
+              siteType:
+                type: string
+                nullable: true
+                description: "The stores' site types (comma-separated keys of the template's roles.json), or null when they have none"
               storeDays: { type: number }
               stores: { type: number, description: 'Store-months: store-days over the days in the month' }
-              listPriceCents: { type: integer }
+              listPriceCents:
+                type: integer
+                description: "Monthly list price of one store: its site type's shop price for its size (Small Website 1200, Bookings 1900, Store 2900, Community 4900, Everything 7900; Medium 2x, Large 4x), or the reseller's own price for the size when it has no site type with a public price"
               wholesalePriceCents: { type: integer, description: 'Monthly price of one store after the discount' }
               amountCents: { type: integer }
         domainLines:
@@ -4083,6 +4487,20 @@ components:
         size: { type: string, enum: [small, medium, large] }
         siteTypes: { type: array, items: { type: string }, description: "What the store was sold as, from its ANYPRESS_TENANT_ROLES constant: site types from the template's roles.json (website, bookings, online-store, community, everything). Empty when unknown." }
         keepsOwnCode: { type: boolean, description: A site moved in from another host keeps its own plugins and themes; versions don't replace them. }
+        care:
+          type: object
+          nullable: true
+          description: The care package bought for the store on the shop and this month's care time (PUT /v1/tenants/care); null without care.
+          additionalProperties: false
+          required: [package, minutes, used, left, extra, month]
+          properties:
+            package: { type: string }
+            minutes: { type: integer, description: Minutes of changes a month. }
+            used: { type: integer, description: Minutes used this month. }
+            left: { type: integer, description: Minutes left this month. }
+            extra: { type: integer, description: Extra minutes bought, which never expire. }
+            answer: { type: string, description: How soon requests are answered. }
+            month: { type: string, description: YYYY-MM }
         moveIn:
           type: object
           description: Only for a store made to move a site in (docs/site-imports.md). It waits for the site while startedAt is null.

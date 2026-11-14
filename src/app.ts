@@ -7,6 +7,7 @@ import { accountRoutes, sessionAuth, type SessionCaller } from './accounts.ts';
 import { publicApplicationRoutes } from './applications.ts';
 import type { Auth } from './auth.ts';
 import { publicBrandingRoutes } from './branding.ts';
+import { PRICE_LIST } from './pricing.ts';
 import { dashboardHostProduct } from './dashboarddomains.ts';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
@@ -17,20 +18,26 @@ import { isUuid } from './http.ts';
 import type { PlacesSearch } from './prospects.ts';
 import { APP_PATHS, highLevelRoutes } from './highlevel.ts';
 import { authenticateKey } from './keys.ts';
+import { callerAddress, recordWrongKey, tooManyWrongKeys, WRONG_KEY_RETRY_SECONDS } from './keyattempts.ts';
 import type { CpuWatch } from './cpuwatch.ts';
-import { checkHealth } from './health.ts';
+import { checkHealth, publicHealth } from './health.ts';
 import { iconRoutes } from './icon.ts';
 import { mcpRoutes } from './mcp.ts';
-import { isAppsResource, oauthRoutes, verifyAccessToken, type TokenOwner } from './oauth.ts';
+import { isAppsResource, oauthRoutes, publicBase, verifyAccessToken, type TokenOwner } from './oauth.ts';
 import { assistantUsageRoutes } from './assistant-usage.ts';
+import { demoAssistantRoutes } from './demo-assistant.ts';
 import { voiceRoutes } from './voice.ts';
 import { buildPublicSpec, docsPage } from './publicspec.ts';
 import { requestLogger } from './requestlog.ts';
+import { setClientIp } from './clientip.ts';
 import { partnerRoutes, PARTNER_ONLY, SHARED_TEMPLATES } from './routes/partner.ts';
 import { pluginChoiceRoutes } from './pluginchoices.ts';
 import type { WpOrg } from './wporg.ts';
+import { demoDraftRoutes } from './demodrafts.ts';
+import { publicProspectDemoRoutes } from './prospectdemos.ts';
 import { importRoutes } from './imports.ts';
 import { referenceRoutes } from './references.ts';
+import { siteDownloadRoutes } from './sitedownloads.ts';
 import { adminRoutes } from './routes/admin.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
 import type { ReleaseStore } from './releases.ts';
@@ -91,6 +98,50 @@ export type AppEnv = {
   Variables: { productId: string; apiKeyId?: string; userId?: string; storeTenantId?: string; sessionCaller?: SessionCaller; scopeProductId?: string; resellerId?: string; appScopes?: string[] };
 };
 
+/** The sign-in parameters that say where to send the browser afterwards. */
+const REDIRECT_PARAMS = ['callbackURL', 'newUserCallbackURL', 'errorCallbackURL', 'redirectTo', 'updateCallbackURL'];
+
+/**
+ * The first redirect parameter (in the query or a JSON or form body) that points off `hosts`, or null. A path
+ * ("/stores") is fine; so is a full address on one of `hosts`.
+ */
+async function offSiteRedirect(request: Request, hosts: string[]): Promise<string | null> {
+  const url = new URL(request.url);
+  const body = request.method === 'POST' ? await formOrJson(request) : {};
+  for (const name of REDIRECT_PARAMS) {
+    const values: unknown[] = [...url.searchParams.getAll(name), body[name]];
+    if (values.some((value) => !onSite(value, hosts))) return name;
+  }
+  return null;
+}
+
+/** A request's JSON or form body as an object; empty for anything else. */
+async function formOrJson(request: Request): Promise<Record<string, unknown>> {
+  const type = request.headers.get('content-type') ?? '';
+  const text = await request.text().catch(() => '');
+  if (type.includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
+  if (!type.includes('application/json')) return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Whether a redirect value stays here: empty, a path, or an http(s) address on one of `hosts`. */
+function onSite(value: unknown, hosts: string[]): boolean {
+  if (value === undefined || value === null || value === '') return true;
+  // "//evil.example" and "/\evil.example" are addresses on another host to a browser.
+  return typeof value === 'string' && (/^\/(?![/\\])/.test(value) || onHosts(value, hosts));
+}
+
+/** Whether `value` is an http(s) address on one of `hosts`. */
+function onHosts(value: string, hosts: string[]): boolean {
+  const target = URL.canParse(value) ? new URL(value) : null;
+  return /^https?:$/.test(target?.protocol ?? '') && hosts.includes(target!.host.toLowerCase());
+}
+
 /** The largest request body the API reads. */
 const MAX_BODY_BYTES = 25 * 1024 ** 2;
 
@@ -110,13 +161,13 @@ export function createApp(deps: Deps) {
   );
 
   // For uptime monitoring; outside /v1 and unauthenticated. 503 when Postgres or
-  // the job queue doesn't answer within 3 seconds. `dbBackup` reports the last off-site database
-  // backup (no object keys or errors here; those are in /admin/db-backups) and never causes a 503.
+  // the job queue doesn't answer within 3 seconds. Only the flags monitors alert on (src/health.ts publicHealth);
+  // backup times, failed-job counts and CPU figures are in /admin/overview. A stale backup never causes a 503.
   iconRoutes(app);
 
   app.get('/health', async (c) => {
     const health = await checkHealth(deps.pool, deps.boss, !!deps.config.dbBackup, !!deps.config.restoreTest, deps.cpuWatch);
-    return c.json(health, health.ok ? 200 : 503);
+    return c.json(publicHealth(health), health.ok ? 200 : 503);
   });
 
   // The public API reference, unauthenticated like /health. Built on first request, once every
@@ -151,15 +202,27 @@ export function createApp(deps: Deps) {
     const mode = c.req.header('x-forwarded-sec-fetch-mode');
     if (mode && /^[a-z-]{1,20}$/.test(mode)) headers.set('sec-fetch-mode', mode);
     headers.delete('x-forwarded-sec-fetch-mode');
-    return deps.auth.handler(new Request(c.req.raw, { headers }));
+    setClientIp(headers, deps.config.adminToken);
+    // Better Auth trusts every origin here (its allowedHosts is '*', so sellers' addresses resolve), so where a
+    // sign-in sends the person afterwards is checked here: a path, or an address on the host this request is for.
+    const request = new Request(c.req.raw, { headers });
+    const away = await offSiteRedirect(request.clone(), [own.host, live ?? own.host]);
+    if (away) return c.json({ statusCode: 400, message: `${away} must be a path on this dashboard` }, 400);
+    return deps.auth.handler(request);
   });
   // Applications to sell on the platform, from the marketing site's form (src/applications.ts). No sign-in.
   app.route('/applications', publicApplicationRoutes(deps));
   // Sites moved in from another host: the AnyPress Export plugin, holding an import code (src/imports.ts). No API key,
   // and not in the request log, which would keep the code.
   app.route('/imports', importRoutes(deps));
+  // Demos people build on Playground, saved for their checkout (src/demodrafts.ts). No API key.
+  app.route('/demos', demoDraftRoutes(deps));
+  // Branded demos made for businesses AnyPress may contact (src/prospectdemos.ts). No API key: the code is the key.
+  app.route('/demos/prospects', publicProspectDemoRoutes(deps, (c) => publicBase(c, deps.config.publicUrl)));
   // Dashboard logos and icons (src/branding.ts). Public: the sign-in page shows them.
   app.route('/branding', publicBrandingRoutes(deps));
+  // The one price list (src/pricing.ts). Public: anypress.io and the dashboard show it.
+  app.get('/pricing', (c) => c.json(PRICE_LIST, 200, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300' }));
 
   app.use('/account/*', requestLogger(deps.pool, 'account', logDays));
   app.route('/account', accountRoutes(deps));
@@ -205,8 +268,13 @@ export function createApp(deps: Deps) {
     // The key is an id, kept in the request log even when the secret is wrong; anything else typed
     // as the username (a pasted secret, say) is not.
     if (isUuid(key)) c.set('apiKeyId', key);
+    const ip = callerAddress(c.req.header('cf-connecting-ip'));
+    if (key && tooManyWrongKeys(ip)) {
+      return c.json({ statusCode: 429, message: 'Too many wrong API keys from this address. Try again in a few minutes' }, 429, { 'Retry-After': String(WRONG_KEY_RETRY_SECONDS) });
+    }
     const caller = key ? await authenticateKey(deps.pool, key, decoded.slice(colon + 1)) : null;
     if (!caller) {
+      if (key) recordWrongKey(ip);
       // HighLevel shows this message in the workflow's history: say what the install is missing.
       if (!match && APP_PATHS.test(c.req.path)) {
         const message = !appKey
@@ -258,11 +326,15 @@ export function createApp(deps: Deps) {
   referenceRoutes(app, deps);
   // The AnyPress app for HighLevel: its actions, trigger and install (src/highlevel.ts).
   highLevelRoutes(app, deps);
+  // "Download my site" from a store's own wp-admin, signed with its site key (src/sitedownloads.ts).
+  siteDownloadRoutes(app, deps);
 
   // The MCP server and the OAuth sign-in MCP clients use for it (mcp/README.md).
   oauthRoutes(app, deps);
   // The website assistant's monthly allowance per store (src/assistant-usage.ts).
   assistantUsageRoutes(app, deps);
+  // The assistant inside a demo on anypress.io/try (src/demo-assistant.ts). Public, capped per demo.
+  demoAssistantRoutes(app, deps);
   // The phone receptionist agent's calls about a store, by the number that was called (src/voice.ts).
   voiceRoutes(app, deps);
   mcpRoutes(app, deps);

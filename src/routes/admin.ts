@@ -1,8 +1,10 @@
+import { careOf } from '../care.ts';
 import { voiceAdminRoutes } from '../voice.ts';
 import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebhook } from '../prospectcrm.ts';
 import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
 import { addAutomation, automationInput, listAutomations } from '../outreachautomation.ts';
 import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
+import { adminProspectDemoRoutes } from '../prospectdemos.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
@@ -20,12 +22,13 @@ import { setHighLevelAgency, siteLinkOf } from '../highlevel.ts';
 import { listHostUpdates, queueHostUpdates } from '../hostupdates.ts';
 import { importCode, importDetail, renewImport, reprintSite, startReprintCopy } from '../imports.ts';
 import { mailUsage } from '../mailcount.ts';
-import { getMailDomain, removeMailDomain, setMailDomain } from '../maildomains.ts';
+import { getMailDomain, platformMailDomains, removeMailDomain, setMailDomain } from '../maildomains.ts';
 import { enqueue, QUEUE, type JobData } from '../queue.ts';
 import { addApiKey, forgetApiKey, listApiKeys, parseGraceHours, parseLabel, revokeApiKey, rotateApiKey, wantsForever } from '../keys.ts';
 import { isPluginSlug, manifestKey, parseManifest, RELEASE_VERSION } from '../releases.ts';
 import { publicBase } from '../oauth.ts';
 import { adminResellerRoutes } from '../resellers.ts';
+import { CLEAN_DASHBOARD_OPTION } from '../provisioner/provisioner.ts';
 import { Status, statusName } from '../status.ts';
 import { createStorefront, getStorefront, type NewStorefront } from '../storefronts.ts';
 import { baseSnapshotService } from './basesnapshots.ts';
@@ -35,6 +38,7 @@ import { storeDomainConnect } from './domainconnect.ts';
 import { websiteSetup } from '../domainconnect.ts';
 import { buyDomain, listBoughtDomains, searchDomains, setAutoRenew, transferCode } from '../domainsales.ts';
 import { addTenantDomain, assertChangeable } from './domains.ts';
+import { adminSiteDownloadRoutes } from '../sitedownloads.ts';
 import { createTenant } from './tenants.ts';
 import { loadSetup } from '../setup.ts';
 import { sitePluginsOf } from '../siteplugins.ts';
@@ -324,6 +328,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/voice-lines', adminOnly);
   app.use('/voice-lines/*', adminOnly);
   app.use('/resellers/*', adminOnly);
+  app.use('/prospect-demos', adminOnly);
+  app.use('/prospect-demos/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
@@ -338,6 +344,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Reseller accounts: storefronts grouped under one partner, and their usage (src/resellers.ts).
   app.route('/resellers', adminResellerRoutes(deps));
+  // Branded demos for businesses AnyPress may contact (src/prospectdemos.ts). Platform admin only.
+  app.route('/prospect-demos', adminProspectDemoRoutes(deps, (c) => publicBase(c, config.publicUrl)));
 
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
@@ -505,6 +513,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       size: t.size,
       siteTypes: siteTypesOf(t.php_constants),
       keepsOwnCode: t.own_code,
+      // The care package bought for it on the shop, and this month's care time (src/care.ts); null without care.
+      care: careOf(t.care) ?? null,
       // A site moved in from another host (docs/site-imports.md): waiting while it has no startedAt.
       // The Migration Token only while the site can still be copied (not once it is live or being removed).
       ...(moveIn && {
@@ -663,6 +673,32 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       await enqueue(boss, client, { type: 'tenant.rollback', tenantId: id, backupId: body.backupId as string, ...(safetyBackupId ? { safetyBackupId } : {}) });
     });
     return c.json({ tenantId: id, externalId: tenant.external_id, backupId: body.backupId, safetyBackupId });
+  });
+
+  // "Download my site" (src/sitedownloads.ts): the store's newest copy, or a new one.
+  adminSiteDownloadRoutes(app, deps);
+
+  // Takes a backup of the store now (reason manual), as POST /v1/tenants/backups does: for any store the caller may
+  // see. The backup is Pending until the tenant.backup job finishes; the store stays as it is meanwhile.
+  app.post('/tenants/:id/backups', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    const { rows } = await pool.query(
+      'SELECT id, product_id, external_id, status FROM tenants WHERE id = $1 AND ($2::uuid IS NULL OR product_id = $2)',
+      [id, scopedProduct(c)],
+    );
+    const tenant = rows[0];
+    if (!tenant) throw notFound(`Tenant ${id} not found`);
+    assertChangeable(tenant);
+    const backupId = randomUUID();
+    await withTransaction(pool, async (client) => {
+      await client.query(
+        "INSERT INTO tenant_backups (id, product_id, tenant_id, external_id, reason) VALUES ($1, $2, $3, $4, 'manual')",
+        [backupId, tenant.product_id, id, tenant.external_id],
+      );
+      await enqueue(boss, client, { type: 'tenant.backup', tenantId: id, backupId });
+    });
+    return c.json({ tenantId: id, externalId: tenant.external_id, backupId });
   });
 
   // Makes a site moved in live (docs/site-imports.md), as POST /v1/tenants/go-live does: for any store the caller may
@@ -830,7 +866,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     if (typeof body?.domainName !== 'string' || !body.domainName.trim()) throw badRequest('domainName is required');
     const from = config.coolify?.mail?.from;
     if (!from) throw badRequest('Stores send no email: STORE_SMTP_PASSWORD is not set on the API');
-    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, from) });
+    return c.json({ mailDomain: await setMailDomain(pool, config.sendingDomains, tenant.id, body.domainName, platformMailDomains(config, from)) });
   });
 
   app.get('/tenants/:id/domain-connect', async (c) => {
@@ -982,7 +1018,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   async function products(id: string | null) {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, p.highlevel_agency, r.name AS reseller_name,
+      `SELECT p.id, p.name, p.created_at, p.max_tenants, p.reseller_id, p.follows_product_id, p.highlevel_agency, p.clean_dashboard, r.name AS reseller_name,
          (SELECT count(*)::int FROM tenants t WHERE t.product_id = p.id) AS tenant_count,
          (SELECT count(*)::int FROM versions v WHERE v.product_id = p.id) AS version_count,
          (SELECT v.id FROM versions v WHERE v.product_id = p.id AND v.is_production) AS production_version_id
@@ -1001,6 +1037,7 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       resellerName: p.reseller_name,
       followsProductId: p.follows_product_id,
       highlevelAgency: p.highlevel_agency,
+      cleanDashboard: p.clean_dashboard,
       dateCreated: iso(p.created_at),
     }));
   }
@@ -1038,6 +1075,30 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       }
       await pool.query('UPDATE products SET max_tenants = $2 WHERE id = $1', [productId, max]);
     }
+    return c.json((await products(productId))[0]);
+  });
+
+  // The wp-admin Dashboard home on the storefront's stores (AnyPress Client 2.28.0+): on, the store's own home in
+  // place of WordPress's Welcome, Site Health, Quick Draft, At a Glance, Activity and Events boxes; off, WordPress's
+  // boxes. The seller (or reseller) decides for their own stores. Written to the stores running now as an option,
+  // without a restart; a store built, restored or rolled back later gets it from its job (src/jobs.ts).
+  app.put('/products/:productId/clean-dashboard', async (c) => {
+    const productId = await product(c);
+    const body = (await readJson(c)) as { on?: unknown } | null;
+    if (typeof body?.on !== 'boolean') throw badRequest('Send on: true or false');
+    const on = body.on;
+    await withTransaction(pool, async (client) => {
+      const { rows } = await client.query<{ clean_dashboard: boolean }>('SELECT clean_dashboard FROM products WHERE id = $1 FOR UPDATE', [productId]);
+      if (!rows[0] || rows[0].clean_dashboard === on) return;
+      await client.query('UPDATE products SET clean_dashboard = $2 WHERE id = $1', [productId, on]);
+      const stores = await client.query<{ id: string }>(
+        'SELECT id FROM tenants WHERE product_id = $1 AND NOT own_code AND status NOT IN ($2, $3)',
+        [productId, Status.Removing, Status.Failed],
+      );
+      for (const t of stores.rows) {
+        await enqueue(deps.boss, client, { type: 'tenant.update', tenantId: t.id, wpOptions: { [CLEAN_DASHBOARD_OPTION]: on ? 'on' : 'off' } });
+      }
+    });
     return c.json((await products(productId))[0]);
   });
 

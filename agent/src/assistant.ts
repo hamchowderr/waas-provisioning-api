@@ -7,6 +7,7 @@ import { Agent } from '@mastra/core/agent';
 import { AgentController, type Session } from '@mastra/core/agent-controller';
 import type { MastraCompositeStore } from '@mastra/core/storage';
 import { Memory } from '@mastra/memory';
+import type { ProcessInputStepArgs, ProcessOutputStepArgs } from '@mastra/core/processors';
 import { MASTRA_RESOURCE_ID_KEY } from '@mastra/core/request-context';
 import { type BusinessProfile, describeBusiness } from './business.js';
 import { createEditorTools, describeEditor, EDITOR_TOOLS, editorOf } from './editor.js';
@@ -22,6 +23,45 @@ export interface AssistantConfig {
   callSite: CallSite;
   /** At most this many steps per message. */
   maxSteps?: number;
+  /** Where each model step's tokens go (server.ts sends them to the API), so every store's real cost can be read. */
+  recordTokens?: RecordTokens;
+}
+
+/** Takes one model step's tokens for the website `resourceId`. */
+export type RecordTokens = (resourceId: string, tokens: StepTokens) => void;
+
+/** One model step's tokens, as the API keeps them: input not read from the cache, output, cache reads and writes. */
+export interface StepTokens {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/** What the owner reads when a message runs out of steps. */
+const STEP_LIMIT_ANSWER = 'That took more steps than one message allows. Tell me which part to do next and I will carry on.';
+
+/** Marks the end of a prompt part to keep in Anthropic's prompt cache. */
+const CACHED = { anthropic: { cacheControl: { type: 'ephemeral' as const } } };
+
+interface StepUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+}
+
+/** Mastra's input count includes the cache's reads and writes; the API keeps the three apart. */
+function stepTokens(usage: StepUsage | undefined): StepTokens {
+  const whole = (n: number | undefined) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.round(n) : 0);
+  const cacheReadTokens = whole(usage?.cachedInputTokens);
+  const cacheWriteTokens = whole(usage?.cacheCreationInputTokens);
+  return {
+    inputTokens: Math.max(0, whole(usage?.inputTokens) - cacheReadTokens - cacheWriteTokens),
+    outputTokens: whole(usage?.outputTokens),
+    cacheReadTokens,
+    cacheWriteTokens,
+  };
 }
 
 /** The site-editing part of the AnyPress connector's skill, so the assistant and the connector follow one guide. */
@@ -52,6 +92,13 @@ The guide below names the API's tools; here site_pages, site_styles, header_foot
 ${siteGuide()}`;
 
 const ASSISTANT_ID = 'website-assistant';
+
+/** A demo on anypress.io/try: its resource id starts with this (server.ts), and it has no website behind it. */
+const isDemo = (resourceId: string | undefined) => !!resourceId?.startsWith('demo:');
+
+const DEMO = `## This is a demo
+
+The owner is trying a website in a demo on their own computer, before buying it. There is no website for your site tools to reach: only editor_change works, on the page open in the editor beside you. Write and change that page for them; it's the quickest way to see what the website can be. If they ask for something editor_change can't do (another page, the menus, the site's colours or fonts, settings), say that in this demo you can only change the open page, and that once it's their website you can do the rest too. Don't call the other site tools, support or business_profile.`;
 
 /**
  * What the assistant knows about WordPress, loaded when a job needs it (Mastra skills: the model sees each one's
@@ -95,6 +142,7 @@ export function createAssistant(config: AssistantConfig) {
   };
 
   const tools = { ...createSiteTools(callSite), ...createEditorTools() };
+  const maxSteps = config.maxSteps ?? 12;
   const agent = new Agent({
     id: ASSISTANT_ID,
     name: 'Website assistant',
@@ -103,13 +151,41 @@ export function createAssistant(config: AssistantConfig) {
     instructions: async ({ requestContext }) => {
       const view = editorOf(requestContext);
       const resourceId = requestContext?.get(MASTRA_RESOURCE_ID_KEY) as string | undefined;
-      const about = resourceId ? describeBusiness(await businessOf(resourceId)) : '';
-      return [INSTRUCTIONS, about, view ? describeEditor(view) : ''].filter(Boolean).join('\n\n');
+      const demo = isDemo(resourceId);
+      const about = resourceId && !demo ? describeBusiness(await businessOf(resourceId)) : '';
+      // Anthropic's prompt cache: the tools and these instructions are the same for every website, and the business
+      // profile the same for every message on one website, so each is read back from the cache (about a tenth of
+      // the price) instead of paid in full on every model step. The open editor changes often, so it comes last.
+      return [
+        { role: 'system' as const, content: INSTRUCTIONS, providerOptions: CACHED },
+        ...(demo ? [{ role: 'system' as const, content: DEMO, providerOptions: CACHED }] : []),
+        ...(about ? [{ role: 'system' as const, content: about, providerOptions: CACHED }] : []),
+        ...(view ? [{ role: 'system' as const, content: describeEditor(view) }] : []),
+      ];
     },
     model: { id: `anthropic/${config.model}` as `anthropic/${string}`, apiKey: config.anthropicApiKey },
     tools,
     skills: SKILLS,
-    defaultOptions: { maxSteps: config.maxSteps ?? 12 },
+    // AgentController runs every message with its own step limit (1,000) and step callback, so ours are
+    // processors, which run on every model step either way. The last allowed step may only answer, not call a
+    // tool; a model that calls one anyway is stopped there.
+    inputProcessors: [
+      {
+        id: 'step-limit',
+        processInputStep: ({ stepNumber }: ProcessInputStepArgs) => (stepNumber >= maxSteps - 1 ? { toolChoice: 'none' as const } : {}),
+      },
+    ],
+    outputProcessors: [
+      {
+        id: 'record-tokens',
+        processOutputStep: ({ usage, requestContext, messageList, stepNumber, toolCalls, abort }: ProcessOutputStepArgs) => {
+          const resourceId = requestContext?.get(MASTRA_RESOURCE_ID_KEY) as string | undefined;
+          if (resourceId) config.recordTokens?.(resourceId, stepTokens(usage));
+          if (stepNumber >= maxSteps - 1 && toolCalls?.length) abort(STEP_LIMIT_ANSWER);
+          return messageList;
+        },
+      },
+    ],
   });
   const controller = new AgentController({
     id: 'website-assistant',
@@ -140,6 +216,8 @@ export function createAssistant(config: AssistantConfig) {
         await created.permissions.setForTool({ toolName: 'ask_user', policy: 'allow' });
         // An explicit "ask" outranks any grant, so a change always waits.
         for (const tool of CHANGE_TOOLS) await created.permissions.setForTool({ toolName: tool, policy: 'ask' });
+        // A demo has no website: its site tools are refused outright, so only the open editor can change.
+        if (isDemo(resourceId)) for (const tool of [...SAFE_TOOLS, ...CHANGE_TOOLS]) await created.permissions.setForTool({ toolName: tool, policy: 'deny' });
         return created;
       })();
       open.catch(() => sessions.delete(resourceId));

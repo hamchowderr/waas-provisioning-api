@@ -249,6 +249,23 @@ describe('rolling a live store back', () => {
   });
 });
 
+describe('backing a store up from the dashboard', () => {
+  it('takes a manual backup of a live store', async () => {
+    const store = await newTenant({ name: 'Backup Now Shop' });
+    const res = await admin('POST', `/admin/tenants/${store.id}/backups`, 200, {});
+    expect(res).toEqual({ tenantId: store.id, externalId: store.externalId, backupId: expect.any(String) });
+    await waitFor(async () => (await admin('GET', `/admin/tenants/${store.id}`)).backups.find((b: any) => b.id === res.backupId)?.statusCode === Status.Done);
+    const detail = await admin('GET', `/admin/tenants/${store.id}`);
+    expect(detail.backups.find((b: any) => b.id === res.backupId)).toMatchObject({ reason: 'manual' });
+    expect(t.provisioner.backups.get(res.backupId)?.storeId).toBe(store.id);
+  });
+
+  it('refuses a store that is not there', async () => {
+    await admin('POST', `/admin/tenants/${crypto.randomUUID()}/backups`, 404, {});
+    await admin('POST', '/admin/tenants/not-an-id/backups', 404, {});
+  });
+});
+
 describe('suspending, resuming and deleting a store', () => {
   it('suspends with a backup, resumes, and deletes, as the storefront can', async () => {
     const store = await newTenant({ name: 'Pause Shop' });
@@ -422,10 +439,10 @@ describe('admin versions and templates (any product)', () => {
       expect(list).toMatchObject({ status: 'failed', sizeBytes: 1234, stale: true, total: 2, pageSize: 1 });
       expect(list.items).toEqual([expect.objectContaining({ status: 'failed', objectKey: null, error: 'S3 PUT failed: HTTP 403' })]);
       expect((await admin('GET', '/admin/overview')).health.dbBackup).toMatchObject({ status: 'failed', sizeBytes: 1234 });
-      // /health shows the status but not keys or errors, and a failed backup is not a 503.
+      // /health shows the status but not times, sizes, keys or errors, and a failed backup is not a 503.
       const health = await t.call('GET', '/health', { auth: null });
       expect(health.status).toBe(200);
-      expect((await health.json()).dbBackup).toEqual({ status: 'failed', lastAttemptAt: expect.any(String), lastSuccessAt: expect.any(String), sizeBytes: 1234, stale: true });
+      expect((await health.json()).dbBackup).toEqual({ status: 'failed', stale: true });
     } finally {
       t.deps.config.dbBackup = undefined;
       await t.pool.query('DELETE FROM db_backups');

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 // Dashboard branding (docs/branding.md): a storefront's and a reseller's name, logo, icon, color and
 // support address, at /admin and /account, the public images, and the look GET /account hands the
 // dashboard. Admin answers are checked against openapi/admin/admin-api.yaml.
@@ -7,7 +8,7 @@ import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { createAuth, type AuthConfig } from '../src/auth.ts';
-import { demoZip } from '../src/branding.ts';
+import { demoZip, latestClientZip, latestDemoZip } from '../src/branding.ts';
 import { createAjv } from '../src/openapi.ts';
 import { setup, TEST_ADMIN_TOKEN, type TestContext } from './helpers.ts';
 
@@ -218,6 +219,46 @@ describe('demo page zips (public)', () => {
     expect(res.status).toBe(404);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
     expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('serves AnyPress Client’s latest stable release for the site-type blueprints, checked against its manifest', async () => {
+    const zip = Buffer.from('PK client zip');
+    const sha256 = createHash('sha256').update(zip).digest('hex');
+    const manifest = { slug: 'anypress-client', version: '2.25.0', zip: 'releases/anypress-client/2.25.0/anypress-client.zip', sha256, signature: `${'A'.repeat(86)}==` };
+    const releases = { getJson: async () => manifest, presignGet: async (key: string) => `https://r2.example/${key}` };
+    const asked: string[] = [];
+    const download = (async (url: string) => (asked.push(url), new Response(zip))) as typeof fetch;
+    expect((await latestClientZip(releases, download))?.toString()).toBe('PK client zip');
+    expect((await latestClientZip(releases, download))?.toString()).toBe('PK client zip');
+    expect(asked).toEqual(['https://r2.example/releases/anypress-client/2.25.0/anypress-client.zip']);
+    const tampered = { ...releases, getJson: async () => ({ ...manifest, version: '2.25.1', zip: 'releases/anypress-client/2.25.1/anypress-client.zip' }) };
+    expect(await latestClientZip(tampered, (async () => new Response('something else')) as typeof fetch)).toBeNull();
+    expect(await latestClientZip({ ...releases, getJson: async () => null }, download)).toBeNull();
+  });
+});
+
+describe('newest demo zips (public)', () => {
+  it('serves the newest theme and Blocks release under a name without a version', async () => {
+    const urls: string[] = [];
+    const download = (async (url: string) => {
+      urls.push(url);
+      return new Response('PK zip');
+    }) as typeof fetch;
+    const asked: string[] = [];
+    const latest = async (repo: string) => {
+      asked.push(repo);
+      return repo === 'anypress-theme' ? 'v0.21.0' : 'v0.5.1';
+    };
+    expect((await latestDemoZip('anypress-theme.zip', latest, download))?.toString()).toBe('PK zip');
+    expect((await latestDemoZip('anypress-theme.zip', latest, download))?.toString()).toBe('PK zip');
+    expect(await latestDemoZip('anypress-blocks.zip', latest, download)).not.toBeNull();
+    for (const bad of ['anypress-client.zip', 'anypress-theme', '../anypress-theme.zip']) expect(await latestDemoZip(bad, latest, download)).toBeNull();
+    // GitHub is asked once per repository while the tag is fresh, and each release is downloaded once.
+    expect(asked).toEqual(['anypress-theme', 'anypress-blocks']);
+    expect(urls).toEqual([
+      'https://github.com/hamchowderr/anypress-theme/releases/download/v0.21.0/anypress.zip',
+      'https://github.com/hamchowderr/anypress-blocks/releases/download/v0.5.1/anypress-blocks.zip',
+    ]);
   });
 });
 

@@ -56,6 +56,14 @@ describe('setup checklists', () => {
     expect(stepsOf(mine)).toMatchObject({ approved: 'done', 'shop-connected': 'todo', 'starting-site': 'todo', plans: 'not-reported', 'first-store': 'todo' });
     expect(mine.next).toBe('Shop connected');
     expect(mine.stuck).toBe(false);
+    expect(mine.steps.find((st: any) => st.key === 'shop-connected').detail).toBe('Install AnyPress Host on your shop and add your API key');
+  });
+
+  it('tells a seller with a ready-made storefront that it connects itself', async () => {
+    const seller = (await t.pool.query("INSERT INTO products (name) VALUES ('Ready-made seller') RETURNING id")).rows[0].id;
+    await t.pool.query("INSERT INTO api_keys (product_id, secret_hash, label) VALUES ($1, 'x', 'Ready-made storefront')", [seller]);
+    const mine = (await getSetup()).storefronts.find((s: any) => s.productId === seller);
+    expect(mine.steps.find((st: any) => st.key === 'shop-connected').detail).toBe('Your ready-made storefront connects itself a few minutes after it is built');
   });
 
   it('ticks steps as the shop connects, picks a version and builds a store on its own', async () => {

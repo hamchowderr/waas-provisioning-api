@@ -27,6 +27,8 @@ const BACKUP_MAX_AGE_HOURS = 48;
 const STALE_AFTER_HOURS = 50;
 /** A test still "running" after this long was cut off (the API restarted); it counts as failed. */
 const INTERRUPTED_AFTER_HOURS = 3;
+/** Finished tests this recent get their test store deleted again, in case the delete at the end of the test failed. */
+const LEFTOVER_DAYS = 7;
 /** No test started this long: queue one on startup (first deploy, or the API was down at night). */
 const DUE_AFTER_HOURS = 26;
 /** The last test failed and started this long ago: queue one on startup, so a deployed fix is checked the same day. */
@@ -52,7 +54,8 @@ export interface RestoreTestOutcome {
 }
 
 /**
- * Marks tests cut off mid-way as failed and deletes any test store they left. Returns how many.
+ * Marks tests cut off mid-way as failed and deletes any test store they left, or that a finished test
+ * failed to delete (deleteRestoreTest does nothing when there is none). Returns how many were cut off.
  */
 export async function cleanUpInterruptedTests(pool: Pool, provisioner: Provisioner): Promise<number> {
   const { rows } = await pool.query<{ id: string }>(
@@ -60,7 +63,12 @@ export async function cleanUpInterruptedTests(pool: Pool, provisioner: Provision
       WHERE status = 'running' AND started_at < now() - make_interval(hours => $1) RETURNING id`,
     [INTERRUPTED_AFTER_HOURS],
   );
-  for (const { id } of rows) await provisioner.deleteRestoreTest({ testId: id });
+  const { rows: finished } = await pool.query<{ id: string }>(
+    "SELECT id FROM restore_tests WHERE status <> 'running' AND started_at > now() - make_interval(days => $1)",
+    [LEFTOVER_DAYS],
+  );
+  const ids = new Set([...rows, ...finished].map((row) => row.id));
+  for (const testId of ids) await provisioner.deleteRestoreTest({ testId });
   return rows.length;
 }
 

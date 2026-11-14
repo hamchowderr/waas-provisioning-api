@@ -1,9 +1,11 @@
 // Ready-made storefronts (src/storefronts.ts): POST /admin/products/{id}/storefront builds a store of the
 // storefront product, connected to the API with a new key of the product it sells for.
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiKey } from '../src/keys.ts';
+import { STOREFRONT_BRAND_OPTION } from '../src/branding.ts';
 import { Status } from '../src/status.ts';
-import { STOREFRONT_KEY_LABEL, storefrontDns } from '../src/storefronts.ts';
+import { AUDIENCES, SITE_TYPES, STOREFRONT_KEY_LABEL, storefrontDns } from '../src/storefronts.ts';
 import { basic, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
 let t: TestContext;
@@ -65,6 +67,7 @@ describe('ready-made storefronts', () => {
       anypress_root_domain: 'waas.example',
       anypress_dns_a_records: '203.0.113.10',
       anypress_dns_cname_target: storesHost,
+      anypress_clean_dashboard: 'on',
     });
     const constants = store.phpConstants;
     expect(constants.ANYPRESS_API_BASE_URL).toEqual({ value: 'http://localhost', isPrivate: false });
@@ -80,9 +83,36 @@ describe('ready-made storefronts', () => {
     expect(await own.json()).toEqual([]);
   });
 
+  it("is named after the business when no address was chosen, unless that name is taken", async () => {
+    const first = await newProduct('Named seller');
+    const named = (await (await build(first.id, { name: 'Bright Pixel Studio', email: 'sam@pixel.example' })).json()) as any;
+    expect(named.domainName).toBe('bright-pixel-studio.waas.example');
+    const second = await newProduct('Same name seller');
+    const random = (await (await build(second.id, { name: 'Bright Pixel Studio!', email: 'jo@pixel.example' })).json()) as any;
+    expect(random.domainName).not.toBe('bright-pixel-studio.waas.example');
+    expect(random.domainName).toMatch(/\.waas\.example$/);
+  });
+
   it('builds only one per product', async () => {
     const res = await build(sellerId, { name: 'Again', email: 'owner@agency.example' });
     expect(res.status).toBe(409);
+  });
+
+  it("takes the seller's Branding: the look goes to the storefront as one option, and stays on the store", async () => {
+    const storefront = await get(sellerId);
+    const brand = () => JSON.parse(t.provisioner.stores.get(storefront.id)!.wpOptions[STOREFRONT_BRAND_OPTION] ?? 'null');
+    const res = await t.call('PUT', `/admin/products/${sellerId}/branding`, { body: { name: 'Jane Designs', color: '#1D4ED8', supportEmail: 'help@jane.example' }, auth: ADMIN });
+    expect(res.status).toBe(200);
+    // The store gets the look before the job marks the storefront Done, so wait for both.
+    await waitFor(async () => brand()?.name === 'Jane Designs' && (await get(sellerId)).statusCode === Status.Done);
+    expect(brand()).toMatchObject({ name: 'Jane Designs', color: '#1d4ed8', supportEmail: 'help@jane.example', logoUrl: null });
+    const { rows } = await t.pool.query('SELECT wp_options FROM tenants WHERE id = $1', [storefront.id]);
+    expect(JSON.parse(rows[0].wp_options[STOREFRONT_BRAND_OPTION]).name).toBe('Jane Designs');
+
+    // A cleared field is cleared on the storefront too.
+    await t.call('PUT', `/admin/products/${sellerId}/branding`, { body: { name: null }, auth: ADMIN });
+    await waitFor(async () => brand()?.name === null);
+    expect(brand().color).toBe('#1d4ed8');
   });
 
   it('checks the request, and makes no key when it is refused', async () => {
@@ -120,5 +150,14 @@ describe('deleting a storefront', () => {
     expect((await t.pool.query('SELECT 1 FROM products WHERE id = $1', [empty.id])).rowCount).toBe(0);
     expect((await t.pool.query('SELECT 1 FROM api_keys WHERE product_id = $1', [empty.id])).rowCount).toBe(0);
     expect((await remove(empty.id)).status).toBe(404);
+  });
+});
+
+describe('what a storefront can be narrowed to', () => {
+  const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as Record<string, unknown>;
+
+  it('names the template\'s Who we help pages and the store template\'s site types', () => {
+    expect([...AUDIENCES]).toEqual(Object.keys(json('../templates/seller-storefront/audiences.json')));
+    expect(SITE_TYPES.every((type) => type in json('../templates/anypress-store/roles.json'))).toBe(true);
   });
 });

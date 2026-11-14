@@ -2,7 +2,7 @@
 // number's store with the caller's number from the call, and the call state follows what happened.
 import { describe, expect, it } from 'vitest';
 import { type Line, VoiceApi } from '../src/api.ts';
-import { businessName, instructions } from '../src/prompt.ts';
+import { businessName, greeting, instructions } from '../src/prompt.ts';
 import { createTools, newCallState } from '../src/tools.ts';
 
 const NUMBER = '+12135550100';
@@ -39,6 +39,13 @@ describe('the receptionist', () => {
     expect(text).toContain('phone receptionist for Rosa Plumbing');
     expect(text).toContain('Opening hours: Mon to Sat, 8 to 6');
     expect(text).not.toMatch(/anypress/i);
+  });
+
+  it('tells the caller at once that an automated receptionist is answering', () => {
+    expect(greeting(line)).toBe("Thanks for calling Rosa Plumbing. I'm the automated virtual receptionist. How can I help?");
+    const text = instructions(line, new Date(), 'America/Los_Angeles');
+    expect(text).toContain('automated virtual receptionist');
+    expect(text).not.toContain('Never say you are an AI');
   });
 
   it('only takes messages once the month’s minutes are used', () => {

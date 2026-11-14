@@ -10,7 +10,7 @@ use Waas\Provisioning\Http\CurlTransport;
 use Waas\Provisioning\Http\Transport;
 
 /**
- * A client for the WaaS Provisioning API: stores (tenants), domains, backups, versions, templates,
+ * A client for the AnyPress API: stores (tenants), domains, backups, versions, templates,
  * sending domains, Domain Connect links and webhooks. Field names follow the API's OpenAPI files
  * (openapi/*.yaml); results are the API's JSON as associative arrays.
  *
@@ -156,6 +156,31 @@ final class Client
     public function addTenantEmailPack(array $tenant, int $emails, string $reference): array
     {
         return $this->call('addTenantEmailPack', 'POST', '/v1/tenants/email-packs', $this->ref($tenant), ['emails' => $emails, 'reference' => $reference]);
+    }
+
+    /**
+     * Sets how many storage packs the store has now (its monthly subscription's quantity), each adding 25 GB to its
+     * plan's storage; 0 ends them. Sending the same number again changes nothing.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @return array<string, mixed>
+     */
+    public function setTenantStoragePacks(array $tenant, int $packs): array
+    {
+        return $this->call('setTenantStoragePacks', 'PUT', '/v1/tenants/storage-packs', $this->ref($tenant), ['packs' => $packs]);
+    }
+
+    /**
+     * Records the store's care package and this month's care time, for the dashboard. Pass null as the package
+     * when care ends. Sending the same values again changes nothing.
+     *
+     * @param array{externalId?: string, tenantId?: string} $tenant
+     * @param array{minutes?: int, used?: int, extra?: int, answer?: string, month?: string} $time
+     * @return array<string, mixed>
+     */
+    public function setTenantCare(array $tenant, ?string $package, array $time = []): array
+    {
+        return $this->call('setTenantCare', 'PUT', '/v1/tenants/care', $this->ref($tenant), ['package' => $package] + $time);
     }
 
     /**

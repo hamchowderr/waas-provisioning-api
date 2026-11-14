@@ -75,6 +75,9 @@ delete_option('fluent_cart_do_activation_redirect');
     // a reminder 7 days before each charge, on top of the yearly and trial-end ones that are already on.
     'reminders_enabled' => 'yes',
     'monthly_renewal_reminders_enabled' => 'yes',
+    // Settings → Appearance: "Inherit from theme", so the shop, product cards, cart drawer and checkout take the
+    // site's own colours and corners, and follow them when the owner picks another style in the Site Editor.
+    'appearance_source' => \FluentCart\App\Services\Theme\ColorPalette::SOURCE_THEME,
 ]);
 // Settings → Email notifications → Settings: a footer that tells customers how to reach the owner (replies go to the
 // site's sending address; waas-mail sets that). The store logo at the top of each email follows the site logo
@@ -135,6 +138,16 @@ $merge('_fluentcrm_compliance_settings', array_merge(\FluentCrm\App\Services\Hel
     'enable_gravatar' => 'no',
     'gravatar_fallback' => 'no',
 ]));
+
+// FluentCommunity. Portal settings → Privacy: profile pictures come from Gravatar by default, which sends every
+// member's hashed email to Gravatar (and ui-avatars.com) on each page view. Off, as in FluentCRM above; members
+// upload their own picture instead.
+if (class_exists(\FluentCommunity\App\Functions\Utility::class)) {
+    \FluentCommunity\App\Functions\Utility::updatePrivacySettings(array_merge(
+        \FluentCommunity\App\Functions\Utility::getPrivacySettings(),
+        ['enable_gravatar' => 'no']
+    ));
+}
 
 // Fluent Forms. Global settings → Security: the honeypot and token checks, off by default.
 $forms = get_option('_fluentform_global_form_settings', []);
@@ -228,8 +241,14 @@ foreach ($GLOBALS['ct_registered_tables'] ?? [] as $table) {
 
 // FluentAuth. Saving its settings once is what its first-run wizard does. Its defaults stay (5 failed logins locks
 // an address for 30 minutes, a monthly login digest to the admin email); XML-RPC is off, since no store uses it and
-// it is the usual target for password guessing. Two-factor stays off for the owner to switch on.
-update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), ['disable_xmlrpc' => 'yes']));
+// it is the usual target for password guessing. Two-factor stays off for the owner to switch on. Members, customers
+// and subscribers (the subscriber role) are kept out of wp-admin and its admin bar: opening wp-admin sends them to the
+// home page, as FluentAuth's "keep these roles out of wp-admin" does; anyone who can publish posts still gets in.
+update_option('__fls_auth_settings', array_merge(\FluentAuth\App\Helpers\Helper::getAuthSettings(), [
+    'disable_xmlrpc' => 'yes',
+    'disable_admin_bar' => 'yes',
+    'disable_bar_roles' => ['subscriber'],
+]));
 
 // Theme (AnyPress). Without a menu the header's navigation lists every page (Receipt, Review Your Order...), so make
 // one; the header and footer navigation blocks use the newest menu. Links to pages a site type hides

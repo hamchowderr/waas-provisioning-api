@@ -3,7 +3,7 @@ info:
   license:
     name: GPL-3.0-or-later
     url: https://www.gnu.org/licenses/gpl-3.0.html
-  title: WaaS Provisioning API
+  title: AnyPress API
   description: 'Contract for the AnyPress provisioning API. The storefront and client plugins depend on these paths, parameters and field names, so they do not change.
 
 
@@ -1003,6 +1003,142 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: importReprint
+  /v1/tenants/storage-packs:
+    put:
+      tags:
+      - Tenant
+      summary: Set storage packs
+      description: 'Added for AnyPress.
+
+
+        Sets how many storage packs the store has, each adding 25 GB to the storage of its plan (10, 20 or 30 GB by size). Storage packs are bought monthly: send the subscription''s quantity whenever it changes, and 0 when it ends. Sending the same number again changes nothing and is safe to retry. When packs end, nothing is deleted; the store only stops taking new uploads while it is over its storage.
+
+
+        The store gets the new storage within a minute. Rejected for a tenant that is being removed or has failed.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      - name: productId
+        in: query
+        description: 'Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2.'
+        schema:
+          type: string
+          format: uuid
+        x-phase: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoragePackParams'
+            examples:
+              one:
+                summary: 'Set storage packs: One pack'
+                value:
+                  packs: 1
+      responses:
+        '200':
+          description: The count was recorded and is being applied to the store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoragePackResult'
+              examples:
+                set:
+                  summary: 'Set storage packs: Set'
+                  value:
+                    tenantId: 90b97b83-b320-4006-aaa8-dacb0639325c
+                    externalId: store-1042
+                    storagePacks: 1
+                    storagePacksGb: 25
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+              examples:
+                unknownTenant:
+                  summary: 'Set storage packs: 400 Unknown tenant'
+                  value:
+                    statusCode: 400
+                    message: Tenant store-9999 not found
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      operationId: setTenantStoragePacks
+  /v1/tenants/care:
+    put:
+      tags:
+      - Tenant
+      summary: Set care
+      description: 'Added for AnyPress.
+
+
+        Records the care package bought for the store on the shop and this month''s care time, so the dashboard can show it. Send it whenever care starts, time is logged or extra time is bought, and send `package: null` when care ends. Sending the same values again changes nothing and is safe to retry. Nothing changes on the store itself.
+
+
+        `used` counts for `month`; once that month is over and nothing new has been sent, the tenant shows the new month with no time used. Rejected for a tenant that is being removed or has failed.'
+      parameters:
+      - name: tenantId
+        in: query
+        description: The Id of the Tenant (required if externalId is omitted)
+        schema:
+          type: string
+          format: uuid
+      - name: externalId
+        in: query
+        description: The ExternalId of the Tenant (required if tenantId is omitted)
+        schema:
+          type: string
+        example: store-1042
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CareParams'
+            examples:
+              carePlus:
+                summary: 'Set care: Care Plus with 40 minutes used'
+                value:
+                  package: Care Plus
+                  minutes: 120
+                  used: 40
+                  extra: 60
+                  answer: 1 business day
+                  month: 2026-11
+              ended:
+                summary: 'Set care: Care ended'
+                value:
+                  package: null
+      responses:
+        '200':
+          description: The care was recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareResult'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      operationId: setTenantCare
   /v1/tenants/email-packs:
     post:
       tags:
@@ -2760,6 +2896,71 @@ paths:
         '403':
           description: Forbidden
       operationId: getReferenceUsage
+  /demos/drafts:
+    post:
+      tags:
+      - DemoDraft
+      summary: Save a demo as a draft
+      description: 'Called by a demo page with what it read out of a WordPress Playground demo (built from a site type''s blueprint, with AnyPress Client): pages, Site Editor styles, header and footer, menus and business details. No API key. Never code, plugins or users. Photos the visitor added are listed by file name in `images`, uploaded with the `uploads` links (one `PUT` each, at most `maxImageBytes`), and written in the content as `anypress-demo-image:<name>`. The answer''s `id` goes to checkout, where the storefront creates the store with `demoDraftId`. Drafts are kept 14 days.'
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemoDraftParams'
+      responses:
+        '201':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemoDraftCreated'
+        '400':
+          description: The validation of the request failed. See the message in the response to see why
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '413':
+          description: The demo is too large to save
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+        '429':
+          description: Too many demos are being saved right now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: createDemoDraft
+  /demos/drafts/{id}:
+    get:
+      tags:
+      - DemoDraft
+      summary: Get a demo draft
+      description: What checkout shows about a saved demo, and whether it can still be used. No API key. The content itself is not returned.
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemoDraft'
+        '404':
+          description: No such draft, or it has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExceptionResult'
+      operationId: getDemoDraft
   /imports/upload:
     post:
       tags:
@@ -3062,17 +3263,17 @@ paths:
     get:
       tags:
       - Branding
-      summary: A theme or AnyPress Blocks release zip for the demo pages
+      summary: A theme, AnyPress Blocks or AnyPress Client release zip for the demo pages
       description: 'The AnyPress theme or AnyPress Blocks release zip the demo pages install on WordPress Playground (docs/branding.md, "Demo page"), readable from any site. Public.'
       security: []
       parameters:
       - name: file
         in: path
         required: true
-        description: anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip
+        description: anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip for one release; anypress-theme.zip or anypress-blocks.zip for the newest; anypress-client.zip for AnyPress Client's newest stable release
         schema:
           type: string
-          pattern: ^anypress-(theme|blocks)-v\d{1,3}\.\d{1,3}\.\d{1,3}\.zip$
+          pattern: ^anypress-((theme|blocks)(-v\d{1,3}\.\d{1,3}\.\d{1,3})?|client)\.zip$
       responses:
         '200':
           description: The zip
@@ -3088,6 +3289,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExceptionResult'
       operationId: getDemoFile
+  /pricing:
+    get:
+      tags:
+      - Pricing
+      summary: The price list
+      description: 'Added for AnyPress.
+
+
+        Every site type''s monthly and yearly price per size in US dollars, the volume savings, the reseller discount and the affiliate share. anypress.io and the dashboard read their prices from here. Public, readable from any site.'
+      security: []
+      responses:
+        '200':
+          description: The price list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceList'
+      operationId: getPricing
   /v1/support/tickets:
     get:
       tags:
@@ -4031,6 +4250,9 @@ components:
         notifyOwner:
           type: boolean
           description: Email the store's owner (`wordPressUserEmail`) once the store is ready, with a link to set their password. Sent in the storefront's brand. Off unless set to true, so you can tell your client yourself.
+        demoDraftId:
+          type: string
+          description: 'A demo the customer built on Playground and saved before checkout (Demo drafts). The store is built as usual, then gets the demo''s pages, styles, header and footer, menus and photos. The draft must match the store''s site type (`ANYPRESS_TENANT_ROLES`), belong to this storefront''s demo page or AnyPress''s own, and is used once. Not with `uploadCustomSnapshot`.'
         uploadCustomSnapshot:
           type: boolean
           description: 'Move in an existing WordPress site instead of starting from a snapshot. The tenant is not built yet: it waits for its site, and the response carries an `importCode` for the AnyPress Export plugin and an `uploadUrl`. Once the archive (a zip or gzipped tar holding `database.sql` and `wp-content/`) is uploaded and the move started (see Site import), the store is built from it and keeps the site''s own plugins and themes. Not with `snapshotId` or `groupName`.'
@@ -4197,6 +4419,114 @@ components:
         expiresAt: { type: string, format: date-time, nullable: true }
         error: { type: string, nullable: true }
         dateCreated: { type: string, format: date-time }
+    PriceList:
+      type: object
+      required: [currency, siteTypes, sizeTimes, yearlyMonths, trialDays, volumeTiers, wholesalePercent, affiliatePercent, care, packs]
+      properties:
+        currency:
+          type: string
+          enum: [USD]
+        siteTypes:
+          type: array
+          description: Each site type, in the order anypress.io lists them
+          items:
+            type: object
+            required: [key, name, monthly, yearly]
+            properties:
+              key:
+                type: string
+                description: The store template's site type (website, bookings, online-store, community, everything)
+              name:
+                type: string
+              monthly:
+                $ref: '#/components/schemas/PriceBySize'
+              yearly:
+                $ref: '#/components/schemas/PriceBySize'
+        sizeTimes:
+          description: How many times the Small price each size costs
+          allOf:
+          - $ref: '#/components/schemas/PriceBySize'
+        yearlyMonths:
+          type: integer
+          description: How many months a year costs
+        trialDays:
+          type: integer
+          description: Free days at the start of a new website plan, one trial per person
+        volumeTiers:
+          type: array
+          description: The saving off every site's price once a customer has this many live sites
+          items:
+            type: object
+            required: [sites, percent]
+            properties:
+              sites:
+                type: integer
+              percent:
+                type: integer
+        wholesalePercent:
+          type: integer
+          description: A new reseller's discount off each site's price
+        affiliatePercent:
+          type: integer
+          description: An affiliate's share of a customer's first payment
+        care:
+          type: object
+          description: Care for one website, sold on the shop. Packages are monthly changes; services are one-time.
+          required: [packages, services]
+          properties:
+            packages:
+              type: array
+              items:
+                type: object
+                required: [key, name, monthly, yearly, minutes, answer, call]
+                properties:
+                  key: { type: string }
+                  name: { type: string }
+                  monthly: { type: number, description: Price a month in US dollars }
+                  yearly: { type: number, description: Price a year in US dollars }
+                  minutes: { type: integer, description: Minutes of changes each month }
+                  answer: { type: string, description: 'How soon a request is answered, e.g. "1 business day"' }
+                  call: { type: boolean, description: Whether the package includes a monthly call }
+            services:
+              type: array
+              items:
+                type: object
+                required: [key, name, price, minutes, careOnly]
+                properties:
+                  key: { type: string }
+                  name: { type: string }
+                  price: { type: number, description: One-time price in US dollars }
+                  minutes: { type: integer, description: Minutes of changes it adds to the website (0 for a job) }
+                  careOnly: { type: boolean, description: Sold only for a website with a care package }
+        packs:
+          type: object
+          description: Add-ons for one website, sold on the shop
+          required: [email, storage]
+          properties:
+            email:
+              type: object
+              description: Extra emails, a one-time price; they never expire
+              required: [emails, price]
+              properties:
+                emails: { type: integer }
+                price: { type: number, description: One-time price in US dollars }
+            storage:
+              type: object
+              description: Extra storage, a monthly price; packs stack
+              required: [gb, monthly]
+              properties:
+                gb: { type: integer }
+                monthly: { type: number, description: Price a month in US dollars }
+    PriceBySize:
+      type: object
+      required: [small, medium, large]
+      properties:
+        small:
+          type: number
+        medium:
+          type: number
+        large:
+          type: number
     ExceptionResult:
       type: object
       properties:
@@ -4569,6 +4899,13 @@ components:
           example: null
         size:
           $ref: '#/components/schemas/TenantSize'
+        storagePacks:
+          type: integer
+          description: Added for AnyPress. The storage packs the store has (see Set storage packs), each adding 25 GB to its plan's storage. Absent when it has none.
+          readOnly: true
+          example: 1
+        care:
+          $ref: '#/components/schemas/TenantCare'
         keepsOwnCode:
           type: boolean
           description: Added for AnyPress. True for a site moved in from another host (`uploadCustomSnapshot`), which keeps its own plugins and themes when it is restored or moved to another version. Absent otherwise.
@@ -4786,6 +5123,170 @@ components:
           description: The archive's size
         store:
           $ref: '#/components/schemas/ImportStore'
+      additionalProperties: false
+    DemoDraftParams:
+      required:
+      - siteType
+      - content
+      type: object
+      properties:
+        siteType:
+          type: string
+          enum:
+          - website
+          - bookings
+          - online-store
+          - community
+          - everything
+          - store
+          - highlevel
+          description: The site type the demo was built as (the store template's roles.json). A store made from the draft must be this type.
+        kit:
+          type: string
+          description: The design kit the demo started from, e.g. `ridge` or `ridge/ironclad-roofing`
+        productId:
+          type: string
+          format: uuid
+          description: The storefront whose demo page made it (a seller's or reseller's). Only that storefront can use the draft.
+        content:
+          $ref: '#/components/schemas/DemoContent'
+        images:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+          description: The photos' file names (lowercase, ending .jpg, .png, .webp or .gif)
+      additionalProperties: false
+    DemoContent:
+      required:
+      - pages
+      type: object
+      properties:
+        pages:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            $ref: '#/components/schemas/DemoPage'
+        styles:
+          type: object
+          description: Site Editor changes, as the site routes' `PATCH /styles` takes them
+          properties:
+            settings:
+              type: object
+              additionalProperties: true
+            styles:
+              type: object
+              additionalProperties: true
+          additionalProperties: false
+        header:
+          type: string
+          description: The header as blocks
+        footer:
+          type: string
+          description: The footer as blocks
+        menus:
+          type: array
+          maxItems: 5
+          description: Navigation menus, applied to the store's menu with the same title
+          items:
+            required:
+            - title
+            - content
+            type: object
+            properties:
+              title:
+                type: string
+              content:
+                type: string
+            additionalProperties: false
+        business:
+          type: object
+          description: Business details for the store's assistants
+          properties:
+            what:
+              type: string
+            who:
+              type: string
+            area:
+              type: string
+            hours:
+              type: string
+            contact:
+              type: string
+            voice:
+              type: string
+            notes:
+              type: string
+          additionalProperties: false
+      additionalProperties: false
+    DemoPage:
+      required:
+      - title
+      - slug
+      type: object
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+          description: Matched to the store's page with the same slug, which it replaces; otherwise a new page
+        content:
+          type: string
+          description: The page as blocks
+        status:
+          type: string
+          enum:
+          - publish
+          - draft
+      additionalProperties: false
+    DemoDraftCreated:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The draft's id, for checkout (`demoDraftId`)
+        expiresAt:
+          type: string
+          format: date-time
+        maxImageBytes:
+          type: integer
+        uploads:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              uploadUrl:
+                type: string
+                description: Where to PUT the photo, for an hour
+            additionalProperties: false
+      additionalProperties: false
+    DemoDraft:
+      type: object
+      properties:
+        id:
+          type: string
+        siteType:
+          type: string
+        kit:
+          type: string
+          nullable: true
+        productId:
+          type: string
+          nullable: true
+        pages:
+          type: array
+          items:
+            type: string
+          description: The demo's page titles
+        expiresAt:
+          type: string
+          format: date-time
+        used:
+          type: boolean
+          description: A store was already made from it
       additionalProperties: false
     ImportUploadResult:
       type: object
@@ -5236,6 +5737,127 @@ components:
           maxLength: 100
           example: fluentcart-order-123
       additionalProperties: false
+    StoragePackParams:
+      type: object
+      required:
+      - packs
+      properties:
+        packs:
+          type: integer
+          description: How many storage packs the store has now, each adding 25 GB. 0 ends them.
+          minimum: 0
+          maximum: 20
+          example: 1
+      additionalProperties: false
+    CareParams:
+      type: object
+      required:
+      - package
+      properties:
+        package:
+          type: string
+          description: The care package's name, such as Care Plus. null when the store's care ends.
+          nullable: true
+          minLength: 1
+          maxLength: 60
+          example: Care Plus
+        minutes:
+          type: integer
+          description: The package's minutes of changes a month.
+          minimum: 0
+          maximum: 100000
+          example: 120
+        used:
+          type: integer
+          description: Minutes used in `month`.
+          minimum: 0
+          maximum: 100000
+          example: 40
+        extra:
+          type: integer
+          description: Extra minutes bought, which never expire and are used once the month's time runs out.
+          minimum: 0
+          maximum: 100000
+          example: 60
+        answer:
+          type: string
+          description: How soon requests are answered.
+          maxLength: 60
+          example: 1 business day
+        month:
+          type: string
+          description: The month `used` counts for, YYYY-MM in the shop's time zone. Defaults to the current month (UTC).
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: 2026-11
+      additionalProperties: false
+    TenantCare:
+      type: object
+      description: Added for AnyPress. The care package bought for the store on the shop, and this month's care time (see Set care). Absent when it has none.
+      readOnly: true
+      properties:
+        package:
+          type: string
+          example: Care Plus
+        minutes:
+          type: integer
+          description: Minutes of changes a month.
+          example: 120
+        used:
+          type: integer
+          description: Minutes used this month.
+          example: 40
+        left:
+          type: integer
+          description: Minutes left this month.
+          example: 80
+        extra:
+          type: integer
+          description: Extra minutes bought, which never expire.
+          example: 60
+        answer:
+          type: string
+          description: How soon requests are answered.
+          example: 1 business day
+        month:
+          type: string
+          example: 2026-11
+    CareResult:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+          readOnly: true
+        externalId:
+          type: string
+          readOnly: true
+        care:
+          allOf:
+          - $ref: '#/components/schemas/TenantCare'
+          nullable: true
+          description: The care the store has now; null when it has none.
+      additionalProperties: false
+    StoragePackResult:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+          readOnly: true
+        externalId:
+          type: string
+          readOnly: true
+        storagePacks:
+          type: integer
+          description: The storage packs the store has now.
+          readOnly: true
+          example: 1
+        storagePacksGb:
+          type: integer
+          description: The storage they add to the plan's, in GB.
+          readOnly: true
+          example: 25
+      additionalProperties: false
     EmailPackResult:
       type: object
       properties:
@@ -5484,7 +6106,7 @@ components:
       - small
       - medium
       - large
-      description: "The tenant's size: what its WordPress may use and its plan's quotas. Storage counts wp-content and the database; uploads past it are refused. Email counts what the store sends in a calendar month (UTC); past it the store sends none until the next month.\r\nsmall: 1 CPU, 512 MB, 5 GB storage, 5,000 emails a month\r\nmedium: 2 CPUs, 512 MB, 10 GB storage, 20,000 emails a month\r\nlarge: 4 CPUs, 768 MB, 25 GB storage, 50,000 emails a month\r\nOptional when creating a tenant: small when omitted."
+      description: "The tenant's size: what its WordPress may use and its plan's quotas. Storage counts wp-content and the database; uploads past it are refused. Email counts what the store sends in a calendar month (UTC); past it the store sends none until the next month.\r\nsmall: 1 CPU, 768 MB, 5 GB storage, 5,000 emails a month\r\nmedium: 2 CPUs, 1280 MB, 10 GB storage, 20,000 emails a month\r\nlarge: 4 CPUs, 2048 MB, 25 GB storage, 50,000 emails a month\r\nOptional when creating a tenant: small when omitted."
       example: small
     UpdateTenantCommandResult:
       type: object
@@ -5595,6 +6217,8 @@ tags:
   description: 'Added for AnyPress. Support tickets for the signed-in person: a website owner, seller or reseller asks for help from an AI app, the website assistant or the dashboard, and the ticket goes to whoever helps them.'
 - name: TenantSite
   description: 'Added for AnyPress. Edit a store''s pages and design for an AI agent, through the store''s AnyPress Client.'
+- name: DemoDraft
+  description: 'Added for AnyPress. Demos people build for themselves on WordPress Playground, saved before checkout so the store made after payment starts with them. These calls take no API key.'
 - name: SiteImport
   description: 'Added for AnyPress. Move an existing WordPress site in from another host: create a tenant with `uploadCustomSnapshot`, paste its import code into the AnyPress Export plugin on the old site, and the plugin uploads the site and starts the move with these calls. They take the import code instead of an API key.'
 - name: Version
@@ -5620,3 +6244,5 @@ tags:
   description: 'Added for AnyPress. Read a website, Shopify shop, Figma file or document into one bundle to build a site from.'
 - name: Branding
   description: The public look of a seller's or reseller's branded pages
+- name: Pricing
+  description: AnyPress's public price list

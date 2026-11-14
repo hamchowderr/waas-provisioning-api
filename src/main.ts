@@ -23,10 +23,11 @@ import { S3ReleaseStore } from './releases.ts';
 import { startHostUpdates } from './hostupdates.ts';
 import { resolvePlatformProducts } from './platformproducts.ts';
 import { Secrets } from './secrets.ts';
-import { siteKey, siteKeyMaster } from './sitekeys.ts';
+import { callSite, siteKey, siteKeyMaster, type SiteRequest } from './sitekeys.ts';
 import { startStoreBackups } from './storebackups.ts';
 import Firecrawl from '@mendable/firecrawl-js';
 import { startReferences } from './references.ts';
+import { startProspectDemos } from './prospectdemos.ts';
 import { loadDomainSalesConfig, startDomainSales, storeAttacher } from './domainsales.ts';
 import { serviceIdStore } from './coolifyids.ts';
 import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webhooks.ts';
@@ -44,11 +45,13 @@ const provisioner: Provisioner = config.coolify
   : new FakeProvisioner();
 const secrets = new Secrets(config.secretsKey);
 const releases = config.releases ? new S3ReleaseStore(config.releases) : undefined;
+// A store made from a demo gets the demo's content through its own site routes (src/demodrafts.ts). Only real stores have them.
+const siteCall = config.coolify ? (storeId: string, domain: string, request: SiteRequest) => callSite(siteKey(siteKeys, storeId), domain, request) : undefined;
 const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
 // A job that fails its last retry is emailed to the admins (src/jobalerts.ts).
 const handlers = withFailureAlerts(
-  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss), pool, boss, webhooks),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss, siteCall), pool, boss, webhooks),
   pool,
   { mail: config.auth?.mail, to: config.jobAlerts, dashboardUrl: config.auth?.url },
 );
@@ -62,16 +65,19 @@ await startDbBackups(boss, dbBackups, config.dbBackup?.schedule ?? '');
 // Nightly backup of every live store (docs/store-backups.md), unless STORE_BACKUP=off.
 await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
 // References to build sites from (docs/references.md): read with Firecrawl and Figma's API when their keys are set.
-await startReferences(
-  boss,
-  pool,
-  { firecrawl: config.references?.firecrawlApiKey ? new Firecrawl({ apiKey: config.references.firecrawlApiKey }) : undefined, figmaToken: config.references?.figmaToken },
-  { config: () => config.references ?? { readsPerMonth: 0 } },
-);
+const firecrawl = config.references?.firecrawlApiKey ? new Firecrawl({ apiKey: config.references.firecrawlApiKey }) : undefined;
+await startReferences(boss, pool, { firecrawl, figmaToken: config.references?.figmaToken }, { config: () => config.references ?? { readsPerMonth: 0 } });
+// Branded demos for businesses AnyPress may contact (docs/prospect-demos.md): their websites read with the same Firecrawl key.
+await startProspectDemos(boss, pool, provisioner, { firecrawl });
 // Nightly, one store's latest backup restored into a throwaway copy and checked (docs/store-backups.md), unless RESTORE_TEST=off.
 // Phone and computer alerts for the bell's important notices (src/push.ts); off without VAPID keys.
 configurePush(loadPushConfig(process.env, config.auth?.url));
 await startRestoreTests(boss, pool, provisioner, config.restoreTest, { mail: config.auth?.mail, to: config.jobAlerts });
+// The nightly shop price check was removed; drop its old schedule and queue.
+if (await boss.getQueue('price-check')) {
+  await boss.unschedule('price-check');
+  await boss.deleteQueue('price-check');
+}
 // Stores' own sending domains (docs/store-email.md): checked every 10 minutes, when toSend is set up.
 await startMailDomainChecks(boss, pool, config.sendingDomains, provisioner, config);
 // The platform's count of each store's email (docs/store-email.md): every hour, when toSend is set up.
@@ -81,7 +87,7 @@ await startResellerInvoices(boss, pool, config.resellerInvoices);
 // Sites whose constants moved to their ANYPRESS_ names get them pushed once (src/constantnames.ts).
 const renamed = await pushRenamedConstants(boss, pool);
 if (renamed) console.log(`Pushing renamed constants to ${renamed} site(s)`);
-// Each new WaaS Host release pushed to every ready-made storefront (docs/host-updates.md), checked every 15 minutes.
+// Each new AnyPress Host release pushed to every ready-made storefront (docs/host-updates.md), checked every 15 minutes.
 await startHostUpdates({ pool, boss, releases, storefrontProductId: config.storefrontProductId });
 // In the background: a store already up to date costs two Coolify lookups.
 void maintainStores(pool, provisioner, config);
@@ -101,7 +107,7 @@ await startTemplateReleases(deps);
 await startDomainSales(boss, { pool, config: domainSales, storesDomain: config.storesDomain, ipv6: config.domainConnect?.ipv6, attach: storeAttacher(deps) });
 
 const server = serve({ fetch: createApp(deps).fetch, port: config.port }, (info) =>
-  console.log(`WaaS provisioning API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'}${domainSales ? '' : '; domain sales off: NAMECOM_* not set'})`),
+  console.log(`AnyPress API listening on :${info.port} (${config.provisioner} provisioner${config.adminToken ? '' : '; admin API off: ADMIN_TOKEN not set'}${config.dbBackup ? '' : '; database backups off: S3_* not set'}${config.storeBackup ? '' : '; store backups off'}${releases ? '' : '; plugin updates off: RELEASES_S3_BUCKET not set'}${auth ? '' : '; sign-in off: AUTH_URL not set'}${domainSales ? '' : '; domain sales off: NAMECOM_* not set'})`),
 );
 // The proxy in front (Coolify's Traefik) keeps idle connections to the API open for up to 90 seconds.
 // Node's own default is 5, so the API could close a connection just as Traefik reused it, and that

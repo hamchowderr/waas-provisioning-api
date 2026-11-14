@@ -70,19 +70,25 @@
     "day": 1,
     "subject": "Three things to do first on your website",
     "preheader": "Your first ten minutes.",
-    "body": "<p>Hi {{contact.first_name|there}},</p><p>Welcome. Your website is being set up and you will get its sign-in link in a separate email.</p><p>When you are in, do these three things first: put in your business name and logo, rewrite the home page in your own words, and add your contact details.</p><p><a href=\"{{wp.url}}/account/\"><strong>Go to my account</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Welcome. Your website is being set up and you will get its sign-in link in a separate email.</p><p>When you are in, do these three things first: put in your business name and logo, rewrite the home page in your own words, and add your contact details.</p><p><a href=\"{{wp.url}}/account/\"><strong>Go to my account</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
    },
    {
     "day": 7,
     "subject": "How is your website coming along?",
     "preheader": "A quick check-in.",
-    "body": "<p>Hi {{contact.first_name|there}},</p><p>You have had your website for a week. Is anything holding you up? Tell us what you are stuck on and we will help.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>You have had your website for a week. Is anything holding you up? The <a href=\"{{wp.url}}/docs/\">help pages</a> answer the usual questions: signing in, using your own domain, sending email from it. Stuck on something else? Tell us and we will help.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
    },
    {
     "day": 31,
     "subject": "Know a business that needs a website?",
     "preheader": "Pass it on.",
-    "body": "<p>Hi {{contact.first_name|there}},</p><p>We hope your first month has gone well. If you know another business that needs a website, we would be grateful if you sent them our way.</p><p><a href=\"{{wp.url}}\"><strong>Share our website</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We hope your first month has gone well. If you know another business that needs a website, send them our way. Join our <a href=\"{{wp.url}}/affiliates/\">referral program</a> and you earn a share of their first payment.</p><p><a href=\"{{wp.url}}/affiliates/\"><strong>Get my referral link</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
+   },
+   {
+    "day": 60,
+    "subject": "Room to grow",
+    "preheader": "More emails, more storage or a bigger size, when you need them.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Two months in. If your website is getting busier, you don't need to start again:</p><ul><li><strong>More emails or storage:</strong> add a pack from your website's card in <a href=\"{{wp.url}}/account/\">your account</a>.</li><li><strong>Your own domain:</strong> connect one you own, or buy one from the same page.</li><li><strong>A bigger size or another kind of site:</strong> tell us and we switch it for you. The new price starts from your next renewal.</li></ul><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
    }
   ]
  },
@@ -95,13 +101,13 @@
     "day": 2,
     "subject": "Can we ask one quick question?",
     "preheader": "What made you stop?",
-    "body": "<p>Hi {{contact.first_name|there}},</p><p>We noticed your website plan has ended. Could you tell us why? One line is enough, and it really helps us improve.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Tell us why</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>We noticed your website plan has ended. Could you tell us why? One line is enough, and it really helps us improve.</p><p><a href=\"{{wp.url}}/contact/\"><strong>Tell us why</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
    },
    {
     "day": 30,
     "subject": "Come back for 20% off",
     "preheader": "Use code COMEBACK20 at checkout.",
-    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like a website again, use the code <strong>COMEBACK20</strong> at checkout for 20% off your first payment.</p><p><a href=\"{{wp.url}}/plans/\"><strong>See the plans</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/contact/\">Get in touch</a> and a person will answer.</p>"
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>If you would like a website again, use the code <strong>COMEBACK20</strong> at checkout for 20% off your first payment.</p><p><a href=\"{{wp.url}}/plans/\"><strong>See the plans</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
    }
   ]
  },
@@ -139,5 +145,24 @@
    "active_once": "no",
    "require_subscribed": "no"
   }
+ },
+ {
+  "title": "Welcome: Affiliate",
+  "trigger": "manual",
+  "note": "Started when a referral application is approved in FluentAffiliate (the contact gets \"Affiliate: Active\").",
+  "emails": [
+   {
+    "day": 0,
+    "subject": "You're in: your referral link is ready",
+    "preheader": "Share it and earn from every new customer.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>Your referral account is approved. Your link, your rate and your earnings are on the <a href=\"{{wp.url}}/affiliates/\">Referrals</a> page whenever you sign in.</p><p>Share your link with businesses that need a website. When someone buys a plan within 30 days of clicking it, that sale is yours.</p><p><a href=\"{{wp.url}}/affiliates/\"><strong>Get my link</strong></a></p><p>The <a href=\"{{wp.url}}/docs/how-referrals-work/\">referral guide</a> has the rules and how you get paid.</p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
+   },
+   {
+    "day": 14,
+    "subject": "Who to share your referral link with",
+    "preheader": "The people most likely to say yes.",
+    "body": "<p>Hi {{contact.first_name|there}},</p><p>The best referrals come from people you already talk to: a business still without a website, one stuck on a site that keeps breaking, or a friend starting something new. A short note saying why you like your website works better than an ad.</p><p><a href=\"{{wp.url}}/affiliates/\"><strong>Open my referral dashboard</strong></a></p><p>{{crm.business_name}}</p><p>Questions? <a href=\"{{wp.url}}/support/\">Open a support request</a> and a person will answer.</p>"
+   }
+  ]
  }
 ]

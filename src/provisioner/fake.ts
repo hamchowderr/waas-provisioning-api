@@ -12,6 +12,8 @@ interface FakeStore extends CreateStoreInput {
   suspendedBrand?: Brand;
   /** The pack emails the store was told it has bought (setEmailPacks). */
   emailPacks?: number;
+  /** The storage its packs add, in GB, as the store was told (setStoragePacks). */
+  storagePacksGb?: number;
   /** The address it sends from (ensureStoreMail, setDomains with `mail`), when stores send email. */
   mailFrom?: string;
   /** This month's count the platform told it (setMailCount). */
@@ -116,6 +118,46 @@ export class FakeProvisioner implements Provisioner {
     this.pluginUploads.delete(uploadId);
   }
 
+  /** Demo draft photos: "<draftId>/<name>" -> size. Tests "upload" one with uploadDemoImage. */
+  readonly demoImages = new Map<string, number>();
+
+  uploadDemoImage(draftId: string, name: string, bytes: number) {
+    this.demoImages.set(`${draftId}/${name}`, bytes);
+  }
+
+  async createDemoImageUpload({ draftId, name }: { draftId: string; name: string; expiresInSeconds: number }) {
+    this.check('createDemoImageUpload');
+    return `https://uploads.waas.example/demos/${draftId}/${name}?put`;
+  }
+
+  async demoImageSize({ draftId, name }: { draftId: string; name: string }) {
+    return this.demoImages.get(`${draftId}/${name}`) ?? null;
+  }
+
+  async demoImageUrl({ draftId, name }: { draftId: string; name: string; expiresInSeconds: number }) {
+    return `https://uploads.waas.example/demos/${draftId}/${name}?get`;
+  }
+
+  async deleteDemoDraft({ draftId, names }: { draftId: string; names: string[] }) {
+    for (const name of names) this.demoImages.delete(`${draftId}/${name}`);
+  }
+
+  /** Prospect demo files: "<code>/<name>" -> bytes. */
+  readonly prospectFiles = new Map<string, Uint8Array>();
+
+  async putProspectFile({ code, name, body }: { code: string; name: string; body: Uint8Array; contentType: string }) {
+    this.check('putProspectFile');
+    this.prospectFiles.set(`${code}/${name}`, body);
+  }
+
+  async readProspectFile({ code, name }: { code: string; name: string }) {
+    return this.prospectFiles.get(`${code}/${name}`) ?? null;
+  }
+
+  async deleteProspectFiles({ code, names }: { code: string; names: string[] }) {
+    for (const name of names) this.prospectFiles.delete(`${code}/${name}`);
+  }
+
   async deleteVersion({ versionId }: { versionId: string }) {
     this.check('deleteVersion');
     this.versions.delete(versionId);
@@ -214,6 +256,11 @@ export class FakeProvisioner implements Provisioner {
     this.store(storeId).emailPacks = purchased;
   }
 
+  async setStoragePacks({ storeId, gb }: { storeId: string; gb: number }) {
+    this.check('setStoragePacks');
+    this.store(storeId).storagePacksGb = gb;
+  }
+
   async setMailCount({ storeId, month, sent }: { storeId: string; month: string; sent: number }) {
     this.check('setMailCount');
     this.store(storeId).mailCount = { month, sent };
@@ -242,6 +289,24 @@ export class FakeProvisioner implements Provisioner {
     const sizeBytes = 1024 * 1024;
     this.backups.set(backupId, { storeId, sizeBytes });
     return { sizeBytes };
+  }
+
+  /** Site downloads: download id -> store id. */
+  readonly downloads = new Map<string, string>();
+
+  async downloadStore({ storeId, downloadId }: { storeId: string; downloadId: string }) {
+    this.check('downloadStore');
+    this.store(storeId);
+    this.downloads.set(downloadId, storeId);
+    return { sizeBytes: 3 * 1024 * 1024 };
+  }
+
+  async downloadUrl({ downloadId, fileName }: { downloadId: string; fileName: string; expiresInSeconds: number }) {
+    return `https://uploads.waas.example/downloads/${downloadId}.zip?get&name=${encodeURIComponent(fileName)}`;
+  }
+
+  async deleteDownload({ downloadId }: { downloadId: string }) {
+    this.downloads.delete(downloadId);
   }
 
   async restoreDeletedStore(input: Parameters<Provisioner['restoreDeletedStore']>[0]) {

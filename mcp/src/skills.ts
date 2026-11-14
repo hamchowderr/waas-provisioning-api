@@ -12,6 +12,21 @@ import { z } from 'zod';
 
 const SKILLS_EXTENSION = 'io.modelcontextprotocol/skills';
 
+/**
+ * The skills an AI app also offers as ready-made workflows (MCP prompts, shown in its slash menu),
+ * by skill name. Each prompt hands the app the skill and the job in the user's words.
+ */
+const SKILL_PROMPTS: Record<string, { name: string; title: string; request: string }> = {
+  'anypress-site-builder': { name: 'build-website', title: 'Build a website', request: 'The business, the store, and anything you already have (old site, logo, photos)' },
+  'anypress-stores': { name: 'run-my-sites', title: 'Run my sites', request: 'What to do: launch a site, add a domain, back up, restore, move a site...' },
+  'anypress-design-brief': { name: 'design-brief', title: 'Write a design brief', request: 'The business and who its customers are' },
+  'anypress-design-md': { name: 'copy-a-look', title: 'Copy a look from a reference', request: 'The website, brand book or Figma file to take the look from' },
+  'anypress-site-copy': { name: 'write-the-words', title: 'Write the words', request: 'The business, and the page or section the words are for' },
+  'anypress-design-critique': { name: 'critique-a-page', title: 'Critique a page', request: 'The store and page to review' },
+  'anypress-slop-gate': { name: 'check-a-page', title: 'Check a page before it goes live', request: 'The store and page to check' },
+  'anypress-ui-check': { name: 'check-for-visitors', title: 'Check a page works for visitors', request: 'The page address to open' },
+};
+
 export interface SkillFile {
   uri: string;
   mimeType: string;
@@ -90,8 +105,9 @@ const entryOf = (skill: Skill) => ({
 });
 
 /**
- * Serves the skills on an MCP server: one resource per file, the extension in the server's
- * capabilities, and the skills/list and skills/get methods. Call before connecting.
+ * Serves the skills on an MCP server: one resource per file, a prompt for each skill in
+ * SKILL_PROMPTS, the extension in the server's capabilities, and the skills/list and skills/get
+ * methods. Call before connecting.
  */
 export function registerSkills(server: McpServer, skills: Skill[] = loadSkills()): void {
   for (const skill of skills) {
@@ -101,6 +117,30 @@ export function registerSkills(server: McpServer, skills: Skill[] = loadSkills()
       const metadata = isSkillMd ? { description: skill.frontmatter.description, mimeType: file.mimeType } : { mimeType: file.mimeType };
       server.registerResource(name, file.uri, metadata, async () => ({ contents: [{ uri: file.uri, mimeType: file.mimeType, text: file.text }] }));
     }
+  }
+
+  for (const skill of skills) {
+    const prompt = SKILL_PROMPTS[skill.frontmatter.name];
+    if (!prompt) continue;
+    const skillMd = skill.files.find((file) => file.uri === skill.uri)!;
+    server.registerPrompt(
+      prompt.name,
+      { title: prompt.title, description: skill.frontmatter.description, argsSchema: z.object({ request: z.string().optional().describe(prompt.request) }) },
+      ({ request }) => ({
+        messages: [
+          { role: 'user', content: { type: 'resource', resource: { uri: skillMd.uri, mimeType: skillMd.mimeType, text: skillMd.text } } },
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                `Follow the ${skill.frontmatter.name} skill above (its other files are resources under skill://${skill.frontmatter.name}/).` +
+                (request?.trim() ? ` The job: ${request.trim()}` : ' Start by asking me what the job is.'),
+            },
+          },
+        ],
+      }),
+    );
   }
 
   server.server.registerCapabilities({ extensions: { [SKILLS_EXTENSION]: {} } });

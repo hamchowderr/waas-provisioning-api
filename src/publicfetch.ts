@@ -5,12 +5,15 @@ import { guardedLookup, isPrivateAddress } from './webhooks.ts';
 
 /** Bytes of a response body read at most; a longer body is cut off. */
 const MAX_BODY = 256 * 1024;
+/** How long a fetch may take, body included, when the caller gives no signal of its own. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
  * A GET-only `fetch` for URLs that come from outside (an OAuth client's metadata document, a DNS provider's
  * Domain Connect settings), so they can't reach this server's own network: refuses private, loopback and
  * link-local addresses, both as IP literals and as what a name resolves to at connect time. Never follows
- * redirects (a 3xx comes back as is, which callers treat as not ok).
+ * redirects (a 3xx comes back as is, which callers treat as not ok). Without a signal from the caller it gives up after
+ * DEFAULT_TIMEOUT_MS, so a server that answers slowly can't hold a job.
  */
 export const publicFetch: typeof fetch = (input, init) => guardedGet(input, init, MAX_BODY);
 
@@ -35,7 +38,7 @@ function guardedGet(input: Parameters<typeof fetch>[0], init: RequestInit | unde
     if (host === 'localhost' || host.endsWith('.localhost') || (isIP(host) && isPrivateAddress(host))) {
       return reject(new TypeError(`${host} is a private address`));
     }
-    const signal = init?.signal ?? undefined;
+    const signal = init?.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
     if (signal?.aborted) return reject(signal.reason);
     const client = url.protocol === 'http:' ? http : https;
     const req = client.request(url, { method, headers: Object.fromEntries(new Headers(init?.headers).entries()), lookup: guardedLookup(false), signal }, (res) => {

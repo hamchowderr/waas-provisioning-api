@@ -11,7 +11,8 @@
     "integrations/n8n/credentials/*.credentials.ts",
     "mcp/src/view/**",
     "mcp/skills/**/scripts/*.mjs",
-    ".github/pins/pins.mjs"
+    ".github/pins/pins.mjs",
+    "templates/anypress-store/playground/blueprints.mjs"
   ],
   // Installed for the packages that run from the root (npm run mcp), for build tools named in config files rather
   // imported (shadcn's CSS, Tailwind's PostCSS plugin, release-it, the Zapier CLI), and Playwright, which the agent's

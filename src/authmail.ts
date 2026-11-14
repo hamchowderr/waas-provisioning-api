@@ -121,11 +121,22 @@ export interface ApplicationMail {
   business: string;
 }
 
-/** To the applicant: their application to sell arrived and is waiting for review. */
-export async function sendApplicationReceived(mail: AuthMail, to: string, app: ApplicationMail): Promise<void> {
+/**
+ * To the applicant: their application to sell arrived. Sellers and resellers start with a short call, where billing is
+ * agreed, before they're approved: `callUrl` is where they book it, else they reply to pick a time.
+ */
+export async function sendApplicationReceived(mail: AuthMail, to: string, app: ApplicationMail & { callUrl?: string }): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
-  const next = "We review every application by hand. When yours is approved, you'll get another email with a link to sign in.";
-  await send(mail, to, `We got your ${mail.brand} application`, layout(mail, { title: 'Thanks for applying', lines: [lead, next] }), `${lead}\n\n${next}`, 'application email');
+  const next = app.callUrl
+    ? 'Next, book a short call with us. We get to know your business, show you how selling works and agree how billing works. Once that is done, we approve your account and you get an email with a link to sign in.'
+    : 'Next, we set up a short call with you: reply to this email with a few times that suit you. We get to know your business, show you how selling works and agree how billing works. Once that is done, we approve your account and you get an email with a link to sign in.';
+  const html = layout(mail, {
+    title: 'Thanks for applying',
+    lines: [lead, next],
+    button: app.callUrl ? { label: 'Book your call', url: app.callUrl } : undefined,
+  });
+  const text = `${lead}\n\n${next}${app.callUrl ? `\n\nBook your call: ${app.callUrl}` : ''}`;
+  await send(mail, to, `We got your ${mail.brand} application`, html, text, 'application email');
 }
 
 /** To the platform admin: a new application is waiting on the dashboard at `url`. */
@@ -197,7 +208,8 @@ export async function sendRestoreTestFailed(mail: AuthMail, to: string, test: { 
 /** To the applicant: not approved. */
 export async function sendApplicationDeclined(mail: AuthMail, to: string, app: ApplicationMail): Promise<void> {
   const lead = `Hi ${app.name}, thanks for applying to sell websites with ${mail.brand} as ${app.business}.`;
-  const body = "We can't offer you a seller account right now. If you have questions, contact us through our website.";
+  const ask = mail.supportEmail ? `write to ${mail.supportEmail}` : 'contact us through our website';
+  const body = `We can't offer you a seller account right now. If you have questions, ${ask}.`;
   await send(mail, to, `Your ${mail.brand} application`, layout(mail, { title: 'About your application', lines: [lead, body] }), `${lead}\n\n${body}`, 'decline email');
 }
 

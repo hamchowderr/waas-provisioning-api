@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { Octokit } from '@octokit/rest';
 import { Hono, type Context } from 'hono';
 import type { AppEnv, Deps } from './app.ts';
 import type { AuthMail } from './authmail.ts';
@@ -5,6 +7,10 @@ import { activeDashboardDomain, dashboardHostProduct } from './dashboarddomains.
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson, scopedProduct } from './http.ts';
 import { publicBase } from './oauth.ts';
+import { withTransaction } from './db.ts';
+import { enqueue } from './queue.ts';
+import { channelKey, parseManifest, type ReleaseStore } from './releases.ts';
+import { Status } from './status.ts';
 import { getStorefront } from './storefronts.ts';
 
 /**
@@ -49,23 +55,67 @@ export function demoZip(file: string, download: typeof fetch = fetch): Promise<B
   const match = DEMO_ZIP.exec(file);
   if (!match) return Promise.resolve(null);
   const [, repo, tag] = match as unknown as [string, keyof typeof DEMO_ZIP_ASSET, string];
-  let zip = demoZips.get(file);
+  return cachedZip(file, () => Promise.resolve(`https://github.com/hamchowderr/anypress-${repo}/releases/download/${tag}/${DEMO_ZIP_ASSET[repo]}`), download);
+}
+
+/**
+ * A zip from `url()`, kept in memory under `key` once fetched: no larger than DEMO_ZIP_MAX and, when `sha256` is given,
+ * with that checksum. A failed fetch is forgotten, so the next request tries again.
+ */
+function cachedZip(key: string, url: () => Promise<string>, download: typeof fetch, sha256?: string): Promise<Buffer | null> {
+  let zip = demoZips.get(key);
   if (!zip) {
-    const url = `https://github.com/hamchowderr/anypress-${repo}/releases/download/${tag}/${DEMO_ZIP_ASSET[repo]}`;
-    zip = download(url, { signal: AbortSignal.timeout(20_000) })
+    zip = url()
+      .then((u) => download(u, { signal: AbortSignal.timeout(20_000) }))
       .then(async (r) => {
         if (!r.ok) return null;
         const bytes = Buffer.from(await r.arrayBuffer());
-        return bytes.length <= DEMO_ZIP_MAX ? bytes : null;
+        if (bytes.length > DEMO_ZIP_MAX) return null;
+        return !sha256 || createHash('sha256').update(bytes).digest('hex') === sha256 ? bytes : null;
       })
       .catch(() => null)
       .then((bytes) => {
-        if (!bytes) demoZips.delete(file);
+        if (!bytes) demoZips.delete(key);
         return bytes;
       });
-    demoZips.set(file, zip);
+    demoZips.set(key, zip);
   }
   return zip;
+}
+
+/**
+ * AnyPress Client's latest stable release zip, kept in memory per version once fetched. Null when there is no release
+ * or it can't be read.
+ */
+export async function latestClientZip(releases: ReleaseStore, download: typeof fetch = fetch): Promise<Buffer | null> {
+  const manifest = parseManifest(await releases.getJson(channelKey('anypress-client', 'stable')), 'anypress-client');
+  if (!manifest) return null;
+  return cachedZip(`anypress-client-${manifest.version}`, () => releases.presignGet(manifest.zip, 300), download, manifest.sha256);
+}
+
+/** The newest release tag of the theme or Blocks, asked of GitHub (its official SDK) at most every five minutes. */
+const LATEST_TTL = 5 * 60_000;
+const latestTags = new Map<string, { tag: string; at: number }>();
+type LatestRelease = (repo: string) => Promise<string>;
+const githubLatest: LatestRelease = async (repo) => {
+  const { data } = await new Octokit({ userAgent: 'anypress-api' }).rest.repos.getLatestRelease({ owner: 'hamchowderr', repo });
+  return data.tag_name;
+};
+
+/**
+ * The newest release zip of the AnyPress theme (anypress-theme.zip) or AnyPress Blocks (anypress-blocks.zip), for demos
+ * that always run the latest release. Null for any other name, or when GitHub can't be asked and no tag is known yet.
+ */
+export async function latestDemoZip(file: string, latest: LatestRelease = githubLatest, download: typeof fetch = fetch): Promise<Buffer | null> {
+  const match = /^anypress-(theme|blocks)\.zip$/.exec(file);
+  if (!match) return null;
+  const repo = `anypress-${match[1]}`;
+  let known = latestTags.get(repo);
+  if (!known || Date.now() - known.at > LATEST_TTL) {
+    const tag = await latest(repo).catch(() => null);
+    if (tag) latestTags.set(repo, (known = { tag, at: Date.now() }));
+  }
+  return known ? demoZip(`${repo}-${known.tag}.zip`, download) : null;
 }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const URL_RE = /^https?:\/\/[^\s]+$/;
@@ -246,6 +296,30 @@ async function save(pool: Deps['pool'], owner: BrandOwner, set: Record<string, u
  * Mounted in the admin API for /products/:productId (also /account, its own storefront) and
  * /resellers/:id (platform admin only).
  */
+/** The option a ready-made storefront takes its look from (templates/seller-storefront/mu-plugins/seller-storefront.php). */
+export const STOREFRONT_BRAND_OPTION = 'anypress_storefront_brand';
+
+/**
+ * A storefront's look reaches its ready-made storefront too: the site title, logo, icon, main colour and support
+ * address, as one option the template applies once per change. Saved on the store (restores and rollbacks keep it)
+ * and written by a tenant.update job. A reseller's change reaches each of its storefronts that has one.
+ */
+async function pushStorefrontBrand(deps: Deps, base: string, owner: BrandOwner) {
+  const { pool } = deps;
+  if (!deps.config.storefrontProductId) return;
+  const products =
+    'productId' in owner ? [owner.productId] : (await pool.query<{ id: string }>('SELECT id FROM products WHERE reseller_id = $1', [owner.resellerId])).rows.map((r) => r.id);
+  for (const productId of products) {
+    const storefront = await getStorefront(deps, productId);
+    if (!storefront || storefront.statusCode === Status.Removing || storefront.statusCode === Status.Failed) continue;
+    const wpOptions = { [STOREFRONT_BRAND_OPTION]: JSON.stringify((await effectiveBrand(pool, base, productId)) ?? {}) };
+    await withTransaction(pool, async (client) => {
+      await client.query('UPDATE tenants SET wp_options = wp_options || $2, status = $3, date_changed = now() WHERE id = $1', [storefront.id, wpOptions, Status.Pending]);
+      await enqueue(deps.boss, client, { type: 'tenant.update', tenantId: storefront.id, wpOptions });
+    });
+  }
+}
+
 export function brandingRoutes(deps: Deps) {
   const { pool } = deps;
   const app = new Hono<AppEnv>();
@@ -266,6 +340,12 @@ export function brandingRoutes(deps: Deps) {
     return { resellerId: id };
   }
 
+  /** After a change: the new look goes to the ready-made storefront, then the answer. */
+  async function changed(c: Context<AppEnv>, owner: BrandOwner) {
+    await pushStorefrontBrand(deps, base(c), owner);
+    return answer(c, owner);
+  }
+
   /** The owner's own branding, and for a storefront what its dashboard shows once its reseller's fills the gaps. */
   async function answer(c: Context<AppEnv>, owner: BrandOwner) {
     const own = view(base(c), await ownBrand(pool, owner));
@@ -281,7 +361,7 @@ export function brandingRoutes(deps: Deps) {
       const owner = await find(c);
       const fields = parseFields(await readJson(c));
       await save(pool, owner, { name: fields.name, color: fields.color, support_email: fields.supportEmail, shop_url: fields.shopUrl });
-      return answer(c, owner);
+      return changed(c, owner);
     });
 
     for (const kind of Object.keys(IMAGES) as ImageKind[]) {
@@ -299,14 +379,14 @@ export function brandingRoutes(deps: Deps) {
           throw badRequest(`${spec.label} must be a PNG, JPEG or WebP image${kind === 'icon' ? ', or an .ico file' : ''}`);
         }
         await save(pool, owner, { [kind]: Buffer.from(bytes), [`${kind}_type`]: type });
-        return answer(c, owner);
+        return changed(c, owner);
       });
 
       app.delete(`${prefix}/branding/${kind}`, async (c) => {
         const owner = await find(c);
         const { column, id } = ownerColumn(owner);
         await pool.query(`UPDATE dashboard_brands SET ${kind} = NULL, ${kind}_type = NULL, updated_at = now() WHERE ${column} = $1`, [id]);
-        return answer(c, owner);
+        return changed(c, owner);
       });
     }
   }
@@ -353,7 +433,7 @@ async function demoBrand(deps: Pick<Deps, 'pool' | 'config'>, base: string, id: 
  * GET /branding/host/:host: the look of the sign-in page on a seller's own dashboard address
  * (src/dashboarddomains.ts), before anyone has signed in; 404 for any other address.
  */
-export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
+export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config' | 'releases'>) {
   const app = new Hono<AppEnv>();
   app.get('/host/:host', async (c) => {
     const productId = await dashboardHostProduct(deps.pool, c.req.param('host'));
@@ -371,16 +451,31 @@ export function publicBrandingRoutes(deps: Pick<Deps, 'pool' | 'config'>) {
   });
   // The theme and AnyPress Blocks zips the demo pages install on WordPress Playground (docs/branding.md, "Demo page").
   // GitHub's release downloads don't let other sites read them, so Playground's site gets them here.
+  // AnyPress Client's latest stable release, for the site-type blueprints (templates/anypress-store/playground): its
+  // releases are in the update channel, not GitHub downloads. Cached briefly, so a new release reaches Playground soon.
+  app.get('/demo-files/anypress-client.zip', async (c) => {
+    const zip = deps.releases ? await latestClientZip(deps.releases) : null;
+    if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+    return c.body(new Uint8Array(zip), 200, {
+      'Content-Type': 'application/zip',
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Cache-Control': 'public, max-age=300',
+    });
+  });
+  // anypress-theme.zip and anypress-blocks.zip are the newest releases, for demos that never pin a version.
   app.get('/demo-files/:file', async (c) => {
-    const zip = await demoZip(c.req.param('file'));
+    const file = c.req.param('file');
+    const latest = !DEMO_ZIP.test(file);
+    const zip = latest ? await latestDemoZip(file) : await demoZip(file);
     // Not kept by any cache: a release published later, or a download that failed once, must work on the next try.
     if (!zip) return c.json({ statusCode: 404, message: 'Not found' }, 404, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
     return c.body(new Uint8Array(zip), 200, {
       'Content-Type': 'application/zip',
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
-      // A release never changes, and the name carries its version.
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      // A release never changes, and a versioned name keeps it; the newest one is cached briefly so a new release shows soon.
+      'Cache-Control': latest ? 'public, max-age=300' : 'public, max-age=31536000, immutable',
     });
   });
   app.get('/:id/:kind{logo|icon}', async (c) => {

@@ -246,7 +246,7 @@ describe('chat panel', () => {
         await box.press('Enter');
         const notice = page.getByRole('alert').filter({ hasText: 'assistant messages' });
         await notice.waitFor({ timeout: 30_000 });
-        expect(await notice.innerText()).toMatch(/^You've used all 150 assistant messages in your plan this month\. They start again on \w+ 1\. A bigger plan gets more\.$/);
+        expect(await notice.innerText()).toMatch(/^You've used all 150 assistant messages in your plan this month\. They start again on \w+ 1\.$/);
         expect(writes()).toEqual([]);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/panel-allowance-${label}.png`, fullPage: true });

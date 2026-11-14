@@ -363,6 +363,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/storage-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set storage packs
+         * @description Added for AnyPress.
+         *
+         *     Sets how many storage packs the store has, each adding 25 GB to the storage of its plan (10, 20 or 30 GB by size). Storage packs are bought monthly: send the subscription's quantity whenever it changes, and 0 when it ends. Sending the same number again changes nothing and is safe to retry. When packs end, nothing is deleted; the store only stops taking new uploads while it is over its storage.
+         *
+         *     The store gets the new storage within a minute. Rejected for a tenant that is being removed or has failed.
+         */
+        put: operations["setTenantStoragePacks"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/care": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set care
+         * @description Added for AnyPress.
+         *
+         *     Records the care package bought for the store on the shop and this month's care time, so the dashboard can show it. Send it whenever care starts, time is logged or extra time is bought, and send `package: null` when care ends. Sending the same values again changes nothing and is safe to retry. Nothing changes on the store itself.
+         *
+         *     `used` counts for `month`; once that month is over and nothing new has been sent, the tenant shows the new month with no time used. Rejected for a tenant that is being removed or has failed.
+         */
+        put: operations["setTenantCare"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/email-packs": {
         parameters: {
             query?: never;
@@ -984,6 +1032,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/demos/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a demo as a draft
+         * @description Called by a demo page with what it read out of a WordPress Playground demo (built from a site type's blueprint, with AnyPress Client): pages, Site Editor styles, header and footer, menus and business details. No API key. Never code, plugins or users. Photos the visitor added are listed by file name in `images`, uploaded with the `uploads` links (one `PUT` each, at most `maxImageBytes`), and written in the content as `anypress-demo-image:<name>`. The answer's `id` goes to checkout, where the storefront creates the store with `demoDraftId`. Drafts are kept 14 days.
+         */
+        post: operations["createDemoDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/demos/drafts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a demo draft
+         * @description What checkout shows about a saved demo, and whether it can still be used. No API key. The content itself is not returned.
+         */
+        get: operations["getDemoDraft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/imports/upload": {
         parameters: {
             query?: never;
@@ -1152,10 +1240,32 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A theme or AnyPress Blocks release zip for the demo pages
+         * A theme, AnyPress Blocks or AnyPress Client release zip for the demo pages
          * @description The AnyPress theme or AnyPress Blocks release zip the demo pages install on WordPress Playground (docs/branding.md, "Demo page"), readable from any site. Public.
          */
         get: operations["getDemoFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The price list
+         * @description Added for AnyPress.
+         *
+         *     Every site type's monthly and yearly price per size in US dollars, the volume savings, the reseller discount and the affiliate share. anypress.io and the dashboard read their prices from here. Public, readable from any site.
+         */
+        get: operations["getPricing"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1873,6 +1983,8 @@ export interface components {
             size?: components["schemas"]["TenantSize"];
             /** @description Email the store's owner (`wordPressUserEmail`) once the store is ready, with a link to set their password. Sent in the storefront's brand. Off unless set to true, so you can tell your client yourself. */
             notifyOwner?: boolean;
+            /** @description A demo the customer built on Playground and saved before checkout (Demo drafts). The store is built as usual, then gets the demo's pages, styles, header and footer, menus and photos. The draft must match the store's site type (`ANYPRESS_TENANT_ROLES`), belong to this storefront's demo page or AnyPress's own, and is used once. Not with `uploadCustomSnapshot`. */
+            demoDraftId?: string;
             /** @description Move in an existing WordPress site instead of starting from a snapshot. The tenant is not built yet: it waits for its site, and the response carries an `importCode` for the AnyPress Export plugin and an `uploadUrl`. Once the archive (a zip or gzipped tar holding `database.sql` and `wp-content/`) is uploaded and the move started (see Site import), the store is built from it and keeps the site's own plugins and themes. Not with `snapshotId` or `groupName`. */
             uploadCustomSnapshot?: boolean;
             /** @description Accepted for compatibility; zip and gzipped tar are both read. Only with uploadCustomSnapshot. */
@@ -2038,6 +2150,80 @@ export interface components {
             error: string | null;
             /** Format: date-time */
             dateCreated: string;
+        };
+        PriceList: {
+            /** @enum {string} */
+            currency: "USD";
+            /** @description Each site type, in the order anypress.io lists them */
+            siteTypes: {
+                /** @description The store template's site type (website, bookings, online-store, community, everything) */
+                key: string;
+                name: string;
+                monthly: components["schemas"]["PriceBySize"];
+                yearly: components["schemas"]["PriceBySize"];
+            }[];
+            /** @description How many times the Small price each size costs */
+            sizeTimes: components["schemas"]["PriceBySize"];
+            /** @description How many months a year costs */
+            yearlyMonths: number;
+            /** @description Free days at the start of a new website plan, one trial per person */
+            trialDays: number;
+            /** @description The saving off every site's price once a customer has this many live sites */
+            volumeTiers: {
+                sites: number;
+                percent: number;
+            }[];
+            /** @description A new reseller's discount off each site's price */
+            wholesalePercent: number;
+            /** @description An affiliate's share of a customer's first payment */
+            affiliatePercent: number;
+            /** @description Care for one website, sold on the shop. Packages are monthly changes; services are one-time. */
+            care: {
+                packages: {
+                    key: string;
+                    name: string;
+                    /** @description Price a month in US dollars */
+                    monthly: number;
+                    /** @description Price a year in US dollars */
+                    yearly: number;
+                    /** @description Minutes of changes each month */
+                    minutes: number;
+                    /** @description How soon a request is answered, e.g. "1 business day" */
+                    answer: string;
+                    /** @description Whether the package includes a monthly call */
+                    call: boolean;
+                }[];
+                services: {
+                    key: string;
+                    name: string;
+                    /** @description One-time price in US dollars */
+                    price: number;
+                    /** @description Minutes of changes it adds to the website (0 for a job) */
+                    minutes: number;
+                    /** @description Sold only for a website with a care package */
+                    careOnly: boolean;
+                }[];
+            };
+            /** @description Add-ons for one website, sold on the shop */
+            packs: {
+                /** @description Extra emails, a one-time price; they never expire */
+                email: {
+                    emails: number;
+                    /** @description One-time price in US dollars */
+                    price: number;
+                };
+                /** @description Extra storage, a monthly price; packs stack */
+                storage: {
+                    gb: number;
+                    /** @description Price a month in US dollars */
+                    monthly: number;
+                };
+            };
+        };
+        PriceBySize: {
+            small: number;
+            medium: number;
+            large: number;
         };
         ExceptionResult: {
             /**
@@ -2363,6 +2549,12 @@ export interface components {
              */
             readonly dateSuspended?: string | null;
             size?: components["schemas"]["TenantSize"];
+            /**
+             * @description Added for AnyPress. The storage packs the store has (see Set storage packs), each adding 25 GB to its plan's storage. Absent when it has none.
+             * @example 1
+             */
+            readonly storagePacks?: number;
+            care?: components["schemas"]["TenantCare"];
             /** @description Added for AnyPress. True for a site moved in from another host (`uploadCustomSnapshot`), which keeps its own plugins and themes when it is restored or moved to another version. Absent otherwise. */
             readonly keepsOwnCode?: boolean;
             /** @description Added for AnyPress. True while a site moved in waits for its upload (see Site import); it can then only be deleted. Absent otherwise. */
@@ -2497,6 +2689,87 @@ export interface components {
              */
             bytes?: number;
             store?: components["schemas"]["ImportStore"];
+        };
+        DemoDraftParams: {
+            /**
+             * @description The site type the demo was built as (the store template's roles.json). A store made from the draft must be this type.
+             * @enum {string}
+             */
+            siteType: "website" | "bookings" | "online-store" | "community" | "everything" | "store" | "highlevel";
+            /** @description The design kit the demo started from, e.g. `ridge` or `ridge/ironclad-roofing` */
+            kit?: string;
+            /**
+             * Format: uuid
+             * @description The storefront whose demo page made it (a seller's or reseller's). Only that storefront can use the draft.
+             */
+            productId?: string;
+            content: components["schemas"]["DemoContent"];
+            /** @description The photos' file names (lowercase, ending .jpg, .png, .webp or .gif) */
+            images?: string[];
+        };
+        DemoContent: {
+            pages: components["schemas"]["DemoPage"][];
+            /** @description Site Editor changes, as the site routes' `PATCH /styles` takes them */
+            styles?: {
+                settings?: {
+                    [key: string]: unknown;
+                };
+                styles?: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description The header as blocks */
+            header?: string;
+            /** @description The footer as blocks */
+            footer?: string;
+            /** @description Navigation menus, applied to the store's menu with the same title */
+            menus?: {
+                title: string;
+                content: string;
+            }[];
+            /** @description Business details for the store's assistants */
+            business?: {
+                what?: string;
+                who?: string;
+                area?: string;
+                hours?: string;
+                contact?: string;
+                voice?: string;
+                notes?: string;
+            };
+        };
+        DemoPage: {
+            title: string;
+            /** @description Matched to the store's page with the same slug, which it replaces; otherwise a new page */
+            slug: string;
+            /** @description The page as blocks */
+            content?: string;
+            /** @enum {string} */
+            status?: "publish" | "draft";
+        };
+        DemoDraftCreated: {
+            /** @description The draft's id, for checkout (`demoDraftId`) */
+            id?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            maxImageBytes?: number;
+            uploads?: {
+                name?: string;
+                /** @description Where to PUT the photo, for an hour */
+                uploadUrl?: string;
+            }[];
+        };
+        DemoDraft: {
+            id?: string;
+            siteType?: string;
+            kit?: string | null;
+            productId?: string | null;
+            /** @description The demo's page titles */
+            pages?: string[];
+            /** Format: date-time */
+            expiresAt?: string;
+            /** @description A store was already made from it */
+            used?: boolean;
         };
         ImportUploadResult: {
             /** @description Where to PUT the archive, in one request */
@@ -2788,6 +3061,99 @@ export interface components {
              */
             reference: string;
         };
+        StoragePackParams: {
+            /**
+             * @description How many storage packs the store has now, each adding 25 GB. 0 ends them.
+             * @example 1
+             */
+            packs: number;
+        };
+        CareParams: {
+            /**
+             * @description The care package's name, such as Care Plus. null when the store's care ends.
+             * @example Care Plus
+             */
+            package: string | null;
+            /**
+             * @description The package's minutes of changes a month.
+             * @example 120
+             */
+            minutes?: number;
+            /**
+             * @description Minutes used in `month`.
+             * @example 40
+             */
+            used?: number;
+            /**
+             * @description Extra minutes bought, which never expire and are used once the month's time runs out.
+             * @example 60
+             */
+            extra?: number;
+            /**
+             * @description How soon requests are answered.
+             * @example 1 business day
+             */
+            answer?: string;
+            /**
+             * @description The month `used` counts for, YYYY-MM in the shop's time zone. Defaults to the current month (UTC).
+             * @example 2026-11
+             */
+            month?: string;
+        };
+        /** @description Added for AnyPress. The care package bought for the store on the shop, and this month's care time (see Set care). Absent when it has none. */
+        TenantCare: {
+            /** @example Care Plus */
+            package?: string;
+            /**
+             * @description Minutes of changes a month.
+             * @example 120
+             */
+            minutes?: number;
+            /**
+             * @description Minutes used this month.
+             * @example 40
+             */
+            used?: number;
+            /**
+             * @description Minutes left this month.
+             * @example 80
+             */
+            left?: number;
+            /**
+             * @description Extra minutes bought, which never expire.
+             * @example 60
+             */
+            extra?: number;
+            /**
+             * @description How soon requests are answered.
+             * @example 1 business day
+             */
+            answer?: string;
+            /** @example 2026-11 */
+            month?: string;
+        };
+        CareResult: {
+            /** Format: uuid */
+            readonly tenantId?: string;
+            readonly externalId?: string;
+            /** @description The care the store has now; null when it has none. */
+            care?: components["schemas"]["TenantCare"] | null;
+        };
+        StoragePackResult: {
+            /** Format: uuid */
+            readonly tenantId?: string;
+            readonly externalId?: string;
+            /**
+             * @description The storage packs the store has now.
+             * @example 1
+             */
+            readonly storagePacks?: number;
+            /**
+             * @description The storage they add to the plan's, in GB.
+             * @example 25
+             */
+            readonly storagePacksGb?: number;
+        };
         EmailPackResult: {
             /** Format: uuid */
             readonly tenantId?: string;
@@ -2998,9 +3364,9 @@ export interface components {
         };
         /**
          * @description The tenant's size: what its WordPress may use and its plan's quotas. Storage counts wp-content and the database; uploads past it are refused. Email counts what the store sends in a calendar month (UTC); past it the store sends none until the next month.
-         *     small: 1 CPU, 512 MB, 5 GB storage, 5,000 emails a month
-         *     medium: 2 CPUs, 512 MB, 10 GB storage, 20,000 emails a month
-         *     large: 4 CPUs, 768 MB, 25 GB storage, 50,000 emails a month
+         *     small: 1 CPU, 768 MB, 5 GB storage, 5,000 emails a month
+         *     medium: 2 CPUs, 1280 MB, 10 GB storage, 20,000 emails a month
+         *     large: 4 CPUs, 2048 MB, 25 GB storage, 50,000 emails a month
          *     Optional when creating a tenant: small when omitted.
          * @example small
          * @enum {string}
@@ -3996,6 +4362,118 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
                 };
+            };
+        };
+    };
+    setTenantStoragePacks: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+                /** @description Reseller (partner) keys only: the product to act on. Ignored for product keys, which are already tied to one product. Phase 2. */
+                productId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StoragePackParams"];
+            };
+        };
+        responses: {
+            /** @description The count was recorded and is being applied to the store */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoragePackResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setTenantCare: {
+        parameters: {
+            query?: {
+                /** @description The Id of the Tenant (required if externalId is omitted) */
+                tenantId?: string;
+                /**
+                 * @description The ExternalId of the Tenant (required if tenantId is omitted)
+                 * @example store-1042
+                 */
+                externalId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CareParams"];
+            };
+        };
+        responses: {
+            /** @description The care was recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CareResult"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5839,6 +6317,88 @@ export interface operations {
             };
         };
     };
+    createDemoDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DemoDraftParams"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoDraftCreated"];
+                };
+            };
+            /** @description The validation of the request failed. See the message in the response to see why */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description The demo is too large to save */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+            /** @description Too many demos are being saved right now */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getDemoDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoDraft"];
+                };
+            };
+            /** @description No such draft, or it has expired */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
     getImportUpload: {
         parameters: {
             query?: never;
@@ -6245,7 +6805,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip */
+                /** @description anypress-theme-v{version}.zip or anypress-blocks-v{version}.zip for one release; anypress-theme.zip or anypress-blocks.zip for the newest; anypress-client.zip for AnyPress Client's newest stable release */
                 file: string;
             };
             cookie?: never;
@@ -6268,6 +6828,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExceptionResult"];
+                };
+            };
+        };
+    };
+    getPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The price list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceList"];
                 };
             };
         };

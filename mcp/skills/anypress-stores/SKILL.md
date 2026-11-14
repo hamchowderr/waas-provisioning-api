@@ -1,6 +1,6 @@
 ---
 name: anypress-stores
-description: Create and manage WordPress stores on AnyPress (the WaaS provisioning API) through its MCP server - launching a store, putting it on a custom domain, setting up its sending domain, backups, suspend/resume and restores, and editing a store's pages, sections, colours, fonts, header, footer and menus. Use whenever the user asks to do something with their AnyPress or WaaS stores and the waas-provisioning MCP tools are connected.
+description: Create and manage WordPress stores on AnyPress through its MCP server - launching a store, putting it on a custom domain, setting up its sending domain, backups, suspend/resume and restores, and editing a store's pages, sections, colours, fonts, header, footer and menus. Use whenever the user asks to do something with their AnyPress stores and the AnyPress MCP tools are connected.
 license: GPL-3.0-or-later
 ---
 

@@ -86,7 +86,7 @@ type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 /**
- * A typed client for the WaaS Provisioning API: stores (tenants), domains, backups, versions,
+ * A typed client for the AnyPress API: stores (tenants), domains, backups, versions,
  * templates, sending domains, Domain Connect links and webhooks. Request and response types come
  * from the API's OpenAPI files (openapi/*.yaml).
  */
@@ -143,6 +143,7 @@ export class WaasClient {
      * repeat add nothing. Answers with the total bought for the store.
      */
     addEmailPack: (ref: TenantRef, params: BodyOf<'addTenantEmailPack'>) => this.#call('addTenantEmailPack', 'POST', '/v1/tenants/email-packs', ref, params),
+    setStoragePacks: (ref: TenantRef, params: BodyOf<'setTenantStoragePacks'>) => this.#call('setTenantStoragePacks', 'PUT', '/v1/tenants/storage-packs', ref, params),
     listBackups: (ref: TenantRef) => this.#call('listTenantBackups', 'GET', '/v1/tenants/backups', ref),
     createBackup: (ref: TenantRef) => this.#call('createTenantBackup', 'POST', '/v1/tenants/backups', ref),
     /**
