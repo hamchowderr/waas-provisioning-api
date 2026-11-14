@@ -28,7 +28,7 @@ fluent-support 2.5.0 a9525ca9fdc5e6de34a37b3075db01cd7249818f76e93464d7aec44ac5f
 easy-code-manager 10.58 39bfd2fe29b099147949086c42dfe715cedd4ddce3631c9ef33165470ed25667
 seo-by-rank-math 1.0.282 d4434c5726c62cdd819f0129cac3df5fea0c8efafbcd812856cf87f5e05691a3
 automatorwp 6.1.1 5b63d943831bd90e7df4576cf9ac9dbf5afd054d590eedd2b6cb4c9262eff082
-wp-fusion-lite 3.48.0 72e480456caff66f25d8b88c63f403c9ba393e4e808d78b81ae48d13cf8976e6
+wp-fusion-lite 3.48.2 a4b9a90be710e3d5ffac86a472136d71b1a292d121b6698741d4b19ea5b030d7
 "
 # wordpress.org plugins installed but left off: slug version sha256. AnyPress Client turns the MCP Adapter on on every
 # store (always on since AnyPress Client 2.18.0; not in roles.json).

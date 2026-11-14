@@ -179,7 +179,7 @@
 			"step": "installPlugin",
 			"pluginData": {
 				"resource": "url",
-				"url": "https://downloads.wordpress.org/plugin/wp-fusion-lite.3.48.0.zip",
+				"url": "https://downloads.wordpress.org/plugin/wp-fusion-lite.3.48.2.zip",
 				"caption": "Installing wp-fusion-lite"
 			},
 			"options": {

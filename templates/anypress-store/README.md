@@ -25,7 +25,7 @@ Plugins are listed in the order AnyPress shows them everywhere.
 | FluentSnippets | `easy-code-manager` | 10.58 |
 | Rank Math SEO | `seo-by-rank-math` | 1.0.282 |
 | AutomatorWP | `automatorwp` | 6.1.1 |
-| WP Fusion Lite | `wp-fusion-lite` | 3.48.0 |
+| WP Fusion Lite | `wp-fusion-lite` | 3.48.2 |
 
 Plus FluentToolkit 2.1.4 (`fluent-toolkit`, shown in wp-admin as FluentHub: one dashboard for the Fluent plugins). It isn't
 on wordpress.org, so its GPL zip from WPManageNinja is kept in [`plugins/`](plugins/) and checked by SHA-256 like the others;
