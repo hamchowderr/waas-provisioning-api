@@ -24,13 +24,16 @@ const QUEUE = 'prospect-demos';
 const ROUTES = ['seller', 'reseller', 'affiliate', 'chamber', 'owner'] as const;
 const KIT = /^[a-z][a-z0-9-]{0,39}$/;
 const CODE = /^p_[A-Za-z0-9_-]{16}$/;
-const FILE = /^(logo|photo-[1-4]|item-[1-8])\.(png|jpg|webp|gif|svg)$/;
+const FILE = /^((logo|photo-[1-4]|item-[1-8])\.(png|jpg|webp|gif|svg)|font-[12]-(400|700)\.woff2)$/;
 const MAX_IMPORT = 200;
 const MAX_FILE = 5 * 1024 ** 2;
 const MAX_ITEMS = 8;
 const MAX_PHOTOS = 4;
 const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg' };
-const FILE_TYPES = Object.fromEntries(Object.entries(IMAGE_TYPES).map(([type, ext]) => [ext, type]));
+const FILE_TYPES: Record<string, string> = { ...Object.fromEntries(Object.entries(IMAGE_TYPES).map(([type, ext]) => [ext, type])), woff2: 'font/woff2' };
+/** Open-licence fonts by name, with their files (fontsource.org; it has no official client, so this is a plain GET). */
+const FONTSOURCE = 'https://api.fontsource.org/v1/fonts/';
+const FONT_WEIGHTS = [400, 700] as const;
 
 /** What the job keeps from the website. Images are file names here and links in every answer. */
 interface ProspectBrand {
@@ -44,6 +47,10 @@ interface ProspectBrand {
   hours: string[];
   colors: Record<string, string>;
   fonts: { heading: string | null; body: string | null };
+  /** What their website is now: the builder it runs on and what it has (shop, bookings, events, members, blog, donations). */
+  site?: { platform: string | null; features: (typeof SITE_FEATURES)[number][] };
+  /** The heading and body fonts' files, copied when the font is open-licence (Google Fonts and the like); otherwise none. */
+  fontFaces?: { family: string; category: string; weight: number; file: string }[];
   colorScheme: 'light' | 'dark' | null;
   logo: string | null;
   photos: string[];
@@ -148,7 +155,7 @@ const fileUrl = (base: string, code: string) => (name: string | null) => (name ?
 function brandOut(base: string, code: string, brand: ProspectBrand | null) {
   if (!brand) return null;
   const url = fileUrl(base, code);
-  return { ...brand, logo: url(brand.logo), photos: brand.photos.map((p) => url(p)!), items: brand.items.map((i) => ({ ...i, image: url(i.image) })) };
+  return { ...brand, fontFaces: (brand.fontFaces ?? []).map((f) => ({ ...f, file: url(f.file)! })), logo: url(brand.logo), photos: brand.photos.map((p) => url(p)!), items: brand.items.map((i) => ({ ...i, image: url(i.image) })) };
 }
 
 function demoOut(base: string, r: Row) {
@@ -291,8 +298,8 @@ export function publicProspectDemoRoutes(deps: Pick<Deps, 'pool' | 'provisioner'
 /** What the job calls out to; tests replace them. */
 export interface ProspectReaders {
   firecrawl?: Pick<Firecrawl, 'scrape'>;
-  /** Downloads one image; a GET that never reaches a private address. */
-  fetchImage?: typeof fetch;
+  /** Downloads one image or font file; a GET that never reaches a private address. */
+  download?: typeof fetch;
 }
 
 const PROMPT = [
@@ -302,9 +309,51 @@ const PROMPT = [
   `items: up to ${MAX_ITEMS} things it sells or offers (products, menu items, services, classes, events or member benefits), each with a short description,`,
   'its price exactly as printed on the site (null when the site shows no price; never guess one), and the link of its picture.',
   `photos: up to ${MAX_PHOTOS} links of large photos of the business, its place, people or work (not icons or logos).`,
+  'platform: the website builder it runs on when the page shows it (WordPress, Wix, Squarespace, Shopify, Webflow, GoDaddy, Weebly, Duda, Square Online), else null.',
+  'features: which of these the website itself has, only when you can see it on the site:',
+  'shop (sells products online with a cart), bookings (books appointments or classes online), events (an events list or calendar),',
+  'members (membership, member sign-in or a member directory), blog (news or blog posts), donations (takes donations online).',
 ].join(' ');
 
 const nullableString = { type: ['string', 'null'] };
+const SITE_FEATURES = ['shop', 'bookings', 'events', 'members', 'blog', 'donations'] as const;
+/** Builders by what their pages say about themselves (the generator tag), in the name the board shows. */
+const PLATFORMS: [RegExp, string][] = [
+  [/wordpress|woocommerce|elementor|divi/i, 'WordPress'],
+  [/wix/i, 'Wix'],
+  [/squarespace/i, 'Squarespace'],
+  [/shopify/i, 'Shopify'],
+  [/webflow/i, 'Webflow'],
+  [/godaddy|websites \+ marketing/i, 'GoDaddy'],
+  [/weebly|square online/i, 'Square Online'],
+  [/duda/i, 'Duda'],
+  [/drupal/i, 'Drupal'],
+  [/joomla/i, 'Joomla'],
+  [/hubspot/i, 'HubSpot'],
+];
+
+/** Where a link on the page points tells us what the site has, alongside what the reader saw. */
+const FEATURE_LINKS: [RegExp, (typeof SITE_FEATURES)[number]][] = [
+  [/\/(shop|store|cart|products?|collections)(\/|$|\?)|square\.site|shopify|etsy\.com/i, 'shop'],
+  [/\/(book|booking|appointments?|schedule)(\/|$|\?)|calendly\.com|acuityscheduling|vagaro|booksy|squareup\.com\/appointments|mindbodyonline|cal\.com/i, 'bookings'],
+  [/\/(events?|calendar)(\/|$|\?)|eventbrite|growthzoneapp|chambermaster/i, 'events'],
+  [/\/(members?|membership|join|directory|login|my-account)(\/|$|\?)/i, 'members'],
+  [/\/(blog|news|articles?)(\/|$|\?)/i, 'blog'],
+  [/\/(donate|donations?|give)(\/|$|\?)|givebutter|paypal\.com\/donate/i, 'donations'],
+];
+
+/** The features the reader saw, plus the ones the page's links show. */
+function featuresOf(doc: Document, found: Extracted) {
+  const links = (doc.links ?? []).filter((l): l is string => typeof l === 'string');
+  return SITE_FEATURES.filter((f) => (found.features ?? []).includes(f) || FEATURE_LINKS.some(([test, name]) => name === f && links.some((l) => test.test(l))));
+}
+
+/** What the site runs on: its generator tag first, then what the reader saw on the page. */
+function platformOf(doc: Document, found: Extracted): string | null {
+  const said = [doc.metadata?.generator, found.platform].flat().filter((v): v is string => typeof v === 'string');
+  for (const text of said) for (const [test, name] of PLATFORMS) if (test.test(text)) return name;
+  return str(found.platform, 50);
+}
 const SCHEMA = {
   type: 'object',
   properties: {
@@ -317,6 +366,8 @@ const SCHEMA = {
     hours: { type: 'array', items: { type: 'string' } },
     items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, description: nullableString, price: nullableString, image: nullableString }, required: ['name'] } },
     photos: { type: 'array', items: { type: 'string' } },
+    platform: nullableString,
+    features: { type: 'array', items: { type: 'string', enum: [...SITE_FEATURES] } },
   },
 };
 
@@ -330,6 +381,8 @@ interface Extracted {
   hours?: unknown[];
   items?: { name?: unknown; description?: unknown; price?: unknown; image?: unknown }[];
   photos?: unknown[];
+  platform?: unknown;
+  features?: unknown[];
 }
 
 const str = (value: unknown, max = 500) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null);
@@ -345,20 +398,24 @@ function linkOf(value: unknown, page: string): string | null {
   }
 }
 
-/** Copies one image, or answers null when it isn't a picture we can keep. */
-async function copyImage(get: typeof fetch, link: string | null, stem: string): Promise<{ name: string; body: Uint8Array; type: string } | null> {
-  if (!link) return null;
+/** Downloads one file whose type `accept` names an extension for, or answers null. */
+async function download(get: typeof fetch, link: string, accept: (type: string) => string | undefined, headers: Record<string, string> = {}) {
   try {
-    const res = await get(link, { headers: { Accept: 'image/*' }, signal: AbortSignal.timeout(20_000) });
+    const res = await get(link, { headers, signal: AbortSignal.timeout(20_000) });
     const type = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
-    const ext = IMAGE_TYPES[type];
+    const ext = accept(type);
     if (!res.ok || !ext) return null;
     const body = new Uint8Array(await res.arrayBuffer());
-    if (!body.length || body.length > MAX_FILE) return null;
-    return { name: `${stem}.${ext}`, body, type };
+    return body.length && body.length <= MAX_FILE ? { body, type, ext } : null;
   } catch {
     return null;
   }
+}
+
+/** Copies one image, or answers null when it isn't a picture we can keep. */
+async function copyImage(get: typeof fetch, link: string | null, stem: string): Promise<{ name: string; body: Uint8Array; type: string } | null> {
+  const file = link ? await download(get, link, (type) => IMAGE_TYPES[type], { Accept: 'image/*' }) : null;
+  return file ? { name: `${stem}.${file.ext}`, body: file.body, type: file.type } : null;
 }
 
 class UnreadableSite extends Error {}
@@ -366,7 +423,7 @@ class UnreadableSite extends Error {}
 async function scrape(website: string, readers: ProspectReaders): Promise<Document> {
   if (!readers.firecrawl) throw new UnreadableSite("Reading websites isn't set up on this server yet.");
   try {
-    return await readers.firecrawl.scrape(website, { formats: ['branding', { type: 'json', prompt: PROMPT, schema: SCHEMA }], onlyMainContent: false, proxy: 'auto', blockAds: true, timeout: 60_000 });
+    return await readers.firecrawl.scrape(website, { formats: ['branding', 'links', { type: 'json', prompt: PROMPT, schema: SCHEMA }], onlyMainContent: false, proxy: 'auto', blockAds: true, timeout: 60_000 });
   } catch (err) {
     throw new UnreadableSite(`${new URL(website).hostname} couldn't be read: ${(err as Error).message}`);
   }
@@ -386,6 +443,7 @@ function brandOf(doc: Document, page: string, found: Extracted): ProspectBrand {
     city: str(found.city, 100),
     address: str(found.address, 300),
     hours: texts(found.hours, 100, 14),
+    site: { platform: platformOf(doc, found), features: featuresOf(doc, found) },
     colors: design.colors,
     fonts: { heading: design.fonts.heading, body: design.fonts.body },
     colorScheme: design.colorScheme,
@@ -401,7 +459,8 @@ async function gather(website: string, readers: ProspectReaders) {
   const page = (doc.metadata?.sourceURL as string | undefined) ?? website;
   const found = (doc.json ?? {}) as Extracted;
   const brand = brandOf(doc, page, found);
-  const files = await copyImages(readers.fetchImage ?? publicFetchUpTo(MAX_FILE + 1), brand, found, [...(found.photos ?? []), doc.metadata?.ogImage]);
+  const get = readers.download ?? publicFetchUpTo(MAX_FILE + 1);
+  const files = [...(await copyImages(get, brand, found, [...(found.photos ?? []), doc.metadata?.ogImage])), ...(await copyFonts(get, brand))];
   return { brand, files, credits: doc.metadata?.creditsUsed ?? 5 };
 }
 
@@ -421,6 +480,44 @@ async function copyImages(get: typeof fetch, brand: ProspectBrand, found: Extrac
   return [logo, ...photos, ...pictures].filter((f): f is NonNullable<typeof f> => !!f);
 }
 
+/** Looks a font up by name; null when it isn't an open-licence font we may copy. */
+async function fontsourceFont(get: typeof fetch, family: string) {
+  const id = family.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (!id) return null;
+  try {
+    const res = await get(`${FONTSOURCE}${id}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    const font = (await res.json()) as { family?: string; category?: string; weights?: number[]; variants?: Record<string, Record<string, Record<string, { url?: { woff2?: string } }>>> };
+    return font.family?.toLowerCase() === family.toLowerCase().trim() ? font : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The nearest weight the font has to the one wanted. */
+const nearest = (weights: number[], want: number) => weights.reduce((best, w) => (Math.abs(w - want) < Math.abs(best - want) ? w : best), weights[0]!);
+
+/** Copies the regular and bold Latin files of the heading and body fonts, when they are open-licence fonts. */
+async function copyFonts(get: typeof fetch, brand: ProspectBrand) {
+  const families = [...new Set([brand.fonts.heading, brand.fonts.body].filter((f): f is string => !!f))].slice(0, 2);
+  const files: { name: string; body: Uint8Array; type: string }[] = [];
+  brand.fontFaces = [];
+  for (const [i, family] of families.entries()) {
+    const font = await fontsourceFont(get, family);
+    if (!font?.weights?.length) continue;
+    for (const want of FONT_WEIGHTS) {
+      const weight = nearest(font.weights, want);
+      const link = font.variants?.[String(weight)]?.normal?.latin?.url?.woff2;
+      const name = `font-${i + 1}-${want}.woff2`;
+      const file = link ? await download(get, link, (type) => (['font/woff2', 'application/octet-stream', ''].includes(type) ? 'woff2' : undefined)) : null;
+      if (!file) continue;
+      files.push({ name, body: file.body, type: 'font/woff2' });
+      brand.fontFaces.push({ family: font.family!, category: font.category ?? 'sans-serif', weight: want, file: name });
+    }
+  }
+  return files;
+}
+
 /** Works the queue: each job reads one prospect's website and keeps what the demo needs. */
 export async function startProspectDemos(
   boss: PgBoss,
@@ -430,7 +527,7 @@ export async function startProspectDemos(
   { pollingIntervalSeconds = 2, notifyPollingIntervalSeconds = NOTIFY_POLL_SECONDS, log = console }: { pollingIntervalSeconds?: number; notifyPollingIntervalSeconds?: number; log?: Pick<Console, 'error'> } = {},
 ) {
   await ensureQueue(boss, QUEUE, { retryLimit: 0, expireInSeconds: 600, deleteAfterSeconds: 7 * 24 * 3600 });
-  await boss.work(QUEUE, { includeMetadata: true, pollingIntervalSeconds, notifyPollingIntervalSeconds }, async ([job]: JobWithMetadata<{ id: string }>[]) => {
+  await boss.work(QUEUE, { includeMetadata: true, pollingIntervalSeconds, notifyPollingIntervalSeconds, localConcurrency: 4 }, async ([job]: JobWithMetadata<{ id: string }>[]) => {
     if (!job) return;
     const { rows } = await pool.query<Row & { files: string[] }>('SELECT * FROM prospect_demos WHERE id = $1 AND status = $2', [job.data.id, Status.Pending]);
     const row = rows[0];

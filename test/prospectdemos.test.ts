@@ -37,6 +37,8 @@ const sites: Record<string, { json: unknown; logo: string }> = {
         { name: '' },
       ],
       photos: ['https://cdn.example/shop.jpg', 'javascript:alert(1)'],
+      platform: null,
+      features: ['shop', 'blog', 'made-up'],
     },
   },
   'https://chamber.example/': { logo: 'https://cdn.example/chamber.svg', json: { name: 'Example Chamber', items: [{ name: 'Leads Lunch', description: 'Second Wednesday, 11:30' }] } },
@@ -50,8 +52,9 @@ const firecrawl = {
     if (!site) throw new Error('Request failed with status 500');
     return {
       json: site.json,
+      links: url.includes('chamber') ? ['https://chamber.example/events/', 'https://chamber.example/join', 'https://chamber.example/about'] : [],
       branding: { brandName: 'From branding', logo: site.logo, colorScheme: 'light', colors: { primary: '#272727', accent: '#83B3BE' }, typography: { fontFamilies: { primary: 'Poppins' } } },
-      metadata: { sourceURL: url, creditsUsed: 5, ogImage: `https://cdn.example/og-${version}.jpg` },
+      metadata: { sourceURL: url, creditsUsed: 5, ogImage: `https://cdn.example/og-${version}.jpg`, generator: url.includes('boba') ? 'Wix.com Website Builder' : undefined },
     } as any;
   },
 };
@@ -59,6 +62,11 @@ const firecrawl = {
 const fetchImage: typeof fetch = async (input) => {
   const url = String(input);
   downloads.push(url);
+  if (url === 'https://api.fontsource.org/v1/fonts/poppins') {
+    const variant = (w: number) => ({ normal: { latin: { url: { woff2: `https://cdn.example/poppins-${w}.woff2` } } } });
+    return Response.json({ family: 'Poppins', category: 'sans-serif', weights: [300, 600], variants: { 300: variant(300), 600: variant(600) } });
+  }
+  if (url.endsWith('.woff2')) return new Response(new Uint8Array([9, version]), { headers: { 'content-type': 'font/woff2' } });
   if (url.endsWith('.txt')) return new Response('text', { headers: { 'content-type': 'text/plain' } });
   if (url.endsWith('.svg')) return new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', { headers: { 'content-type': 'image/svg+xml' } });
   return new Response(new Uint8Array([1, 2, 3, version]), { headers: { 'content-type': 'image/jpeg; charset=binary' } });
@@ -70,7 +78,7 @@ const settled = (id: string) => waitFor(async () => ((await get(id)).statusCode 
 
 beforeAll(async () => {
   t = await setup();
-  await startProspectDemos(t.boss, t.pool, t.provisioner, { firecrawl: firecrawl as unknown as NonNullable<ProspectReaders['firecrawl']>, fetchImage }, { pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 0.5, log: { error: () => {} } });
+  await startProspectDemos(t.boss, t.pool, t.provisioner, { firecrawl: firecrawl as unknown as NonNullable<ProspectReaders['firecrawl']>, download: fetchImage }, { pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 0.5, log: { error: () => {} } });
 });
 afterAll(() => t.close());
 
@@ -106,16 +114,25 @@ describe('prospect demos', () => {
     expect(boba.statusCode).toBe(1);
     expect(boba.creditsUsed).toBe(5);
     expect(scraped[0]!.options.formats[0]).toBe('branding');
-    expect(scraped[0]!.options.formats[1]).toMatchObject({ type: 'json' });
+    expect(scraped[0]!.options.formats[1]).toBe('links');
+    expect(scraped[0]!.options.formats[2]).toMatchObject({ type: 'json' });
     const base = `http://localhost/demos/prospects/${boba.code}/files`;
     expect(boba.brand).toMatchObject({
       name: 'Boba Example',
       tagline: 'Tea, made fresh',
       colors: { primary: '#272727', accent: '#83B3BE' },
+      site: { platform: 'Wix', features: ['shop', 'blog'] },
       fonts: { heading: 'Poppins', body: 'Poppins' },
       logo: `${base}/logo.jpg`,
       photos: [`${base}/photo-1.jpg`, `${base}/photo-2.jpg`],
+      // Open-licence fonts are copied, regular and bold, at the nearest weights the font has.
+      fontFaces: [
+        { family: 'Poppins', category: 'sans-serif', weight: 400, file: `${base}/font-1-400.woff2` },
+        { family: 'Poppins', category: 'sans-serif', weight: 700, file: `${base}/font-1-700.woff2` },
+      ],
     });
+    expect(downloads).toContain('https://cdn.example/poppins-300.woff2');
+    expect(downloads).toContain('https://cdn.example/poppins-600.woff2');
     // Prices only where the site printed one; an item without a name is dropped; a picture that isn't an image is left out.
     expect(boba.brand.items).toEqual([
       { name: 'Classic Milk Tea', description: 'Black tea and milk', price: null, image: `${base}/item-1.jpg` },
@@ -124,8 +141,10 @@ describe('prospect demos', () => {
     expect(downloads).toContain('https://boba.example/img/classic.jpg');
     expect(downloads.some((d) => d.startsWith('javascript:'))).toBe(false);
     expect([...t.provisioner.prospectFiles.keys()].filter((k) => k.startsWith(boba.code)).sort()).toEqual(
-      ['logo.jpg', 'photo-1.jpg', 'photo-2.jpg', 'item-1.jpg'].map((n) => `${boba.code}/${n}`).sort(),
+      ['logo.jpg', 'photo-1.jpg', 'photo-2.jpg', 'item-1.jpg', 'font-1-400.woff2', 'font-1-700.woff2'].map((n) => `${boba.code}/${n}`).sort(),
     );
+    // What the site has, from where its links point when the reader didn't say.
+    expect(chamber.brand.site).toEqual({ platform: null, features: ['events', 'members'] });
     expect(chamber.brand.logo).toMatch(/\/logo\.svg$/);
     expect(chamber.brand.items[0]).toEqual({ name: 'Leads Lunch', description: 'Second Wednesday, 11:30', price: null, image: null });
   });
@@ -146,6 +165,9 @@ describe('prospect demos', () => {
     expect(file.headers.get('content-type')).toBe('image/jpeg');
     expect(file.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect([...new Uint8Array(await file.arrayBuffer())]).toEqual([1, 2, 3, 1]);
+    const font = await t.call('GET', `/demos/prospects/${boba.code}/files/font-1-700.woff2`, { auth: null });
+    expect(font.headers.get('content-type')).toBe('font/woff2');
+    expect(font.headers.get('access-control-allow-origin')).toBe('*');
     const svg = await t.call('GET', `/demos/prospects/${chamber.code}/files/logo.svg`, { auth: null });
     expect(svg.headers.get('content-security-policy')).toContain("default-src 'none'");
 
