@@ -137,6 +137,8 @@ async function oauthCall(hl: HighLevelConfig, path: string, run: (client: HighLe
   } catch (err: any) {
     const status = err?.statusCode ?? err?.response?.status;
     const detail = err?.response?.data ? JSON.stringify(err.response.data) : String(err?.message ?? err);
+    // The SDK's error carries the request, tokens included, so it stays out of anything that logs this one.
+    // eslint-disable-next-line preserve-caught-error
     throw new Error(`HighLevel ${path} answered ${status ?? 'with an error'}: ${detail.slice(0, 200)}`);
   }
   if (!answer?.access_token) throw new Error(`HighLevel ${path} gave no access token`);

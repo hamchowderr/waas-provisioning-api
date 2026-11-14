@@ -493,7 +493,7 @@ export class CoolifyProvisioner implements Provisioner {
   /** Waits until every container of the Service runs and none is unhealthy. */
   async waitHealthy(uuid: string): Promise<void> {
     const deadline = Date.now() + (this.config.deployTimeoutMs ?? 10 * 60_000);
-    let last = 'unknown';
+    let last: string;
     for (;;) {
       const statuses = await this.statuses(uuid);
       last = statuses.join(', ') || 'unknown';

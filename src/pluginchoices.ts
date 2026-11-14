@@ -196,7 +196,7 @@ export function pluginChoiceService({ pool, provisioner, secrets, wporg = wordpr
     const [where, id] = ownerWhere(owner);
     const existing = (await pool.query(`SELECT * FROM plugin_choices WHERE ${where} AND slug = $2`, [id, slug])).rows[0];
 
-    let name = slug;
+    let name: string;
     let icon: string | null = null;
     let version: string | null = null;
     let sha256: string | null = null;

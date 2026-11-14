@@ -116,7 +116,7 @@ async function callDesk(deps: Deps, body: Record<string, unknown>): Promise<Desk
     body: text,
     signal: AbortSignal.timeout(DESK_TIMEOUT_MS),
   });
-  let answer: unknown = null;
+  let answer: unknown;
   try {
     answer = await response.json();
   } catch {

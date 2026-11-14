@@ -289,7 +289,7 @@ async function send(mail: AuthMail, to: string, subject: string, html: string, t
     await tosend.send({ from: { email: mail.from, name: mail.brand }, to: [{ email: to }], subject, html, text });
   } catch (err) {
     if (!(err instanceof ToSendError)) throw err;
-    throw new Error(`toSend refused the ${what} (${err.code}): ${err.message.slice(0, 300)}`);
+    throw new Error(`toSend refused the ${what} (${err.code}): ${err.message.slice(0, 300)}`, { cause: err });
   }
 }
 
