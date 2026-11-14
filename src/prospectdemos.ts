@@ -124,20 +124,25 @@ function priorityOf(value: unknown): number | null | undefined {
 function detailsOf(body: Record<string, unknown>): ProspectDetails | null | undefined {
   if (body.details === undefined || body.details === null) return body.details as null | undefined;
   if (typeof body.details !== 'object' || Array.isArray(body.details)) throw badRequest('details must be an object');
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, name, ...details } = parseCrmProspect({ ...(body.details as object), id: 'details', name: 'details' });
-  return details;
+  const parsed = parseCrmProspect({ ...(body.details as object), id: 'details', name: 'details' });
+  return Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== 'id' && key !== 'name')) as ProspectDetails;
+}
+
+/** The finder's id for the business (Google's place id), when it came from the finder. */
+function placeIdOf(body: Record<string, unknown>): string | null | undefined {
+  const placeId = body.placeId;
+  if (placeId === undefined || placeId === null) return placeId;
+  if (typeof placeId !== 'string' || !placeId.trim() || placeId.length > 300) throw badRequest("placeId must be the finder's id for the business");
+  return placeId.trim();
 }
 
 /** Checks one business. `whole` asks for everything a new one needs. */
 function parseProspect(raw: unknown, whole: boolean): ProspectInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('Each prospect must be an object');
   const body = raw as Record<string, unknown>;
-  const placeId = body.placeId;
-  if (placeId !== undefined && placeId !== null && (typeof placeId !== 'string' || !placeId.trim() || placeId.length > 300)) throw badRequest('placeId must be the finder\'s id for the business');
   const input: ProspectInput = {
     company: optionalText(body, 'company') ?? undefined,
-    placeId: typeof placeId === 'string' ? placeId.trim() : (placeId as null | undefined),
+    placeId: placeIdOf(body),
     details: detailsOf(body),
     website: websiteOf(optionalText(body, 'website')),
     route: oneOf(body.route, ROUTES, 'route'),
@@ -637,12 +642,12 @@ async function timePage(get: typeof fetch, finalUrl: string): Promise<{ ms: numb
 
 /** The website check on the page Firecrawl fetched, or null when it gave no page. */
 async function checkSite(doc: Document, website: string, get: typeof fetch): Promise<Report | null> {
-  const html = typeof doc.rawHtml === 'string' ? doc.rawHtml : '';
-  if (!html) return null;
-  const finalUrl = (doc.metadata?.url as string | undefined) ?? (doc.metadata?.sourceURL as string | undefined) ?? website;
+  if (typeof doc.rawHtml !== 'string' || !doc.rawHtml) return null;
+  const html = doc.rawHtml;
+  const meta = doc.metadata ?? {};
+  const finalUrl = [meta.url, meta.sourceURL].find((u): u is string => typeof u === 'string') ?? website;
   const timed = await timePage(get, finalUrl);
-  const status = Number(doc.metadata?.statusCode) || 200;
-  return analyze({ requested: website, finalUrl, status, html, ms: timed.ms, bytes: timed.bytes ?? Buffer.byteLength(html), redirectsToHttps: timed.redirectsToHttps });
+  return analyze({ requested: website, finalUrl, status: Number(meta.statusCode) || 200, html, ms: timed.ms, bytes: timed.bytes ?? Buffer.byteLength(html), redirectsToHttps: timed.redirectsToHttps });
 }
 
 /** The site type a demo shows when nobody picked one: the closest to what their website has now. */
@@ -659,16 +664,16 @@ export function siteTypeFor(features: readonly string[]): (typeof SITE_TYPES)[nu
 /** Reads the website once, checks it, and copies its images and fonts. */
 async function gather(website: string, readers: ProspectReaders) {
   const doc = await scrape(website, readers);
-  const page = (doc.metadata?.sourceURL as string | undefined) ?? website;
+  const meta = doc.metadata ?? {};
   const found = (doc.json ?? {}) as Extracted;
-  const brand = brandOf(doc, page, found);
+  const brand = brandOf(doc, typeof meta.sourceURL === 'string' ? meta.sourceURL : website, found);
   const get = readers.download ?? publicFetchUpTo(MAX_FILE + 1);
   const [report, images, fonts] = await Promise.all([
     checkSite(doc, website, readers.page ?? publicFetch),
-    copyImages(get, brand, found, [...(found.photos ?? []), doc.metadata?.ogImage]),
+    copyImages(get, brand, found, [...(found.photos ?? []), meta.ogImage]),
     copyFonts(get, brand),
   ]);
-  return { brand, report, files: [...images, ...fonts], credits: doc.metadata?.creditsUsed ?? 5 };
+  return { brand, report, files: [...images, ...fonts], credits: meta.creditsUsed ?? 5 };
 }
 
 /** Copies the logo, photos and item pictures, and puts their file names in the brand. */
@@ -740,19 +745,29 @@ export async function startProspectDemos(
     const row = rows[0];
     if (!row?.website) return;
     try {
-      const { brand, report, files, credits } = await gather(row.website, readers);
-      for (const f of files) await provisioner.putProspectFile({ code: row.code, name: f.name, body: f.body, contentType: f.type });
-      const names = files.map((f) => f.name);
-      await provisioner.deleteProspectFiles({ code: row.code, names: row.files.filter((n) => !names.includes(n)) });
-      const siteType = row.site_type_auto ? siteTypeFor(brand.site?.features ?? []) : row.site_type;
-      await pool.query(
-        'UPDATE prospect_demos SET status = $2, brand = $3, report = $4, site_type = $5, files = $6, error = NULL, credits_used = credits_used + $7, date_gathered = now() WHERE id = $1',
-        [row.id, Status.Done, JSON.stringify(brand), report ? JSON.stringify(report) : null, siteType, names, credits],
-      );
+      await saveRead(pool, provisioner, row, await gather(row.website, readers));
     } catch (err) {
-      const message = err instanceof UnreadableSite ? err.message : "The website couldn't be read. Try again in a few minutes.";
-      if (!(err instanceof UnreadableSite)) log.error(`prospect demo ${row.id} failed:`, err);
-      await pool.query('UPDATE prospect_demos SET status = $2, error = $3 WHERE id = $1', [row.id, Status.Failed, message]);
+      await failRead(pool, row.id, err, log);
     }
   });
+}
+
+/** Keeps what one read found: the files under the prospect's code, then the brand, report and site type. */
+async function saveRead(pool: Pool, provisioner: Provisioner, row: Row & { files: string[] }, read: Awaited<ReturnType<typeof gather>>) {
+  const { brand, report, files, credits } = read;
+  for (const f of files) await provisioner.putProspectFile({ code: row.code, name: f.name, body: f.body, contentType: f.type });
+  const names = files.map((f) => f.name);
+  await provisioner.deleteProspectFiles({ code: row.code, names: row.files.filter((n) => !names.includes(n)) });
+  const siteType = row.site_type_auto ? siteTypeFor(brand.site?.features ?? []) : row.site_type;
+  await pool.query(
+    'UPDATE prospect_demos SET status = $2, brand = $3, report = $4, site_type = $5, files = $6, error = NULL, credits_used = credits_used + $7, date_gathered = now() WHERE id = $1',
+    [row.id, Status.Done, JSON.stringify(brand), report ? JSON.stringify(report) : null, siteType, names, credits],
+  );
+}
+
+async function failRead(pool: Pool, id: string, err: unknown, log: Pick<Console, 'error'>) {
+  const unreadable = err instanceof UnreadableSite;
+  if (!unreadable) log.error(`prospect demo ${id} failed:`, err);
+  const message = unreadable ? err.message : "The website couldn't be read. Try again in a few minutes.";
+  await pool.query('UPDATE prospect_demos SET status = $2, error = $3 WHERE id = $1', [id, Status.Failed, message]);
 }

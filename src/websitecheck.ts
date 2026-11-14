@@ -82,143 +82,171 @@ function copyrightYear(html: string): number | null {
 const ACT_ONLINE =
   /\b(book (now|online|an appointment)|schedule|appointment|reserve|add to cart|shop now|checkout|buy now|donate|give online|giving|register|enrol|enroll|join now|sign up)\b/i;
 
-export function analyze(page: Fetched, now = new Date()): Report {
-  const html = page.html;
-  const url = new URL(page.finalUrl);
-  const checks: Check[] = [];
-  const add = (c: Check) => checks.push(c);
+type CheckInput = { page: Fetched; html: string; url: URL; now: Date };
+type CheckFn = (input: CheckInput) => Check | null;
 
-  const https = url.protocol === 'https:';
-  add({
+const tier = <T>(levels: Array<[boolean, T]>, otherwise: T): T => levels.find(([hit]) => hit)?.[1] ?? otherwise;
+
+const secure: CheckFn = ({ page, url }) => {
+  const level = tier<0 | 1 | 2>([[url.protocol !== 'https:', 0], [page.redirectsToHttps === false, 1]], 2);
+  return {
     id: 'secure',
     title: 'Secure connection',
     weight: 3,
-    status: !https ? 'fail' : page.redirectsToHttps === false ? 'warn' : 'pass',
-    detail: !https
-      ? 'The site doesn\'t use a secure connection, so browsers mark it "Not secure" and visitors may leave.'
-      : page.redirectsToHttps === false
-        ? "The secure address works, but the plain address doesn't send visitors to it."
-        : 'The site uses a secure connection (https).',
-  });
+    status: (['fail', 'warn', 'pass'] as const)[level],
+    detail: [
+      'The site doesn\'t use a secure connection, so browsers mark it "Not secure" and visitors may leave.',
+      "The secure address works, but the plain address doesn't send visitors to it.",
+      'The site uses a secure connection (https).',
+    ][level]!,
+  };
+};
 
-  const seconds = (page.ms ?? 0) / 1000;
+const speed: CheckFn = ({ page }) => {
+  if (page.ms === null) return null;
+  const seconds = page.ms / 1000;
   const mb = page.bytes / 1_000_000;
-  if (page.ms !== null)
-    add({
-      id: 'speed',
-      title: 'Loads quickly',
-      weight: 3,
-      status: seconds < 1.5 && mb < 2 ? 'pass' : seconds < 4 ? 'warn' : 'fail',
-      detail: `The page took ${seconds.toFixed(1)} seconds to arrive${mb >= 0.05 ? ` and is ${mb.toFixed(1)} MB` : ''}. ${
-        seconds < 1.5 ? "That's quick." : 'Slow pages lose visitors, most of all on phones.'
-      }`,
-    });
+  const size = mb >= 0.05 ? ` and is ${mb.toFixed(1)} MB` : '';
+  const quick = seconds < 1.5;
+  return {
+    id: 'speed',
+    title: 'Loads quickly',
+    weight: 3,
+    status: tier<CheckStatus>([[quick && mb < 2, 'pass'], [seconds < 4, 'warn']], 'fail'),
+    detail: `The page took ${seconds.toFixed(1)} seconds to arrive${size}. ${quick ? "That's quick." : 'Slow pages lose visitors, most of all on phones.'}`,
+  };
+};
 
-  const viewport = metaContent(html, 'viewport');
-  add({
+const mobile: CheckFn = ({ html }) => {
+  const fits = /width\s*=\s*device-width/i.test(metaContent(html, 'viewport') ?? '');
+  return {
     id: 'mobile',
     title: 'Works on phones',
     weight: 3,
-    status: viewport && /width\s*=\s*device-width/i.test(viewport) ? 'pass' : 'fail',
-    detail:
-      viewport && /width\s*=\s*device-width/i.test(viewport)
-        ? 'The site is set up to fit phone screens.'
-        : "The site isn't set up for phones, so visitors on a phone have to pinch and zoom.",
-  });
+    status: fits ? 'pass' : 'fail',
+    detail: fits ? 'The site is set up to fit phone screens.' : "The site isn't set up for phones, so visitors on a phone have to pinch and zoom.",
+  };
+};
 
+function searchDetail(title: string, description: string): string {
+  if (!title) return 'The page has no title, which is what Google shows as the headline in search results.';
+  if (!description) return `The title is "${title.slice(0, 70)}", but there's no description for Google to show under it.`;
+  if (title.length < 10 || description.length < 50) return 'The title or the description Google shows is very short.';
+  return 'The page has a clear title and description for Google to show.';
+}
+
+const search: CheckFn = ({ html }) => {
   const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.replace(/\s+/g, ' ').trim() ?? '';
   const description = metaContent(html, 'description') ?? '';
-  add({
+  const titled = title.length >= 10;
+  return {
     id: 'search',
     title: 'Ready for Google',
     weight: 2,
-    status: title.length >= 10 && description.length >= 50 ? 'pass' : title.length >= 10 || description ? 'warn' : 'fail',
-    detail: !title
-      ? 'The page has no title, which is what Google shows as the headline in search results.'
-      : !description
-        ? `The title is "${title.slice(0, 70)}", but there's no description for Google to show under it.`
-        : title.length < 10 || description.length < 50
-          ? 'The title or the description Google shows is very short.'
-          : 'The page has a clear title and description for Google to show.',
-  });
+    status: tier<CheckStatus>([[titled && description.length >= 50, 'pass'], [titled || description !== '', 'warn']], 'fail'),
+    detail: searchDetail(title, description),
+  };
+};
 
-  const h1 = /<h1\b/i.test(html);
-  add({
-    id: 'heading',
-    title: 'Clear main heading',
-    weight: 1,
-    status: h1 ? 'pass' : 'warn',
-    detail: h1
-      ? "The page has a main heading that says what it's about."
-      : 'The page has no main heading, which helps visitors and Google see what the business does.',
-  });
+/** A check that passes when the page has something, and warns or fails when it doesn't. */
+const has =
+  (id: string, title: string, weight: number, missing: CheckStatus, test: (html: string) => boolean, yes: string, no: string): CheckFn =>
+  ({ html }) => {
+    const ok = test(html);
+    return { id, title, weight, status: ok ? 'pass' : missing, detail: ok ? yes : no };
+  };
 
-  const ogImage = metaContent(html, 'og:image');
-  add({
-    id: 'sharing',
-    title: 'Looks good when shared',
-    weight: 1,
-    status: ogImage ? 'pass' : 'warn',
-    detail: ogImage ? 'Links to the site show a picture when shared on Facebook or in a text.' : 'Links shared on Facebook or in a text show no picture.',
-  });
+const heading = has(
+  'heading',
+  'Clear main heading',
+  1,
+  'warn',
+  (html) => /<h1\b/i.test(html),
+  "The page has a main heading that says what it's about.",
+  'The page has no main heading, which helps visitors and Google see what the business does.',
+);
 
+const sharing = has(
+  'sharing',
+  'Looks good when shared',
+  1,
+  'warn',
+  (html) => Boolean(metaContent(html, 'og:image')),
+  'Links to the site show a picture when shared on Facebook or in a text.',
+  'Links shared on Facebook or in a text show no picture.',
+);
+
+const fresh: CheckFn = ({ html, now }) => {
   const year = copyrightYear(html);
-  const age = year ? now.getFullYear() - year : null;
-  add({
+  const age = year === null ? null : now.getFullYear() - year;
+  const [status, detail] = tier<[CheckStatus, string]>(
+    [
+      [age === null, ['warn', "We couldn't tell when the site was last updated."]],
+      [(age ?? 0) <= 1, ['pass', 'The site looks recently updated.']],
+      [(age ?? 0) <= 3, ['warn', '']],
+    ],
+    ['fail', ''],
+  );
+  return {
     id: 'fresh',
     title: 'Kept up to date',
     weight: 2,
-    status: age === null ? 'warn' : age <= 1 ? 'pass' : age <= 3 ? 'warn' : 'fail',
-    detail:
-      age === null
-        ? "We couldn't tell when the site was last updated."
-        : age <= 1
-          ? 'The site looks recently updated.'
-          : `The footer still says ${year}, so the site looks like it hasn't been updated in ${age} years.`,
-  });
+    status,
+    detail: detail || `The footer still says ${year}, so the site looks like it hasn't been updated in ${age} years.`,
+  };
+};
 
-  const contact = /href\s*=\s*["']?(tel:|mailto:)/i.test(html) || /<form\b/i.test(html);
-  add({
-    id: 'contact',
-    title: 'Easy to contact',
-    weight: 2,
-    status: contact ? 'pass' : 'fail',
-    detail: contact ? 'Visitors can tap to call, email or send a message.' : "There's no tap-to-call number, email link or contact form on the page.",
-  });
+const contact = has(
+  'contact',
+  'Easy to contact',
+  2,
+  'fail',
+  (html) => /href\s*=\s*["']?(tel:|mailto:)/i.test(html) || /<form\b/i.test(html),
+  'Visitors can tap to call, email or send a message.',
+  "There's no tap-to-call number, email link or contact form on the page.",
+);
 
-  const act = ACT_ONLINE.test(text(html));
-  add({
-    id: 'online',
-    title: 'Customers can act online',
-    weight: 2,
-    status: act ? 'pass' : 'warn',
-    detail: act ? 'Visitors can book, buy, give or sign up online.' : "Visitors can't book, buy, give or sign up from the page, so they have to call or leave.",
-  });
+const online = has(
+  'online',
+  'Customers can act online',
+  2,
+  'warn',
+  (html) => ACT_ONLINE.test(text(html)),
+  'Visitors can book, buy, give or sign up online.',
+  "Visitors can't book, buy, give or sign up from the page, so they have to call or leave.",
+);
 
-  const images = html.match(/<img\b[^>]*>/gi) ?? [];
-  const described = images.filter((tag) => (attr(tag, 'alt') ?? '').trim().length > 0).length;
-  if (images.length >= 3) {
-    const share = described / images.length;
-    add({
-      id: 'images',
-      title: 'Pictures are described',
-      weight: 1,
-      status: share >= 0.8 ? 'pass' : share >= 0.4 ? 'warn' : 'fail',
-      detail:
-        share >= 0.8
-          ? 'Pictures have descriptions for screen readers and Google.'
-          : `${images.length - described} of ${images.length} pictures have no description, which hurts accessibility and search.`,
-    });
-  }
+const images: CheckFn = ({ html }) => {
+  const tags = html.match(/<img\b[^>]*>/gi) ?? [];
+  if (tags.length < 3) return null;
+  const described = tags.filter((tag) => (attr(tag, 'alt') ?? '').trim().length > 0).length;
+  const share = described / tags.length;
+  const good = share >= 0.8;
+  return {
+    id: 'images',
+    title: 'Pictures are described',
+    weight: 1,
+    status: tier<CheckStatus>([[good, 'pass'], [share >= 0.4, 'warn']], 'fail'),
+    detail: good
+      ? 'Pictures have descriptions for screen readers and Google.'
+      : `${tags.length - described} of ${tags.length} pictures have no description, which hurts accessibility and search.`,
+  };
+};
 
+const CHECKS: CheckFn[] = [secure, speed, mobile, search, heading, sharing, fresh, contact, online, images];
+const CREDIT: Record<CheckStatus, number> = { pass: 1, warn: 0.5, fail: 0 };
+
+export function analyze(page: Fetched, now = new Date()): Report {
+  const input = { page, html: page.html, url: new URL(page.finalUrl), now };
+  const checks = CHECKS.map((check) => check(input)).filter((c): c is Check => c !== null);
   const total = checks.reduce((n, c) => n + c.weight, 0);
-  const got = checks.reduce((n, c) => n + c.weight * (c.status === 'pass' ? 1 : c.status === 'warn' ? 0.5 : 0), 0);
+  const got = checks.reduce((n, c) => n + c.weight * CREDIT[c.status], 0);
   return {
     url: page.finalUrl,
-    host: url.hostname.replace(/^www\./, ''),
+    host: input.url.hostname.replace(/^www\./, ''),
     checkedAt: now.toISOString(),
     score: Math.round((got / total) * 100),
-    builder: builderOf(html),
+    builder: builderOf(page.html),
     checks,
   };
 }
