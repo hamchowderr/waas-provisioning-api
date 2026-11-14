@@ -103,7 +103,7 @@ describe('sending prospects to a CRM', () => {
   });
 
   it('marks search results that are in a CRM already', async () => {
-    t.deps.config.prospects = { apiKey: 'k', searchesPerMonth: 10 };
+    t.deps.config.prospects = { apiKey: 'k', searchesPerMonth: 10, readsPerMonth: 50 };
     t.deps.placesSearch = async () => ({ places: [{ id: 'p-grace', displayName: { text: 'Grace Church' } }, { id: 'p-new', displayName: { text: 'New Life' } }] });
     const res = await t.call('POST', `/admin/products/${sellerProduct}/prospects/search`, { auth: ADMIN, body: { query: 'church', location: 'Columbus' } });
     const found = ((await res.json()) as any).prospects;

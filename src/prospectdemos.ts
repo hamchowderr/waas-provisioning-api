@@ -1,23 +1,29 @@
-// Branded demos for businesses AnyPress may contact (docs/prospect-demos.md). The platform admin adds a business (its
-// name, website, route and the site type its demo shows); a job reads the website once with Firecrawl (its official
-// SDK: the brand's colours, fonts and logo, and what the business offers) and copies the logo and a few photos into
-// object storage, since other sites' images often can't be loaded from a demo page and links change. The demo on
-// anypress.io/try?for=<code> reads the result from the public routes below: nothing is built on the server, the demo
-// runs on WordPress Playground in the visitor's browser like every other /try demo.
+// The Sales Kit's prospects (docs/prospect-demos.md): each storefront (a seller's or reseller's, and AnyPress's own
+// shop) keeps a list of businesses it may contact, from the prospect finder, a list it imports or one at a time. One
+// read of a business's website does everything: a job reads it with Firecrawl (its official SDK: the brand's colours,
+// fonts and logo, what kind of site it is and what the business offers), runs the website check on the same page
+// (src/websitecheck.ts) and copies the logo, photos and fonts into object storage, since other sites' files often can't
+// be loaded from a demo page and links change. The branded demo (anypress.io/try?for=<code> for AnyPress's own list,
+// the seller's demo page /demo/<storefront>?for=<code> for everyone else) reads the result from the public routes
+// below: nothing is built on the server, the demo runs on WordPress Playground in the visitor's browser. Reads cost
+// money, so each storefront has a monthly allowance (PROSPECT_READS_PER_MONTH); AnyPress's own list has none.
 import { randomBytes } from 'node:crypto';
 import type { Document, Firecrawl } from '@mendable/firecrawl-js';
 import { Hono, type Context } from 'hono';
 import type { JobWithMetadata, PgBoss } from 'pg-boss';
 import type { AppEnv, Deps } from './app.ts';
 import type { Pool } from './db.ts';
+import { activeDashboardDomain } from './dashboarddomains.ts';
 import { SITE_TYPES } from './demodrafts.ts';
 import { badRequest, HttpError } from './errors.ts';
 import { isUuid, readJson } from './http.ts';
 import type { Provisioner } from './provisioner/provisioner.ts';
-import { publicFetchUpTo } from './publicfetch.ts';
+import { parseCrmProspect, type CrmProspect } from './prospectcrm.ts';
+import { publicFetch, publicFetchUpTo } from './publicfetch.ts';
 import { ensureQueue, NOTIFY_POLL_SECONDS } from './queue.ts';
 import { designFromBranding } from './referencesite.ts';
 import { Status } from './status.ts';
+import { analyze, type Report } from './websitecheck.ts';
 
 const QUEUE = 'prospect-demos';
 /** What the demo shows: a client's shop (seller), one location (reseller), a customer's site (affiliate), their own site. */
@@ -26,6 +32,8 @@ const KIT = /^[a-z][a-z0-9-]{0,39}$/;
 const CODE = /^p_[A-Za-z0-9_-]{16}$/;
 const FILE = /^((logo|photo-[1-4]|item-[1-8])\.(png|jpg|webp|gif|svg)|font-[12]-(400|700)\.woff2)$/;
 const MAX_IMPORT = 200;
+/** A business's own page on its demo site, for the board: what the finder or the list said about it. */
+type ProspectDetails = Omit<CrmProspect, 'id' | 'name'>;
 const MAX_FILE = 5 * 1024 ** 2;
 const MAX_ITEMS = 8;
 const MAX_PHOTOS = 4;
@@ -62,6 +70,8 @@ const FIELDS = { company: 200, website: 2000, kit: 40, label: 100, city: 100, no
 
 interface ProspectInput {
   company?: string;
+  placeId?: string | null;
+  details?: ProspectDetails | null;
   website?: string | null;
   route?: (typeof ROUTES)[number];
   siteType?: string;
@@ -110,12 +120,25 @@ function priorityOf(value: unknown): number | null | undefined {
   return value as number;
 }
 
+/** What the finder found about the business, kept with it and sent on to the CRM. */
+function detailsOf(body: Record<string, unknown>): ProspectDetails | null | undefined {
+  if (body.details === undefined || body.details === null) return body.details as null | undefined;
+  if (typeof body.details !== 'object' || Array.isArray(body.details)) throw badRequest('details must be an object');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { id, name, ...details } = parseCrmProspect({ ...(body.details as object), id: 'details', name: 'details' });
+  return details;
+}
+
 /** Checks one business. `whole` asks for everything a new one needs. */
 function parseProspect(raw: unknown, whole: boolean): ProspectInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('Each prospect must be an object');
   const body = raw as Record<string, unknown>;
+  const placeId = body.placeId;
+  if (placeId !== undefined && placeId !== null && (typeof placeId !== 'string' || !placeId.trim() || placeId.length > 300)) throw badRequest('placeId must be the finder\'s id for the business');
   const input: ProspectInput = {
     company: optionalText(body, 'company') ?? undefined,
+    placeId: typeof placeId === 'string' ? placeId.trim() : (placeId as null | undefined),
+    details: detailsOf(body),
     website: websiteOf(optionalText(body, 'website')),
     route: oneOf(body.route, ROUTES, 'route'),
     siteType: oneOf(body.siteType, SITE_TYPES, 'siteType'),
@@ -125,12 +148,17 @@ function parseProspect(raw: unknown, whole: boolean): ProspectInput {
     priority: priorityOf(body.priority),
     notes: optionalText(body, 'notes'),
   };
-  if (whole && !(input.company && input.route && input.siteType)) throw badRequest('Each prospect needs company, route and siteType');
+  if (whole && !input.company) throw badRequest('Each prospect needs its company name');
   return input;
 }
 
 type Row = {
   id: string;
+  product_id: string | null;
+  place_id: string | null;
+  details: ProspectDetails | null;
+  report: Report | null;
+  site_type_auto: boolean;
   code: string;
   company: string;
   website: string | null;
@@ -158,45 +186,122 @@ function brandOut(base: string, code: string, brand: ProspectBrand | null) {
   return { ...brand, fontFaces: (brand.fontFaces ?? []).map((f) => ({ ...f, file: url(f.file)! })), logo: url(brand.logo), photos: brand.photos.map((p) => url(p)!), items: brand.items.map((i) => ({ ...i, image: url(i.image) })) };
 }
 
-function demoOut(base: string, r: Row) {
+/** Where a storefront's demo links go: AnyPress's own to anypress.io/try, a seller's to their own demo page. */
+export interface DemoLinks {
+  /** AnyPress's own shop (STORE_TEMPLATE_PRODUCT_ID): its list has no monthly allowance and its demos are on the site. */
+  platformProductId?: string;
+  /** The marketing site, for AnyPress's own demos. */
+  site: string;
+  /** The dashboard, whose /demo/<storefront> page shows a seller's demos when they have no address of their own. */
+  dashboard: string;
+}
+
+/** The link that opens a storefront's demos, without the code: `${prefix}${code}`. */
+async function demoPrefix(pool: Pool, links: DemoLinks, productId: string): Promise<string> {
+  if (productId === links.platformProductId) return `${links.site}/try?for=`;
+  const own = await activeDashboardDomain(pool, productId);
+  return `${own ? `https://${own}` : links.dashboard}/demo/${productId}?for=`;
+}
+
+function demoOut(base: string, prefix: string, r: Row) {
   return {
     id: r.id,
     code: r.code,
     company: r.company,
     website: r.website,
+    placeId: r.place_id,
     route: r.route,
     siteType: r.site_type,
+    siteTypeAuto: r.site_type_auto,
     kit: r.kit,
     label: r.label,
     city: r.city,
     priority: r.priority,
     notes: r.notes,
+    details: r.details,
     statusCode: r.status,
     error: r.error,
     creditsUsed: r.credits_used,
     brand: brandOut(base, r.code, r.brand),
+    report: r.report,
+    demoUrl: r.status === Status.Done ? `${prefix}${r.code}` : null,
     createdAt: r.date_created.toISOString(),
     gatheredAt: r.date_gathered ? r.date_gathered.toISOString() : null,
   };
 }
 
-async function findDemo(pool: Pool, id: string): Promise<Row> {
-  const { rows } = isUuid(id) ? await pool.query<Row>('SELECT * FROM prospect_demos WHERE id = $1', [id]) : { rows: [] };
-  if (!rows[0]) throw new HttpError(404, 'No prospect demo with this id');
+async function findDemo(pool: Pool, productId: string, id: string): Promise<Row> {
+  const { rows } = isUuid(id) ? await pool.query<Row>('SELECT * FROM prospect_demos WHERE id = $1 AND product_id = $2', [id, productId]) : { rows: [] };
+  if (!rows[0]) throw new HttpError(404, 'No prospect with this id');
   return rows[0];
 }
 
 const queueGather = (boss: PgBoss, id: string) => boss.send(QUEUE, { id }, { retryLimit: 0, expireInSeconds: 600 });
 
-/** Saves one new business, or answers null when its website is on the list already. */
-async function insertProspect(pool: Pool, p: ProspectInput): Promise<Row | null> {
+const monthStart = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+
+export interface ReadUsage {
+  used: number;
+  /** Null for AnyPress's own list, which has no allowance. */
+  limit: number | null;
+  resetsAt: string;
+}
+
+export async function readUsage(pool: Pool, limits: ReadLimits, productId: string, now = new Date()): Promise<ReadUsage> {
+  const { rows } = await pool.query<{ reads: number }>('SELECT reads FROM prospect_reads WHERE product_id = $1 AND month = $2', [productId, monthStart(now)]);
+  const resetsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+  return { used: rows[0]?.reads ?? 0, limit: productId === limits.platformProductId ? null : limits.readsPerMonth, resetsAt };
+}
+
+export interface ReadLimits {
+  readsPerMonth: number;
+  platformProductId?: string;
+}
+
+/** Counts one read against the storefront's month, or answers false when the month's reads are used. */
+async function takeRead(pool: Pool, limits: ReadLimits, productId: string): Promise<boolean> {
+  const limit = productId === limits.platformProductId ? 2 ** 31 - 1 : limits.readsPerMonth;
+  const { rows } = await pool.query(
+    `INSERT INTO prospect_reads (product_id, month, reads) SELECT $1, $2, 1 WHERE $3 > 0
+     ON CONFLICT (product_id, month) DO UPDATE SET reads = prospect_reads.reads + 1 WHERE prospect_reads.reads < $3 RETURNING reads`,
+    [productId, monthStart(new Date()), limit],
+  );
+  return rows.length > 0;
+}
+
+const READS_USED = (limit: number) => `This month's ${limit} website reads are used. They start again on the 1st.`;
+
+/** Starts a read of the business's website, when the storefront has reads left this month. */
+async function startRead(deps: Pick<Deps, 'pool' | 'boss'>, limits: ReadLimits, row: Row): Promise<void> {
+  if (!row.website) return;
+  if (!(await takeRead(deps.pool, limits, row.product_id!))) {
+    await deps.pool.query('UPDATE prospect_demos SET status = $2, error = $3 WHERE id = $1', [row.id, Status.Failed, READS_USED(limits.readsPerMonth)]);
+    return;
+  }
+  await deps.pool.query('UPDATE prospect_demos SET status = $2, error = NULL WHERE id = $1', [row.id, Status.Pending]);
+  await queueGather(deps.boss, row.id);
+}
+
+/** Saves one new business, or answers null when its website is on the storefront's list already. */
+async function insertProspect(pool: Pool, productId: string, p: ProspectInput): Promise<Row | null> {
   const website = p.website ?? null;
-  const values = [p.kit, p.label, p.city, p.priority, p.notes].map((v) => v ?? null);
+  const values = [p.kit, p.label, p.city, p.priority, p.notes, p.placeId, p.details ? JSON.stringify(p.details) : null].map((v) => v ?? null);
   const { rows } = await pool.query<Row>(
-    `INSERT INTO prospect_demos (code, company, website, route, site_type, status, error, kit, label, city, priority, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     ON CONFLICT (lower(website)) WHERE website IS NOT NULL DO NOTHING RETURNING *`,
-    [`p_${randomBytes(12).toString('base64url')}`, p.company, website, p.route, p.siteType, website ? Status.Pending : Status.Failed, website ? null : 'No website to read', ...values],
+    `INSERT INTO prospect_demos (product_id, code, company, website, route, site_type, site_type_auto, status, error, kit, label, city, priority, notes, place_id, details)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     ON CONFLICT (product_id, lower(website)) WHERE website IS NOT NULL DO NOTHING RETURNING *`,
+    [
+      productId,
+      `p_${randomBytes(12).toString('base64url')}`,
+      p.company,
+      website,
+      p.route ?? 'owner',
+      p.siteType ?? 'website',
+      !p.siteType,
+      website ? Status.Pending : Status.Failed,
+      website ? null : 'No website to read',
+      ...values,
+    ],
   );
   return rows[0] ?? null;
 }
@@ -207,60 +312,107 @@ function prospectList(body: unknown): ProspectInput[] {
   return list.map((p) => parseProspect(p, true));
 }
 
-async function addProspects(deps: Pick<Deps, 'pool' | 'boss'>, body: unknown) {
+async function addProspects(deps: Pick<Deps, 'pool' | 'boss'>, limits: ReadLimits, productId: string, body: unknown) {
   const created: Row[] = [];
   const skipped: { company: string; reason: string }[] = [];
   for (const p of prospectList(body)) {
-    const row = await insertProspect(deps.pool, p);
-    if (!row) skipped.push({ company: p.company!, reason: 'A prospect with this website is already on the list' });
-    else created.push(row);
-    if (row?.website) await queueGather(deps.boss, row.id);
+    const row = await insertProspect(deps.pool, productId, p);
+    if (!row) skipped.push({ company: p.company!, reason: 'This website is on your list already' });
+    else {
+      await startRead(deps, limits, row);
+      created.push(await findDemo(deps.pool, productId, row.id));
+    }
   }
   return { created, skipped };
 }
 
-async function updateProspect(pool: Pool, id: string, body: unknown): Promise<Row> {
+async function updateProspect(pool: Pool, productId: string, id: string, body: unknown): Promise<Row> {
   const input = parseProspect(body, false);
   if ('website' in (body as object)) throw badRequest("A prospect's website can't be changed: remove it and add it again");
   const columns: Record<string, unknown> = { company: input.company, route: input.route, site_type: input.siteType, kit: input.kit, label: input.label, city: input.city, priority: input.priority, notes: input.notes };
+  if (input.siteType) columns.site_type_auto = false;
   const set = Object.entries(columns).filter(([, v]) => v !== undefined);
   if (set.some(([k, v]) => v === null && k === 'company')) throw badRequest('company is required');
-  await findDemo(pool, id);
+  await findDemo(pool, productId, id);
   if (set.length) await pool.query(`UPDATE prospect_demos SET ${set.map(([k], i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...set.map(([, v]) => v)]);
-  return findDemo(pool, id);
+  return findDemo(pool, productId, id);
 }
 
 /** This API's own address, for the links of a demo's images. */
 type BaseOf = (c: Context<AppEnv>) => string;
 
-/** GET, POST, PATCH and DELETE /admin/prospect-demos: the platform admin's list. */
-export function adminProspectDemoRoutes(deps: Deps, base: BaseOf) {
+/**
+ * GET, POST, PATCH and DELETE /products/:productId/prospects/demos: a storefront's prospects (the Sales Kit). The
+ * caller has already checked who may use the storefront; `productOf` answers its id.
+ */
+export function prospectDemoRoutes(deps: Deps, base: BaseOf, productOf: (c: Context<AppEnv>) => Promise<string>, limitsOf: () => ReadLimits, linksOf: () => DemoLinks) {
   const app = new Hono<AppEnv>();
+  const out = async (c: Context<AppEnv>, productId: string, rows: Row[]) => {
+    const prefix = await demoPrefix(deps.pool, linksOf(), productId);
+    return rows.map((r) => demoOut(base(c), prefix, r));
+  };
   app.get('/', async (c) => {
-    const { rows } = await deps.pool.query<Row>('SELECT * FROM prospect_demos ORDER BY priority NULLS LAST, company');
-    return c.json(rows.map((r) => demoOut(base(c), r)), 200, { 'Cache-Control': 'no-store' });
+    const productId = await productOf(c);
+    const { rows } = await deps.pool.query<Row>('SELECT * FROM prospect_demos WHERE product_id = $1 ORDER BY priority NULLS LAST, date_created DESC, company', [productId]);
+    return c.json({ prospects: await out(c, productId, rows), reads: await readUsage(deps.pool, limitsOf(), productId) }, 200, { 'Cache-Control': 'no-store' });
   });
   app.post('/', async (c) => {
-    const { created, skipped } = await addProspects(deps, await readJson(c));
-    return c.json({ created: created.map((r) => demoOut(base(c), r)), skipped }, 201);
+    const productId = await productOf(c);
+    const { created, skipped } = await addProspects(deps, limitsOf(), productId, await readJson(c));
+    return c.json({ created: await out(c, productId, created), skipped, reads: await readUsage(deps.pool, limitsOf(), productId) }, 201);
   });
-  app.get('/:id', async (c) => c.json(demoOut(base(c), await findDemo(deps.pool, c.req.param('id'))), 200, { 'Cache-Control': 'no-store' }));
-  app.patch('/:id', async (c) => c.json(demoOut(base(c), await updateProspect(deps.pool, c.req.param('id'), await readJson(c))), 200));
-  // Reads the website again, for a site that changed or a read that failed.
-  app.post('/:id/gather', async (c) => {
-    const row = await findDemo(deps.pool, c.req.param('id'));
+  app.get('/:id', async (c) => {
+    const productId = await productOf(c);
+    return c.json((await out(c, productId, [await findDemo(deps.pool, productId, c.req.param('id'))]))[0], 200, { 'Cache-Control': 'no-store' });
+  });
+  app.patch('/:id', async (c) => {
+    const productId = await productOf(c);
+    return c.json((await out(c, productId, [await updateProspect(deps.pool, productId, c.req.param('id'), await readJson(c))]))[0], 200);
+  });
+  // Reads the website again, for a site that changed or a read that failed. Counts as a read.
+  app.post('/:id/read', async (c) => {
+    const productId = await productOf(c);
+    const row = await findDemo(deps.pool, productId, c.req.param('id'));
     if (!row.website) throw badRequest('This prospect has no website to read');
-    await deps.pool.query('UPDATE prospect_demos SET status = $2, error = NULL WHERE id = $1', [row.id, Status.Pending]);
-    await queueGather(deps.boss, row.id);
-    return c.json(demoOut(base(c), await findDemo(deps.pool, row.id)), 202);
+    if (row.status === Status.Pending) throw new HttpError(409, 'Its website is being read now.');
+    await startRead(deps, limitsOf(), row);
+    const after = await findDemo(deps.pool, productId, row.id);
+    if (after.status === Status.Failed && after.error === READS_USED(limitsOf().readsPerMonth)) throw new HttpError(429, after.error);
+    return c.json((await out(c, productId, [after]))[0], 202);
   });
   app.delete('/:id', async (c) => {
-    const row = await findDemo(deps.pool, c.req.param('id'));
+    const productId = await productOf(c);
+    const row = await findDemo(deps.pool, productId, c.req.param('id'));
     const { rows } = await deps.pool.query<{ files: string[] }>('DELETE FROM prospect_demos WHERE id = $1 RETURNING files', [row.id]);
     await deps.provisioner.deleteProspectFiles({ code: row.code, names: rows[0]?.files ?? [] });
     return c.body(null, 204);
   });
   return app;
+}
+
+/** What the CRM is told about a business the storefront read: its demo link, website score and what it runs on. */
+export async function demoFacts(pool: Pool, links: DemoLinks, productId: string, prospects: { id: string; website: string | null }[]) {
+  const facts = new Map<string, { demoUrl: string | null; websiteScore: number | null; websitePlatform: string | null }>();
+  // The same business by its website's address, whatever page or www. the list gave.
+  const host = (w: string | null) => (w ? new URL(w).hostname.toLowerCase().replace(/^www\./, '') : null);
+  const hosts = prospects.map((p) => host(p.website)).filter((h): h is string => !!h);
+  const { rows } = await pool.query<Row>(
+    `SELECT * FROM prospect_demos WHERE product_id = $1 AND status = $2
+       AND (place_id = ANY($3) OR id::text = ANY($3) OR regexp_replace(lower(website), '^https?://(www\\.)?([^/:?#]+).*$', '\\2') = ANY($4))`,
+    [productId, Status.Done, prospects.map((p) => p.id), hosts],
+  );
+  if (!rows.length) return facts;
+  const prefix = await demoPrefix(pool, links, productId);
+  for (const p of prospects) {
+    const r = rows.find((row) => row.place_id === p.id || row.id === p.id) ?? rows.find((row) => !!p.website && host(row.website) === host(p.website));
+    if (r) facts.set(p.id, { demoUrl: `${prefix}${r.code}`, websiteScore: r.report?.score ?? null, websitePlatform: r.brand?.site?.platform ?? r.report?.builder ?? null });
+  }
+  return facts;
+}
+
+/** AnyPress's own prospects, added before lists belonged to a storefront, become its shop's. */
+export async function claimPlatformProspects(pool: Pool, platformProductId: string | undefined) {
+  if (platformProductId) await pool.query('UPDATE prospect_demos SET product_id = $1 WHERE product_id IS NULL', [platformProductId]);
 }
 
 const PUBLIC_HEADERS = { 'Access-Control-Allow-Origin': '*', 'X-Robots-Tag': 'noindex, nofollow' };
@@ -274,7 +426,8 @@ export function publicProspectDemoRoutes(deps: Pick<Deps, 'pool' | 'provisioner'
     const { rows } = CODE.test(code) ? await deps.pool.query<Row>('SELECT * FROM prospect_demos WHERE code = $1 AND status = $2', [code, Status.Done]) : { rows: [] };
     const r = rows[0];
     if (!r) return notFound(c);
-    const demo = { company: r.company, route: r.route, siteType: r.site_type, kit: r.kit, brand: brandOut(base(c), r.code, r.brand) };
+    // productId: whose demo page may show it (a seller's page shows only its own storefront's demos).
+    const demo = { company: r.company, productId: r.product_id, route: r.route, siteType: r.site_type, kit: r.kit, brand: brandOut(base(c), r.code, r.brand) };
     return c.json(demo, 200, { ...PUBLIC_HEADERS, 'Cache-Control': 'public, max-age=300' });
   });
   app.get('/:code/files/:name', async (c) => {
@@ -300,6 +453,8 @@ export interface ProspectReaders {
   firecrawl?: Pick<Firecrawl, 'scrape'>;
   /** Downloads one image or font file; a GET that never reaches a private address. */
   download?: typeof fetch;
+  /** Our own timed request for the page, for the website check's speed and https checks; same rule. */
+  page?: typeof fetch;
 }
 
 const PROMPT = [
@@ -423,7 +578,7 @@ class UnreadableSite extends Error {}
 async function scrape(website: string, readers: ProspectReaders): Promise<Document> {
   if (!readers.firecrawl) throw new UnreadableSite("Reading websites isn't set up on this server yet.");
   try {
-    return await readers.firecrawl.scrape(website, { formats: ['branding', 'links', { type: 'json', prompt: PROMPT, schema: SCHEMA }], onlyMainContent: false, proxy: 'auto', blockAds: true, timeout: 60_000 });
+    return await readers.firecrawl.scrape(website, { formats: ['branding', 'links', 'rawHtml', { type: 'json', prompt: PROMPT, schema: SCHEMA }], onlyMainContent: false, proxy: 'auto', blockAds: true, timeout: 60_000 });
   } catch (err) {
     throw new UnreadableSite(`${new URL(website).hostname} couldn't be read: ${(err as Error).message}`);
   }
@@ -453,15 +608,67 @@ function brandOf(doc: Document, page: string, found: Extracted): ProspectBrand {
   };
 }
 
-/** Reads the website once and copies its images. */
+/** Times our own request for the page, and asks whether its plain http:// address sends visitors to https://. */
+async function timePage(get: typeof fetch, finalUrl: string): Promise<{ ms: number | null; bytes: number | null; redirectsToHttps: boolean | null }> {
+  let ms: number | null = null;
+  let bytes: number | null = null;
+  try {
+    const started = performance.now();
+    const res = await get(finalUrl, { headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(15_000) });
+    const body = await res.arrayBuffer();
+    if (res.ok) [ms, bytes] = [performance.now() - started, body.byteLength];
+  } catch {
+    // Some sites turn away anything but a browser: speed isn't scored then.
+  }
+  let redirectsToHttps: boolean | null = null;
+  const url = new URL(finalUrl);
+  if (url.protocol === 'https:') {
+    try {
+      const res = await get(`http://${url.host}/`, { signal: AbortSignal.timeout(5_000) });
+      await res.body?.cancel();
+      const to = res.headers.get('location');
+      redirectsToHttps = res.status >= 300 && res.status < 400 && !!to ? new URL(to, `http://${url.host}/`).protocol === 'https:' : false;
+    } catch {
+      redirectsToHttps = null;
+    }
+  }
+  return { ms, bytes, redirectsToHttps };
+}
+
+/** The website check on the page Firecrawl fetched, or null when it gave no page. */
+async function checkSite(doc: Document, website: string, get: typeof fetch): Promise<Report | null> {
+  const html = typeof doc.rawHtml === 'string' ? doc.rawHtml : '';
+  if (!html) return null;
+  const finalUrl = (doc.metadata?.url as string | undefined) ?? (doc.metadata?.sourceURL as string | undefined) ?? website;
+  const timed = await timePage(get, finalUrl);
+  const status = Number(doc.metadata?.statusCode) || 200;
+  return analyze({ requested: website, finalUrl, status, html, ms: timed.ms, bytes: timed.bytes ?? Buffer.byteLength(html), redirectsToHttps: timed.redirectsToHttps });
+}
+
+/** The site type a demo shows when nobody picked one: the closest to what their website has now. */
+export function siteTypeFor(features: readonly string[]): (typeof SITE_TYPES)[number] {
+  const has = (f: string) => features.includes(f);
+  const kinds = [has('shop'), has('bookings'), has('members')].filter(Boolean).length;
+  if (kinds > 1) return 'everything';
+  if (has('shop')) return 'online-store';
+  if (has('bookings')) return 'bookings';
+  if (has('members')) return 'community';
+  return 'website';
+}
+
+/** Reads the website once, checks it, and copies its images and fonts. */
 async function gather(website: string, readers: ProspectReaders) {
   const doc = await scrape(website, readers);
   const page = (doc.metadata?.sourceURL as string | undefined) ?? website;
   const found = (doc.json ?? {}) as Extracted;
   const brand = brandOf(doc, page, found);
   const get = readers.download ?? publicFetchUpTo(MAX_FILE + 1);
-  const files = [...(await copyImages(get, brand, found, [...(found.photos ?? []), doc.metadata?.ogImage])), ...(await copyFonts(get, brand))];
-  return { brand, files, credits: doc.metadata?.creditsUsed ?? 5 };
+  const [report, images, fonts] = await Promise.all([
+    checkSite(doc, website, readers.page ?? publicFetch),
+    copyImages(get, brand, found, [...(found.photos ?? []), doc.metadata?.ogImage]),
+    copyFonts(get, brand),
+  ]);
+  return { brand, report, files: [...images, ...fonts], credits: doc.metadata?.creditsUsed ?? 5 };
 }
 
 /** Copies the logo, photos and item pictures, and puts their file names in the brand. */
@@ -533,11 +740,15 @@ export async function startProspectDemos(
     const row = rows[0];
     if (!row?.website) return;
     try {
-      const { brand, files, credits } = await gather(row.website, readers);
+      const { brand, report, files, credits } = await gather(row.website, readers);
       for (const f of files) await provisioner.putProspectFile({ code: row.code, name: f.name, body: f.body, contentType: f.type });
       const names = files.map((f) => f.name);
       await provisioner.deleteProspectFiles({ code: row.code, names: row.files.filter((n) => !names.includes(n)) });
-      await pool.query('UPDATE prospect_demos SET status = $2, brand = $3, files = $4, error = NULL, credits_used = credits_used + $5, date_gathered = now() WHERE id = $1', [row.id, Status.Done, JSON.stringify(brand), names, credits]);
+      const siteType = row.site_type_auto ? siteTypeFor(brand.site?.features ?? []) : row.site_type;
+      await pool.query(
+        'UPDATE prospect_demos SET status = $2, brand = $3, report = $4, site_type = $5, files = $6, error = NULL, credits_used = credits_used + $7, date_gathered = now() WHERE id = $1',
+        [row.id, Status.Done, JSON.stringify(brand), report ? JSON.stringify(report) : null, siteType, names, credits],
+      );
     } catch (err) {
       const message = err instanceof UnreadableSite ? err.message : "The website couldn't be read. Try again in a few minutes.";
       if (!(err instanceof UnreadableSite)) log.error(`prospect demo ${row.id} failed:`, err);

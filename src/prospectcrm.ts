@@ -35,8 +35,15 @@ export interface CrmProspect {
   socials: { network: (typeof NETWORKS)[number]; url: string }[];
 }
 
+/** What the storefront knows from reading the business's website (src/prospectdemos.ts), when it read it. */
+export interface CrmFacts {
+  demoUrl: string | null;
+  websiteScore: number | null;
+  websitePlatform: string | null;
+}
+
 /** What the store's FluentCRM is given for one business. */
-export interface CrmContact extends CrmProspect {
+export interface CrmContact extends CrmProspect, Partial<CrmFacts> {
   email: string;
   tags: string[];
 }
@@ -71,6 +78,35 @@ const httpUrl = (v: unknown): string | null => {
 };
 const num = (v: unknown, max: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : null);
 
+/** One business as the dashboard sent it, cleaned: anything that isn't the right kind of value is left out. */
+export function parseCrmProspect(raw: unknown): CrmProspect {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  const id = text(p.id, 300);
+  const name = text(p.name, 200);
+  if (!id || !name) throw badRequest('Each business needs its id and name.');
+  const email = text(p.email, 254)?.toLowerCase() ?? null;
+  return {
+    id,
+    name,
+    type: text(p.type, 100),
+    phone: text(p.phone, 40),
+    email: email && EMAIL.test(email) ? email : null,
+    website: httpUrl(p.website),
+    contactPage: httpUrl(p.contactPage),
+    address: text(p.address, 300),
+    mapsUrl: httpUrl(p.mapsUrl),
+    rating: num(p.rating, 5),
+    reviews: num(p.reviews, 10_000_000),
+    hours: (Array.isArray(p.hours) ? p.hours : []).map((h) => text(h, 100)).filter((h): h is string => Boolean(h)).slice(0, 7),
+    socials: (Array.isArray(p.socials) ? p.socials : [])
+      .map((s) => (s ?? {}) as Record<string, unknown>)
+      .filter((s) => NETWORKS.includes(s.network as (typeof NETWORKS)[number]))
+      .map((s) => ({ network: s.network as (typeof NETWORKS)[number], url: httpUrl(s.url) ?? '' }))
+      .filter((s) => s.url)
+      .slice(0, NETWORKS.length),
+  };
+}
+
 /** Reads the dashboard's request: the businesses, the customer group they were found for, and which CRMs. */
 export function crmInput(body: unknown): { prospects: CrmProspect[]; group: string | null; targets: CrmTarget[] } {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -79,33 +115,7 @@ export function crmInput(body: unknown): { prospects: CrmProspect[]; group: stri
   if (list.length > MAX_PROSPECTS) throw badRequest(`Add at most ${MAX_PROSPECTS} businesses at a time.`);
   const targets = (Array.isArray(b.targets) ? b.targets : []).filter((t): t is CrmTarget => TARGETS.includes(t as CrmTarget));
   if (!targets.length) throw badRequest('Choose FluentCRM, HighLevel or both.');
-  const prospects = list.map((raw): CrmProspect => {
-    const p = (raw ?? {}) as Record<string, unknown>;
-    const id = text(p.id, 300);
-    const name = text(p.name, 200);
-    if (!id || !name) throw badRequest('Each business needs its id and name.');
-    const email = text(p.email, 254)?.toLowerCase() ?? null;
-    return {
-      id,
-      name,
-      type: text(p.type, 100),
-      phone: text(p.phone, 40),
-      email: email && EMAIL.test(email) ? email : null,
-      website: httpUrl(p.website),
-      contactPage: httpUrl(p.contactPage),
-      address: text(p.address, 300),
-      mapsUrl: httpUrl(p.mapsUrl),
-      rating: num(p.rating, 5),
-      reviews: num(p.reviews, 10_000_000),
-      hours: (Array.isArray(p.hours) ? p.hours : []).map((h) => text(h, 100)).filter((h): h is string => Boolean(h)).slice(0, 7),
-      socials: (Array.isArray(p.socials) ? p.socials : [])
-        .map((s) => (s ?? {}) as Record<string, unknown>)
-        .filter((s) => NETWORKS.includes(s.network as (typeof NETWORKS)[number]))
-        .map((s) => ({ network: s.network as (typeof NETWORKS)[number], url: httpUrl(s.url) ?? '' }))
-        .filter((s) => s.url)
-        .slice(0, NETWORKS.length),
-    };
-  });
+  const prospects = list.map(parseCrmProspect);
   const unique = [...new Map(prospects.map((p) => [p.id, p])).values()];
   return { prospects: unique, group: text(b.group, 80), targets: [...new Set(targets)] };
 }
@@ -177,7 +187,7 @@ export async function crmMarks(pool: Pool, productId: string, placeIds: string[]
 }
 
 /** HighLevel's flat fields for one business, as the snapshot's workflow maps them. */
-function highLevelBody(p: CrmProspect, tags: string[]) {
+function highLevelBody(p: CrmProspect, tags: string[], facts: CrmFacts | undefined) {
   const social = (n: string) => p.socials.find((s) => s.network === n)?.url ?? '';
   return {
     companyName: p.name,
@@ -201,6 +211,9 @@ function highLevelBody(p: CrmProspect, tags: string[]) {
     tags: tags.join(','),
     source: 'Prospect finder',
     prospectId: p.id,
+    demoLink: facts?.demoUrl ?? '',
+    websiteScore: facts?.websiteScore ?? '',
+    websitePlatform: facts?.websitePlatform ?? '',
   };
 }
 
@@ -218,12 +231,15 @@ export interface CrmDeps {
   /** Queues the storefront.crm-prospects job for the store (inside the caller's transaction is not needed: rows wait). */
   queueFluentCrm: (tenantId: string, productId: string) => Promise<void>;
   fetchFn?: typeof fetch;
+  /** The demo link, website score and platform of the businesses the storefront read, by business id. */
+  facts?: (productId: string, prospects: { id: string; website: string | null }[]) => Promise<Map<string, CrmFacts>>;
 }
 
 /** Sends the businesses to the CRMs asked for. HighLevel is posted now; FluentCRM is written by a job. */
 export async function addProspectsToCrm(deps: CrmDeps, productId: string, input: ReturnType<typeof crmInput>): Promise<CrmAddResult> {
   const { pool } = deps;
   const tags = prospectTags(input.group);
+  const facts = (await deps.facts?.(productId, input.prospects)) ?? new Map<string, CrmFacts>();
   const result: CrmAddResult = {
     fluentcrm: { queued: 0, already: 0, noEmail: 0, unavailable: null },
     highlevel: { sent: 0, already: 0, failed: 0, unavailable: null },
@@ -249,7 +265,7 @@ export async function addProspectsToCrm(deps: CrmDeps, productId: string, input:
         if (sent.has(p.id)) result.fluentcrm.already++;
         else if (!p.email) result.fluentcrm.noEmail++;
         else {
-          const contact: CrmContact = { ...p, email: p.email, tags };
+          const contact: CrmContact = { ...p, ...facts.get(p.id), email: p.email, tags };
           await pool.query(
             `INSERT INTO prospect_crm (product_id, place_id, target, status, contact) VALUES ($1, $2, 'fluentcrm', $3, $4)
              ON CONFLICT (product_id, place_id, target) DO UPDATE SET status = EXCLUDED.status, contact = EXCLUDED.contact, error = NULL, date_changed = now()`,
@@ -276,7 +292,7 @@ export async function addProspectsToCrm(deps: CrmDeps, productId: string, input:
           const res = await fetchFn(webhook, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(highLevelBody(p, tags)),
+            body: JSON.stringify(highLevelBody(p, tags, facts.get(p.id))),
             signal: AbortSignal.timeout(10_000),
             redirect: 'error',
           });
