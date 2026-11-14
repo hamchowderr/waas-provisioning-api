@@ -57,6 +57,8 @@ export type JobData =
   | { type: 'storefront.update-host'; tenantId: string; version: string }
   /** Prospect finder results into the storefront's FluentCRM (src/prospectcrm.ts). */
   | { type: 'storefront.crm-prospects'; tenantId: string; productId: string }
+  /** Prospect finder results into the FluentCRM of a storefront on its own website, through its AnyPress Host (src/prospectcrm.ts). */
+  | { type: 'storefront.crm-prospects-host'; productId: string }
   /** The seller's own mailbox for prospect emails onto the storefront, or off it (src/outreach.ts). */
   | { type: 'storefront.outreach-mailbox'; tenantId: string; productId: string }
   /** Sales Kit outreach plans into the storefront's FluentCRM as draft automations (src/outreachautomation.ts). */
@@ -67,6 +69,7 @@ export const MAINTENANCE_QUEUE = 'maintenance';
 
 function singletonKey(data: JobData): string {
   if ('baseSnapshotId' in data) return `basesnapshot:${data.baseSnapshotId}`;
+  if (data.type === 'storefront.crm-prospects-host') return `product:${data.productId}`;
   return 'versionId' in data ? `version:${data.versionId}` : `tenant:${data.tenantId}`;
 }
 

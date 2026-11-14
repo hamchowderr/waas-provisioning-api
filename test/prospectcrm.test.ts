@@ -2,13 +2,14 @@
 // the store agent, and HighLevel through the seller's workflow webhook. Responses are validated against
 // openapi/admin/admin-api.yaml.
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import { createAjv } from '../src/openapi.ts';
 import { mailboxInput } from '../src/outreach.ts';
 import { automationInput, emailHtml } from '../src/outreachautomation.ts';
 import { crmInput, highLevelWebhook } from '../src/prospectcrm.ts';
 import { Status } from '../src/status.ts';
+import { sign } from '../src/webhooks.ts';
 import { OWNER, setup, TEST_ADMIN_TOKEN, waitFor, type TestContext } from './helpers.ts';
 
 const adminSpec: any = parse(readFileSync(new URL('../openapi/admin/admin-api.yaml', import.meta.url), 'utf8'));
@@ -147,6 +148,52 @@ describe('sending prospects to a CRM', () => {
   it('is only for the platform admin and the storefront itself', async () => {
     expect((await t.call('GET', `/admin/products/${sellerProduct}/prospects/crm`)).status).toBe(403);
     expect((await t.call('GET', `/admin/products/${sellerProduct}/prospects/mailbox`)).status).toBe(403);
+  });
+});
+
+describe("a storefront on its own website, through its AnyPress Host", () => {
+  const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+  let ownSite: string;
+  const calls: Array<{ url: string; headers: Record<string, string>; body: string }> = [];
+
+  beforeAll(async () => {
+    ownSite = (await t.pool.query<{ id: string }>("INSERT INTO products (name) VALUES ('Own shop') RETURNING id")).rows[0]!.id;
+    vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
+      if (!String(url).startsWith('https://shop.example/')) throw new Error(`unexpected call to ${String(url)}`);
+      calls.push({ url: String(url), headers: init?.headers as Record<string, string>, body: String(init?.body) });
+      const { contacts } = JSON.parse(String(init?.body));
+      const failed = Object.fromEntries(contacts.filter((c: any) => c.email.startsWith('bounce')).map((c: any) => [c.id, 'FluentCRM did not take the contact']));
+      return Response.json({ added: contacts.length - Object.keys(failed).length, updated: 0, failed });
+    });
+  });
+  afterAll(() => vi.unstubAllGlobals());
+
+  const ownAdd = (body: unknown) => t.call('POST', `/admin/products/${ownSite}/prospects/crm`, { auth: ADMIN, body });
+
+  it('has no FluentCRM until its AnyPress Host is connected', async () => {
+    const before = (await (await t.call('GET', `/admin/products/${ownSite}/prospects/crm`, { auth: ADMIN })).json()) as any;
+    expect(before.fluentcrm).toMatchObject({ available: false });
+    await t.pool.query('INSERT INTO webhook_endpoints (product_id, url, secret) VALUES ($1, $2, $3)', [ownSite, 'https://shop.example/wp-json/anypress-host/v1/webhook', t.deps.secrets.encrypt(SECRET)]);
+    const after = (await (await t.call('GET', `/admin/products/${ownSite}/prospects/crm`, { auth: ADMIN })).json()) as any;
+    valid('ProspectCrm', after);
+    expect(after.fluentcrm).toEqual({ available: true, reason: null });
+  });
+
+  it("posts businesses with an email to Host's prospects route, signed, and records each", async () => {
+    const bounce = { ...grace, id: 'p-bounce', email: 'bounce@nope.example' };
+    const res = await ownAdd({ prospects: [grace, hope, bounce], group: 'Churches', targets: ['fluentcrm'] });
+    const body = (await res.json()) as any;
+    valid('ProspectCrmResult', body);
+    expect(body.fluentcrm).toEqual({ queued: 2, already: 0, noEmail: 1, unavailable: null });
+    const status = async (id: string) => (await t.pool.query('SELECT status, error FROM prospect_crm WHERE product_id = $1 AND place_id = $2', [ownSite, id])).rows[0];
+    await waitFor(async () => (await status('p-grace'))?.status === Status.Done && (await status('p-bounce'))?.status === Status.Failed);
+    expect((await status('p-bounce')).error).toMatch(/did not take/);
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(call.url).toBe('https://shop.example/wp-json/anypress-host/v1/prospects');
+    expect(call.headers['webhook-signature']).toBe(sign(SECRET, call.headers['webhook-id']!, Number(call.headers['webhook-timestamp']), call.body));
+    expect(JSON.parse(call.body).contacts[0]).toMatchObject({ id: 'p-grace', email: 'office@gracechurch.example', tags: ['Prospect', 'Prospect: Churches'] });
+    expect(((await (await ownAdd({ prospects: [grace], targets: ['fluentcrm'] })).json()) as any).fluentcrm).toMatchObject({ queued: 0, already: 1 });
   });
 });
 

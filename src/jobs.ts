@@ -14,7 +14,7 @@ import { applyDemoDraft, purgeExpiredDemoDrafts } from './demodrafts.ts';
 import { holdAllowList, purgeExpiredImports, recordImportBuilt, recordImportFailure, reprintSource } from './imports.ts';
 import { failMailbox, pushMailbox } from './outreach.ts';
 import { failAutomations, pushAutomations } from './outreachautomation.ts';
-import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
+import { failCrmProspects, hostCrm, pushCrmProspects, writeHostProspects } from './prospectcrm.ts';
 import { STORAGE_PACK_GB, type Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
@@ -66,6 +66,8 @@ export function createJobHandlers(
   siteCall?: SiteCall,
   /** The store template and storefront template products, whose old versions and base snapshots are cleared nightly (src/prune.ts). */
   templateProductIds: string[] = [],
+  /** Calls a storefront's own AnyPress Host with prospects for its FluentCRM; tests replace it. */
+  prospectsFetch: typeof fetch = (input, init) => fetch(input, init),
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -270,6 +272,12 @@ export function createJobHandlers(
         await pushCrmProspects(pool, (contacts) => provisioner.addCrmProspects({ storeId: data.tenantId, contacts }), data.productId);
         return;
       }
+      case 'storefront.crm-prospects-host': {
+        const target = await hostCrm(pool, secrets, data.productId);
+        if (!target) return failCrmProspects(pool, data.productId, "The storefront's AnyPress Host is no longer connected");
+        await pushCrmProspects(pool, (contacts) => writeHostProspects(target, contacts, prospectsFetch), data.productId);
+        return;
+      }
       case 'storefront.outreach-mailbox': {
         const { rows } = await pool.query<{ size: Size }>('SELECT size FROM tenants WHERE id = $1', [data.tenantId]);
         if (!rows[0]) return failMailbox(pool, data.productId, 'The storefront is gone');
@@ -366,6 +374,7 @@ export function createJobHandlers(
           await setTenantStatus(data.tenantId, Status.Failed, Status.Pending);
           return;
         case 'storefront.crm-prospects':
+        case 'storefront.crm-prospects-host':
           // The businesses can be sent again from the finder.
           await failCrmProspects(pool, data.productId, error);
           return;

@@ -1,18 +1,23 @@
 // Sending prospect finder results into a seller's CRM (Sales Kit, waas-api-72b.11), so they can act on them there
 // instead of downloading a CSV:
 //
-// - FluentCRM: the storefront's own (ready-made storefronts, src/storefronts.ts). Contacts are written on the store by
-//   the storefront.crm-prospects job (Provisioner.addCrmProspects), tagged "Prospect" and "Prospect: <group>", with
+// - FluentCRM: the storefront's own. On a ready-made storefront (src/storefronts.ts) contacts are written on the store
+//   by the storefront.crm-prospects job (Provisioner.addCrmProspects). A storefront on its own website (such as the
+//   platform's own shop) gets them from the storefront.crm-prospects-host job, through its AnyPress Host
+//   (anypress-host/v1/prospects, signed like the support desk with the secret its webhook endpoint holds; Host 2.23.0+,
+//   which also keeps FluentCRM from emailing them). Either way they are tagged "Prospect" and "Prospect: <group>", with
 //   a note of what the finder found. A new contact is "transactional": no newsletter or campaign reaches someone who
 //   never signed up. FluentCRM needs an email, so businesses without one are left out.
 // - HighLevel: the seller's own sub-account, through an Inbound Webhook workflow (the Sales Kit snapshot's). The API
 //   posts each business to its address; the workflow makes the contact. HighLevel sends any email itself.
 //
 // Each business goes to each CRM once (prospect_crm); the finder shows which are already there.
+import { randomUUID } from 'node:crypto';
 import type { Pool } from './db.ts';
 import { badRequest, HttpError } from './errors.ts';
 import type { Secrets } from './secrets.ts';
 import { Status } from './status.ts';
+import { sign } from './webhooks.ts';
 
 export type CrmTarget = 'fluentcrm' | 'highlevel';
 const TARGETS: readonly CrmTarget[] = ['fluentcrm', 'highlevel'];
@@ -169,8 +174,29 @@ export async function fluentCrmUnavailable(storefront: StorefrontLookup, product
   return { tenantId: store.id, reason: null };
 }
 
+/** A storefront on its own website: its AnyPress Host's prospects route and signing secret, from the webhook endpoint Host registered. */
+export async function hostCrm(pool: Pool, secrets: Secrets, productId: string): Promise<{ url: string; secret: string } | null> {
+  const { rows } = await pool.query<{ url: string; secret: string }>(
+    `SELECT url, secret FROM webhook_endpoints
+      WHERE product_id = $1 AND enabled AND (url LIKE '%/wp-json/anypress-host/v1/webhook' OR url LIKE '%?rest_route=/anypress-host/v1/webhook')
+      ORDER BY date_created DESC LIMIT 1`,
+    [productId],
+  );
+  const row = rows[0];
+  return row ? { url: row.url.replace(/\/webhook$/, '/prospects'), secret: secrets.decrypt(row.secret) } : null;
+}
+
+/** Where the storefront's FluentCRM is: a ready-made storefront's store, or its own website's AnyPress Host. */
+async function fluentCrmTarget(deps: Pick<CrmDeps, 'pool' | 'secrets' | 'storefront'>, productId: string): Promise<{ tenantId: string | null; host: boolean; reason: string | null }> {
+  // A ready-made storefront (even one still being set up) is the place; otherwise its own website, when Host is connected.
+  const store = await fluentCrmUnavailable(deps.storefront, productId);
+  if (store.tenantId || !store.reason?.startsWith('FluentCRM is on')) return { ...store, host: false };
+  if (await hostCrm(deps.pool, deps.secrets, productId)) return { tenantId: null, host: true, reason: null };
+  return { tenantId: null, host: false, reason: 'FluentCRM is on ready-made AnyPress storefronts, or on a storefront running AnyPress Host. This storefront has neither connected.' };
+}
+
 export async function getCrmSettings(pool: Pool, secrets: Secrets, storefront: StorefrontLookup, productId: string): Promise<CrmSettings> {
-  const { reason } = await fluentCrmUnavailable(storefront, productId);
+  const { reason } = await fluentCrmTarget({ pool, secrets, storefront }, productId);
   return { fluentcrm: { available: !reason, reason }, highlevel: { connected: Boolean(await storedWebhook(pool, secrets, productId)) } };
 }
 
@@ -230,6 +256,8 @@ export interface CrmDeps {
   storefront: StorefrontLookup;
   /** Queues the storefront.crm-prospects job for the store (inside the caller's transaction is not needed: rows wait). */
   queueFluentCrm: (tenantId: string, productId: string) => Promise<void>;
+  /** Queues the storefront.crm-prospects-host job, for a storefront on its own website. */
+  queueHostCrm: (productId: string) => Promise<void>;
   fetchFn?: typeof fetch;
   /** The demo link, website score and platform of the businesses the storefront read, by business id. */
   facts?: (productId: string, prospects: { id: string; website: string | null }[]) => Promise<Map<string, CrmFacts>>;
@@ -257,8 +285,8 @@ export async function addProspectsToCrm(deps: CrmDeps, productId: string, input:
     );
 
   if (input.targets.includes('fluentcrm')) {
-    const { tenantId, reason } = await fluentCrmUnavailable(deps.storefront, productId);
-    if (!tenantId) result.fluentcrm.unavailable = reason;
+    const { tenantId, host, reason } = await fluentCrmTarget(deps, productId);
+    if (!tenantId && !host) result.fluentcrm.unavailable = reason;
     else {
       const sent = await already('fluentcrm');
       for (const p of input.prospects) {
@@ -274,7 +302,7 @@ export async function addProspectsToCrm(deps: CrmDeps, productId: string, input:
           result.fluentcrm.queued++;
         }
       }
-      if (result.fluentcrm.queued) await deps.queueFluentCrm(tenantId, productId);
+      if (result.fluentcrm.queued) await (tenantId ? deps.queueFluentCrm(tenantId, productId) : deps.queueHostCrm(productId));
     }
   }
 
@@ -351,6 +379,36 @@ export async function pushCrmProspects(
     }
     if (Object.keys(failed).length) console.error(`Prospects to FluentCRM for ${productId}: ${Object.keys(failed).length} of ${rows.length} failed`);
   }
+}
+
+/** Seconds a storefront's AnyPress Host has to take 50 contacts. */
+const HOST_TIMEOUT_MS = 60_000;
+
+/**
+ * Writes contacts into a storefront's own FluentCRM through its AnyPress Host, one signed call. Throws when Host can't
+ * be reached or is too old for the route, so the job tries again and the rows keep waiting.
+ */
+export async function writeHostProspects(target: { url: string; secret: string }, contacts: CrmContact[], fetchFn: typeof fetch = fetch): Promise<CrmWriteResult> {
+  const text = JSON.stringify({ contacts });
+  const id = `pro_${randomUUID()}`;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const response = await fetchFn(target.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'AnyPress-Prospects/1.0',
+      'webhook-id': id,
+      'webhook-timestamp': String(timestamp),
+      'webhook-signature': sign(target.secret, id, timestamp, text),
+    },
+    body: text,
+    signal: AbortSignal.timeout(HOST_TIMEOUT_MS),
+    redirect: 'error',
+  });
+  const body = (await response.json().catch(() => null)) as Partial<CrmWriteResult> & { message?: string } | null;
+  if (response.status === 404) throw new Error('The storefront\'s AnyPress Host is too old to take prospects: update it to 2.23.0 or later');
+  if (!response.ok) throw new Error(`The storefront's AnyPress Host answered ${response.status}${body?.message ? `: ${body.message}` : ''}`);
+  return { added: Number(body?.added ?? 0), updated: Number(body?.updated ?? 0), failed: (body?.failed as Record<string, string>) ?? {} };
 }
 
 /** When the job gives up: the waiting businesses are marked failed, so the seller can send them again. */
