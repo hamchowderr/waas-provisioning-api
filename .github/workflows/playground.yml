@@ -56,7 +56,7 @@ jobs:
           tar -C upstream/dist/packages/playground/wasm-wordpress-net -czf playground.tar.gz .
           ls -l playground.tar.gz
           sha256sum playground.tar.gz | tee playground.tar.gz.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: playground-${{ env.VERSION }}
           path: playground.tar.gz*

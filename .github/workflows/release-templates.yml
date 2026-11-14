@@ -96,11 +96,11 @@ jobs:
           node plugins/scripts/playground/admin-audit.mjs --client | tee "$RUNNER_TEMP/audit.log"
           pages=$(grep -cE '^[0-9]+ /' "$RUNNER_TEMP/audit.log" || true)
           echo "$SITE_TYPE: ok, $pages wp-admin pages and the home page, only its plugins on" > "$RUNNER_TEMP/check-$SITE_TYPE.txt"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: check-${{ matrix.site_type }}
           path: ${{ runner.temp }}/check-${{ matrix.site_type }}.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: audit-${{ matrix.site_type }}
