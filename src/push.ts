@@ -57,7 +57,7 @@ export function pushPublicKey(): string | null {
 export function parseSubscription(value: unknown): PushSubscription {
   const v = value as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | null;
   const endpoint = typeof v?.endpoint === 'string' ? v.endpoint : '';
-  let url: URL | null = null;
+  let url: URL | null;
   try {
     url = new URL(endpoint);
   } catch {

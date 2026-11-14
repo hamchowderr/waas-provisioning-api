@@ -136,7 +136,7 @@ export async function callSite(
     signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
-  let parsed: unknown = text;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {

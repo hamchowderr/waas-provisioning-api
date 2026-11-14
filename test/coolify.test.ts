@@ -69,7 +69,7 @@ class FakeCloud {
       const id = this.environments.get(m[2]!);
       return id === undefined ? json(404, { message: 'Environment not found.' }) : json(200, { id, uuid: `env-${id}`, name: m[2] });
     }
-    if ((m = /^\/projects\/([^/]+)\/environments$/.exec(path)) && method === 'POST') {
+    if (/^\/projects\/[^/]+\/environments$/.test(path) && method === 'POST') {
       this.environments.set(body.name, 10 + this.environments.size + 1);
       return json(201, { uuid: `env-${body.name}` });
     }

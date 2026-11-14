@@ -573,7 +573,7 @@ export function oauthRoutes(app: Hono<AppEnv>, deps: Deps) {
   // never got a secret, so one that names no way to sign in at the token endpoint stays a public app.
   app.post('/oauth/register', async (c) => {
     const raw = await c.req.text();
-    let body: Record<string, unknown> | null = null;
+    let body: Record<string, unknown> | null;
     try {
       body = JSON.parse(raw || '{}') as Record<string, unknown>;
     } catch {
