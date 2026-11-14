@@ -90,9 +90,8 @@ Until a store publishes its first product, FluentCart's product lists (the Shop 
 "New products are on their way. Check back soon." instead of an empty filter bar and "No results found"
 (`mu-plugins/anypress-store.php`).
 
-Pages, settings and users are the same as [Starter store (FluentCart)](../starter-fluentcart/README.md): FluentCart's
-pages with Shop as the home page, comments off, search engines discouraged until launch, and a `waas-admin` user with
-a random password nobody keeps.
+Pages, settings and users: FluentCart's pages with Shop as the home page, comments off, search engines discouraged
+until launch, and a `waas-admin` user with a random password nobody keeps.
 
 ## Settings
 
@@ -229,5 +228,19 @@ templates/anypress-store/build.sh ../waas-plugins
 WAAS_API_URL=https://api.example.com WAAS_KEY=<product key> WAAS_SECRET=<secret> templates/anypress-store/publish.sh v1.0.0 --production
 ```
 
-Plugin versions and SHA-256 checksums are pinned in `PLUGINS` (and `VENDORED`) at the top of `build.sh`. Otherwise both scripts work as
-described in the [starter template's README](../starter-fluentcart/README.md).
+Plugin versions and SHA-256 checksums are pinned in `PLUGINS` (and `VENDORED`) at the top of `build.sh`. The build needs
+Docker, curl, zip, unzip and composer; it runs MariaDB and WP-CLI in containers and talks to nothing but wordpress.org and
+the image registry. `publish.sh` creates the base snapshot and uploads the zip, creates the version from it, waits until
+it is Done and, with `--production`, makes it the production version. Set `WAAS_API_URL` to your API's address
+(required); `WP_VERSION` and `PHP_VERSION` pick the image (default `7.1`, `8.3`).
+
+### Format
+
+`dist/anypress-store.zip` is the archive the Coolify provisioner restores ([docs/coolify.md](../../docs/coolify.md),
+`restore` in `src/provisioner/coolify/agent.php`):
+
+- `database.sql`: `wp db export` of the whole database, table prefix `wp_` (what the stores' `wp-config.php` uses),
+  home and site URL `https://store.template.invalid`. The agent imports it and rewrites that host to the store's domain
+  (`wp search-replace`), so it must be a bare `https` host without a port.
+- `wp-content/`: plugins, theme and an empty `uploads`. WordPress core is not included; it comes from the image.
+- `waas-template.json`: what went into the build (versions, waas-plugins commit, build time). Informational.

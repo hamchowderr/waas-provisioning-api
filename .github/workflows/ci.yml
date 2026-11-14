@@ -12,7 +12,7 @@ jobs:
     # Fails when a pinned version (.github/pins.json) is behind an AnyPress release; warns for third-party pins.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/pins
 
   test:
@@ -35,7 +35,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/waas_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: pg_dump 18 (the database backup tests dump the postgres:18 service)
         run: |
           sudo apt-get install -y postgresql-common
@@ -95,8 +95,8 @@ jobs:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/waas_test
       ANYPRESS_CLIENT_DIR: ${{ github.workspace }}/waas-plugins/packages/anypress-client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: hamchowderr/waas-plugins
           path: waas-plugins
@@ -120,7 +120,7 @@ jobs:
     # Moves sites into real MariaDB and WordPress containers (test/docker). Separate from `test` so that job stays fast.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 26
@@ -133,7 +133,7 @@ jobs:
     # `fallow audit` also fails on duplicated or overly complex code the change adds; what is already there is listed.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4

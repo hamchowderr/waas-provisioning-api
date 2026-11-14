@@ -33,6 +33,8 @@ add_filter('intermediate_image_sizes_advanced', '__return_empty_array', 99);
 add_filter('big_image_size_threshold', '__return_false', 99);
 
 const ANYPRESS_SAMPLE = __DIR__;
+/** What was read from a business's website for a demo made for it, when there is one (sample/prospect.php). */
+const ANYPRESS_PROSPECT = '/wordpress/anypress-prospect.json';
 $type = defined('ANYPRESS_TENANT_ROLES') ? (string) ANYPRESS_TENANT_ROLES : 'website';
 $sample = (require ANYPRESS_SAMPLE . '/data.php')($type);
 
@@ -215,6 +217,8 @@ $parts = [
     'newsletter' => defined('FLUENTCRM') && !empty($sample['newsletter']),
     // The public pages last: they show the posts, the forms, the booking calendar and the shop the parts above made.
     'pages' => !empty($sample['pages']),
+    // A demo made for one business (anypress.io/try?for=<code>) takes its name, look and offer after everything else.
+    'prospect' => is_file(ANYPRESS_PROSPECT),
 ];
 // The demo runs the parts a few at a time, so its loader can say what it is adding (blueprints.mjs).
 $only = defined('ANYPRESS_SAMPLE_PARTS') ? (array) ANYPRESS_SAMPLE_PARTS : array_keys($parts);

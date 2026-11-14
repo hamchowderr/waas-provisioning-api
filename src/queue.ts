@@ -33,7 +33,7 @@ export type JobData =
   | { type: 'tenant.move'; tenantId: string; targetVersionId: string; rollbackVersionId?: string }
   /** Applies the tenant's current domains from the database (main + redirects). */
   | { type: 'tenant.domains'; tenantId: string }
-  | { type: 'tenant.delete'; tenantId: string }
+  | { type: 'tenant.delete'; tenantId: string; /** Delete its backups too, instead of keeping them (test stores). */ dropBackups?: boolean }
   /** Backs up first when backupId is set, then takes the store offline. */
   | { type: 'tenant.suspend'; tenantId: string; backupId?: string }
   | { type: 'tenant.resume'; tenantId: string }

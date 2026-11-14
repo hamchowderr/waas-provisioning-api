@@ -4,7 +4,7 @@ import { addProspectsToCrm, crmInput, crmMarks, getCrmSettings, setHighLevelWebh
 import { getMailbox, mailboxInput, setMailbox } from '../outreach.ts';
 import { addAutomation, automationInput, listAutomations } from '../outreachautomation.ts';
 import { prospectUsage, searchInput, searchProspects } from '../prospects.ts';
-import { adminProspectDemoRoutes } from '../prospectdemos.ts';
+import { demoFacts, prospectDemoRoutes, readUsage, type DemoLinks, type ReadLimits } from '../prospectdemos.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { adminAccountRoutes, SESSION_HEADER, sessionAuth } from '../accounts.ts';
@@ -45,7 +45,7 @@ import { sitePluginsOf } from '../siteplugins.ts';
 import { deleteTenant, goLiveTenant, HIGHLEVEL_SITE_TYPE, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
-import { emailWebsiteReady } from '../jobs.ts';
+import { emailWebsiteReady, purgeTenantBackups } from '../jobs.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 import { notificationRoutes } from '../notifications.ts';
 
@@ -328,8 +328,6 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.use('/voice-lines', adminOnly);
   app.use('/voice-lines/*', adminOnly);
   app.use('/resellers/*', adminOnly);
-  app.use('/prospect-demos', adminOnly);
-  app.use('/prospect-demos/*', adminOnly);
 
   // Products' organizations, members and invitations: the Team page (src/accounts.ts).
   app.route('/', adminAccountRoutes(deps));
@@ -344,8 +342,6 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   // Reseller accounts: storefronts grouped under one partner, and their usage (src/resellers.ts).
   app.route('/resellers', adminResellerRoutes(deps));
-  // Branded demos for businesses AnyPress may contact (src/prospectdemos.ts). Platform admin only.
-  app.route('/prospect-demos', adminProspectDemoRoutes(deps, (c) => publicBase(c, config.publicUrl)));
 
 
   // Every product's webhook endpoints and deliveries (src/routes/webhooks.ts).
@@ -837,8 +833,21 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   app.delete('/tenants/:id', async (c) => {
     const tenant = await adminTenant(c);
-    await deleteTenant(pool, boss, tenant);
+    const backups = c.req.query('backups');
+    if (backups !== undefined && backups !== 'keep' && backups !== 'delete') throw badRequest('backups must be keep or delete');
+    await deleteTenant(pool, boss, tenant, { dropBackups: backups === 'delete' });
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id });
+  });
+
+  // A deleted test store's backups, removed now instead of at the end of the retention period.
+  app.use('/tenants/:id/backups/purge', adminOnly);
+  app.post('/tenants/:id/backups/purge', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    if ((await pool.query('SELECT 1 FROM tenants WHERE id = $1', [id])).rowCount) {
+      throw badRequest(`Tenant ${id} still exists; delete it with backups=delete instead`);
+    }
+    return c.json({ tenantId: id, deleted: await purgeTenantBackups(pool, deps.provisioner, id) });
   });
 
   // The store's own sending domain (docs/store-email.md): GET shows it with the DNS records to add
@@ -1238,13 +1247,20 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
   app.delete('/products/:productId/basesnapshots', async (c) => c.json(await templates.remove(await product(c), requiredUuidQuery(c, 'id'))));
 
   // The Sales Kit's prospect finder (src/prospects.ts): Google Places searches, a monthly allowance per storefront.
-  app.get('/products/:productId/prospects/usage', async (c) =>
-    c.json(await prospectUsage(pool, config.prospects ?? { searchesPerMonth: 0 }, await product(c)), 200, { 'Cache-Control': 'no-store' }),
-  );
+  // reads: the storefront's website reads this month (src/prospectdemos.ts).
+  const readLimits = (): ReadLimits => ({ readsPerMonth: config.prospects?.readsPerMonth ?? 0, platformProductId: config.storeTemplateProductId });
+  const demoLinks = (): DemoLinks => ({ platformProductId: config.storeTemplateProductId, site: 'https://anypress.io', dashboard: config.auth?.url ?? 'https://app.anypress.io' });
+  app.get('/products/:productId/prospects/usage', async (c) => {
+    const productId = await product(c);
+    const searches = await prospectUsage(pool, config.prospects ?? { searchesPerMonth: 0, readsPerMonth: 0 }, productId);
+    return c.json({ ...searches, reads: await readUsage(pool, readLimits(), productId) }, 200, { 'Cache-Control': 'no-store' });
+  });
+  // The storefront's prospects: each business read once for the website check and its branded demo (src/prospectdemos.ts).
+  app.route('/products/:productId/prospects/demos', prospectDemoRoutes(deps, (c) => publicBase(c, config.publicUrl), product, readLimits, demoLinks));
   app.post('/products/:productId/prospects/search', async (c) => {
     const productId = await product(c);
     const input = searchInput(await c.req.json().catch(() => null));
-    const found = await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0 }, productId, input, deps.placesSearch);
+    const found = await searchProspects(pool, config.prospects ?? { searchesPerMonth: 0, readsPerMonth: 0 }, productId, input, deps.placesSearch);
     // Which of them are in the seller's CRM already (src/prospectcrm.ts).
     const marks = await crmMarks(pool, productId, found.prospects.map((p) => p.id));
     return c.json({ ...found, prospects: found.prospects.map((p) => ({ ...p, inCrm: marks[p.id] ?? [] })) }, 200, { 'Cache-Control': 'no-store' });
@@ -1263,6 +1279,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
       withTransaction(pool, (client) => enqueue(boss, client, { type: 'storefront.crm-prospects', tenantId, productId })).then(() => undefined),
     // Looked up on each call, so tests can replace it after the app is made.
     fetchFn: ((input: Parameters<typeof fetch>[0], init?: RequestInit) => (deps.crmFetch ?? fetch)(input, init)) as typeof fetch,
+    // The demo link, website score and platform of businesses the storefront read, for their CRM contact.
+    facts: (productId: string, prospects: { id: string; website: string | null }[]) => demoFacts(pool, demoLinks(), productId, prospects),
   };
   app.get('/products/:productId/prospects/crm', async (c) =>
     c.json(await getCrmSettings(pool, deps.secrets, storefrontOf, await product(c)), 200, { 'Cache-Control': 'no-store' }),

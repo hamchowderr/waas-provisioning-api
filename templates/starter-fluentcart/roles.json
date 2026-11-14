@@ -1,8 +1,0 @@
-{
-    "store": {
-        "title": "Store",
-        "plugins": [
-            "fluent-cart/fluent-cart.php"
-        ]
-    }
-}

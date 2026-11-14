@@ -27,7 +27,7 @@ import { callSite, siteKey, siteKeyMaster, type SiteRequest } from './sitekeys.t
 import { startStoreBackups } from './storebackups.ts';
 import Firecrawl from '@mendable/firecrawl-js';
 import { startReferences } from './references.ts';
-import { startProspectDemos } from './prospectdemos.ts';
+import { claimPlatformProspects, startProspectDemos } from './prospectdemos.ts';
 import { loadDomainSalesConfig, startDomainSales, storeAttacher } from './domainsales.ts';
 import { serviceIdStore } from './coolifyids.ts';
 import { DEFAULT_WEBHOOK_CONFIG, startWebhookWorker, withWebhooks } from './webhooks.ts';
@@ -51,7 +51,7 @@ const webhooks = config.webhooks ?? DEFAULT_WEBHOOK_CONFIG;
 // Each finished or failed store and version job sends its webhook event (docs/webhooks.md).
 // A job that fails its last retry is emailed to the admins (src/jobalerts.ts).
 const handlers = withFailureAlerts(
-  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss, siteCall), pool, boss, webhooks),
+  withWebhooks(createJobHandlers(pool, provisioner, secrets, config.backupRetentionDays, config.requestLogDays, config, () => config.dashboardHost, () => config.auth?.mail, releases, boss, siteCall, [config.storeTemplateProductId, config.storefrontProductId].filter((id): id is string => !!id)), pool, boss, webhooks),
   pool,
   { mail: config.auth?.mail, to: config.jobAlerts, dashboardUrl: config.auth?.url },
 );
@@ -67,7 +67,9 @@ await startStoreBackups(boss, pool, provisioner, handlers, config.storeBackup);
 // References to build sites from (docs/references.md): read with Firecrawl and Figma's API when their keys are set.
 const firecrawl = config.references?.firecrawlApiKey ? new Firecrawl({ apiKey: config.references.firecrawlApiKey }) : undefined;
 await startReferences(boss, pool, { firecrawl, figmaToken: config.references?.figmaToken }, { config: () => config.references ?? { readsPerMonth: 0 } });
-// Branded demos for businesses AnyPress may contact (docs/prospect-demos.md): their websites read with the same Firecrawl key.
+// The Sales Kit's prospects (docs/prospect-demos.md): their websites read with the same Firecrawl key. AnyPress's own
+// list, from before lists belonged to a storefront, becomes its shop's.
+await claimPlatformProspects(pool, config.storeTemplateProductId);
 await startProspectDemos(boss, pool, provisioner, { firecrawl });
 // Nightly, one store's latest backup restored into a throwaway copy and checked (docs/store-backups.md), unless RESTORE_TEST=off.
 // Phone and computer alerts for the bell's important notices (src/push.ts); off without VAPID keys.

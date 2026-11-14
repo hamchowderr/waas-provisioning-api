@@ -2066,6 +2066,9 @@ foreach ($contacts as $c) {
             if ($v === '' || $v === null) continue;
             $rows[] = '<li>' . $esc($label) . ': ' . (preg_match('#^https?://#', (string) $v) ? '<a href="' . esc_url((string) $v) . '">' . $esc($v) . '</a>' : $esc($v)) . '</li>';
         }
+        if (!empty($c['demoUrl'])) $rows[] = '<li>Their demo: <a href="' . esc_url((string) $c['demoUrl']) . '">' . $esc($c['demoUrl']) . '</a></li>';
+        if (isset($c['websiteScore']) && $c['websiteScore'] !== null) $rows[] = '<li>Website check: ' . $esc($c['websiteScore']) . ' of 100</li>';
+        if (!empty($c['websitePlatform'])) $rows[] = '<li>Website runs on: ' . $esc($c['websitePlatform']) . '</li>';
         if (isset($c['rating']) && $c['rating'] !== null) $rows[] = '<li>Google rating: ' . $esc($c['rating']) . (isset($c['reviews']) && $c['reviews'] !== null ? ' (' . $esc($c['reviews']) . ' reviews)' : '') . '</li>';
         foreach ((array) ($c['socials'] ?? []) as $s) $rows[] = '<li>' . $esc(ucfirst((string) ($s['network'] ?? ''))) . ': <a href="' . esc_url((string) ($s['url'] ?? '')) . '">' . $esc($s['url'] ?? '') . '</a></li>';
         if (!empty($c['hours'])) $rows[] = '<li>Hours:<br>' . implode('<br>', array_map($esc, (array) $c['hours'])) . '</li>';

@@ -22,8 +22,8 @@
     "deadcode": "fallow dead-code"
   },
   "dependencies": {
-    "@better-auth/cimd": "^1.7.18",
-    "@better-auth/mcp": "^1.7.18",
+    "@better-auth/cimd": "^1.7.20",
+    "@better-auth/mcp": "^1.7.20",
     "@better-auth/oauth-provider": "^1.7.18",
     "@gohighlevel/api-client": "3.1.1",
     "@googlemaps/places": "3.1.0",
@@ -32,9 +32,9 @@
     "@modelcontextprotocol/client": "^2.4.0",
     "@modelcontextprotocol/ext-apps": "^2.0.4",
     "@modelcontextprotocol/server": "^2.4.0",
-    "@namecom/core-api": "1.36.2",
+    "@namecom/core-api": "1.36.3",
     "@octokit/rest": "22.0.1",
-    "@vercel/sdk": "1.28.60",
+    "@vercel/sdk": "1.28.61",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "aws4fetch": "1.0.20",
@@ -44,7 +44,7 @@
     "kysely": "^0.29.8",
     "node-pg-migrate": "^9.0.0",
     "pg": "^8.23.1",
-    "pg-boss": "^12.38.1",
+    "pg-boss": "^12.38.2",
     "stripe": "23.1.0",
     "tosend": "1.2.0",
     "tsx": "^4.23.15",
@@ -55,18 +55,18 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@figma/rest-api-spec": "0.45.0",
+    "@figma/rest-api-spec": "0.47.0",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "@types/web-push": "3.6.4",
     "@types/yauzl": "3.4.0",
     "eslint": "^9.39.5",
-    "fallow": "3.41.0",
-    "jose": "^6.2.12",
+    "fallow": "3.42.0",
+    "jose": "^6.2.17",
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^5.0.3"
+    "vitest": "^5.1.0"
   },
   "overrides": {
     "node-pg-migrate": {

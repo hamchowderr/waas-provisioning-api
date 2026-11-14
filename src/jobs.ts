@@ -18,6 +18,7 @@ import { failCrmProspects, pushCrmProspects } from './prospectcrm.ts';
 import { STORAGE_PACK_GB, type Size } from './plans.ts';
 import { recordMailSender, storeMailbox, type MailboxDomains } from './mailcount.ts';
 import { storeSenders } from './maildomains.ts';
+import { pruneOldBaseSnapshots, pruneOldVersions } from './prune.ts';
 import { pruneRequestLog } from './requestlog.ts';
 import type { ReleaseStore } from './releases.ts';
 import type { Secrets } from './secrets.ts';
@@ -63,6 +64,8 @@ export function createJobHandlers(
   boss?: PgBoss,
   /** Calls a store's site routes, signed with its key: a new store made from a demo gets the demo's content. */
   siteCall?: SiteCall,
+  /** The store template and storefront template products, whose old versions and base snapshots are cleared nightly (src/prune.ts). */
+  templateProductIds: string[] = [],
 ): JobHandlers {
   const mailbox = (tenantId: string) => (mailboxDomains ? storeMailbox(pool, provisioner, mailboxDomains, tenantId) : Promise.resolve(undefined));
 
@@ -164,6 +167,12 @@ export function createJobHandlers(
         await provisioner.deleteStore({ storeId: data.tenantId });
         // A site that was being moved in leaves no upload behind.
         await provisioner.deleteImport({ storeId: data.tenantId });
+        // A test store asked to go without a trace takes its backups with it.
+        if (data.dropBackups) {
+          await purgeTenantBackups(pool, provisioner, data.tenantId);
+          await pool.query('DELETE FROM tenants WHERE id = $1', [data.tenantId]);
+          return;
+        }
         // Keep what a restore needs on the backups, which outlive the tenant.
         step('keep');
         const { rows } = await pool.query(`${TENANT_SELECT} WHERE t.id = $1`, [data.tenantId]);
@@ -305,6 +314,10 @@ export function createJobHandlers(
       await purgeExpiredSignIns(pool);
       await maintainDashboardDomains(pool, dashboardHost());
       await stopBuiltVersions(pool, provisioner);
+      if (boss) {
+        await pruneOldVersions(pool, boss, templateProductIds);
+        await pruneOldBaseSnapshots(pool, boss, templateProductIds);
+      }
     },
 
     async fail(data: JobData, error: unknown, job: { id: string; attempts: number }) {
@@ -609,6 +622,24 @@ const failBackup = (pool: Pool, backupId: string) =>
 /** Deletes the backups of tenants deleted more than `retentionDays` ago. Safe to re-run. */
 export async function purgeExpiredBackups(pool: Pool, provisioner: Provisioner, retentionDays: number): Promise<number> {
   const { rows } = await pool.query('SELECT id FROM tenant_backups WHERE tenant_deleted_at < now() - make_interval(days => $1)', [retentionDays]);
+  return deleteBackups(pool, provisioner, rows);
+}
+
+/**
+ * Every backup of one store, now: a deleted test store's (POST /admin/tenants/{id}/backups/purge), or a store being
+ * deleted with backups=delete. A live store's are only taken while it is being deleted.
+ */
+export async function purgeTenantBackups(pool: Pool, provisioner: Provisioner, tenantId: string): Promise<number> {
+  const { rows } = await pool.query(
+    `SELECT b.id FROM tenant_backups b
+      WHERE b.tenant_id = $1
+        AND (b.tenant_deleted_at IS NOT NULL OR EXISTS (SELECT 1 FROM tenants t WHERE t.id = b.tenant_id AND t.status = $2))`,
+    [tenantId, Status.Removing],
+  );
+  return deleteBackups(pool, provisioner, rows);
+}
+
+async function deleteBackups(pool: Pool, provisioner: Provisioner, rows: { id: string }[]): Promise<number> {
   for (const { id } of rows) {
     await provisioner.deleteBackup({ backupId: id });
     await pool.query('DELETE FROM tenant_backups WHERE id = $1', [id]);
