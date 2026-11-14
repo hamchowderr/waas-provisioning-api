@@ -72,4 +72,4 @@ WAAS_API_URL=https://api.example.com WAAS_KEY=<storefront product key> WAAS_SECR
 ```
 
 Then set `STOREFRONT_PRODUCT_ID` on the API to that product's id. Plugin versions and SHA-256 checksums are pinned in
-`PLUGINS` at the top of `build.sh`. The archive's format is the [starter template's](../starter-fluentcart/README.md#format).
+`PLUGINS` at the top of `build.sh`. The archive's format is the [store template's](../anypress-store/README.md#format).

@@ -156,11 +156,10 @@ Running stores keep their image until they restart, and `docker image prune` onl
 
 ### 5. A template version
 
-Stores are copies of a template version. Three templates ship in `templates/`, each with a `build.sh` that builds the archive and a `publish.sh` that uploads it through the API and creates a version from it:
+Stores are copies of a template version. Two templates ship in `templates/`, each with a `build.sh` that builds the archive and a `publish.sh` that uploads it through the API and creates a version from it:
 
 | Template | What it is |
 |---|---|
-| [`starter-fluentcart`](../templates/starter-fluentcart/README.md) | The smallest store: WordPress, AnyPress Client, FluentCart, Twenty Twenty-Five |
 | [`anypress-store`](../templates/anypress-store/README.md) | The full store AnyPress sells: the Fluent plugins, SEO and automation on the AnyPress theme, with one role per site type (website, bookings, store, community and courses, everything) in `roles.json` |
 | [`seller-storefront`](../templates/seller-storefront/README.md) | Not a store: the ready-made storefront (section 6) |
 

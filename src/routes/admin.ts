@@ -45,7 +45,7 @@ import { sitePluginsOf } from '../siteplugins.ts';
 import { deleteTenant, goLiveTenant, HIGHLEVEL_SITE_TYPE, resumeTenant, siteTypesOf, suspendTenant } from '../tenants.ts';
 import { versionService } from './versions.ts';
 import { wpLogin } from '../wplogin.ts';
-import { emailWebsiteReady } from '../jobs.ts';
+import { emailWebsiteReady, purgeTenantBackups } from '../jobs.ts';
 import { adminWebhookRoutes } from './webhooks.ts';
 import { notificationRoutes } from '../notifications.ts';
 
@@ -833,8 +833,21 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
 
   app.delete('/tenants/:id', async (c) => {
     const tenant = await adminTenant(c);
-    await deleteTenant(pool, boss, tenant);
+    const backups = c.req.query('backups');
+    if (backups !== undefined && backups !== 'keep' && backups !== 'delete') throw badRequest('backups must be keep or delete');
+    await deleteTenant(pool, boss, tenant, { dropBackups: backups === 'delete' });
     return c.json({ tenantId: tenant.id, externalId: tenant.external_id });
+  });
+
+  // A deleted test store's backups, removed now instead of at the end of the retention period.
+  app.use('/tenants/:id/backups/purge', adminOnly);
+  app.post('/tenants/:id/backups/purge', async (c) => {
+    const id = c.req.param('id');
+    if (!isUuid(id)) throw notFound(`Tenant ${id} not found`);
+    if ((await pool.query('SELECT 1 FROM tenants WHERE id = $1', [id])).rowCount) {
+      throw badRequest(`Tenant ${id} still exists; delete it with backups=delete instead`);
+    }
+    return c.json({ tenantId: id, deleted: await purgeTenantBackups(pool, deps.provisioner, id) });
   });
 
   // The store's own sending domain (docs/store-email.md): GET shows it with the DNS records to add
