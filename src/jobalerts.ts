@@ -34,12 +34,17 @@ export async function describeJob(pool: Pool, data: JobData): Promise<string> {
     const v = rows[0] as { name: string; product: string } | undefined;
     return v ? `${verb} the version ${v.name} of ${v.product}` : `${verb} the version ${data.versionId}`;
   }
+  if (data.type === 'storefront.crm-prospects-host') {
+    const { rows } = await pool.query('SELECT name FROM products WHERE id = $1', [data.productId]);
+    return `${verb} the storefront ${(rows[0] as { name: string } | undefined)?.name ?? data.productId}`;
+  }
   return `${verb} the template ${data.baseSnapshotId}`;
 }
 
 const VERBS: Record<JobData['type'], string> = {
   'storefront.update-host': 'Update AnyPress Host on',
   'storefront.crm-prospects': 'Add prospects to the FluentCRM of',
+  'storefront.crm-prospects-host': 'Add prospects to the FluentCRM of',
   'storefront.outreach-mailbox': 'Connect the prospect mailbox of',
   'storefront.outreach-automation': 'Add an outreach automation to the FluentCRM of',
   'version.create': 'Build',

@@ -146,6 +146,8 @@ async function resetForRetry(client: Client, data: JobData): Promise<boolean> {
     }
     case 'basesnapshot.delete':
       return true; // nothing recorded to reset; the archive delete is simply tried again
+    case 'storefront.crm-prospects-host':
+      return true; // the businesses still waiting are sent; failed ones are sent again from the finder
     default:
       return tenant(data.tenantId, Status.Pending);
   }
@@ -1277,6 +1279,8 @@ export function adminRoutes(deps: Deps, { session = false } = {}) {
     storefront: storefrontOf,
     queueFluentCrm: (tenantId: string, productId: string) =>
       withTransaction(pool, (client) => enqueue(boss, client, { type: 'storefront.crm-prospects', tenantId, productId })).then(() => undefined),
+    queueHostCrm: (productId: string) =>
+      withTransaction(pool, (client) => enqueue(boss, client, { type: 'storefront.crm-prospects-host', productId })).then(() => undefined),
     // Looked up on each call, so tests can replace it after the app is made.
     fetchFn: ((input: Parameters<typeof fetch>[0], init?: RequestInit) => (deps.crmFetch ?? fetch)(input, init)) as typeof fetch,
     // The demo link, website score and platform of businesses the storefront read, for their CRM contact.

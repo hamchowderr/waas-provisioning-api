@@ -149,8 +149,9 @@ paths:
       operationId: adminProspectCrm
       summary: Where prospects can go
       description: >-
-        Whether the storefront's FluentCRM can take prospects (ready-made AnyPress storefronts that are built), and
-        whether a HighLevel webhook is set.
+        Whether the storefront's FluentCRM can take prospects (ready-made AnyPress storefronts that are built, or a
+        storefront on its own website whose AnyPress Host 2.23.0 or later is connected), and whether a HighLevel
+        webhook is set.
       responses:
         '200':
           description: The CRMs
