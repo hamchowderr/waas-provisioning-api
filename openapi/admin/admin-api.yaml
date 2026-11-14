@@ -132,7 +132,8 @@ paths:
       summary: The prospect finder's searches this month
       description: >-
         How many Google Places searches this storefront's Sales Kit prospect finder has used this calendar month (UTC),
-        out of PROSPECT_SEARCHES_PER_MONTH. available is false until the platform sets GOOGLE_PLACES_API_KEY.
+        out of PROSPECT_SEARCHES_PER_MONTH. available is false until the platform sets GOOGLE_PLACES_API_KEY. reads is
+        this month's website reads (the check and branded demo of each prospect), out of PROSPECT_READS_PER_MONTH.
       responses:
         '200':
           description: This month's searches
@@ -2506,29 +2507,40 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-  /admin/prospect-demos:
+  /admin/products/{productId}/prospects/demos:
+    parameters:
+      - $ref: '#/components/parameters/productId'
     get:
       operationId: adminListProspectDemos
-      summary: Businesses with a branded demo
+      summary: The storefront's prospects
       description: >-
-        Businesses AnyPress may contact, each with a private branded demo made from its own website
-        (docs/prospect-demos.md), by priority. Platform admin only: 404 at /account.
+        The businesses this storefront's Sales Kit may contact (docs/prospect-demos.md), by priority, then newest.
+        Each website is read once: the website check (report), what kind of site it is, and a private branded demo
+        (demoUrl). reads is this month's allowance of website reads.
       responses:
         '200':
-          description: Every prospect demo
+          description: The storefront's prospects
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/ProspectDemo' }
+                type: object
+                required: [prospects, reads]
+                properties:
+                  prospects:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProspectDemo' }
+                  reads: { $ref: '#/components/schemas/ProspectReadUsage' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     post:
       operationId: adminAddProspectDemos
       summary: Add businesses and read their websites
       description: >-
-        Adds up to 200 businesses. Each with a website is read in the background (statusCode 0 until it is
-        done); one without a website is saved with statusCode 2. A business whose website is already on the
-        list is skipped.
+        Adds up to 200 businesses, from the prospect finder (placeId and details), a list, or one at a time. Each with
+        a website is read in the background (statusCode 0 until it is done), one read each from this month's
+        allowance; when the allowance is used, the business is saved with statusCode 2 and says so. One without a
+        website is saved with statusCode 2. A business whose website is already on the storefront's list is skipped.
+        Without siteType, the read picks the demo's site type from what their website has.
       requestBody:
         required: true
         content:
@@ -2545,9 +2557,11 @@ paths:
                     allOf:
                       - $ref: '#/components/schemas/ProspectDemoSettings'
                       - type: object
-                        required: [company, route, siteType]
+                        required: [company]
                         properties:
                           website: { type: string, nullable: true, maxLength: 2000 }
+                          placeId: { type: string, nullable: true, maxLength: 300, description: The prospect finder's (Google Places) id }
+                          details: { $ref: '#/components/schemas/ProspectDetails' }
       responses:
         '201':
           description: What was added, and what was skipped
@@ -2555,7 +2569,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [created, skipped]
+                required: [created, skipped, reads]
                 properties:
                   created:
                     type: array
@@ -2568,17 +2582,20 @@ paths:
                       properties:
                         company: { type: string }
                         reason: { type: string }
+                  reads: { $ref: '#/components/schemas/ProspectReadUsage' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
-  /admin/prospect-demos/{id}:
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/products/{productId}/prospects/demos/{id}:
     parameters:
+      - $ref: '#/components/parameters/productId'
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     get:
       operationId: adminGetProspectDemo
-      summary: One prospect demo
+      summary: One prospect
       responses:
         '200':
-          description: The prospect demo
+          description: The prospect
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProspectDemo' }
@@ -2587,7 +2604,9 @@ paths:
     patch:
       operationId: adminUpdateProspectDemo
       summary: Change a prospect's route, site type, kit or notes
-      description: Fields left out stay as they are. The website can't be changed; remove the prospect and add it again.
+      description: >-
+        Fields left out stay as they are. Picking a siteType keeps it from then on. The website can't be changed;
+        remove the prospect and add it again.
       requestBody:
         required: true
         content:
@@ -2595,7 +2614,7 @@ paths:
             schema: { $ref: '#/components/schemas/ProspectDemoSettings' }
       responses:
         '200':
-          description: The prospect demo
+          description: The prospect
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProspectDemo' }
@@ -2605,18 +2624,21 @@ paths:
     delete:
       operationId: adminDeleteProspectDemo
       summary: Remove a prospect and its demo
-      description: Removes the business, its copied logo and photos; its demo link stops working.
+      description: Removes the business and its copied logo, photos and fonts; its demo link stops working.
       responses:
         '204': { description: Removed }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-  /admin/prospect-demos/{id}/gather:
+  /admin/products/{productId}/prospects/demos/{id}/read:
     parameters:
+      - $ref: '#/components/parameters/productId'
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     post:
-      operationId: adminGatherProspectDemo
+      operationId: adminReadProspectDemo
       summary: Read the website again
-      description: For a website that changed or a read that failed. The demo keeps its old look until the new read is done.
+      description: >-
+        For a website that changed or a read that failed; one read from this month's allowance. The demo keeps its old
+        look until the new read is done. 409 while a read is running; 429 when this month's reads are used.
       responses:
         '202':
           description: Reading (statusCode 0)
@@ -2626,6 +2648,10 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429':
+          description: This month's website reads are used
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   /demos/prospects/{code}:
     parameters:
       - { name: code, in: path, required: true, schema: { type: string } }
@@ -2633,8 +2659,9 @@ paths:
       operationId: getProspectDemo
       summary: A branded demo's settings (public)
       description: >-
-        What anypress.io/try?for=<code> reads to brand its WordPress Playground demo. No key: the private
-        code is the key. 404 until the website has been read. Sent with X-Robots-Tag noindex.
+        What the demo page (anypress.io/try?for=<code>, or a seller's demo page /demo/<storefront>?for=<code>) reads
+        to brand its WordPress Playground demo. No key: the private code is the key. 404 until the website has been
+        read. Sent with X-Robots-Tag noindex.
       security: []
       responses:
         '200':
@@ -3413,24 +3440,83 @@ components:
               image: { type: string, nullable: true }
     PublicProspectDemo:
       type: object
-      required: [company, route, siteType, kit, brand]
+      required: [company, productId, route, siteType, kit, brand]
       properties:
         company: { type: string }
+        productId: { type: string, format: uuid, nullable: true, description: "The storefront whose demo page may show it" }
         route: { type: string }
         siteType: { type: string }
         kit: { type: string, nullable: true }
         brand:
           anyOf: [{ $ref: '#/components/schemas/ProspectBrand' }, { type: object, nullable: true, enum: [null] }]
+    ProspectDetails:
+      type: object
+      nullable: true
+      description: What the prospect finder found about the business, sent on to the CRM with it.
+      properties:
+        type: { type: string, nullable: true, description: 'The kind of business, such as Church' }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        website: { type: string, nullable: true }
+        contactPage: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        mapsUrl: { type: string, nullable: true }
+        rating: { type: number, nullable: true }
+        reviews: { type: integer, nullable: true }
+        hours: { type: array, items: { type: string } }
+        socials:
+          type: array
+          items:
+            type: object
+            required: [network, url]
+            properties:
+              network: { type: string, enum: [facebook, instagram, linkedin, x, youtube, tiktok] }
+              url: { type: string }
+    WebsiteCheck:
+      type: object
+      description: The website check, run on the page the read fetched. A plain report for the business owner.
+      required: [url, host, checkedAt, score, builder, checks]
+      properties:
+        url: { type: string }
+        host: { type: string }
+        checkedAt: { type: string, format: date-time }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        builder: { type: string, nullable: true, description: The site builder the page says it was made with }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [id, title, status, detail, weight]
+            properties:
+              id: { type: string, example: secure }
+              title: { type: string }
+              status: { type: string, enum: [pass, warn, fail] }
+              detail: { type: string }
+              weight: { type: integer }
+    ProspectReadUsage:
+      type: object
+      required: [used, limit, resetsAt]
+      additionalProperties: false
+      properties:
+        used: { type: integer }
+        limit: { type: integer, nullable: true, description: "PROSPECT_READS_PER_MONTH; null for AnyPress's own list, which has no allowance" }
+        resetsAt: { type: string, format: date-time, description: 'The first of next month, UTC' }
     ProspectDemo:
       type: object
-      required: [id, code, company, website, route, siteType, kit, label, city, priority, notes, statusCode, error, creditsUsed, brand, createdAt, gatheredAt]
+      required: [id, code, company, website, placeId, route, siteType, siteTypeAuto, kit, label, city, priority, notes, details, statusCode, error, creditsUsed, brand, report, demoUrl, createdAt, gatheredAt]
       properties:
         id: { type: string, format: uuid }
-        code: { type: string, description: 'The private code in the demo link, anypress.io/try?for=<code>' }
+        code: { type: string, description: 'The private code in the demo link' }
         company: { type: string }
         website: { type: string, nullable: true }
+        placeId: { type: string, nullable: true, description: The prospect finder's id, when it came from the finder }
         route: { type: string }
         siteType: { type: string }
+        siteTypeAuto: { type: boolean, description: True until someone picks the site type; the read picks it from what their website has }
+        details: { $ref: '#/components/schemas/ProspectDetails' }
+        report:
+          anyOf: [{ $ref: '#/components/schemas/WebsiteCheck' }, { type: object, nullable: true, enum: [null] }]
+        demoUrl: { type: string, nullable: true, description: "The demo link to send them, once the website is read: anypress.io/try?for=<code> for AnyPress's own list, the storefront's demo page for everyone else" }
         kit: { type: string, nullable: true }
         label: { type: string, nullable: true }
         city: { type: string, nullable: true }
@@ -3954,6 +4040,7 @@ components:
         used: { type: integer }
         limit: { type: integer }
         resetsAt: { type: string, format: date-time, description: 'The first of next month, UTC' }
+        reads: { $ref: '#/components/schemas/ProspectReadUsage' }
     Prospect:
       type: object
       required: [id, name, address, phone, website, rating, reviews, mapsUrl, type, hours, inCrm]

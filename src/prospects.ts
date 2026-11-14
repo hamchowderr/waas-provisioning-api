@@ -8,6 +8,8 @@ import { HttpError } from './errors.ts';
 export interface ProspectConfig {
   apiKey?: string;
   searchesPerMonth: number;
+  /** Website reads (Firecrawl) per storefront and month, for the check and branded demo (src/prospectdemos.ts). */
+  readsPerMonth: number;
 }
 
 export interface ProspectUsage {
@@ -56,7 +58,10 @@ export function loadProspectConfig(env: NodeJS.ProcessEnv): ProspectConfig {
   const raw = env.PROSPECT_SEARCHES_PER_MONTH?.trim();
   const searchesPerMonth = raw ? Number(raw) : 100;
   if (!Number.isInteger(searchesPerMonth) || searchesPerMonth < 0) throw new Error('PROSPECT_SEARCHES_PER_MONTH must be a whole number');
-  return { apiKey: env.GOOGLE_PLACES_API_KEY?.trim() || undefined, searchesPerMonth };
+  const reads = env.PROSPECT_READS_PER_MONTH?.trim();
+  const readsPerMonth = reads ? Number(reads) : 50;
+  if (!Number.isInteger(readsPerMonth) || readsPerMonth < 0) throw new Error('PROSPECT_READS_PER_MONTH must be a whole number');
+  return { apiKey: env.GOOGLE_PLACES_API_KEY?.trim() || undefined, searchesPerMonth, readsPerMonth };
 }
 
 export async function prospectUsage(pool: Pool, config: ProspectConfig, productId: string, now = new Date()): Promise<ProspectUsage> {

@@ -36,7 +36,7 @@ afterAll(async () => t?.close());
 
 describe('the prospect finder', () => {
   it('says it is not set up without a key, and counts nothing', async () => {
-    t.deps.config.prospects = { searchesPerMonth: 3 };
+    t.deps.config.prospects = { searchesPerMonth: 3, readsPerMonth: 50 };
     const before = await usage();
     valid('ProspectUsage', before);
     expect(before).toMatchObject({ available: false, used: 0, limit: 3 });
@@ -45,7 +45,7 @@ describe('the prospect finder', () => {
   });
 
   it('searches Google Places and answers each business, leaving out closed ones', async () => {
-    t.deps.config.prospects = { apiKey: 'test-key', searchesPerMonth: 3 };
+    t.deps.config.prospects = { apiKey: 'test-key', searchesPerMonth: 3, readsPerMonth: 50 };
     answer = () => ({
         places: [
           { id: 'a', displayName: { text: 'Grace Church' }, formattedAddress: '1 Main St, Columbus, OH', nationalPhoneNumber: '(614) 555-0100', rating: 4.8, userRatingCount: 120, googleMapsUri: 'https://maps.google.com/?cid=1', primaryTypeDisplayName: { text: 'Church' }, regularOpeningHours: { weekdayDescriptions: ['Sunday: 9:00 AM – 1:00 PM'] } },
@@ -116,8 +116,8 @@ describe('the prospect finder', () => {
   });
 
   it('reads the allowance from the environment', () => {
-    expect(loadProspectConfig({})).toEqual({ apiKey: undefined, searchesPerMonth: 100 });
-    expect(loadProspectConfig({ GOOGLE_PLACES_API_KEY: ' k ', PROSPECT_SEARCHES_PER_MONTH: '50' })).toEqual({ apiKey: 'k', searchesPerMonth: 50 });
+    expect(loadProspectConfig({})).toEqual({ apiKey: undefined, searchesPerMonth: 100, readsPerMonth: 50 });
+    expect(loadProspectConfig({ GOOGLE_PLACES_API_KEY: ' k ', PROSPECT_SEARCHES_PER_MONTH: '50' })).toEqual({ apiKey: 'k', searchesPerMonth: 50, readsPerMonth: 50 });
     expect(() => loadProspectConfig({ PROSPECT_SEARCHES_PER_MONTH: 'lots' })).toThrow();
   });
 });

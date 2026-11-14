@@ -115,7 +115,7 @@ export interface Config {
    * is set, unless RESELLER_INVOICE=off. Unset: bills are only shown, and sent by hand.
    */
   resellerInvoices?: ResellerInvoiceConfig;
-  /** The Sales Kit's prospect finder (src/prospects.ts): GOOGLE_PLACES_API_KEY and PROSPECT_SEARCHES_PER_MONTH (100). */
+  /** The Sales Kit's prospect finder (src/prospects.ts): GOOGLE_PLACES_API_KEY, PROSPECT_SEARCHES_PER_MONTH (100) and PROSPECT_READS_PER_MONTH (50). */
   prospects?: ProspectConfig;
   /** Reading references to build sites from (src/references.ts): FIRECRAWL_API_KEY, FIGMA_TOKEN, REFERENCE_READS_PER_MONTH (50), REFERENCE_CREDITS_PER_MONTH (5000) and REFERENCE_MAX_PAGES (500). */
   references?: ReferenceConfig;
