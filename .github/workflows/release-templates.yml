@@ -81,7 +81,7 @@ jobs:
         with:
           php-version: '8.3'
           tools: composer
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Playground check (${{ matrix.site_type }})
@@ -135,7 +135,7 @@ jobs:
           fi
           echo "AnyPress Host $HOST_VERSION"
       # Before the build too: the storefront's build reads the price list from src/pricing.ts with Node.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Build
